@@ -74,6 +74,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleMCPToolCall(message, sendResponse);
       return true;
 
+    case 'MEMORY_EXTRACT':
+      handleMemoryExtract(message, sendResponse);
+      return true;
+
     case 'TEXT_SELECTED':
       // Relay text selection from content script to sidebar
       chrome.runtime.sendMessage({
@@ -216,6 +220,72 @@ async function handleMCPConnect(message, sendResponse) {
     sendResponse(result);
   } catch (e) {
     sendResponse({ success: false, error: e.message });
+  }
+}
+
+async function handleMemoryExtract(message, sendResponse) {
+  const { messages, providerConfig } = message;
+
+  try {
+    const preset = PROVIDER_PRESETS[providerConfig.providerId] || PROVIDER_PRESETS.custom;
+    const provider = {
+      ...preset,
+      ...providerConfig,
+      format: providerConfig.format || preset.format,
+      apiUrl: providerConfig.apiUrl || preset.apiUrl,
+    };
+
+    if (!provider.apiKey) {
+      sendResponse({ error: 'No API key' });
+      return;
+    }
+
+    // Build non-streaming request using formatRequest, then override stream: false
+    const { url: streamUrl, options } = formatRequest(provider, messages, []);
+    const body = JSON.parse(options.body);
+
+    // Override to non-streaming
+    let url = streamUrl;
+    if (provider.format === 'openai') {
+      body.stream = false;
+    } else if (provider.format === 'anthropic') {
+      body.stream = false;
+    } else if (provider.format === 'gemini') {
+      // Switch from streamGenerateContent to generateContent
+      url = url.replace(':streamGenerateContent', ':generateContent').replace('alt=sse&', '');
+    }
+
+    options.body = JSON.stringify(body);
+    const response = await fetch(url, options);
+
+    if (!response.ok) {
+      sendResponse({ error: `API Error ${response.status}` });
+      return;
+    }
+
+    const data = await response.json();
+
+    // Extract text content based on format
+    let text = '';
+    if (provider.format === 'openai') {
+      text = data.choices?.[0]?.message?.content || '';
+    } else if (provider.format === 'anthropic') {
+      text = data.content?.map(c => c.text).filter(Boolean).join('') || '';
+    } else if (provider.format === 'gemini') {
+      text = data.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
+    }
+
+    // Parse JSON from response
+    try {
+      // Try to extract JSON array from the text
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      const memories = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+      sendResponse({ memories });
+    } catch (e) {
+      sendResponse({ memories: [] });
+    }
+  } catch (e) {
+    sendResponse({ error: e.message });
   }
 }
 

@@ -22,6 +22,9 @@
         <span class="header-title">AI Sidebar</span>
       </div>
       <div class="header-right">
+        <button id="btn-history" class="icon-btn" title="Chat History">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </button>
         <button id="btn-new-chat" class="icon-btn" title="New Chat">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
@@ -101,6 +104,20 @@
       </div>
     </div>
 
+    <!-- History Drawer -->
+    <div id="history-drawer" class="hidden">
+      <div class="history-drawer-backdrop"></div>
+      <div class="history-drawer-panel">
+        <div class="history-drawer-header">
+          <h3>Chat History</h3>
+          <button id="btn-close-history" class="icon-btn" title="Close">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </div>
+    </div>
+
     <!--  Settings Panel -->
     <div id="settings-view" class="hidden">
       <div class="settings-header">
@@ -170,7 +187,21 @@
           </div>
         </section>
 
-        <!-- Section 3: Custom Providers -->
+        <!-- Section 3: Memory -->
+        <section class="settings-section">
+          <div class="section-header-row">
+            <h3>Memory</h3>
+            <label class="toggle-switch">
+              <input type="checkbox" id="memory-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="memory-description">AI learns your preferences from conversations to personalize responses.</p>
+          <div id="memory-list" class="memory-list"></div>
+          <button id="btn-clear-memories" class="btn-danger" style="display:none;">Clear All Memories</button>
+        </section>
+
+        <!-- Section 4: Custom Providers -->
         <section class="settings-section">
           <div class="section-header-row">
             <h3>Custom Providers</h3>

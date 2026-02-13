@@ -22,7 +22,17 @@ const state = {
   mcpServers: [], // { id, name, url }
   showCustomModel: false,
   abortController: null,
+  // Multi-conversation
+  conversations: [], // [{ id, title, createdAt, updatedAt }]
+  activeConversationId: null,
+  historyDrawerOpen: false,
+  // Memory system
+  memories: [], // [{ id, category, content, confidence, source, createdAt, updatedAt }]
+  memoryEnabled: true,
+  memoryExtractionTimer: null,
 };
+
+const MEMORY_CATEGORIES = ['style', 'interests', 'expertise', 'preferences', 'personal'];
 
 // ==================== DOM REFS ====================
 const $ = (sel) => document.querySelector(sel);
@@ -75,6 +85,14 @@ function initRefs() {
   refs.btnAddMcp = $('#btn-add-mcp');
   refs.btnToggleMcpForm = $('#btn-toggle-mcp-form');
   refs.mcpAddForm = $('#mcp-add-form');
+  refs.btnHistory = $('#btn-history');
+  refs.historyDrawer = $('#history-drawer');
+  refs.historyList = $('#history-list');
+  refs.btnCloseHistory = $('#btn-close-history');
+  refs.historyBackdrop = refs.historyDrawer?.querySelector('.history-drawer-backdrop');
+  refs.memoryToggle = $('#memory-toggle');
+  refs.memoryList = $('#memory-list');
+  refs.btnClearMemories = $('#btn-clear-memories');
 }
 
 // ==================== INIT ====================
@@ -119,6 +137,10 @@ async function loadSettings() {
       'customProviders',
       'mcpServers',
       'chatHistory',
+      'conversations',
+      'activeConversationId',
+      'memories',
+      'memoryEnabled',
     ]);
     if (data.providerConfig) {
       state.providerConfig = { ...state.providerConfig, ...data.providerConfig };
@@ -132,13 +154,57 @@ async function loadSettings() {
     if (data.mcpServers) {
       state.mcpServers = data.mcpServers;
     }
-    if (data.chatHistory) {
-      state.messages = data.chatHistory;
-      renderAllMessages();
+    if (data.memories) {
+      state.memories = data.memories;
+    }
+    if (data.memoryEnabled !== undefined) {
+      state.memoryEnabled = data.memoryEnabled;
+    }
+
+    // Load conversations index
+    if (data.conversations) {
+      state.conversations = data.conversations;
+    }
+
+    // Migrate legacy chatHistory to new multi-conversation format
+    if (data.chatHistory && data.chatHistory.length > 0 && !data.conversations) {
+      await migrateLegacyChatHistory(data.chatHistory);
+    } else if (data.activeConversationId) {
+      // Load the active conversation
+      state.activeConversationId = data.activeConversationId;
+      const convData = await chrome.storage.local.get(`conv_${data.activeConversationId}`);
+      if (convData[`conv_${data.activeConversationId}`]) {
+        state.messages = convData[`conv_${data.activeConversationId}`];
+        renderAllMessages();
+      }
     }
   } catch (e) {
     console.warn('Failed to load settings:', e);
   }
+}
+
+async function migrateLegacyChatHistory(messages) {
+  const id = `conv_${Date.now()}`;
+  const firstUserMsg = messages.find(m => m.role === 'user');
+  const title = firstUserMsg
+    ? (firstUserMsg.displayContent || firstUserMsg.content).slice(0, 50)
+    : 'Imported Chat';
+  const now = Date.now();
+
+  const conv = { id, title, createdAt: now, updatedAt: now };
+  state.conversations = [conv];
+  state.activeConversationId = id;
+  state.messages = messages;
+
+  await chrome.storage.local.set({
+    [`conv_${id}`]: messages,
+    conversations: state.conversations,
+    activeConversationId: id,
+  });
+  // Remove legacy key
+  await chrome.storage.local.remove('chatHistory');
+
+  renderAllMessages();
 }
 
 async function saveSettings() {
@@ -154,11 +220,84 @@ async function saveSettings() {
   }
 }
 
-async function saveChatHistory() {
+async function saveActiveConversation() {
+  if (!state.activeConversationId) return;
   try {
-    await chrome.storage.local.set({ chatHistory: state.messages });
+    await chrome.storage.local.set({
+      [`conv_${state.activeConversationId}`]: state.messages,
+    });
+    // Update updatedAt in index
+    const conv = state.conversations.find(c => c.id === state.activeConversationId);
+    if (conv) {
+      conv.updatedAt = Date.now();
+      await saveConversationIndex();
+    }
   } catch (e) {
-    console.warn('Failed to save chat history:', e);
+    console.warn('Failed to save conversation:', e);
+  }
+}
+
+async function saveConversationIndex() {
+  try {
+    await chrome.storage.local.set({
+      conversations: state.conversations,
+      activeConversationId: state.activeConversationId,
+    });
+  } catch (e) {
+    console.warn('Failed to save conversation index:', e);
+  }
+}
+
+function createNewConversation() {
+  const id = `conv_${Date.now()}`;
+  const now = Date.now();
+  const conv = { id, title: 'New Chat', createdAt: now, updatedAt: now };
+  state.conversations.unshift(conv);
+  state.activeConversationId = id;
+  state.messages = [];
+  saveConversationIndex();
+  return conv;
+}
+
+async function switchConversation(id) {
+  if (id === state.activeConversationId) return;
+
+  // Save current conversation first
+  await saveActiveConversation();
+
+  // Load target conversation
+  state.activeConversationId = id;
+  const data = await chrome.storage.local.get(`conv_${id}`);
+  state.messages = data[`conv_${id}`] || [];
+
+  await saveConversationIndex();
+  renderAllMessages();
+  closeHistoryDrawer();
+}
+
+async function deleteConversation(id) {
+  state.conversations = state.conversations.filter(c => c.id !== id);
+  await chrome.storage.local.remove(`conv_${id}`);
+
+  if (id === state.activeConversationId) {
+    if (state.conversations.length > 0) {
+      await switchConversation(state.conversations[0].id);
+    } else {
+      createNewConversation();
+      renderAllMessages();
+    }
+  }
+
+  await saveConversationIndex();
+  renderHistoryList();
+}
+
+function autoTitleConversation(text) {
+  if (!state.activeConversationId) return;
+  const conv = state.conversations.find(c => c.id === state.activeConversationId);
+  if (conv && conv.title === 'New Chat') {
+    conv.title = text.slice(0, 50) + (text.length > 50 ? '…' : '');
+    saveConversationIndex();
   }
 }
 
@@ -218,6 +357,23 @@ function bindEvents() {
     refs.btnToggleCpForm.classList.toggle('active');
   });
 
+  // Memory settings
+  refs.memoryToggle.addEventListener('change', () => {
+    state.memoryEnabled = refs.memoryToggle.checked;
+    saveMemories();
+  });
+  refs.btnClearMemories.addEventListener('click', () => {
+    if (confirm('Clear all memories? This cannot be undone.')) {
+      clearAllMemories();
+      renderMemoryList();
+    }
+  });
+
+  // History drawer
+  refs.btnHistory.addEventListener('click', toggleHistoryDrawer);
+  refs.btnCloseHistory.addEventListener('click', closeHistoryDrawer);
+  refs.historyBackdrop.addEventListener('click', closeHistoryDrawer);
+
   // MCP
   refs.btnAddMcp.addEventListener('click', addMCPServer);
   refs.btnToggleMcpForm.addEventListener('click', () => {
@@ -258,6 +414,8 @@ function showView(view) {
   if (view === 'settings') {
     refs.settingsView.classList.remove('hidden');
     updateProviderUI();
+    renderMemoryList();
+    refs.memoryToggle.checked = state.memoryEnabled;
   } else {
     refs.settingsView.classList.add('hidden');
   }
@@ -567,14 +725,18 @@ function clearSelection() {
 
 // ==================== CHAT ====================
 function newChat() {
-  state.messages = [];
+  // Save current conversation before creating new one
+  saveActiveConversation();
+
   state.isStreaming = false;
   state.currentRequestId = null;
   clearPageContext();
   clearSelection();
+
+  createNewConversation();
   refs.messages.innerHTML = '';
   refs.welcome.classList.remove('hidden');
-  saveChatHistory();
+  closeHistoryDrawer();
 }
 
 async function sendMessage() {
@@ -583,6 +745,16 @@ async function sendMessage() {
 
   // Hide welcome
   refs.welcome.classList.add('hidden');
+
+  // Ensure we have an active conversation
+  if (!state.activeConversationId) {
+    createNewConversation();
+  }
+
+  // Auto-title from first user message
+  if (state.messages.length === 0) {
+    autoTitleConversation(text);
+  }
 
   // Build user message with context
   let userContent = text;
@@ -652,12 +824,37 @@ async function sendMessage() {
   }
 }
 
+function buildMemoryBlock() {
+  if (!state.memoryEnabled || state.memories.length === 0) return '';
+
+  const categoryLabels = {
+    style: 'Communication Style',
+    interests: 'Interests & Topics',
+    expertise: 'Expertise & Skills',
+    preferences: 'Preferences',
+    personal: 'Personal Info',
+  };
+
+  let block = '\n\n[User Memory - Use these insights to personalize responses]\n';
+  for (const cat of MEMORY_CATEGORIES) {
+    const items = state.memories.filter(m => m.category === cat);
+    if (items.length === 0) continue;
+    block += `\n${categoryLabels[cat]}:\n`;
+    for (const item of items) {
+      block += `- ${item.content}\n`;
+    }
+  }
+  return block;
+}
+
 function buildAPIMessages() {
   const msgs = [];
 
-  // System prompt
-  if (state.providerConfig.systemPrompt) {
-    msgs.push({ role: 'system', content: state.providerConfig.systemPrompt });
+  // System prompt with memory block
+  const memoryBlock = buildMemoryBlock();
+  const systemContent = (state.providerConfig.systemPrompt || '') + memoryBlock;
+  if (systemContent) {
+    msgs.push({ role: 'system', content: systemContent });
   }
 
   // Conversation history — properly format tool calls and results
@@ -723,7 +920,8 @@ function finishStream(fullContent, toolCalls) {
     // No tool calls — we're done
     setStreamingUI(false);
     state.isStreaming = false;
-    saveChatHistory();
+    saveActiveConversation();
+    scheduleMemoryExtraction();
   }
 
   scrollToBottom();
@@ -1102,6 +1300,278 @@ function renderMCPServers() {
     });
     refs.mcpServersList.appendChild(item);
   }
+}
+
+// ==================== MEMORY SYSTEM ====================
+function scheduleMemoryExtraction() {
+  if (!state.memoryEnabled) return;
+  if (state.messages.length < 4) return;
+
+  if (state.memoryExtractionTimer) {
+    clearTimeout(state.memoryExtractionTimer);
+  }
+  state.memoryExtractionTimer = setTimeout(() => {
+    extractMemories();
+  }, 3000);
+}
+
+async function extractMemories() {
+  if (!state.memoryEnabled) return;
+
+  // Get last 10 messages for context
+  const recentMessages = state.messages.slice(-10);
+  const existingMemories = state.memories.map(m => `[${m.category}] ${m.content}`).join('\n');
+
+  const extractionPrompt = `Analyze the conversation and extract insights about the user. Return ONLY a JSON array of new insights.
+
+Each insight should have:
+- "category": one of "style", "interests", "expertise", "preferences", "personal"
+- "content": the insight text (concise, 1 sentence)
+- "confidence": 0.0-1.0 how confident you are
+
+Categories:
+- style: communication preferences (formal/casual, verbose/concise)
+- interests: topics, hobbies, fields they care about
+- expertise: technical skill level, domain knowledge
+- preferences: response format, length, detail preferences
+- personal: name, role, occupation, location
+
+Existing memories (avoid duplicates):
+${existingMemories || '(none yet)'}
+
+Return [] if no new insights found. ONLY return valid JSON array, nothing else.`;
+
+  const messages = [
+    { role: 'system', content: extractionPrompt },
+    ...recentMessages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({
+      role: m.role,
+      content: m.displayContent || m.content,
+    })),
+  ];
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'MEMORY_EXTRACT',
+      messages,
+      providerConfig: state.providerConfig,
+    });
+
+    if (response?.memories && Array.isArray(response.memories)) {
+      mergeMemories(response.memories);
+    }
+  } catch (e) {
+    console.warn('Memory extraction failed:', e);
+  }
+}
+
+function mergeMemories(newInsights) {
+  let changed = false;
+  for (const insight of newInsights) {
+    if (!MEMORY_CATEGORIES.includes(insight.category)) continue;
+    if (!insight.content || typeof insight.content !== 'string') continue;
+
+    const confidence = Math.min(1, Math.max(0, Number(insight.confidence) || 0.5));
+
+    // Check for similar existing memory
+    const existing = state.memories.find(m =>
+      m.category === insight.category && isSimilarMemory(m.content, insight.content)
+    );
+
+    if (existing) {
+      // Update if higher confidence
+      if (confidence > existing.confidence) {
+        existing.content = insight.content;
+        existing.confidence = confidence;
+        existing.updatedAt = Date.now();
+        changed = true;
+      }
+    } else {
+      state.memories.push({
+        id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        category: insight.category,
+        content: insight.content,
+        confidence,
+        source: state.activeConversationId || '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    // Cap at 100 memories, keep highest confidence + most recent
+    if (state.memories.length > 100) {
+      state.memories.sort((a, b) => (b.confidence * 0.7 + b.updatedAt / Date.now() * 0.3) -
+        (a.confidence * 0.7 + a.updatedAt / Date.now() * 0.3));
+      state.memories = state.memories.slice(0, 100);
+    }
+    saveMemories();
+  }
+}
+
+function isSimilarMemory(a, b) {
+  const normalize = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (na === nb) return true;
+
+  // Simple word overlap check
+  const wordsA = new Set(na.split(/\s+/));
+  const wordsB = new Set(nb.split(/\s+/));
+  const intersection = [...wordsA].filter(w => wordsB.has(w));
+  const union = new Set([...wordsA, ...wordsB]);
+  return intersection.length / union.size > 0.6;
+}
+
+async function saveMemories() {
+  try {
+    await chrome.storage.local.set({ memories: state.memories, memoryEnabled: state.memoryEnabled });
+  } catch (e) {
+    console.warn('Failed to save memories:', e);
+  }
+}
+
+async function loadMemories() {
+  try {
+    const data = await chrome.storage.local.get(['memories', 'memoryEnabled']);
+    if (data.memories) state.memories = data.memories;
+    if (data.memoryEnabled !== undefined) state.memoryEnabled = data.memoryEnabled;
+  } catch (e) {
+    console.warn('Failed to load memories:', e);
+  }
+}
+
+function deleteMemory(id) {
+  state.memories = state.memories.filter(m => m.id !== id);
+  saveMemories();
+}
+
+function clearAllMemories() {
+  state.memories = [];
+  saveMemories();
+}
+
+function renderMemoryList() {
+  const container = refs.memoryList;
+  if (!container) return;
+  container.innerHTML = '';
+
+  refs.btnClearMemories.style.display = state.memories.length > 0 ? 'block' : 'none';
+
+  if (state.memories.length === 0) {
+    container.innerHTML = '<p class="empty-text">No memories yet. Chat more to build personalization.</p>';
+    return;
+  }
+
+  const categoryLabels = {
+    style: '🎨 Communication Style',
+    interests: '💡 Interests & Topics',
+    expertise: '🧠 Expertise & Skills',
+    preferences: '⚙️ Preferences',
+    personal: '👤 Personal Info',
+  };
+
+  for (const cat of MEMORY_CATEGORIES) {
+    const items = state.memories.filter(m => m.category === cat);
+    if (items.length === 0) continue;
+
+    const group = document.createElement('div');
+    group.className = 'memory-category';
+
+    const header = document.createElement('div');
+    header.className = 'memory-category-header';
+    header.textContent = categoryLabels[cat] || cat;
+    group.appendChild(header);
+
+    for (const item of items) {
+      const el = document.createElement('div');
+      el.className = 'memory-item';
+      el.innerHTML = `
+        <span class="memory-item-text">${escapeHtml(item.content)}</span>
+        <button class="memory-item-delete" title="Remove">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      `;
+      el.querySelector('.memory-item-delete').addEventListener('click', () => {
+        deleteMemory(item.id);
+        renderMemoryList();
+      });
+      group.appendChild(el);
+    }
+
+    container.appendChild(group);
+  }
+}
+
+// ==================== HISTORY DRAWER ====================
+function toggleHistoryDrawer() {
+  if (state.historyDrawerOpen) {
+    closeHistoryDrawer();
+  } else {
+    openHistoryDrawer();
+  }
+}
+
+function openHistoryDrawer() {
+  state.historyDrawerOpen = true;
+  refs.historyDrawer.classList.remove('hidden');
+  renderHistoryList();
+}
+
+function closeHistoryDrawer() {
+  state.historyDrawerOpen = false;
+  refs.historyDrawer.classList.add('hidden');
+}
+
+function renderHistoryList() {
+  const container = refs.historyList;
+  container.innerHTML = '';
+
+  // Sort by updatedAt descending
+  const sorted = [...state.conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (sorted.length === 0) {
+    container.innerHTML = '<div class="history-empty">No conversations yet.</div>';
+    return;
+  }
+
+  for (const conv of sorted) {
+    const el = document.createElement('div');
+    el.className = `history-item${conv.id === state.activeConversationId ? ' active' : ''}`;
+
+    el.innerHTML = `
+      <div class="history-item-info">
+        <div class="history-item-title">${escapeHtml(conv.title)}</div>
+        <div class="history-item-time">${formatTimeAgo(conv.updatedAt)}</div>
+      </div>
+      <button class="history-item-delete" title="Delete">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    `;
+
+    el.querySelector('.history-item-info').addEventListener('click', () => {
+      switchConversation(conv.id);
+    });
+    el.querySelector('.history-item-delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteConversation(conv.id);
+    });
+
+    container.appendChild(el);
+  }
+}
+
+function formatTimeAgo(timestamp) {
+  const diff = Date.now() - timestamp;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
 }
 
 function escapeHtml(text) {
