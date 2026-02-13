@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Sidebar</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-left">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="url(#grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs><linearGradient id="grad" x1="2" y1="2" x2="22" y2="22"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+          </svg>
+        </div>
+        <span class="header-title">AI Sidebar</span>
+      </div>
+      <div class="header-right">
+        <button id="btn-new-chat" class="icon-btn" title="New Chat">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" title="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Chat View -->
+    <div id="chat-view">
+      <!-- Context Banner -->
+      <div id="context-banner" class="hidden">
+        <div class="context-info">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span id="context-label">Page context attached</span>
+        </div>
+        <button id="btn-clear-context" class="context-clear" title="Remove context">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Messages -->
+      <div id="messages"></div>
+
+      <!-- Welcome screen -->
+      <div id="welcome" class="">
+        <div class="welcome-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="url(#wgrad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs><linearGradient id="wgrad" x1="2" y1="2" x2="22" y2="22"><stop stop-color="#818cf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
+          </svg>
+        </div>
+        <h2>AI Sidebar</h2>
+        <p>Chat with AI about the current page or anything else.</p>
+        <div class="welcome-actions">
+          <button class="welcome-btn" id="btn-read-page">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Read Current Page
+          </button>
+          <button class="welcome-btn" id="btn-grab-selection">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            Grab Selection
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Area -->
+    <div id="input-area">
+      <div id="selection-preview" class="hidden">
+        <div class="selection-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          <span id="selection-text"></span>
+        </div>
+        <button id="btn-clear-selection" class="context-clear" title="Remove selection">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="input-row">
+        <div class="input-actions">
+          <button id="btn-attach" class="input-icon-btn" title="Attach page context">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+        </div>
+        <textarea id="chat-input" placeholder="Ask about this page..." rows="1"></textarea>
+        <button id="btn-send" class="send-btn" title="Send message">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+        <button id="btn-stop" class="stop-btn hidden" title="Stop generating">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
+      </div>
+      <div class="input-footer">
+        <span id="provider-label" class="provider-badge">No provider configured</span>
+        <span id="model-label" class="model-badge"></span>
+      </div>
+    </div>
+
+    <!--  Settings Panel -->
+    <div id="settings-view" class="hidden">
+      <div class="settings-header">
+        <button id="btn-back" class="icon-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <h2>Settings</h2>
+      </div>
+      <div class="settings-content">
+        <!-- Provider Config -->
+        <section class="settings-section">
+          <h3>LLM Provider</h3>
+          <div class="form-group">
+            <label for="provider-select">Provider</label>
+            <select id="provider-select"></select>
+          </div>
+          <div class="form-group">
+            <label for="api-key">API Key</label>
+            <div class="input-with-toggle">
+              <input type="password" id="api-key" placeholder="sk-...">
+              <button id="btn-toggle-key" class="toggle-vis-btn" title="Toggle visibility">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="api-url">API URL</label>
+            <input type="url" id="api-url" placeholder="https://api.openai.com/v1/chat/completions">
+          </div>
+          <div class="form-group">
+            <label for="model-select">Model</label>
+            <div class="model-input-row">
+              <select id="model-select"></select>
+              <input type="text" id="model-custom" placeholder="Custom model name" class="hidden">
+              <button id="btn-toggle-model" class="toggle-vis-btn" title="Custom model">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="form-group" id="format-group">
+            <label for="api-format">API Format</label>
+            <select id="api-format">
+              <option value="openai">OpenAI-compatible</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="system-prompt">System Prompt</label>
+            <textarea id="system-prompt" rows="3" placeholder="You are a helpful assistant..."></textarea>
+          </div>
+        </section>
+
+        <!-- Custom Providers -->
+        <section class="settings-section">
+          <h3>Custom Providers</h3>
+          <div id="custom-providers-list"></div>
+          <div class="custom-provider-add">
+            <div class="form-group">
+              <label for="cp-name">Provider Name</label>
+              <input type="text" id="cp-name" placeholder="My LLM Provider">
+            </div>
+            <div class="form-group">
+              <label for="cp-url">Base URL</label>
+              <input type="url" id="cp-url" placeholder="https://api.example.com/v1">
+            </div>
+            <div class="form-group">
+              <label for="cp-format">API Format</label>
+              <select id="cp-format">
+                <option value="openai">OpenAI-compatible</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Gemini</option>
+              </select>
+            </div>
+            <button id="btn-add-custom-provider" class="btn-primary">Add Provider</button>
+          </div>
+        </section>
+
+        <!-- MCP Servers -->
+        <section class="settings-section">
+          <h3>MCP Servers</h3>
+          <div id="mcp-servers-list"></div>
+          <div class="mcp-add-form">
+            <div class="form-group">
+              <label for="mcp-name">Server Name</label>
+              <input type="text" id="mcp-name" placeholder="My MCP Server">
+            </div>
+            <div class="form-group">
+              <label for="mcp-url">Server URL</label>
+              <input type="url" id="mcp-url" placeholder="http://localhost:3000">
+            </div>
+            <button id="btn-add-mcp" class="btn-primary">Connect Server</button>
+          </div>
+        </section>
+
+        <!-- About -->
+        <section class="settings-section">
+          <h3>About</h3>
+          <p class="about-text">AI Sidebar v1.0.0 — Chat with AI about any webpage. Supports OpenAI, Claude, Gemini, xAI, DeepSeek, and custom endpoints with MCP tool support.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="sidebar.js"></script>
+</body>
+</html>
