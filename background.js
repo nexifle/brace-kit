@@ -1,7 +1,7 @@
 // Background service worker for AI Sidebar extension
 // Handles: sidebar panel, message routing, LLM API calls, MCP orchestration
 
-import { PROVIDER_PRESETS, formatRequest, parseStream } from './providers.js';
+import { PROVIDER_PRESETS, formatRequest, parseStream, fetchModels } from './providers.js';
 import { MCPManager } from './mcp.js';
 
 const mcpManager = new MCPManager();
@@ -76,6 +76,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'MEMORY_EXTRACT':
       handleMemoryExtract(message, sendResponse);
+      return true;
+
+    case 'FETCH_MODELS':
+      handleFetchModels(message, sendResponse);
       return true;
 
     case 'TEXT_SELECTED':
@@ -302,6 +306,25 @@ async function handleMCPToolCall(message, sendResponse) {
       return;
     }
     const result = await found.client.callTool(name, args);
+    sendResponse(result);
+  } catch (e) {
+    sendResponse({ error: e.message });
+  }
+}
+
+async function handleFetchModels(message, sendResponse) {
+  const { providerConfig } = message;
+
+  try {
+    const preset = PROVIDER_PRESETS[providerConfig.providerId] || PROVIDER_PRESETS.custom;
+    const provider = {
+      ...preset,
+      ...providerConfig,
+      format: providerConfig.format || preset.format,
+      apiUrl: providerConfig.apiUrl || preset.apiUrl,
+    };
+
+    const result = await fetchModels(provider);
     sendResponse(result);
   } catch (e) {
     sendResponse({ error: e.message });

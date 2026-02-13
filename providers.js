@@ -5,18 +5,21 @@ export const PROVIDER_PRESETS = {
   openai: {
     id: 'openai',
     name: 'OpenAI',
-    apiUrl: 'https://api.openai.com/v1/chat/completions',
+    apiUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o',
     format: 'openai',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini'],
+    models: [], // Will be fetched from API
+    supportsModelFetch: true,
   },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic (Claude)',
-    apiUrl: 'https://api.anthropic.com/v1/messages',
+    apiUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-sonnet-4-20250514',
     format: 'anthropic',
-    models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+    models: [], // Anthropic doesn't have a models list endpoint, use hardcoded
+    supportsModelFetch: false,
+    staticModels: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
   },
   gemini: {
     id: 'gemini',
@@ -24,23 +27,26 @@ export const PROVIDER_PRESETS = {
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-2.0-flash',
     format: 'gemini',
-    models: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    models: [], // Will be fetched from API
+    supportsModelFetch: true,
   },
   xai: {
     id: 'xai',
     name: 'xAI (Grok)',
-    apiUrl: 'https://api.x.ai/v1/chat/completions',
+    apiUrl: 'https://api.x.ai/v1',
     defaultModel: 'grok-2',
     format: 'openai',
-    models: ['grok-2', 'grok-2-mini', 'grok-beta'],
+    models: [], // Will be fetched from API (OpenAI-compatible)
+    supportsModelFetch: true,
   },
   deepseek: {
     id: 'deepseek',
     name: 'DeepSeek',
-    apiUrl: 'https://api.deepseek.com/v1/chat/completions',
+    apiUrl: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
     format: 'openai',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    models: [], // Will be fetched from API (OpenAI-compatible)
+    supportsModelFetch: true,
   },
   custom: {
     id: 'custom',
@@ -49,8 +55,112 @@ export const PROVIDER_PRESETS = {
     defaultModel: '',
     format: 'openai',
     models: [],
+    supportsModelFetch: false,
   },
 };
+
+// Fetch available models from provider API
+export async function fetchModels(provider) {
+  const { format, apiUrl, apiKey } = provider;
+
+  if (!apiKey) {
+    return { error: 'API key required' };
+  }
+
+  try {
+    switch (format) {
+      case 'openai':
+        return await fetchOpenAIModels(apiUrl, apiKey);
+      case 'anthropic':
+        // Anthropic doesn't have a models list API, return static list
+        return { models: PROVIDER_PRESETS.anthropic.staticModels || [] };
+      case 'gemini':
+        return await fetchGeminiModels(apiUrl, apiKey);
+      default:
+        // Try OpenAI-compatible endpoint
+        return await fetchOpenAIModels(apiUrl, apiKey);
+    }
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function fetchOpenAIModels(apiUrl, apiKey) {
+  // Get base URL without /chat/completions
+  let baseUrl = apiUrl.replace(/\/+$/, '');
+  if (baseUrl.endsWith('/chat/completions')) {
+    baseUrl = baseUrl.slice(0, -('/chat/completions'.length));
+  }
+
+  const url = `${baseUrl}/models`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  // Filter and sort models
+  let models = (data.data || [])
+    .map(m => m.id)
+    .filter(id => {
+      // Filter out embedding, tts, whisper, dall-e, moderation models
+      // Keep only chat models
+      const excludePatterns = [
+        /embedding/i,
+        /tts/i,
+        /whisper/i,
+        /dall-e/i,
+        /dall/i,
+        /moderation/i,
+        /audio/i,
+        /realtime/i,
+      ];
+      return !excludePatterns.some(p => p.test(id));
+    })
+    .sort((a, b) => a.localeCompare(b));
+
+  return { models };
+}
+
+async function fetchGeminiModels(apiUrl, apiKey) {
+  const baseUrl = apiUrl.replace(/\/+$/, '');
+  const url = `${baseUrl}/models?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  // Filter to only generative models that support generateContent
+  let models = (data.models || [])
+    .filter(m => {
+      // Only include models that support generateContent
+      const supportedMethods = m.supportedGenerationMethods || [];
+      return supportedMethods.includes('generateContent');
+    })
+    .map(m => {
+      // Extract model name from full name (e.g., "models/gemini-2.0-flash" -> "gemini-2.0-flash")
+      const name = m.name || '';
+      return name.replace(/^models\//, '');
+    })
+    .filter(name => name)
+    .sort((a, b) => a.localeCompare(b));
+
+  return { models };
+}
 
 // Format messages for the specific provider
 // options: { enableGoogleSearch: boolean }

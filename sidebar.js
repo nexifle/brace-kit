@@ -32,6 +32,9 @@ const state = {
   memoryExtractionTimer: null,
   // Gemini-specific options
   enableGoogleSearch: false,
+  // Fetched models cache per provider
+  fetchedModels: {}, // { [providerId]: { models: [], fetchedAt: timestamp } }
+  fetchingModels: false,
 };
 
 const MEMORY_CATEGORIES = ['style', 'interests', 'expertise', 'preferences', 'personal'];
@@ -344,7 +347,16 @@ function bindEvents() {
 
   // Settings changes
   refs.providerSelect.addEventListener('change', onProviderChange);
-  refs.apiKey.addEventListener('change', onSettingsChange);
+  refs.apiKey.addEventListener('change', () => {
+    onSettingsChange();
+    // Fetch models when API key changes
+    const provider = getProvider(state.providerConfig.providerId);
+    if (provider.supportsModelFetch && state.providerConfig.apiKey) {
+      // Clear cache to force re-fetch
+      delete state.fetchedModels[state.providerConfig.providerId];
+      fetchAndCacheModels(state.providerConfig.providerId);
+    }
+  });
   refs.apiUrl.addEventListener('change', onSettingsChange);
   refs.modelSelect.addEventListener('change', onSettingsChange);
   refs.modelCustom.addEventListener('change', onSettingsChange);
@@ -498,6 +510,11 @@ function onProviderChange() {
   updateProviderUI();
   saveSettings();
   updateStatusBadges();
+
+  // Fetch models for the new provider if supported and has API key
+  if (provider.supportsModelFetch && state.providerConfig.apiKey) {
+    fetchAndCacheModels(newId);
+  }
 }
 
 function onSettingsChange() {
@@ -559,9 +576,71 @@ function updateProviderUI() {
   refs.geminiOptions.classList.toggle('hidden', !isGemini);
   refs.googleSearchToggle.checked = state.enableGoogleSearch;
 
-  // Populate model select
+  // Populate model select - use fetched models if available, otherwise use preset models
+  populateModelSelect(provider, model);
+
+  // Fetch models from API if supported and not cached
+  if (provider.supportsModelFetch && apiKey && !state.fetchedModels[providerId]) {
+    fetchAndCacheModels(providerId);
+  }
+}
+
+async function fetchAndCacheModels(providerId) {
+  if (state.fetchingModels) return;
+
+  // Check if we have a valid cache (less than 1 hour old)
+  const cached = state.fetchedModels[providerId];
+  if (cached && Date.now() - cached.fetchedAt < 3600000) {
+    return;
+  }
+
+  state.fetchingModels = true;
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'FETCH_MODELS',
+      providerConfig: {
+        ...state.providerConfig,
+        providerId,
+      },
+    });
+
+    if (result?.models && result.models.length > 0) {
+      state.fetchedModels[providerId] = {
+        models: result.models,
+        fetchedAt: Date.now(),
+      };
+
+      // Update UI if this is still the current provider
+      if (state.providerConfig.providerId === providerId) {
+        const provider = getProvider(providerId);
+        populateModelSelect(provider, state.providerConfig.model);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to fetch models:', e);
+  } finally {
+    state.fetchingModels = false;
+  }
+}
+
+function populateModelSelect(provider, currentModel) {
+  const providerId = state.providerConfig.providerId;
+
+  // Get models from: 1) fetched cache, 2) static models from preset, 3) empty
+  let models = [];
+  const cached = state.fetchedModels[providerId];
+
+  if (cached?.models?.length > 0) {
+    models = cached.models;
+  } else if (provider.staticModels?.length > 0) {
+    models = provider.staticModels;
+  } else if (provider.models?.length > 0) {
+    models = provider.models;
+  }
+
   refs.modelSelect.innerHTML = '';
-  const models = provider.models || [];
+
   if (models.length > 0) {
     for (const m of models) {
       const opt = document.createElement('option');
@@ -569,7 +648,10 @@ function updateProviderUI() {
       opt.textContent = m;
       refs.modelSelect.appendChild(opt);
     }
-    refs.modelSelect.value = model || provider.defaultModel;
+    refs.modelSelect.value = currentModel || provider.defaultModel || models[0];
+    state.showCustomModel = false;
+    refs.modelSelect.classList.remove('hidden');
+    refs.modelCustom.classList.add('hidden');
   } else {
     const opt = document.createElement('option');
     opt.value = '';
@@ -580,11 +662,7 @@ function updateProviderUI() {
     refs.modelCustom.classList.remove('hidden');
   }
 
-  if (!state.showCustomModel) {
-    refs.modelCustom.classList.add('hidden');
-    refs.modelSelect.classList.remove('hidden');
-  }
-  refs.modelCustom.value = model || '';
+  refs.modelCustom.value = currentModel || '';
 }
 
 function updateStatusBadges() {
