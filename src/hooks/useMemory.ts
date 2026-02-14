@@ -157,6 +157,17 @@ Return ONLY the JSON array:`;
     [store]
   );
 
+  const updateMemory = useCallback(
+    (id: string, updates: Partial<Memory>) => {
+      store.updateMemory(id, {
+        ...updates,
+        updatedAt: Date.now(),
+      });
+      store.saveToStorage();
+    },
+    [store]
+  );
+
   const clearAllMemories = useCallback(() => {
     if (confirm('Clear all memories? This cannot be undone.')) {
       store.clearMemories();
@@ -190,6 +201,7 @@ Return ONLY the JSON array:`;
     extractMemories,
     addManualMemory,
     deleteMemory,
+    updateMemory,
     clearAllMemories,
     setMemoryEnabled,
     scheduleMemoryExtraction,
