@@ -2,11 +2,13 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import { MessageBubble } from './MessageBubble.tsx';
 import { ToolMessage } from './ToolMessage.tsx';
+import { useChat } from '../hooks/useChat.ts';
 
 export function MessageList() {
   const messages = useStore((state) => state.messages);
   const isStreaming = useStore((state) => state.isStreaming);
   const streamingContent = useStore((state) => state.streamingContent);
+  const { branchFrom, regenerateFrom } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
@@ -67,7 +69,15 @@ export function MessageList() {
             />
           );
         }
-        return <MessageBubble key={idx} message={msg} />;
+        return (
+          <MessageBubble
+            key={idx}
+            message={msg}
+            messageIndex={idx}
+            onBranch={branchFrom}
+            onRegenerate={regenerateFrom}
+          />
+        );
       })}
       {isStreaming && messages.length > 0 && messages[messages.length - 1].role !== 'tool' && (
         <MessageBubble message={{ role: 'assistant', content: streamingContent }} isStreaming />

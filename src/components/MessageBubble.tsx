@@ -6,9 +6,12 @@ import type { Message } from '../types/index.ts';
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
+  messageIndex?: number;
+  onBranch?: (index: number) => void;
+  onRegenerate?: (index: number) => void;
 }
 
-export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming, messageIndex, onBranch, onRegenerate }: MessageBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
 
   const handleCopyCode = useCallback((e: React.MouseEvent) => {
@@ -160,13 +163,58 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
         )}
       </div>
       {message.role === 'assistant' && !isStreaming && (
-        <MessageActions content={message.content} />
+        <MessageActions
+          content={message.content}
+          messageIndex={messageIndex}
+          onBranch={onBranch}
+        />
+      )}
+      {message.role === 'user' && !isStreaming && (messageIndex !== undefined) && (
+        <div className="message-actions">
+          {onRegenerate && (
+            <button
+              className="msg-action-btn"
+              onClick={() => onRegenerate(messageIndex)}
+              title="Regenerate response"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 4v6h-6"/>
+                <path d="M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <span>Regenerate</span>
+            </button>
+          )}
+          {onBranch && (
+            <button
+              className="msg-action-btn"
+              onClick={() => onBranch(messageIndex)}
+              title="Branch from here"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="6" y1="3" x2="6" y2="15"/>
+                <circle cx="18" cy="6" r="3"/>
+                <circle cx="6" cy="18" r="3"/>
+                <path d="M18 9a9 9 0 0 1-9 9"/>
+              </svg>
+              <span>Branch</span>
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function MessageActions({ content }: { content: string }) {
+function MessageActions({
+  content,
+  messageIndex,
+  onBranch,
+}: {
+  content: string;
+  messageIndex?: number;
+  onBranch?: (index: number) => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -196,6 +244,21 @@ function MessageActions({ content }: { content: string }) {
           </>
         )}
       </button>
+      {onBranch && messageIndex !== undefined && (
+        <button
+          className="msg-action-btn"
+          onClick={() => onBranch(messageIndex)}
+          title="Branch from here"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="6" y1="3" x2="6" y2="15"/>
+            <circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          <span>Branch</span>
+        </button>
+      )}
     </div>
   );
 }

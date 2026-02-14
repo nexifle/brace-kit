@@ -2026,6 +2026,68 @@ body {
     font-weight: 600;
 }
 
+/* Branch feature */
+.history-item.branch-highlight {
+    background: rgba(167, 139, 250, 0.12);
+    border-left: 2px solid var(--accent-secondary);
+    animation: branch-pulse 0.3s ease;
+}
+
+@keyframes branch-pulse {
+    0% { background: rgba(167, 139, 250, 0.25); }
+    100% { background: rgba(167, 139, 250, 0.12); }
+}
+
+.history-item-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.history-item-title-row .history-item-title {
+    min-width: 0;
+}
+
+.branch-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--accent-secondary);
+    background: rgba(167, 139, 250, 0.15);
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    border-radius: 4px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+
+.history-item-branch-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--accent-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    opacity: 0;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.history-item:hover .history-item-branch-link {
+    opacity: 1;
+}
+
+.history-item-branch-link:hover {
+    background: rgba(167, 139, 250, 0.15);
+}
+
 /* Utility */
 .hidden {
     display: none !important;

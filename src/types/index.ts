@@ -165,6 +165,7 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  branchedFromId?: string;
 }
 
 // ==================== File Attachment Types ====================
@@ -255,7 +256,7 @@ export interface AppState {
   updateMCPServer: (id: string, updates: Partial<MCPServer>) => void;
   toggleMCPServer: (id: string, enabled: boolean) => void;
 
-  createConversation: () => Conversation;
+  createConversation: (opts?: { title?: string; branchedFromId?: string }) => Conversation;
   switchConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   updateConversationTitle: (id: string, title: string) => void;

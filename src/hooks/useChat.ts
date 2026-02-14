@@ -97,6 +97,25 @@ export function useChat() {
     return msgs;
   }, [store.messages, store.providerConfig.systemPrompt, buildMemoryBlock, formatMessageForAPI]);
 
+  const buildAPIMessagesFromList = useCallback((messages: Message[]): APIMessage[] => {
+    const msgs: APIMessage[] = [];
+
+    const memoryBlock = buildMemoryBlock();
+    const systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
+    if (systemContent) {
+      msgs.push({ role: 'system', content: systemContent });
+    }
+
+    for (const msg of messages) {
+      const formatted = formatMessageForAPI(msg);
+      if (formatted) {
+        msgs.push(formatted);
+      }
+    }
+
+    return msgs;
+  }, [store.providerConfig.systemPrompt, buildMemoryBlock, formatMessageForAPI]);
+
   const sendMessage = useCallback(async (text: string) => {
     if (store.isStreaming) return;
 
@@ -277,10 +296,98 @@ export function useChat() {
     store.setHistoryDrawerOpen(false);
   }, [store]);
 
+  const branchFrom = useCallback(async (messageIndex: number) => {
+    const messagesToCopy = store.messages.slice(0, messageIndex + 1);
+    const parentId = store.activeConversationId;
+
+    // Ambil title dari parent conversation
+    const parentConv = store.conversations.find((c) => c.id === parentId);
+    const branchTitle = parentConv?.title ?? 'New Chat';
+
+    // Save conversation aktif saat ini
+    await store.saveActiveConversation();
+
+    // Buat conversation baru dengan title & branchedFromId dari parent
+    const newConv = store.createConversation({
+      title: branchTitle,
+      branchedFromId: parentId ?? undefined,
+    });
+
+    // Set messages ke hasil copy
+    store.setMessages(messagesToCopy);
+
+    // Simpan conversation baru ke storage & update conversations index
+    await chrome.storage.local.set({ [`conv_${newConv.id}`]: messagesToCopy });
+    await store.saveToStorage();
+
+    store.setView('chat');
+    store.setHistoryDrawerOpen(false);
+  }, [store]);
+
+  const regenerateFrom = useCallback(async (messageIndex: number) => {
+    if (store.isStreaming) return;
+
+    // Potong messages s.d. pesan user tersebut (inclusive)
+    const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
+    store.setMessages(messagesUpToIndex);
+
+    // Build API messages dari list yang sudah dipotong
+    const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);
+
+    // Get MCP tools
+    let tools: MCPTool[] = [];
+    try {
+      const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
+      if (mcpRes?.tools) {
+        const enabledServerIds = new Set(
+          store.mcpServers.filter((s) => s.enabled !== false).map((s) => s.id)
+        );
+        tools = mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) =>
+          enabledServerIds.has(tool._serverId || '')
+        );
+      }
+    } catch {
+      // no MCP tools
+    }
+
+    // Start streaming
+    store.setIsStreaming(true);
+    store.setStreamingContent('');
+    const requestId = `req_${Date.now()}`;
+    store.setCurrentRequestId(requestId);
+
+    const chatOptions = {
+      enableGoogleSearch:
+        store.enableGoogleSearch &&
+        (store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini'),
+    };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'CHAT_REQUEST',
+        messages: apiMessages,
+        providerConfig: store.providerConfig,
+        tools,
+        options: chatOptions,
+        requestId,
+      });
+
+      if (response?.error) {
+        store.addMessage({ role: 'error', content: response.error });
+        store.setIsStreaming(false);
+      }
+    } catch (e) {
+      store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
+      store.setIsStreaming(false);
+    }
+  }, [store, buildAPIMessagesFromList]);
+
   return {
     sendMessage,
     stopStreaming,
     newChat,
+    branchFrom,
+    regenerateFrom,
     getProvider,
     isCustomProvider,
     buildAPIMessages,

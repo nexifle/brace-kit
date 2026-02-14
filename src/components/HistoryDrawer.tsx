@@ -1,14 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import { formatTimeAgo } from '../utils/formatters.ts';
 import fuzzysort from 'fuzzysort';
-import type { Message } from '../types/index.ts';
+import type { Message, Conversation } from '../types/index.ts';
 
 interface ConversationWithMessages {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
+  branchedFromId?: string;
   messages: Message[];
 }
 
@@ -17,6 +18,44 @@ export function HistoryDrawer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [conversationsWithData, setConversationsWithData] = useState<ConversationWithMessages[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
+
+  // Map dari branchedFromId ke list branch ids, untuk highlight relasi
+  const branchRelations = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const conv of store.conversations) {
+      if (conv.branchedFromId) {
+        const arr = map.get(conv.branchedFromId) ?? [];
+        arr.push(conv.id);
+        map.set(conv.branchedFromId, arr);
+      }
+    }
+    return map;
+  }, [store.conversations]);
+
+  const handleBranchIconClick = useCallback((conv: Conversation) => {
+    // Kumpulkan semua id yang berkaitan: conv itu sendiri + parent + semua sibling
+    const related = new Set<string>();
+    related.add(conv.id);
+
+    const parentId = conv.branchedFromId;
+    if (parentId) {
+      related.add(parentId);
+      // Semua branch dari parent yang sama
+      const siblings = branchRelations.get(parentId) ?? [];
+      siblings.forEach((id) => related.add(id));
+    }
+
+    setHighlightedIds(related);
+
+    // Navigasi ke parent
+    if (parentId) {
+      store.switchConversation(parentId);
+    }
+
+    // Clear highlight setelah 2 detik
+    setTimeout(() => setHighlightedIds(new Set()), 2000);
+  }, [branchRelations, store]);
 
   // Load conversation messages when drawer opens
   useEffect(() => {
@@ -180,40 +219,80 @@ export function HistoryDrawer() {
               {searchQuery ? 'No conversations found.' : 'No conversations yet.'}
             </div>
           ) : (
-            filtered.map((conv) => (
-              <div
-                key={conv.id}
-                className={`history-item${conv.id === store.activeConversationId ? ' active' : ''}`}
-              >
+            filtered.map((conv) => {
+              const isBranched = !!conv.branchedFromId;
+              const isHighlighted = highlightedIds.has(conv.id);
+              const isParentOfBranch = branchRelations.has(conv.id);
+
+              return (
                 <div
-                  className="history-item-info"
-                  onClick={() => store.switchConversation(conv.id)}
+                  key={conv.id}
+                  className={[
+                    'history-item',
+                    conv.id === store.activeConversationId ? 'active' : '',
+                    isHighlighted ? 'branch-highlight' : '',
+                  ].filter(Boolean).join(' ')}
                 >
                   <div
-                    className="history-item-title"
-                    dangerouslySetInnerHTML={{
-                      __html: searchQuery
-                        ? highlightMatch(conv.title, searchQuery)
-                        : conv.title,
+                    className="history-item-info"
+                    onClick={() => store.switchConversation(conv.id)}
+                  >
+                    <div className="history-item-title-row">
+                      <div
+                        className="history-item-title"
+                        dangerouslySetInnerHTML={{
+                          __html: searchQuery
+                            ? highlightMatch(conv.title, searchQuery)
+                            : conv.title,
+                        }}
+                      />
+                      {isBranched && (
+                        <span className="branch-badge" title={`Branched from another conversation`}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <line x1="6" y1="3" x2="6" y2="15"/>
+                            <circle cx="18" cy="6" r="3"/>
+                            <circle cx="6" cy="18" r="3"/>
+                            <path d="M18 9a9 9 0 0 1-9 9"/>
+                          </svg>
+                          Branch
+                        </span>
+                      )}
+                    </div>
+                    <div className="history-item-time">{formatTimeAgo(conv.updatedAt)}</div>
+                  </div>
+                  {(isBranched || isParentOfBranch) && (
+                    <button
+                      className="history-item-branch-link"
+                      title={isBranched ? 'Go to source conversation' : 'Go to branch'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleBranchIconClick(conv);
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="6" y1="3" x2="6" y2="15"/>
+                        <circle cx="18" cy="6" r="3"/>
+                        <circle cx="6" cy="18" r="3"/>
+                        <path d="M18 9a9 9 0 0 1-9 9"/>
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    className="history-item-delete"
+                    title="Delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      store.deleteConversation(conv.id);
                     }}
-                  />
-                  <div className="history-item-time">{formatTimeAgo(conv.updatedAt)}</div>
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
-                <button
-                  className="history-item-delete"
-                  title="Delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    store.deleteConversation(conv.id);
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

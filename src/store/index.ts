@@ -134,14 +134,15 @@ export const useStore = create<AppState>((set, get) => ({
       ),
     })),
 
-  createConversation: () => {
+  createConversation: (opts?: { title?: string; branchedFromId?: string }) => {
     const id = `conv_${Date.now()}`;
     const now = Date.now();
     const conv: Conversation = {
       id,
-      title: 'New Chat',
+      title: opts?.title ?? 'New Chat',
       createdAt: now,
       updatedAt: now,
+      ...(opts?.branchedFromId ? { branchedFromId: opts.branchedFromId } : {}),
     };
     set((state) => ({
       conversations: [conv, ...state.conversations],
