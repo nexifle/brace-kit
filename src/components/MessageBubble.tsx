@@ -5,6 +5,7 @@ import { copyToClipboard } from '../utils/formatters.ts';
 import { useStore } from '../store/index.ts';
 import type { Message } from '../types/index.ts';
 import { TextFileViewer } from './TextFileViewer.tsx';
+import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from '../providers.ts';
 
 const turndownService = new TurndownService({
   headingStyle: 'atx',
@@ -46,6 +47,8 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const [quotePopup, setQuotePopup] = useState<QuotePopupState>({ visible: false, x: 0, y: 0, text: '' });
   const [textFileViewer, setTextFileViewer] = useState<TextFileViewerState>({ isOpen: false, name: '', content: '' });
   const setQuotedText = useStore((state) => state.setQuotedText);
+  const currentModel = useStore((state) => state.providerConfig.model || '');
+  const isImageGenerationModel = GEMINI_NO_TOOLS_MODELS.includes(currentModel) || GEMINI_SEARCH_ONLY_MODELS.includes(currentModel);
 
   const handleCopyCode = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -271,6 +274,12 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
               <span></span>
             </div>
           )}
+          {isImageGenerationModel && (
+            <div className="image-generation-skeleton">
+              <div className="image-generation-skeleton-shimmer" />
+              <div className="image-generation-skeleton-label">Generating image...</div>
+            </div>
+          )}
 
           {quotePopup.visible && (
             <div
@@ -327,6 +336,51 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
           </div>
         )}
         {renderedContent}
+        {message.generatedImages && message.generatedImages.length > 0 && (
+          <div className="generated-images">
+            {message.generatedImages.map((img, idx) => {
+              const src = `data:${img.mimeType};base64,${img.data}`;
+              const ext = img.mimeType.split('/')[1] || 'png';
+              const filename = `generated-image-${idx + 1}.${ext}`;
+
+              const handleCopy = () => {
+                fetch(src)
+                  .then(r => r.blob())
+                  .then(blob => navigator.clipboard.write([new ClipboardItem({ [img.mimeType]: blob })]));
+              };
+
+              const handleDownload = () => {
+                const a = document.createElement('a');
+                a.href = src;
+                a.download = filename;
+                a.click();
+              };
+
+              return (
+                <div key={idx} className="generated-image-card">
+                  <img src={src} alt={`Generated image ${idx + 1}`} />
+                  <div className="generated-image-actions">
+                    <button className="generated-image-btn" onClick={handleCopy} title="Copy image">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                      Copy
+                    </button>
+                    <button className="generated-image-btn" onClick={handleDownload} title="Download image">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                      Download
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {message.attachments && message.attachments.length > 0 && (
           <div className="message-attachments">
             {message.attachments.map((att, idx) => (

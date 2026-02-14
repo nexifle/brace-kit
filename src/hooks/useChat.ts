@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { Message, Attachment, APIMessage, PageContext, SelectedText } from '../types/index.ts';
-import { PROVIDER_PRESETS } from '../providers.ts';
+import { PROVIDER_PRESETS, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from '../providers.ts';
 import type { MCPTool } from '../types/index.ts';
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../types/index.ts';
 
@@ -242,10 +242,15 @@ export function useChat() {
     store.setCurrentRequestId(requestId);
 
     // Build options for provider-specific features
+    const currentModel = store.providerConfig.model || '';
+    const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
+    const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
+
     const chatOptions = {
       enableGoogleSearch:
         store.enableGoogleSearch &&
-        (store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini'),
+        isGemini &&
+        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
 
     try {
@@ -253,7 +258,7 @@ export function useChat() {
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools,
+        tools: supportsFunctionCalling ? tools : [],
         options: chatOptions,
         requestId,
       });
@@ -357,10 +362,15 @@ export function useChat() {
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
 
+    const currentModel = store.providerConfig.model || '';
+    const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
+    const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
+
     const chatOptions = {
       enableGoogleSearch:
         store.enableGoogleSearch &&
-        (store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini'),
+        isGemini &&
+        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
 
     try {
@@ -368,7 +378,7 @@ export function useChat() {
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools,
+        tools: supportsFunctionCalling ? tools : [],
         options: chatOptions,
         requestId,
       });

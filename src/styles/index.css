@@ -836,6 +836,107 @@ body {
     transform: scale(1.05);
 }
 
+/* Generated images from AI model */
+.generated-images {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.generated-image-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    overflow: hidden;
+}
+
+.generated-image-card img {
+    display: block;
+    max-width: 100%;
+    width: 100%;
+}
+
+.generated-image-actions {
+    display: flex;
+    gap: 1px;
+    background: var(--border-subtle);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.generated-image-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.generated-image-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* Image generation skeleton loader */
+.image-generation-skeleton {
+    margin-top: 10px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+}
+
+.image-generation-skeleton-shimmer {
+    width: 100%;
+    aspect-ratio: 5 / 4;
+    background: linear-gradient(
+        90deg,
+        var(--bg-secondary) 25%,
+        var(--bg-hover) 50%,
+        var(--bg-secondary) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.image-generation-skeleton-label {
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.image-generation-skeleton-label::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    animation: pulse-dot 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1); }
+}
+
 /* Page attachment in message bubble */
 .page-attachment {
     display: flex;

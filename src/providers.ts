@@ -3,6 +3,11 @@
 
 import type { ProviderFormat, Message, MCPTool } from './types/index.ts';
 
+// Gemini models that do not support function calling or google search
+export const GEMINI_NO_TOOLS_MODELS = ['gemini-2.5-flash-image'];
+// Gemini models that support google search but not function calling
+export const GEMINI_SEARCH_ONLY_MODELS = ['gemini-3-pro-image-preview'];
+
 export interface ProviderPreset {
   id: string;
   name: string;
@@ -393,11 +398,16 @@ function formatGemini(
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
+  const model = provider.model || provider.defaultModel;
+
+  const supportsGoogleSearch = !GEMINI_NO_TOOLS_MODELS.includes(model);
+  const supportsFunctionCalling = !GEMINI_NO_TOOLS_MODELS.includes(model) && !GEMINI_SEARCH_ONLY_MODELS.includes(model);
+
   const geminiTools: Record<string, unknown>[] = [];
 
-  if (options.enableGoogleSearch) {
+  if (options.enableGoogleSearch && supportsGoogleSearch) {
     geminiTools.push({ google_search: {} });
-  } else if (tools.length > 0) {
+  } else if (tools.length > 0 && supportsFunctionCalling) {
     geminiTools.push({
       function_declarations: tools.map((t) => ({
         name: t.name,
@@ -412,7 +422,6 @@ function formatGemini(
   }
 
   const baseUrl = provider.apiUrl.replace(/\/+$/, '');
-  const model = provider.model || provider.defaultModel;
   let url: string;
   if (baseUrl.includes('/models/')) {
     url = `${baseUrl}?alt=sse&key=${provider.apiKey}`;
@@ -431,13 +440,15 @@ function formatGemini(
 }
 
 export interface StreamChunk {
-  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata';
+  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata' | 'image';
   content?: string;
   id?: string;
   index?: number;
   name?: string;
   arguments?: string;
   groundingMetadata?: unknown;
+  mimeType?: string;
+  imageData?: string;
 }
 
 export async function* parseStream(provider: ProviderPreset, response: Response): AsyncGenerator<StreamChunk> {
@@ -571,7 +582,7 @@ async function* parseGeminiStream(response: Response): AsyncGenerator<StreamChun
           const parts = candidate.content?.parts;
           if (!parts) continue;
           for (const part of parts) {
-            if (part.text) {
+            if (part.text && !part.thought) {
               yield { type: 'text', content: part.text };
             }
             if (part.functionCall) {
@@ -579,6 +590,13 @@ async function* parseGeminiStream(response: Response): AsyncGenerator<StreamChun
                 type: 'tool_call',
                 name: part.functionCall.name,
                 arguments: JSON.stringify(part.functionCall.args),
+              };
+            }
+            if (part.inlineData && !part.thought) {
+              yield {
+                type: 'image',
+                mimeType: part.inlineData.mimeType,
+                imageData: part.inlineData.data,
               };
             }
           }

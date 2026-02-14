@@ -1,7 +1,7 @@
 // Background service worker for AI Sidebar extension
 // Handles: sidebar panel, message routing, LLM API calls, MCP orchestration
 
-import { PROVIDER_PRESETS, formatRequest, parseStream, fetchModels } from './providers.js';
+import { PROVIDER_PRESETS, formatRequest, parseStream, fetchModels, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from './src/providers.ts';
 import { MCPManager } from './mcp.js';
 
 const mcpManager = new MCPManager();
@@ -173,6 +173,7 @@ async function handleChatRequest(message, sendResponse) {
 
     const chunks = [];
     const toolCalls = [];
+    const images = [];
     let currentToolCall = null;
     let groundingMetadata = null;
 
@@ -185,6 +186,8 @@ async function handleChatRequest(message, sendResponse) {
           content: chunk.content,
           requestId: message.requestId,
         });
+      } else if (chunk.type === 'image') {
+        images.push({ mimeType: chunk.mimeType, data: chunk.imageData });
       } else if (chunk.type === 'tool_call' || chunk.type === 'tool_call_start') {
         if (chunk.type === 'tool_call_start') {
           currentToolCall = { id: chunk.id, name: chunk.name, arguments: '' };
@@ -214,6 +217,7 @@ async function handleChatRequest(message, sendResponse) {
       fullContent: chunks.join(''),
       toolCalls: mergedToolCalls.length > 0 ? mergedToolCalls : undefined,
       groundingMetadata: groundingMetadata,
+      images: images.length > 0 ? images : undefined,
       requestId: message.requestId,
     });
 

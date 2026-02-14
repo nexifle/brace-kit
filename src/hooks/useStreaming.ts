@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
-import type { ToolCall, GroundingMetadata, MCPTool } from '../types/index.ts';
+import type { ToolCall, GroundingMetadata, MCPTool, GeneratedImage } from '../types/index.ts';
+import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from '../providers.ts';
 import { useMemory } from './useMemory.ts';
 
 function addInlineCitations(text: string, groundingMetadata?: GroundingMetadata): string {
@@ -38,6 +39,7 @@ export function useStreaming() {
   const toolCallsRef = useRef<ToolCall[]>([]);
   const currentToolCallRef = useRef<Partial<ToolCall> | null>(null);
   const groundingMetadataRef = useRef<GroundingMetadata | null>(null);
+  const imagesRef = useRef<GeneratedImage[]>([]);
 
   const handleToolCalls = useCallback(async (toolCalls: ToolCall[]) => {
     store.setIsStreaming(true);
@@ -149,10 +151,15 @@ export function useStreaming() {
     store.setCurrentRequestId(requestId);
     store.setStreamingContent('');
 
+    const currentModel = store.providerConfig.model || '';
+    const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
+    const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
+
     const chatOptions = {
       enableGoogleSearch:
         store.enableGoogleSearch &&
-        (store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini'),
+        isGemini &&
+        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
 
     try {
@@ -160,7 +167,7 @@ export function useStreaming() {
         type: 'CHAT_REQUEST',
         messages: msgs,
         providerConfig: store.providerConfig,
-        tools,
+        tools: supportsFunctionCalling ? tools : [],
         options: chatOptions,
         requestId,
       });
@@ -175,18 +182,21 @@ export function useStreaming() {
     }
   }, [store]);
 
-  const finishStream = useCallback((fullContent: string, toolCalls?: ToolCall[], groundingMetadata?: GroundingMetadata) => {
+  const finishStream = useCallback((fullContent: string, toolCalls?: ToolCall[], groundingMetadata?: GroundingMetadata, generatedImages?: GeneratedImage[]) => {
     // Add inline citations if grounding metadata exists
     const contentWithCitations = addInlineCitations(fullContent, groundingMetadata);
 
     // Only add assistant message if there's content OR no tool calls
-    if (contentWithCitations || !toolCalls || toolCalls.length === 0) {
-      const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata } = { role: 'assistant', content: contentWithCitations || '' };
+    if (contentWithCitations || !toolCalls || toolCalls.length === 0 || (generatedImages && generatedImages.length > 0)) {
+      const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata; generatedImages?: GeneratedImage[] } = { role: 'assistant', content: contentWithCitations || '' };
       if (toolCalls && toolCalls.length > 0) {
         assistantMsg.toolCalls = toolCalls;
       }
       if (groundingMetadata) {
         assistantMsg.groundingMetadata = groundingMetadata;
+      }
+      if (generatedImages && generatedImages.length > 0) {
+        assistantMsg.generatedImages = generatedImages;
       }
       store.addMessage(assistantMsg);
     }
@@ -196,6 +206,7 @@ export function useStreaming() {
     toolCallsRef.current = [];
     currentToolCallRef.current = null;
     groundingMetadataRef.current = null;
+    imagesRef.current = [];
 
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
@@ -218,13 +229,18 @@ export function useStreaming() {
           }));
           
           try {
+            const currentModel = store.providerConfig.model || '';
+            const isImageModel = GEMINI_NO_TOOLS_MODELS.includes(currentModel) || GEMINI_SEARCH_ONLY_MODELS.includes(currentModel);
+            const titleProviderConfig = isImageModel
+              ? { ...store.providerConfig, model: 'gemini-2.5-flash-lite' }
+              : store.providerConfig;
             const response = await chrome.runtime.sendMessage({
               type: 'TITLE_GENERATE',
               messages: [
                 { role: 'system', content: 'Generate a concise 3-5 word title for this conversation. Return ONLY the title, no quotes, no explanation.' },
                 ...msgs
               ],
-              providerConfig: store.providerConfig,
+              providerConfig: titleProviderConfig,
             });
             
             if (response?.title && store.activeConversationId) {
@@ -263,6 +279,7 @@ export function useStreaming() {
       fullContent?: string;
       toolCalls?: ToolCall[];
       groundingMetadata?: GroundingMetadata;
+      images?: GeneratedImage[];
       error?: string;
     }) => {
       const currentRequestId = store.currentRequestId;
@@ -281,7 +298,8 @@ export function useStreaming() {
           finishStream(
             finalContent,
             message.toolCalls || toolCallsRef.current,
-            message.groundingMetadata || groundingMetadataRef.current || undefined
+            message.groundingMetadata || groundingMetadataRef.current || undefined,
+            message.images || imagesRef.current
           );
           break;
 

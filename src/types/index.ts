@@ -19,6 +19,11 @@ export interface Attachment {
   data: string;
 }
 
+export interface GeneratedImage {
+  mimeType: string;
+  data: string;
+}
+
 export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'error';
   content: string;
@@ -32,6 +37,7 @@ export interface Message {
   // For tool role messages
   toolCallId?: string;
   name?: string;
+  generatedImages?: GeneratedImage[];
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;

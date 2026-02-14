@@ -1,5 +1,5 @@
 import { build } from 'bun';
-import { existsSync, mkdirSync, copyFileSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, renameSync } from 'fs';
 import { join } from 'path';
 
 const outDir = './dist';
@@ -11,14 +11,14 @@ if (!existsSync(outDir)) {
 
 // Build the React app
 const result = await build({
-  entrypoints: ['./src/index.tsx', './src/content.ts'],
+  entrypoints: ['./src/index.tsx', './src/content.ts', './background.js'],
   outdir: outDir,
   format: 'esm',
   target: 'browser',
   minify: true,
   sourcemap: 'external',
   splitting: false,
-  external: ['chrome'],
+  external: ['chrome', './mcp.js'],
 });
 
 if (result.success) {
@@ -54,10 +54,7 @@ if (result.success) {
 
   // Copy background and content scripts
   const scriptFiles = [
-    'background.js',
-    'providers.js',
     'mcp.js',
-    'content.js',
   ];
 
   for (const file of scriptFiles) {
@@ -96,6 +93,20 @@ if (result.success) {
       console.log(`Copied: ${from} -> ${to}`);
     } catch (e: unknown) {
       console.warn(`Failed to copy ${from}: ${(e as Error).message}`);
+    }
+  }
+
+  // Flatten dist/src/* to dist/ (Bun preserves src/ subdir structure)
+  const srcOutDir = join(outDir, 'src');
+  if (existsSync(srcOutDir)) {
+    const flatFiles = ['index.js', 'index.js.map', 'content.js', 'content.js.map', 'index.css'];
+    for (const file of flatFiles) {
+      const from = join(srcOutDir, file);
+      const to = join(outDir, file);
+      if (existsSync(from)) {
+        renameSync(from, to);
+        console.log(`Flattened: ${from} -> ${to}`);
+      }
     }
   }
 
