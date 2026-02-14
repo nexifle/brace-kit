@@ -27,6 +27,8 @@ export interface Message {
   toolResults?: ToolResult[];
   attachments?: Attachment[];
   groundingMetadata?: GroundingMetadata;
+  pageContext?: PageContext;
+  selectedText?: SelectedText;
   // For tool role messages
   toolCallId?: string;
   name?: string;

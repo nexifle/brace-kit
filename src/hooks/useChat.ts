@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
-import type { Message, Attachment, APIMessage } from '../types/index.ts';
+import type { Message, Attachment, APIMessage, PageContext, SelectedText } from '../types/index.ts';
 import { PROVIDER_PRESETS } from '../providers.ts';
 import type { MCPTool } from '../types/index.ts';
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../types/index.ts';
@@ -111,11 +111,14 @@ export function useChat() {
     // Build user message content
     let userContent = text;
     let displayContent = text;
+    let pageContextAttachment: PageContext | null = null;
+    let selectedTextAttachment: SelectedText | null = null;
 
     // Attach page context if available
     if (store.pageContext) {
       userContent = `[Page Context]\nTitle: ${store.pageContext.pageTitle}\nURL: ${store.pageContext.pageUrl}\n${store.pageContext.metaDescription ? `Description: ${store.pageContext.metaDescription}\n` : ''}\nContent:\n${store.pageContext.content}\n\n[User Message]\n${text || ''}`;
-      displayContent = `📄 **Attached page:** ${store.pageContext.pageTitle}\n\n${text || ''}`;
+      displayContent = text;
+      pageContextAttachment = store.pageContext;
     }
 
     // Attach selected text if available
@@ -124,7 +127,8 @@ export function useChat() {
         ? ''
         : `[From: ${store.selectedText.pageTitle}]\n`;
       userContent = `${selPrefix}[Selected Text]\n"${store.selectedText.selectedText}"\n\n[User Message]\n${text || ''}`;
-      displayContent = `✨ **Selected text:** "${store.selectedText.selectedText.substring(0, 100)}${store.selectedText.selectedText.length > 100 ? '...' : ''}"\n\n${text || ''}`;
+      displayContent = text;
+      selectedTextAttachment = store.selectedText;
     }
 
     // Add file attachments to message
@@ -150,7 +154,13 @@ export function useChat() {
     }
 
     // Add to state
-    const messageData: Message = { role: 'user', content: userContent, displayContent };
+    const messageData: Message = { 
+      role: 'user', 
+      content: userContent, 
+      displayContent,
+      pageContext: pageContextAttachment || undefined,
+      selectedText: selectedTextAttachment || undefined
+    };
     if (messageAttachments && messageAttachments.some((a) => a.type === 'image')) {
       messageData.attachments = messageAttachments.filter((a) => a.type === 'image');
     }

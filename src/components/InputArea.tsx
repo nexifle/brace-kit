@@ -4,6 +4,7 @@ import { useChat } from '../hooks/useChat.ts';
 import { useFileAttachments } from '../hooks/useFileAttachments.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
+import { PageContextPreview } from './PageContextPreview.tsx';
 
 export function InputArea() {
   const [text, setText] = useState('');
@@ -53,6 +54,7 @@ export function InputArea() {
 
   return (
     <div id="input-area">
+      <PageContextPreview />
       <FilePreview />
       <SelectionPreview />
       <div className="input-row">
