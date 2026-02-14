@@ -110,10 +110,12 @@ export function useChat() {
 
     // Build user message content
     let userContent = text;
+    let displayContent = text;
 
     // Attach page context if available
     if (store.pageContext) {
       userContent = `[Page Context]\nTitle: ${store.pageContext.pageTitle}\nURL: ${store.pageContext.pageUrl}\n${store.pageContext.metaDescription ? `Description: ${store.pageContext.metaDescription}\n` : ''}\nContent:\n${store.pageContext.content}\n\n[User Message]\n${text || ''}`;
+      displayContent = `📄 **Attached page:** ${store.pageContext.pageTitle}\n\n${text || ''}`;
     }
 
     // Attach selected text if available
@@ -122,6 +124,7 @@ export function useChat() {
         ? ''
         : `[From: ${store.selectedText.pageTitle}]\n`;
       userContent = `${selPrefix}[Selected Text]\n"${store.selectedText.selectedText}"\n\n[User Message]\n${text || ''}`;
+      displayContent = `✨ **Selected text:** "${store.selectedText.selectedText.substring(0, 100)}${store.selectedText.selectedText.length > 100 ? '...' : ''}"\n\n${text || ''}`;
     }
 
     // Add file attachments to message
@@ -147,7 +150,7 @@ export function useChat() {
     }
 
     // Add to state
-    const messageData: Message = { role: 'user', content: userContent, displayContent: text };
+    const messageData: Message = { role: 'user', content: userContent, displayContent };
     if (messageAttachments && messageAttachments.some((a) => a.type === 'image')) {
       messageData.attachments = messageAttachments.filter((a) => a.type === 'image');
     }

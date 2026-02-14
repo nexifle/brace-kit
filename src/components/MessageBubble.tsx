@@ -69,7 +69,8 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
 
   const renderContent = () => {
     if (message.role === 'assistant' || message.role === 'user') {
-      return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />;
+      const contentToRender = message.displayContent || message.content;
+      return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender) }} />;
     }
     return <>{message.displayContent || message.content}</>;
   };
