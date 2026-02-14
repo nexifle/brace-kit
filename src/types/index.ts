@@ -166,6 +166,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   branchedFromId?: string;
+  pinned?: boolean;
 }
 
 // ==================== File Attachment Types ====================
@@ -260,6 +261,7 @@ export interface AppState {
   switchConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   updateConversationTitle: (id: string, title: string) => void;
+  togglePinConversation: (id: string) => void;
   setActiveConversationId: (id: string | null) => void;
 
   addMemory: (memory: Memory) => void;

@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
-import { formatTimeAgo } from '../utils/formatters.ts';
 import fuzzysort from 'fuzzysort';
 import type { Message, Conversation } from '../types/index.ts';
 
@@ -10,7 +9,36 @@ interface ConversationWithMessages {
   createdAt: number;
   updatedAt: number;
   branchedFromId?: string;
+  pinned?: boolean;
   messages: Message[];
+}
+
+type TimeGroup = 'pinned' | 'today' | 'yesterday' | 'last7' | 'last30' | 'older';
+
+const GROUP_LABELS: Record<TimeGroup, string> = {
+  pinned: 'Pinned',
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last7: 'Last 7 Days',
+  last30: 'Last 30 Days',
+  older: 'Older',
+};
+
+function getTimeGroup(conv: ConversationWithMessages): TimeGroup {
+  if (conv.pinned) return 'pinned';
+  const now = Date.now();
+  const diff = now - conv.updatedAt;
+  const day = 86400000;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+  if (conv.updatedAt >= todayStart.getTime()) return 'today';
+  if (conv.updatedAt >= yesterdayStart.getTime()) return 'yesterday';
+  if (diff < 7 * day) return 'last7';
+  if (diff < 30 * day) return 'last30';
+  return 'older';
 }
 
 export function HistoryDrawer() {
@@ -19,8 +47,8 @@ export function HistoryDrawer() {
   const [conversationsWithData, setConversationsWithData] = useState<ConversationWithMessages[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
 
-  // Map dari branchedFromId ke list branch ids, untuk highlight relasi
   const branchRelations = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const conv of store.conversations) {
@@ -34,30 +62,19 @@ export function HistoryDrawer() {
   }, [store.conversations]);
 
   const handleBranchIconClick = useCallback((conv: Conversation) => {
-    // Kumpulkan semua id yang berkaitan: conv itu sendiri + parent + semua sibling
     const related = new Set<string>();
     related.add(conv.id);
-
     const parentId = conv.branchedFromId;
     if (parentId) {
       related.add(parentId);
-      // Semua branch dari parent yang sama
       const siblings = branchRelations.get(parentId) ?? [];
       siblings.forEach((id) => related.add(id));
     }
-
     setHighlightedIds(related);
-
-    // Navigasi ke parent
-    if (parentId) {
-      store.switchConversation(parentId);
-    }
-
-    // Clear highlight setelah 2 detik
+    if (parentId) store.switchConversation(parentId);
     setTimeout(() => setHighlightedIds(new Set()), 2000);
   }, [branchRelations, store]);
 
-  // Load conversation messages when drawer opens
   useEffect(() => {
     if (!store.historyDrawerOpen) return;
 
@@ -68,17 +85,10 @@ export function HistoryDrawer() {
       for (const conv of store.conversations) {
         try {
           const data = await chrome.storage.local.get(`conv_${conv.id}`);
-          const messages = data[`conv_${conv.id}`] || [];
-          loaded.push({
-            ...conv,
-            messages,
-          });
+          loaded.push({ ...conv, messages: data[`conv_${conv.id}`] || [] });
         } catch (e) {
           console.warn('Failed to load conversation:', conv.id, e);
-          loaded.push({
-            ...conv,
-            messages: [],
-          });
+          loaded.push({ ...conv, messages: [] });
         }
       }
 
@@ -90,21 +100,21 @@ export function HistoryDrawer() {
   }, [store.historyDrawerOpen, store.conversations]);
 
   const sorted = useMemo(() => {
-    return [...conversationsWithData].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...conversationsWithData].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return b.updatedAt - a.updatedAt;
+    });
   }, [conversationsWithData]);
 
-  // Fuzzy search using fuzzysort
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return sorted;
 
     const query = searchQuery.trim();
 
-    // Prepare searchable items with combined text from title and all messages
     const searchableItems = sorted.map((conv) => {
-      // Combine title and all message content for searching
       const messageContent = conv.messages
         .map((m) => {
-          // Include content from different message fields
           const parts: string[] = [];
           if (m.content) parts.push(m.content);
           if (m.displayContent) parts.push(m.displayContent);
@@ -115,55 +125,25 @@ export function HistoryDrawer() {
         })
         .join(' ');
 
-      return {
-        conv,
-        title: conv.title,
-        content: messageContent,
-        combined: `${conv.title} ${messageContent}`,
-      };
+      return { conv, title: conv.title, content: messageContent };
     });
 
-    // Search in title (higher priority) and content
-    const titleResults = fuzzysort.go(query, searchableItems, {
-      key: 'title',
-      threshold: -10000,
-      limit: 100,
-    });
+    const titleResults = fuzzysort.go(query, searchableItems, { key: 'title', threshold: -10000, limit: 100 });
+    const contentResults = fuzzysort.go(query, searchableItems, { key: 'content', threshold: -10000, limit: 100 });
 
-    const contentResults = fuzzysort.go(query, searchableItems, {
-      key: 'content',
-      threshold: -10000,
-      limit: 100,
-    });
-
-    // Merge results, prioritizing title matches
     const resultMap = new Map<string, { item: typeof searchableItems[0]; score: number }>();
-
-    // Title matches get higher priority (lower score = better match)
-    titleResults.forEach((result) => {
-      resultMap.set(result.obj.conv.id, { item: result.obj, score: result.score * 1.5 }); // Boost title matches
+    titleResults.forEach((r) => resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score * 1.5 }));
+    contentResults.forEach((r) => {
+      const existing = resultMap.get(r.obj.conv.id);
+      if (existing) existing.score = Math.max(existing.score, r.score);
+      else resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score });
     });
 
-    // Add content matches
-    contentResults.forEach((result) => {
-      const existing = resultMap.get(result.obj.conv.id);
-      if (existing) {
-        // If already in map from title, combine scores
-        existing.score = Math.max(existing.score, result.score);
-      } else {
-        resultMap.set(result.obj.conv.id, { item: result.obj, score: result.score });
-      }
-    });
-
-    // Convert to array and sort by score (higher is better for fuzzysort)
-    const mergedResults = Array.from(resultMap.values())
+    return Array.from(resultMap.values())
       .sort((a, b) => b.score - a.score)
       .map((r) => r.item.conv);
-
-    return mergedResults;
   }, [searchQuery, sorted]);
 
-  // Highlight matched text
   const highlightMatch = (text: string, query: string): string => {
     if (!query.trim()) return text;
     const result = fuzzysort.single(query, text);
@@ -171,7 +151,99 @@ export function HistoryDrawer() {
     return result.highlight('<mark>', '</mark>');
   };
 
+  // Kelompokkan conversations berdasarkan time group
+  const grouped = useMemo(() => {
+    const order: TimeGroup[] = ['pinned', 'today', 'yesterday', 'last7', 'last30', 'older'];
+    const map = new Map<TimeGroup, ConversationWithMessages[]>();
+    for (const conv of filtered) {
+      const group = getTimeGroup(conv);
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(conv);
+    }
+    return order.filter((g) => map.has(g)).map((g) => ({ group: g, convs: map.get(g)! }));
+  }, [filtered]);
+
   if (!store.historyDrawerOpen) return null;
+
+  const renderItem = (conv: ConversationWithMessages) => {
+    const isBranched = !!conv.branchedFromId;
+    const isHighlighted = highlightedIds.has(conv.id);
+    const isActive = conv.id === store.activeConversationId;
+
+    return (
+      <div
+        key={conv.id}
+        className={[
+          'history-item',
+          isActive ? 'active' : '',
+          isHighlighted ? 'branch-highlight' : '',
+        ].filter(Boolean).join(' ')}
+        title={conv.title}
+        onClick={() => store.switchConversation(conv.id)}
+      >
+        {isBranched && (
+          <span className="history-item-branch-icon" title="Branch">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="6" y1="3" x2="6" y2="15"/>
+              <circle cx="18" cy="6" r="3"/>
+              <circle cx="6" cy="18" r="3"/>
+              <path d="M18 9a9 9 0 0 1-9 9"/>
+            </svg>
+          </span>
+        )}
+        <span
+          className="history-item-title"
+          dangerouslySetInnerHTML={{
+            __html: searchQuery ? highlightMatch(conv.title, searchQuery) : conv.title,
+          }}
+        />
+        <span className={`history-item-actions${conv.pinned ? ' has-pinned' : ''}`}>
+          <button
+            className={`history-item-pin${conv.pinned ? ' pinned' : ''}`}
+            title={conv.pinned ? 'Unpin' : 'Pin'}
+            onClick={(e) => {
+              e.stopPropagation();
+              store.togglePinConversation(conv.id);
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill={conv.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="17" x2="12" y2="22"/>
+              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+            </svg>
+          </button>
+          {isBranched && (
+            <button
+              className="history-item-action-btn"
+              title="Go to source conversation"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleBranchIconClick(conv);
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 3 21 3 21 9"/>
+                <path d="M21 3L9 15"/>
+                <polyline points="9 3 3 3 3 21 21 21"/>
+              </svg>
+            </button>
+          )}
+          <button
+            className="history-item-delete"
+            title="Delete"
+            onClick={(e) => {
+              e.stopPropagation();
+              store.deleteConversation(conv.id);
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div id="history-drawer">
@@ -199,11 +271,7 @@ export function HistoryDrawer() {
             disabled={isLoading}
           />
           {searchQuery && (
-            <button
-              className="history-search-clear"
-              onClick={() => setSearchQuery('')}
-              title="Clear search"
-            >
+            <button className="history-search-clear" onClick={() => setSearchQuery('')} title="Clear search">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -219,79 +287,32 @@ export function HistoryDrawer() {
               {searchQuery ? 'No conversations found.' : 'No conversations yet.'}
             </div>
           ) : (
-            filtered.map((conv) => {
-              const isBranched = !!conv.branchedFromId;
-              const isHighlighted = highlightedIds.has(conv.id);
-
-              return (
-                <div
-                  key={conv.id}
-                  className={[
-                    'history-item',
-                    conv.id === store.activeConversationId ? 'active' : '',
-                    isHighlighted ? 'branch-highlight' : '',
-                  ].filter(Boolean).join(' ')}
+            grouped.map(({ group, convs }) => (
+              <div key={group} className="history-group">
+                <button
+                  className={`history-group-label${group === 'pinned' ? ' pinned' : ''}`}
+                  onClick={() => group === 'pinned' && setPinnedCollapsed((v) => !v)}
+                  style={{ cursor: group === 'pinned' ? 'pointer' : 'default' }}
                 >
-                  <div
-                    className="history-item-info"
-                    onClick={() => store.switchConversation(conv.id)}
-                  >
-                    <div className="history-item-title-row">
-                      <div
-                        className="history-item-title"
-                        dangerouslySetInnerHTML={{
-                          __html: searchQuery
-                            ? highlightMatch(conv.title, searchQuery)
-                            : conv.title,
-                        }}
-                      />
-                      {isBranched && (
-                        <span className="branch-badge" title={`Branched from another conversation`}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="6" y1="3" x2="6" y2="15"/>
-                            <circle cx="18" cy="6" r="3"/>
-                            <circle cx="6" cy="18" r="3"/>
-                            <path d="M18 9a9 9 0 0 1-9 9"/>
-                          </svg>
-                          Branch
-                        </span>
-                      )}
-                    </div>
-                    <div className="history-item-time">{formatTimeAgo(conv.updatedAt)}</div>
-                  </div>
-                  {isBranched && (
-                    <button
-                      className="history-item-branch-link"
-                      title="Go to source conversation"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBranchIconClick(conv);
-                      }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="6" y1="3" x2="6" y2="15"/>
-                        <circle cx="18" cy="6" r="3"/>
-                        <circle cx="6" cy="18" r="3"/>
-                        <path d="M18 9a9 9 0 0 1-9 9"/>
-                      </svg>
-                    </button>
-                  )}
-                  <button
-                    className="history-item-delete"
-                    title="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      store.deleteConversation(conv.id);
-                    }}
-                  >
+                  {group === 'pinned' && (
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
+                      <line x1="12" y1="17" x2="12" y2="22"/>
+                      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
                     </svg>
-                  </button>
-                </div>
-              );
-            })
+                  )}
+                  {GROUP_LABELS[group]}
+                  {group === 'pinned' && (
+                    <svg
+                      className={`history-group-chevron${pinnedCollapsed ? ' collapsed' : ''}`}
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                    >
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  )}
+                </button>
+                {!(group === 'pinned' && pinnedCollapsed) && convs.map(renderItem)}
+              </div>
+            ))
           )}
         </div>
       </div>

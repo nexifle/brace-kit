@@ -202,6 +202,16 @@ export const useStore = create<AppState>((set, get) => ({
     get().saveToStorage();
   },
 
+  togglePinConversation: (id) => {
+    set((state) => {
+      const updated = state.conversations.map((c) =>
+        c.id === id ? { ...c, pinned: !c.pinned } : c
+      );
+      return { conversations: updated };
+    });
+    get().saveToStorage();
+  },
+
   setActiveConversationId: (activeConversationId) => set({ activeConversationId }),
 
   addMemory: (memory) =>

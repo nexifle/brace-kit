@@ -274,11 +274,15 @@ body {
 }
 
 .message-bubble {
-    padding: 12px 16px;
+    padding: 4px 16px;
     border-radius: var(--radius-lg);
     position: relative;
     word-wrap: break-word;
     overflow-wrap: break-word;
+}
+
+.message-bubble .page-attachment {
+    margin-top: 8px;
 }
 
 .message.user .message-bubble {
@@ -1950,15 +1954,51 @@ body {
     border-radius: var(--radius-xs);
 }
 
+/* History item — compact single-line design */
+.history-group {
+    margin-bottom: 4px;
+}
+
+.history-group-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    padding: 8px 10px 4px;
+    border: none;
+    background: transparent;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--text-tertiary);
+    text-align: left;
+    user-select: none;
+}
+
+.history-group-label.pinned {
+    color: var(--accent-primary);
+}
+
+.history-group-chevron {
+    margin-left: auto;
+    transition: transform var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.history-group-chevron.collapsed {
+    transform: rotate(-90deg);
+}
+
 .history-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
+    gap: 6px;
+    padding: 6px 10px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all var(--transition-fast);
-    margin-bottom: 2px;
+    transition: background var(--transition-fast);
+    min-width: 0;
+    position: relative;
 }
 
 .history-item:hover {
@@ -1966,31 +2006,48 @@ body {
 }
 
 .history-item.active {
-    background: rgba(129, 140, 248, 0.12);
-    border-left: 2px solid var(--accent-primary);
+    background: rgba(129, 140, 248, 0.1);
 }
 
-.history-item-info {
-    flex: 1;
-    overflow: hidden;
-    min-width: 0;
+.history-item-branch-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    opacity: 0.7;
 }
 
 .history-item-title {
-    font-size: 0.9rem;
-    font-weight: 500;
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 400;
     color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
-.history-item-time {
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-    margin-top: 2px;
+.history-item.active .history-item-title {
+    font-weight: 500;
 }
 
+/* Action buttons — hidden until hover */
+.history-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.history-item:hover .history-item-actions {
+    opacity: 1;
+}
+
+.history-item-pin,
+.history-item-action-btn,
 .history-item-delete {
     display: flex;
     align-items: center;
@@ -2002,18 +2059,48 @@ body {
     color: var(--text-tertiary);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    opacity: 0;
     transition: all var(--transition-fast);
     flex-shrink: 0;
+    padding: 0;
 }
 
-.history-item:hover .history-item-delete {
+.history-item-pin.pinned {
+    color: var(--accent-primary);
     opacity: 1;
+}
+
+/* Keep pinned icon always visible even without hover */
+.history-item .history-item-pin.pinned {
+    opacity: 1;
+}
+
+.history-item-pin:hover {
+    background: rgba(129, 140, 248, 0.15);
+    color: var(--accent-primary);
+}
+
+.history-item-action-btn:hover {
+    background: rgba(167, 139, 250, 0.15);
+    color: var(--accent-secondary);
 }
 
 .history-item-delete:hover {
     background: rgba(248, 113, 113, 0.15);
     color: var(--danger);
+}
+
+/* Show pinned icon outside actions group so it's always visible */
+.history-item .history-item-pin.pinned {
+    /* stays visible via actions group opacity override below */
+}
+
+.history-item:not(:hover) .history-item-actions:has(.history-item-pin.pinned) {
+    opacity: 1;
+}
+
+/* Fallback for browsers without :has — use JS class instead */
+.history-item-actions.has-pinned {
+    opacity: 1;
 }
 
 .history-empty {
@@ -2028,14 +2115,13 @@ body {
     background: rgba(129, 140, 248, 0.3);
     color: var(--accent-primary);
     border-radius: 2px;
-    padding: 0 2px;
+    padding: 0 1px;
     font-weight: 600;
 }
 
-/* Branch feature */
+/* Branch highlight animation */
 .history-item.branch-highlight {
     background: rgba(167, 139, 250, 0.12);
-    border-left: 2px solid var(--accent-secondary);
     animation: branch-pulse 0.3s ease;
 }
 
@@ -2047,56 +2133,6 @@ body {
     100% {
         background: rgba(167, 139, 250, 0.12);
     }
-}
-
-.history-item-title-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-}
-
-.history-item-title-row .history-item-title {
-    min-width: 0;
-}
-
-.branch-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    flex-shrink: 0;
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: var(--accent-secondary);
-    background: rgba(167, 139, 250, 0.15);
-    border: 1px solid rgba(167, 139, 250, 0.3);
-    border-radius: var(--radius-xs);
-    padding: 1px 5px;
-    white-space: nowrap;
-}
-
-.history-item-branch-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border: none;
-    background: transparent;
-    color: var(--accent-secondary);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    opacity: 0;
-    transition: all var(--transition-fast);
-    flex-shrink: 0;
-}
-
-.history-item:hover .history-item-branch-link {
-    opacity: 1;
-}
-
-.history-item-branch-link:hover {
-    background: rgba(167, 139, 250, 0.15);
 }
 
 /* Utility */
