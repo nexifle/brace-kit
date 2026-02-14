@@ -184,6 +184,7 @@ export function useChat() {
       messageData.attachments = messageAttachments.filter((a) => a.type === 'image');
     }
     store.addMessage(messageData);
+    store.updateConversationTimestamp();
 
     // Clear selection and attachments
     store.setSelectedText(null);

@@ -222,7 +222,6 @@ export function HistoryDrawer() {
             filtered.map((conv) => {
               const isBranched = !!conv.branchedFromId;
               const isHighlighted = highlightedIds.has(conv.id);
-              const isParentOfBranch = branchRelations.has(conv.id);
 
               return (
                 <div
@@ -260,10 +259,10 @@ export function HistoryDrawer() {
                     </div>
                     <div className="history-item-time">{formatTimeAgo(conv.updatedAt)}</div>
                   </div>
-                  {(isBranched || isParentOfBranch) && (
+                  {isBranched && (
                     <button
                       className="history-item-branch-link"
-                      title={isBranched ? 'Go to source conversation' : 'Go to branch'}
+                      title="Go to source conversation"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleBranchIconClick(conv);

@@ -282,6 +282,7 @@ export interface AppState {
   loadFromStorage: () => Promise<void>;
   saveToStorage: () => Promise<void>;
   saveActiveConversation: () => Promise<void>;
+  updateConversationTimestamp: () => Promise<void>;
 }
 
 // ==================== Constants ====================

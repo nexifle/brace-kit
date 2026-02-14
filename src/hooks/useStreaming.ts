@@ -200,6 +200,7 @@ export function useStreaming() {
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
     store.saveActiveConversation();
+    store.updateConversationTimestamp();
 
     // Extract memories automatically after response
     if (store.memoryEnabled && !toolCalls?.length) {

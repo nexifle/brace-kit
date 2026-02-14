@@ -353,8 +353,16 @@ export const useStore = create<AppState>((set, get) => ({
       await chrome.storage.local.set({
         [`conv_${state.activeConversationId}`]: state.messages,
       });
+    } catch (e) {
+      console.warn('Failed to save conversation:', e);
+    }
+  },
 
-      // Update updatedAt in index
+  updateConversationTimestamp: async () => {
+    const state = get();
+    if (!state.activeConversationId) return;
+
+    try {
       const conv = state.conversations.find((c) => c.id === state.activeConversationId);
       if (conv) {
         conv.updatedAt = Date.now();
@@ -363,7 +371,7 @@ export const useStore = create<AppState>((set, get) => ({
         });
       }
     } catch (e) {
-      console.warn('Failed to save conversation:', e);
+      console.warn('Failed to update conversation timestamp:', e);
     }
   },
 }));
