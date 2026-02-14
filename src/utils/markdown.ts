@@ -3,12 +3,14 @@ import { marked } from 'marked';
 declare global {
   interface Window {
     hljs?: {
-      highlightElement: (element: HTMLElement) => void;
+      highlight: (code: string, options: { language: string }) => { value: string };
+      getLanguage: (lang: string) => unknown;
+      highlightAuto: (code: string) => { value: string };
     };
   }
 }
 
-// Configure marked for safe rendering
+// Configure marked with hljs integration
 marked.setOptions({
   breaks: true,
   gfm: true,
@@ -23,16 +25,38 @@ export function renderMarkdown(text: string): string {
   // Escape HTML entities first for safety
   let html = marked.parse(processedText, { async: false }) as string;
 
-  // Add code block copy buttons and language labels
+  // Add code block copy buttons, language labels, and syntax highlighting
   html = html.replace(
     /<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,
     (_match, lang, code) => {
-      const escapedCode = code
+      // Decode HTML entities back to raw text for copy button and hljs
+      const rawCode = code
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+
+      const escapedCode = rawCode
         .replace(/&/g, '&amp;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+
+      // Highlight with hljs if available
+      let highlightedCode = code;
+      if (window.hljs) {
+        try {
+          if (window.hljs.getLanguage(lang)) {
+            highlightedCode = window.hljs.highlight(rawCode, { language: lang }).value;
+          } else {
+            highlightedCode = window.hljs.highlightAuto(rawCode).value;
+          }
+        } catch {
+          highlightedCode = code;
+        }
+      }
 
       return `
         <div class="md-codeblock-wrapper">
@@ -43,7 +67,7 @@ export function renderMarkdown(text: string): string {
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           </button>
-          <pre class="md-codeblock"><code class="language-${lang}">${code}</code></pre>
+          <pre class="md-codeblock"><code class="hljs language-${lang}">${highlightedCode}</code></pre>
         </div>
       `;
     }
@@ -53,12 +77,29 @@ export function renderMarkdown(text: string): string {
   html = html.replace(
     /<pre><code>([\s\S]*?)<\/code><\/pre>/g,
     (_match, code) => {
-      const escapedCode = code
+      const rawCode = code
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+
+      const escapedCode = rawCode
         .replace(/&/g, '&amp;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+
+      // Auto-detect language with hljs
+      let highlightedCode = code;
+      if (window.hljs) {
+        try {
+          highlightedCode = window.hljs.highlightAuto(rawCode).value;
+        } catch {
+          highlightedCode = code;
+        }
+      }
 
       return `
         <div class="md-codeblock-wrapper">
@@ -68,7 +109,7 @@ export function renderMarkdown(text: string): string {
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           </button>
-          <pre class="md-codeblock"><code>${code}</code></pre>
+          <pre class="md-codeblock"><code class="hljs">${highlightedCode}</code></pre>
         </div>
       `;
     }
@@ -81,15 +122,6 @@ export function renderMarkdown(text: string): string {
   );
 
   return html;
-}
-
-export function highlightCodeBlocks(element: HTMLElement) {
-  if (window.hljs) {
-    const codeBlocks = element.querySelectorAll('pre code');
-    codeBlocks.forEach((block) => {
-      window.hljs!.highlightElement(block as HTMLElement);
-    });
-  }
 }
 
 export function escapeHtml(text: string): string {

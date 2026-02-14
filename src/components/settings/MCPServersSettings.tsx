@@ -41,38 +41,44 @@ export function MCPServersSettings() {
       </div>
 
       <div id="mcp-servers-list">
-        {mcpServers.map((server) => (
-          <div key={server.id} className="mcp-server-item">
-            <div className="mcp-server-info">
-              <span className="mcp-server-name">{server.name}</span>
-              <span className="mcp-server-url">{server.url}</span>
-              {server.toolCount ? (
-                <span className="mcp-server-tools">{server.toolCount} tools available</span>
-              ) : null}
+        {mcpServers.map((server) => {
+          const isActive = server.connected && server.enabled !== false;
+          return (
+            <div key={server.id} className="mcp-server-item">
+              <div className="mcp-server-info">
+                <span
+                  className={`status-dot ${isActive ? 'connected' : 'disconnected'}`}
+                  title={isActive ? 'Connected' : server.enabled === false ? 'Disabled' : 'Disconnected'}
+                ></span>
+                <span className="mcp-server-name">{server.name}</span>
+                <span className="mcp-server-url">{server.url}</span>
+                {server.toolCount ? (
+                  <span className="mcp-server-tools">{server.toolCount} tools</span>
+                ) : null}
+              </div>
+              <div className="mcp-server-actions">
+                <label className="toggle-switch small">
+                  <input
+                    type="checkbox"
+                    checked={server.enabled !== false}
+                    onChange={(e) => toggleMCPServer(server.id, e.target.checked)}
+                  />
+                  <span className="toggle-slider"></span>
+                </label>
+                <button
+                  className="btn-disconnect"
+                  title="Remove server"
+                  onClick={() => removeMCPServer(server.id)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
             </div>
-            <div className="mcp-server-status">
-              <label className="toggle-switch small">
-                <input
-                  type="checkbox"
-                  checked={server.enabled !== false}
-                  onChange={(e) => toggleMCPServer(server.id, e.target.checked)}
-                />
-                <span className="toggle-slider"></span>
-              </label>
-              <span className={`status-dot ${server.connected ? 'connected' : 'disconnected'}`}></span>
-              <button
-                className="btn-disconnect"
-                title="Disconnect"
-                onClick={() => removeMCPServer(server.id)}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showForm && (

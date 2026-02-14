@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import { MessageBubble } from './MessageBubble.tsx';
 import { ToolMessage } from './ToolMessage.tsx';
@@ -10,35 +10,49 @@ export function MessageList() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const rafRef = useRef<number | undefined>(undefined);
 
-  const handleScroll = () => {
-    if (!containerRef.current) return;
+  const isNearBottom = useCallback(() => {
+    if (!containerRef.current) return true;
     const container = containerRef.current;
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 10;
-    
-    isUserScrollingRef.current = !isAtBottom;
-    
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    isUserScrollingRef.current = !isNearBottom();
+  }, [isNearBottom]);
+
+  const scrollToBottom = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
     }
-    
-    scrollTimeoutRef.current = setTimeout(() => {
-      isUserScrollingRef.current = false;
-    }, 150);
-  };
+    rafRef.current = requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      }
+    });
+  }, []);
 
   useEffect(() => {
-    if (containerRef.current && (!isUserScrollingRef.current || isStreaming)) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    if (!isUserScrollingRef.current) {
+      scrollToBottom();
     }
-  }, [streamingContent, isStreaming]);
+  }, [streamingContent, isStreaming, scrollToBottom]);
 
   useEffect(() => {
-    if (containerRef.current && !isUserScrollingRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    if (!isUserScrollingRef.current) {
+      scrollToBottom();
     }
-  }, [messages.length]);
+  }, [messages.length, scrollToBottom]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div id="messages" ref={containerRef} onScroll={handleScroll}>

@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback } from 'react';
-import { renderMarkdown, highlightCodeBlocks } from '../utils/markdown.ts';
+import { renderMarkdown } from '../utils/markdown.ts';
 import { copyToClipboard } from '../utils/formatters.ts';
 import type { Message } from '../types/index.ts';
 
@@ -35,16 +35,14 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
 
   useEffect(() => {
     const ref = bubbleRef.current;
-    if (ref) {
-      ref.addEventListener('click', handleCopyCode as unknown as EventListener);
-      highlightCodeBlocks(ref);
-    }
+    if (!ref) return;
+
+    ref.addEventListener('click', handleCopyCode as unknown as EventListener);
+
     return () => {
-      if (ref) {
-        ref.removeEventListener('click', handleCopyCode as unknown as EventListener);
-      }
+      ref.removeEventListener('click', handleCopyCode as unknown as EventListener);
     };
-  }, [handleCopyCode, message.content]);
+  }, [handleCopyCode]);
 
   const roleLabel = message.role === 'user' ? 'You' : message.role === 'error' ? 'Error' : 'AI';
 
