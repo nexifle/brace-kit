@@ -275,10 +275,13 @@ export class MCPManager {
   }
 
   async addServer(config) {
+    console.log('[MCPManager] addServer called:', config.id, config.name);
     const client = new MCPClient(config.url, config.headers || {});
     const result = await client.connect();
+    console.log('[MCPManager] connect result:', result.success, 'tools:', result.tools?.length);
     if (result.success) {
       this.clients.set(config.id, { client, config, tools: result.tools });
+      console.log('[MCPManager] Server added, total clients:', this.clients.size);
     }
     return result;
   }
@@ -292,9 +295,11 @@ export class MCPManager {
   }
 
   getAllTools() {
+    console.log('[MCPManager] getAllTools called, clients:', this.clients.size);
     const tools = [];
     for (const [serverId, entry] of this.clients) {
-      for (const tool of entry.tools) {
+      console.log(`[MCPManager] Server ${serverId}:`, entry.tools?.length || 0, 'tools');
+      for (const tool of entry.tools || []) {
         tools.push({
           ...tool,
           _serverId: serverId,
@@ -302,6 +307,7 @@ export class MCPManager {
         });
       }
     }
+    console.log('[MCPManager] Total tools:', tools.length);
     return tools;
   }
 

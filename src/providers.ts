@@ -1,14 +1,27 @@
 // LLM Provider abstraction layer
 // Each provider knows how to format requests and parse streaming responses
 
-export const PROVIDER_PRESETS = {
+import type { ProviderFormat, Message, MCPTool } from './types/index.ts';
+
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  apiUrl: string;
+  defaultModel: string;
+  format: ProviderFormat;
+  models?: string[];
+  staticModels?: string[];
+  supportsModelFetch?: boolean;
+}
+
+export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   openai: {
     id: 'openai',
     name: 'OpenAI',
     apiUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o',
     format: 'openai',
-    models: [], // Will be fetched from API
+    models: [],
     supportsModelFetch: true,
   },
   anthropic: {
@@ -17,7 +30,7 @@ export const PROVIDER_PRESETS = {
     apiUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-sonnet-4-20250514',
     format: 'anthropic',
-    models: [], // Anthropic doesn't have a models list endpoint, use hardcoded
+    models: [],
     supportsModelFetch: false,
     staticModels: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
   },
@@ -27,7 +40,7 @@ export const PROVIDER_PRESETS = {
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-2.0-flash',
     format: 'gemini',
-    models: [], // Will be fetched from API
+    models: [],
     supportsModelFetch: true,
   },
   xai: {
@@ -36,7 +49,7 @@ export const PROVIDER_PRESETS = {
     apiUrl: 'https://api.x.ai/v1',
     defaultModel: 'grok-2',
     format: 'openai',
-    models: [], // Will be fetched from API (OpenAI-compatible)
+    models: [],
     supportsModelFetch: true,
   },
   deepseek: {
@@ -45,7 +58,7 @@ export const PROVIDER_PRESETS = {
     apiUrl: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
     format: 'openai',
-    models: [], // Will be fetched from API (OpenAI-compatible)
+    models: [],
     supportsModelFetch: true,
   },
   custom: {
@@ -59,8 +72,11 @@ export const PROVIDER_PRESETS = {
   },
 };
 
-// Fetch available models from provider API
-export async function fetchModels(provider) {
+export interface ChatOptions {
+  enableGoogleSearch?: boolean;
+}
+
+export async function fetchModels(provider: ProviderPreset & { apiKey?: string }): Promise<{ models?: string[]; error?: string }> {
   const { format, apiUrl, apiKey } = provider;
 
   if (!apiKey) {
@@ -72,24 +88,21 @@ export async function fetchModels(provider) {
       case 'openai':
         return await fetchOpenAIModels(apiUrl, apiKey);
       case 'anthropic':
-        // Anthropic doesn't have a models list API, return static list
         return { models: PROVIDER_PRESETS.anthropic.staticModels || [] };
       case 'gemini':
         return await fetchGeminiModels(apiUrl, apiKey);
       default:
-        // Try OpenAI-compatible endpoint
         return await fetchOpenAIModels(apiUrl, apiKey);
     }
   } catch (e) {
-    return { error: e.message };
+    return { error: (e as Error).message };
   }
 }
 
-async function fetchOpenAIModels(apiUrl, apiKey) {
-  // Get base URL without /chat/completions
+async function fetchOpenAIModels(apiUrl: string, apiKey: string): Promise<{ models: string[] }> {
   let baseUrl = apiUrl.replace(/\/+$/, '');
   if (baseUrl.endsWith('/chat/completions')) {
-    baseUrl = baseUrl.slice(0, -('/chat/completions'.length));
+    baseUrl = baseUrl.slice(0, -'/chat/completions'.length);
   }
 
   const url = `${baseUrl}/models`;
@@ -107,12 +120,9 @@ async function fetchOpenAIModels(apiUrl, apiKey) {
 
   const data = await response.json();
 
-  // Filter and sort models
-  let models = (data.data || [])
-    .map(m => m.id)
-    .filter(id => {
-      // Filter out embedding, tts, whisper, dall-e, moderation models
-      // Keep only chat models
+  const models = (data.data || [])
+    .map((m: { id: string }) => m.id)
+    .filter((id: string) => {
       const excludePatterns = [
         /embedding/i,
         /tts/i,
@@ -125,12 +135,12 @@ async function fetchOpenAIModels(apiUrl, apiKey) {
       ];
       return !excludePatterns.some(p => p.test(id));
     })
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a: string, b: string) => a.localeCompare(b));
 
   return { models };
 }
 
-async function fetchGeminiModels(apiUrl, apiKey) {
+async function fetchGeminiModels(apiUrl: string, apiKey: string): Promise<{ models: string[] }> {
   const baseUrl = apiUrl.replace(/\/+$/, '');
   const url = `${baseUrl}/models?key=${apiKey}`;
 
@@ -144,69 +154,79 @@ async function fetchGeminiModels(apiUrl, apiKey) {
 
   const data = await response.json();
 
-  // Filter to only generative models that support generateContent
-  let models = (data.models || [])
-    .filter(m => {
-      // Only include models that support generateContent
+  const models = (data.models || [])
+    .filter((m: { supportedGenerationMethods?: string[] }) => {
       const supportedMethods = m.supportedGenerationMethods || [];
       return supportedMethods.includes('generateContent');
     })
-    .map(m => {
-      // Extract model name from full name (e.g., "models/gemini-2.0-flash" -> "gemini-2.0-flash")
+    .map((m: { name?: string }) => {
       const name = m.name || '';
       return name.replace(/^models\//, '');
     })
-    .filter(name => name)
-    .sort((a, b) => a.localeCompare(b));
+    .filter((name: string) => name)
+    .sort((a: string, b: string) => a.localeCompare(b));
 
   return { models };
 }
 
-// Format messages for the specific provider
-// options: { enableGoogleSearch: boolean }
-export function formatRequest(provider, messages, tools = [], options = {}) {
-  const { format, apiUrl, defaultModel } = provider;
-  const model = provider.model || defaultModel;
+interface RequestConfig {
+  url: string;
+  options: RequestInit;
+}
+
+export function formatRequest(
+  provider: ProviderPreset & { apiKey?: string; model?: string },
+  messages: Message[],
+  tools: MCPTool[] = [],
+  options: ChatOptions = {}
+): RequestConfig {
+  const { format } = provider;
 
   switch (format) {
     case 'openai':
-      return formatOpenAI(provider, messages, model, tools, options);
+      return formatOpenAI(provider, messages, tools, options);
     case 'anthropic':
-      return formatAnthropic(provider, messages, model, tools, options);
+      return formatAnthropic(provider, messages, tools, options);
     case 'gemini':
-      return formatGemini(provider, messages, model, tools, options);
+      return formatGemini(provider, messages, tools, options);
     default:
-      return formatOpenAI(provider, messages, model, tools, options);
+      return formatOpenAI(provider, messages, tools, options);
   }
 }
 
-function formatOpenAI(provider, messages, model, tools, options = {}) {
-  // Process messages to ensure proper format for multimodal content
+function formatOpenAI(
+  provider: ProviderPreset & { apiKey?: string; model?: string },
+  messages: Message[],
+  tools: MCPTool[],
+  _options: ChatOptions
+): RequestConfig {
+  const model = provider.model || provider.defaultModel;
+
   const processedMessages = messages.map(msg => {
-    // If content is an array (multimodal), keep it as is
     if (Array.isArray(msg.content)) {
       return msg;
     }
-    // Otherwise, keep the original message
     return msg;
   });
 
-  const body = {
+  const body: Record<string, unknown> = {
     model,
     messages: processedMessages,
     stream: true,
   };
-  if (tools && tools.length > 0) {
+
+  if (tools.length > 0) {
     body.tools = tools.map((t) => ({
       type: 'function',
       function: { name: t.name, description: t.description, parameters: t.inputSchema },
     }));
   }
-  // Auto-append /chat/completions for OpenAI-compatible endpoints
+
   let url = provider.apiUrl;
   if (!url.endsWith('/chat/completions')) {
     url = url.replace(/\/+$/, '') + '/chat/completions';
   }
+
   return {
     url,
     options: {
@@ -220,10 +240,16 @@ function formatOpenAI(provider, messages, model, tools, options = {}) {
   };
 }
 
-function formatAnthropic(provider, messages, model, tools, options = {}) {
-  // Separate system message
+function formatAnthropic(
+  provider: ProviderPreset & { apiKey?: string; model?: string },
+  messages: Message[],
+  tools: MCPTool[],
+  _options: ChatOptions
+): RequestConfig {
+  const model = provider.model || provider.defaultModel;
   let system = '';
   const filtered = [];
+
   for (const msg of messages) {
     if (msg.role === 'system') {
       system += (system ? '\n' : '') + msg.content;
@@ -232,14 +258,15 @@ function formatAnthropic(provider, messages, model, tools, options = {}) {
     }
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     model,
     max_tokens: 8192,
     stream: true,
     messages: filtered,
   };
+
   if (system) body.system = system;
-  if (tools && tools.length > 0) {
+  if (tools.length > 0) {
     body.tools = tools.map((t) => ({
       name: t.name,
       description: t.description,
@@ -247,18 +274,18 @@ function formatAnthropic(provider, messages, model, tools, options = {}) {
     }));
   }
 
-  // Auto-append /v1/messages for Anthropic-compatible endpoints
   let url = provider.apiUrl;
   if (!url.endsWith('/v1/messages') && !url.endsWith('/messages')) {
     url = url.replace(/\/+$/, '') + '/v1/messages';
   }
+
   return {
     url,
     options: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': provider.apiKey,
+        'x-api-key': provider.apiKey || '',
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
@@ -267,33 +294,47 @@ function formatAnthropic(provider, messages, model, tools, options = {}) {
   };
 }
 
-function formatGemini(provider, messages, model, tools, options = {}) {
-  // Convert OpenAI-style messages to Gemini format
+interface GeminiPart {
+  text?: string;
+  functionCall?: { name: string; args: Record<string, unknown> };
+  inlineData?: { mimeType: string; data: string };
+  functionResponse?: { name: string; response: unknown };
+}
+
+interface GeminiContent {
+  role: string;
+  parts: GeminiPart[];
+}
+
+function formatGemini(
+  provider: ProviderPreset & { apiKey?: string; model?: string },
+  messages: Message[],
+  tools: MCPTool[],
+  options: ChatOptions
+): RequestConfig {
   let systemInstruction = '';
-  const contents = [];
+  const contents: GeminiContent[] = [];
 
   for (const msg of messages) {
     if (msg.role === 'system') {
       systemInstruction += (systemInstruction ? '\n' : '') + msg.content;
     } else if (msg.role === 'assistant') {
-      // Assistant message - may have tool_calls
-      const parts = [];
+      const parts: GeminiPart[] = [];
       if (msg.content) {
         parts.push({ text: msg.content });
       }
-      // Handle tool_calls from OpenAI format -> Gemini functionCall
-      if (msg.tool_calls) {
-        for (const tc of msg.tool_calls) {
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
           let args = {};
           try {
-            args = JSON.parse(tc.function?.arguments || '{}');
-          } catch (e) {
+            args = JSON.parse(tc.arguments || '{}');
+          } catch {
             args = {};
           }
           parts.push({
             functionCall: {
-              name: tc.function?.name || tc.name,
-              args: args,
+              name: tc.name,
+              args,
             },
           });
         }
@@ -302,14 +343,12 @@ function formatGemini(provider, messages, model, tools, options = {}) {
         contents.push({ role: 'model', parts });
       }
     } else if (msg.role === 'tool') {
-      // Tool result - convert to Gemini functionResponse format
-      // In Gemini, function responses go in a 'user' role message
       contents.push({
         role: 'user',
         parts: [
           {
             functionResponse: {
-              name: msg.name || msg.toolCallId || 'unknown',
+              name: msg.toolCallId || 'unknown',
               response: typeof msg.content === 'string'
                 ? { result: msg.content }
                 : msg.content,
@@ -318,16 +357,13 @@ function formatGemini(provider, messages, model, tools, options = {}) {
         ],
       });
     } else if (msg.role === 'user' && Array.isArray(msg.content)) {
-      // Multimodal user message with images
-      const parts = [];
+      const parts: GeminiPart[] = [];
       for (const item of msg.content) {
         if (item.type === 'text') {
           parts.push({ text: item.text });
         } else if (item.type === 'image_url') {
-          // Convert base64 image to Gemini format
           const imageUrl = item.image_url?.url || item.image_url;
           if (imageUrl) {
-            // Extract mime type and data from base64 data URL
             const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
             if (match) {
               const [, mimeType, base64Data] = match;
@@ -345,7 +381,6 @@ function formatGemini(provider, messages, model, tools, options = {}) {
         contents.push({ role: 'user', parts });
       }
     } else {
-      // Regular user message
       contents.push({
         role: 'user',
         parts: [{ text: msg.content }],
@@ -353,24 +388,16 @@ function formatGemini(provider, messages, model, tools, options = {}) {
     }
   }
 
-  const body = { contents };
+  const body: Record<string, unknown> = { contents };
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  // Build tools array - can include both function declarations and google_search
-  // Note: Gemini REST API does NOT support combining google_search with function_declarations
-  // Multi-tool use is only available via Live API
-  // See: https://ai.google.dev/gemini-api/docs/function-calling#multi-tool-use
-  const geminiTools = [];
+  const geminiTools: Record<string, unknown>[] = [];
 
-  // Add Google Search grounding tool if enabled
-  // Use google_search (snake_case) for REST API
   if (options.enableGoogleSearch) {
     geminiTools.push({ google_search: {} });
-  } else if (tools && tools.length > 0) {
-    // Only add function declarations if Google Search is NOT enabled
-    // (they cannot be combined in REST API)
+  } else if (tools.length > 0) {
     geminiTools.push({
       function_declarations: tools.map((t) => ({
         name: t.name,
@@ -384,10 +411,9 @@ function formatGemini(provider, messages, model, tools, options = {}) {
     body.tools = geminiTools;
   }
 
-  // Auto-append /models/{model}:streamGenerateContent for Gemini-compatible endpoints
-  let baseUrl = provider.apiUrl.replace(/\/+$/, '');
-  // If URL already contains /models/, use it as-is; otherwise append the path
-  let url;
+  const baseUrl = provider.apiUrl.replace(/\/+$/, '');
+  const model = provider.model || provider.defaultModel;
+  let url: string;
   if (baseUrl.includes('/models/')) {
     url = `${baseUrl}?alt=sse&key=${provider.apiKey}`;
   } else {
@@ -404,8 +430,17 @@ function formatGemini(provider, messages, model, tools, options = {}) {
   };
 }
 
-// Parse streaming response — returns async generator of text chunks or tool calls
-export async function* parseStream(provider, response) {
+export interface StreamChunk {
+  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata';
+  content?: string;
+  id?: string;
+  index?: number;
+  name?: string;
+  arguments?: string;
+  groundingMetadata?: unknown;
+}
+
+export async function* parseStream(provider: ProviderPreset, response: Response): AsyncGenerator<StreamChunk> {
   switch (provider.format) {
     case 'openai':
       yield* parseOpenAIStream(response);
@@ -421,8 +456,8 @@ export async function* parseStream(provider, response) {
   }
 }
 
-async function* parseOpenAIStream(response) {
-  const reader = response.body.getReader();
+async function* parseOpenAIStream(response: Response): AsyncGenerator<StreamChunk> {
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -459,15 +494,15 @@ async function* parseOpenAIStream(response) {
             };
           }
         }
-      } catch (e) {
+      } catch {
         // skip malformed JSON
       }
     }
   }
 }
 
-async function* parseAnthropicStream(response) {
-  const reader = response.body.getReader();
+async function* parseAnthropicStream(response: Response): AsyncGenerator<StreamChunk> {
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -502,15 +537,15 @@ async function* parseAnthropicStream(response) {
           };
         }
         if (json.type === 'message_stop') return;
-      } catch (e) {
+      } catch {
         // skip
       }
     }
   }
 }
 
-async function* parseGeminiStream(response) {
-  const reader = response.body.getReader();
+async function* parseGeminiStream(response: Response): AsyncGenerator<StreamChunk> {
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -549,28 +584,24 @@ async function* parseGeminiStream(response) {
           }
         }
 
-        // Yield grounding metadata from the last candidate (usually there's only one)
         const groundingMetadata = candidates[0]?.groundingMetadata;
         if (groundingMetadata) {
           yield { type: 'grounding_metadata', groundingMetadata };
         }
-      } catch (e) {
+      } catch {
         // skip
       }
     }
   }
 }
 
-// Convert JSON Schema to Gemini-compatible OpenAPI 3.0 schema format
-function convertToGeminiSchema(schema) {
+function convertToGeminiSchema(schema: unknown): Record<string, unknown> {
   if (!schema || typeof schema !== 'object') {
     return { type: 'object', properties: {} };
   }
 
-  // Create a deep copy to avoid mutating the original
   const converted = JSON.parse(JSON.stringify(schema));
 
-  // Remove JSON Schema specific fields that Gemini doesn't support
   delete converted.$schema;
   delete converted.$ref;
   delete converted.$id;
@@ -579,71 +610,63 @@ function convertToGeminiSchema(schema) {
   delete converted.default;
   delete converted.examples;
   delete converted.format;
-
-  // ALWAYS remove additionalProperties - Gemini doesn't support this field at all
   delete converted.additionalProperties;
 
-  // Remove if it's an empty object {}
   if (converted.properties && Object.keys(converted.properties).length === 0) {
     delete converted.properties;
   }
 
-  // Ensure type is present at root level
   if (!converted.type) {
     if (converted.properties) {
       converted.type = 'object';
     } else if (converted.items) {
       converted.type = 'array';
     } else {
-      converted.type = 'string'; // Default fallback
+      converted.type = 'string';
     }
   }
 
-  // Recursively convert nested schemas in properties
   if (converted.properties && typeof converted.properties === 'object') {
     for (const key of Object.keys(converted.properties)) {
       converted.properties[key] = convertToGeminiSchema(converted.properties[key]);
     }
   }
 
-  // Recursively convert items for arrays
   if (converted.items) {
     converted.items = convertToGeminiSchema(converted.items);
   }
 
-  // Handle anyOf/oneOf/allOf - Gemini only supports anyOf
   if (converted.oneOf) {
     converted.anyOf = converted.oneOf;
     delete converted.oneOf;
   }
+
   if (converted.allOf) {
-    // Flatten allOf into a single object (simplified approach)
-    const merged = { type: 'object', properties: {}, required: [] };
-    for (const sub of converted.allOf) {
+    const merged: Record<string, unknown> = { type: 'object', properties: {}, required: [] as string[] };
+    for (const sub of converted.allOf as unknown[]) {
       const subSchema = convertToGeminiSchema(sub);
       if (subSchema.properties) {
-        Object.assign(merged.properties, subSchema.properties);
+        Object.assign(merged.properties as Record<string, unknown>, subSchema.properties);
       }
       if (subSchema.required) {
-        merged.required.push(...subSchema.required);
+        (merged.required as string[]).push(...(subSchema.required as string[]));
       }
     }
-    // Clean up empty required array
-    if (merged.required.length === 0) {
+    if ((merged.required as string[]).length === 0) {
       delete merged.required;
     }
     return merged;
   }
+
   if (converted.anyOf && Array.isArray(converted.anyOf)) {
-    converted.anyOf = converted.anyOf.map(s => convertToGeminiSchema(s));
+    converted.anyOf = converted.anyOf.map((s: unknown) => convertToGeminiSchema(s));
   }
 
-  // Clean up empty arrays/objects that might cause issues
-  if (converted.required && converted.required.length === 0) {
-    delete converted.required;
+  if (converted.required && Array.isArray(converted.required) && converted.required.length === 0) {
+    delete (converted as Record<string, unknown>).required;
   }
-  if (converted.enum && converted.enum.length === 0) {
-    delete converted.enum;
+  if (converted.enum && Array.isArray(converted.enum) && converted.enum.length === 0) {
+    delete (converted as Record<string, unknown>).enum;
   }
 
   return converted;

@@ -6,6 +6,24 @@ import { MCPManager } from './mcp.js';
 
 const mcpManager = new MCPManager();
 
+// Restore MCP connections on startup
+(async () => {
+  const { mcpServers } = await chrome.storage.local.get('mcpServers');
+  if (mcpServers?.length > 0) {
+    console.log('[Background] Restoring MCP servers:', mcpServers.length);
+    for (const server of mcpServers) {
+      if (server.enabled !== false) {
+        try {
+          await mcpManager.addServer(server);
+          console.log('[Background] Restored:', server.name);
+        } catch (e) {
+          console.log('[Background] Failed to restore:', server.name, e);
+        }
+      }
+    }
+  }
+})();
+
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ tabId: tab.id });
@@ -58,6 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'MCP_CONNECT':
+      console.log('[Background] MCP_CONNECT received:', message.config);
       handleMCPConnect(message, sendResponse);
       return true;
 
@@ -67,7 +86,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'MCP_LIST_TOOLS':
-      sendResponse({ tools: mcpManager.getAllTools() });
+      const allTools = mcpManager.getAllTools();
+      console.log('[Background] MCP_LIST_TOOLS - clients:', mcpManager.clients.size, 'tools:', allTools);
+      sendResponse({ tools: allTools });
       return true;
 
     case 'MCP_CALL_TOOL':
