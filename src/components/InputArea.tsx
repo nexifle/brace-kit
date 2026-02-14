@@ -3,6 +3,7 @@ import { useStore } from '../store/index.ts';
 import { useChat } from '../hooks/useChat.ts';
 import { useFileAttachments } from '../hooks/useFileAttachments.ts';
 import { usePageContext } from '../hooks/usePageContext.ts';
+import { useProvider } from '../hooks/useProvider.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
@@ -11,11 +12,12 @@ export function InputArea() {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastCursorPosRef = useRef<number>(0);
   const store = useStore();
   const { sendMessage, stopStreaming } = useChat();
   const { handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText } = usePageContext();
-  const providerInfo = useProviderInfo();
+  const { providerInfo } = useProvider();
 
   const placeholder = store.pageContext
     ? 'Ask about this page...'
@@ -27,28 +29,41 @@ export function InputArea() {
 
   const { quotedText, setQuotedText } = store;
 
+  const updateCursorPos = useCallback(() => {
+    if (textareaRef.current) {
+      lastCursorPosRef.current = textareaRef.current.selectionStart;
+    }
+  }, []);
+
   useEffect(() => {
     if (quotedText) {
       const formattedQuote = quotedText
         .split('\n')
         .map((line) => `> ${line}`)
         .join('\n') + '\n\n';
-      setText((prev) => formattedQuote + prev);
+
+      const pos = lastCursorPosRef.current;
+      const before = text.substring(0, pos);
+      const after = text.substring(pos);
+      setText(before + formattedQuote + after);
       setQuotedText(null);
 
       // Auto-focus and resize
       if (textareaRef.current) {
         textareaRef.current.focus();
+        const newPos = pos + formattedQuote.length;
+
         // Give React a moment to update the value before measuring scrollHeight
         setTimeout(() => {
           if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+            textareaRef.current.setSelectionRange(newPos, newPos);
           }
         }, 0);
       }
     }
-  }, [quotedText, setQuotedText]);
+  }, [quotedText, setQuotedText, text]);
 
   const handleSend = useCallback(() => {
     if (!text.trim() && store.attachments.length === 0) return;
@@ -133,7 +148,13 @@ export function InputArea() {
           placeholder={placeholder}
           rows={1}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            updateCursorPos();
+          }}
+          onKeyUp={updateCursorPos}
+          onMouseUp={updateCursorPos}
+          onBlur={updateCursorPos}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           onPaste={(e) => handlePaste(e.nativeEvent)}
@@ -172,14 +193,3 @@ export function InputArea() {
   );
 }
 
-function useProviderInfo() {
-  const store = useStore();
-  const { PROVIDER_PRESETS } = require('../providers.ts');
-
-  const provider = PROVIDER_PRESETS[store.providerConfig.providerId] || { name: 'Custom' };
-  const providerName = provider?.name || 'Custom';
-  const model = store.providerConfig.model || provider?.defaultModel || '';
-  const isConfigured = !!store.providerConfig.apiKey;
-
-  return { providerName, model, isConfigured };
-}
