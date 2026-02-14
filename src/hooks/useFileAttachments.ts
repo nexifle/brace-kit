@@ -70,6 +70,34 @@ export function useFileAttachments() {
     }
   }, [processFile]);
 
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const imageItems = Array.from(items).filter((item) => item.type.startsWith('image/'));
+    if (imageItems.length > 0) {
+      // Ada gambar di clipboard — cegah paste teks default supaya tidak dobel
+      e.preventDefault();
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) await processFile(file);
+      }
+      return;
+    }
+
+    // Cek apakah teks yang di-paste melebihi 250 baris
+    const pastedText = e.clipboardData?.getData('text');
+    if (!pastedText) return;
+
+    const lineCount = pastedText.split('\n').length;
+    if (lineCount > 250) {
+      e.preventDefault();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const file = new File([pastedText], `pasted-text-${timestamp}.txt`, { type: 'text/plain' });
+      await processFile(file);
+    }
+  }, [processFile]);
+
   const removeAttachment = useCallback((id: string) => {
     store.removeAttachment(id);
   }, [store]);
@@ -82,6 +110,7 @@ export function useFileAttachments() {
     attachments: store.attachments,
     processFile,
     handleFileSelect,
+    handlePaste,
     removeAttachment,
     clearAllAttachments,
   };

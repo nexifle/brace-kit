@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import { useChat } from '../hooks/useChat.ts';
 import { useFileAttachments } from '../hooks/useFileAttachments.ts';
+import { usePageContext } from '../hooks/usePageContext.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
@@ -12,8 +13,17 @@ export function InputArea() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const store = useStore();
   const { sendMessage, stopStreaming } = useChat();
-  const { handleFileSelect } = useFileAttachments();
+  const { handleFileSelect, handlePaste } = useFileAttachments();
+  const { selectedText } = usePageContext();
   const providerInfo = useProviderInfo();
+
+  const placeholder = store.pageContext
+    ? 'Ask about this page...'
+    : store.attachments.length > 0
+      ? 'Ask about attached files...'
+      : selectedText
+        ? 'Ask about the selected text...'
+        : 'What\'s on your mind?';
 
   const handleSend = useCallback(() => {
     if (!text.trim() && store.attachments.length === 0) return;
@@ -62,23 +72,25 @@ export function InputArea() {
           <button
             id="btn-attach"
             className={`input-icon-btn ${store.pageContext ? 'active' : ''}`}
-            title="Attach page context"
+            title="Add current page to context"
             onClick={handleAttachClick}
           >
+            {/* Globe/page icon for "add current page" */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
             </svg>
           </button>
           <button
             id="btn-upload"
             className="input-icon-btn"
-            title="Upload file (image, txt, csv, pdf)"
+            title="Attach file (image, txt, csv, pdf)"
             onClick={() => fileInputRef.current?.click()}
           >
+            {/* Paperclip icon for file attachment */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
           <input
@@ -93,18 +105,19 @@ export function InputArea() {
         <textarea
           ref={textareaRef}
           id="chat-input"
-          placeholder="Ask about this page..."
+          placeholder={placeholder}
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onPaste={(e) => handlePaste(e.nativeEvent)}
           disabled={store.isStreaming}
         />
         {store.isStreaming ? (
           <button id="btn-stop" className="stop-btn" onClick={stopStreaming} title="Stop generating">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2"/>
+              <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
           </button>
         ) : (
@@ -116,8 +129,8 @@ export function InputArea() {
             title="Send message"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
           </button>
         )}
