@@ -1,7 +1,7 @@
 // Background service worker for AI Sidebar extension
 // Handles: sidebar panel, message routing, LLM API calls, MCP orchestration
 
-import { PROVIDER_PRESETS, formatRequest, parseStream, fetchModels, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from './src/providers.ts';
+import { PROVIDER_PRESETS, formatRequest, parseStream, parseXAIImageResponse, fetchModels, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from './src/providers.ts';
 import { MCPManager } from './mcp.js';
 
 const mcpManager = new MCPManager();
@@ -177,7 +177,9 @@ async function handleChatRequest(message, sendResponse) {
     let currentToolCall = null;
     let groundingMetadata = null;
 
-    for await (const chunk of parseStream(provider, response)) {
+    const isXAIImageModel = provider.id === 'xai' && XAI_IMAGE_MODELS.includes(provider.model || '');
+
+    for await (const chunk of (isXAIImageModel ? parseXAIImageResponse(response) : parseStream(provider, response))) {
       if (chunk.type === 'text') {
         chunks.push(chunk.content);
         // Send incremental update
@@ -188,6 +190,13 @@ async function handleChatRequest(message, sendResponse) {
         });
       } else if (chunk.type === 'image') {
         images.push({ mimeType: chunk.mimeType, data: chunk.imageData });
+      } else if (chunk.type === 'error') {
+        // Send error message to be displayed
+        chrome.runtime.sendMessage({
+          type: 'CHAT_STREAM_CHUNK',
+          content: `\n\n⚠️ ${chunk.content}`,
+          requestId: message.requestId,
+        });
       } else if (chunk.type === 'tool_call' || chunk.type === 'tool_call_start') {
         if (chunk.type === 'tool_call_start') {
           currentToolCall = { id: chunk.id, name: chunk.name, arguments: '' };

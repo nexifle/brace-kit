@@ -5,6 +5,11 @@ import type {
   ProviderConfig,
   Conversation,
 } from '../types/index.ts';
+import {
+  saveImagesForConversation,
+  hydrateMessages,
+  deleteImagesByConversation,
+} from '../utils/imageDB.ts';
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. When the user shares page content or selected text, help them understand and work with it. Be concise and helpful.';
 
@@ -159,14 +164,30 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (id === state.activeConversationId) return;
 
-    // Save current conversation first
-    await state.saveActiveConversation();
+    // Jika conversation aktif kosong, hapus dari state sebelum switch
+    if (state.messages.length === 0 && state.activeConversationId) {
+      const currentId = state.activeConversationId;
+      set((s) => ({
+        conversations: s.conversations.filter((c) => c.id !== currentId),
+      }));
+    } else {
+      // Save current conversation first
+      await state.saveActiveConversation();
+    }
 
     // Load target conversation
     set({ activeConversationId: id });
     try {
       const data = await chrome.storage.local.get(`conv_${id}`);
-      const messages = data[`conv_${id}`] || [];
+      let messages = data[`conv_${id}`] || [];
+
+      // Hydrate gambar dari IndexedDB berdasarkan imageRef keys
+      try {
+        messages = await hydrateMessages(messages);
+      } catch (e) {
+        console.warn('[Store] Failed to hydrate images:', e);
+      }
+
       set({ messages });
 
       // Save to storage
@@ -181,6 +202,11 @@ export const useStore = create<AppState>((set, get) => ({
     const newConversations = state.conversations.filter((c) => c.id !== id);
 
     await chrome.storage.local.remove(`conv_${id}`);
+
+    // Cleanup gambar dari IndexedDB (async, tidak blocking)
+    deleteImagesByConversation(id).catch((e) =>
+      console.warn('[Store] Failed to cleanup images for deleted conversation:', e)
+    );
 
     if (id === state.activeConversationId) {
       if (newConversations.length > 0) {
@@ -331,7 +357,16 @@ export const useStore = create<AppState>((set, get) => ({
         updates.activeConversationId = data.activeConversationId;
         const convData = await chrome.storage.local.get(`conv_${data.activeConversationId}`);
         if (convData[`conv_${data.activeConversationId}`]) {
-          updates.messages = convData[`conv_${data.activeConversationId}`];
+          let messages = convData[`conv_${data.activeConversationId}`];
+
+          // Hydrate gambar dari IndexedDB saat extension pertama dibuka
+          try {
+            messages = await hydrateMessages(messages);
+          } catch (e) {
+            console.warn('[Store] Failed to hydrate images on load:', e);
+          }
+
+          updates.messages = messages;
         }
       }
 
@@ -344,14 +379,24 @@ export const useStore = create<AppState>((set, get) => ({
   saveToStorage: async () => {
     const state = get();
     try {
+      // Jangan simpan conversation aktif yang masih kosong (belum pernah kirim pesan)
+      const activeIsEmpty = state.messages.length === 0;
+      const conversationsToSave = state.conversations.filter((c) => {
+        if (c.id === state.activeConversationId) {
+          return !activeIsEmpty;
+        }
+        return true;
+      });
+
       await chrome.storage.local.set({
         providerConfig: state.providerConfig,
         providerKeys: state.providerKeys,
         customProviders: state.customProviders,
         mcpServers: state.mcpServers,
         enableGoogleSearch: state.enableGoogleSearch,
-        conversations: state.conversations,
-        activeConversationId: state.activeConversationId,
+        conversations: conversationsToSave,
+        // Jika aktif kosong, simpan null agar saat reload tidak coba load conversation ini
+        activeConversationId: activeIsEmpty ? null : state.activeConversationId,
         memories: state.memories,
         memoryEnabled: state.memoryEnabled,
       });
@@ -364,9 +409,40 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (!state.activeConversationId) return;
 
+    // Jangan simpan conversation yang masih kosong
+    if (state.messages.length === 0) return;
+
     try {
+      const convId = state.activeConversationId;
+
+      // Simpan gambar ke IndexedDB, dapat kembali key map per message
+      let imageKeyMap: string[][] = [];
+      try {
+        imageKeyMap = await saveImagesForConversation(convId, state.messages);
+      } catch (e) {
+        console.warn('[Store] IndexedDB save failed, images will not persist:', e);
+      }
+
+      // Buat messages untuk chrome.storage dengan imageRef menggantikan data base64
+      const messagesToSave = state.messages.map((msg, msgIdx) => {
+        if (!msg.generatedImages || msg.generatedImages.length === 0) {
+          return msg;
+        }
+
+        const msgKeys = imageKeyMap[msgIdx] || [];
+        const imagesWithRefs = msg.generatedImages.map((img, imgIdx) => {
+          const key = msgKeys[imgIdx];
+          if (key) {
+            return { mimeType: img.mimeType, data: '', imageRef: key };
+          }
+          return { mimeType: img.mimeType, data: '[IMAGE_DATA_NOT_SAVED]' };
+        });
+
+        return { ...msg, generatedImages: imagesWithRefs };
+      });
+
       await chrome.storage.local.set({
-        [`conv_${state.activeConversationId}`]: state.messages,
+        [`conv_${convId}`]: messagesToSave,
       });
     } catch (e) {
       console.warn('Failed to save conversation:', e);

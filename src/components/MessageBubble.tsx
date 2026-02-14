@@ -5,7 +5,7 @@ import { copyToClipboard } from '../utils/formatters.ts';
 import { useStore } from '../store/index.ts';
 import type { Message } from '../types/index.ts';
 import { TextFileViewer } from './TextFileViewer.tsx';
-import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from '../providers.ts';
+import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
 
 const turndownService = new TurndownService({
   headingStyle: 'atx',
@@ -48,7 +48,11 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const [textFileViewer, setTextFileViewer] = useState<TextFileViewerState>({ isOpen: false, name: '', content: '' });
   const setQuotedText = useStore((state) => state.setQuotedText);
   const currentModel = useStore((state) => state.providerConfig.model || '');
-  const isImageGenerationModel = GEMINI_NO_TOOLS_MODELS.includes(currentModel) || GEMINI_SEARCH_ONLY_MODELS.includes(currentModel);
+  const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
+  const isImageGenerationModel =
+    GEMINI_NO_TOOLS_MODELS.includes(currentModel) ||
+    GEMINI_SEARCH_ONLY_MODELS.includes(currentModel) ||
+    (currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel));
 
   const handleCopyCode = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -235,18 +239,38 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
   }, []);
 
+  // Handle link clicks - allow default behavior for external links
+  const handleLinkClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const link = target.closest('a');
+    if (!link) return;
+
+    // Check if it's an external link (has href and starts with http)
+    const href = link.getAttribute('href');
+    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+      // Allow default behavior - let the browser handle the link
+      // Chrome extension popup will handle this appropriately
+      return;
+    }
+
+    // For citation links or other internal links, prevent default
+    e.preventDefault();
+  }, []);
+
   useEffect(() => {
     const ref = bubbleRef.current;
     if (!ref) return;
 
     ref.addEventListener('click', handleCopyCode as unknown as EventListener);
     ref.addEventListener('click', handleTableActions as unknown as EventListener);
+    ref.addEventListener('click', handleLinkClick as unknown as EventListener);
 
     return () => {
       ref.removeEventListener('click', handleCopyCode as unknown as EventListener);
       ref.removeEventListener('click', handleTableActions as unknown as EventListener);
+      ref.removeEventListener('click', handleLinkClick as unknown as EventListener);
     };
-  }, [handleCopyCode, handleTableActions]);
+  }, [handleCopyCode, handleTableActions, handleLinkClick]);
 
   const roleLabel = message.role === 'user' ? 'You' : message.role === 'error' ? 'Error' : 'AI';
 

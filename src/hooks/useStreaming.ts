@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import type { ToolCall, GroundingMetadata, MCPTool, GeneratedImage } from '../types/index.ts';
-import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS } from '../providers.ts';
+import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
 import { useMemory } from './useMemory.ts';
 
 function addInlineCitations(text: string, groundingMetadata?: GroundingMetadata): string {
@@ -230,10 +230,13 @@ export function useStreaming() {
           
           try {
             const currentModel = store.providerConfig.model || '';
-            const isImageModel = GEMINI_NO_TOOLS_MODELS.includes(currentModel) || GEMINI_SEARCH_ONLY_MODELS.includes(currentModel);
-            const titleProviderConfig = isImageModel
+            const isGeminiImageModel = GEMINI_NO_TOOLS_MODELS.includes(currentModel) || GEMINI_SEARCH_ONLY_MODELS.includes(currentModel);
+            const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+            const titleProviderConfig = isGeminiImageModel
               ? { ...store.providerConfig, model: 'gemini-2.5-flash-lite' }
-              : store.providerConfig;
+              : isXAIImageModel
+                ? { ...store.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
+                : store.providerConfig;
             const response = await chrome.runtime.sendMessage({
               type: 'TITLE_GENERATE',
               messages: [

@@ -7,6 +7,8 @@ import type { ProviderFormat, Message, MCPTool } from './types/index.ts';
 export const GEMINI_NO_TOOLS_MODELS = ['gemini-2.5-flash-image'];
 // Gemini models that support google search but not function calling
 export const GEMINI_SEARCH_ONLY_MODELS = ['gemini-3-pro-image-preview'];
+// xAI image generation models
+export const XAI_IMAGE_MODELS = ['grok-2-image-1212', 'grok-imagine-image', 'grok-imagine-image-pro'];
 
 export interface ProviderPreset {
   id: string;
@@ -52,10 +54,11 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     id: 'xai',
     name: 'xAI (Grok)',
     apiUrl: 'https://api.x.ai/v1',
-    defaultModel: 'grok-2',
+    defaultModel: 'grok-4-1-fast-non-reasoning',
     format: 'openai',
     models: [],
     supportsModelFetch: true,
+    staticModels: ['grok-4-1-fast-non-reasoning', 'grok-2-image-1212', 'grok-imagine-image', 'grok-imagine-image-pro'],
   },
   deepseek: {
     id: 'deepseek',
@@ -79,6 +82,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
 
 export interface ChatOptions {
   enableGoogleSearch?: boolean;
+  aspectRatio?: string;
 }
 
 export async function fetchModels(provider: ProviderPreset & { apiKey?: string }): Promise<{ models?: string[]; error?: string }> {
@@ -185,6 +189,11 @@ export function formatRequest(
   tools: MCPTool[] = [],
   options: ChatOptions = {}
 ): RequestConfig {
+  // xAI image generation uses a separate non-streaming endpoint
+  if (provider.id === 'xai' && XAI_IMAGE_MODELS.includes(provider.model || '')) {
+    return formatXAIImageRequest(provider, messages, options);
+  }
+
   const { format } = provider;
 
   switch (format) {
@@ -197,6 +206,40 @@ export function formatRequest(
     default:
       return formatOpenAI(provider, messages, tools, options);
   }
+}
+
+function formatXAIImageRequest(
+  provider: ProviderPreset & { apiKey?: string; model?: string },
+  messages: Message[],
+  options: ChatOptions
+): RequestConfig {
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+  const prompt = typeof lastUserMessage?.content === 'string' ? lastUserMessage.content : '';
+
+  const body: Record<string, unknown> = {
+    model: provider.model || 'grok-imagine-image',
+    prompt,
+    n: 1,
+    response_format: 'b64_json',
+  };
+
+  if (options.aspectRatio) {
+    body.aspect_ratio = options.aspectRatio;
+  }
+
+  const url = `${provider.apiUrl.replace(/\/+$/, '')}/images/generations`;
+
+  return {
+    url,
+    options: {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${provider.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    },
+  };
 }
 
 function formatOpenAI(
@@ -440,7 +483,7 @@ function formatGemini(
 }
 
 export interface StreamChunk {
-  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata' | 'image';
+  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata' | 'image' | 'error';
   content?: string;
   id?: string;
   index?: number;
@@ -449,6 +492,19 @@ export interface StreamChunk {
   groundingMetadata?: unknown;
   mimeType?: string;
   imageData?: string;
+}
+
+export async function* parseXAIImageResponse(response: Response): AsyncGenerator<StreamChunk> {
+  const data = await response.json();
+  for (const item of data.data || []) {
+    if (item.b64_json) {
+      yield {
+        type: 'image',
+        mimeType: 'image/jpeg',
+        imageData: item.b64_json,
+      };
+    }
+  }
 }
 
 export async function* parseStream(provider: ProviderPreset, response: Response): AsyncGenerator<StreamChunk> {
@@ -579,6 +635,13 @@ async function* parseGeminiStream(response: Response): AsyncGenerator<StreamChun
         if (!candidates) continue;
 
         for (const candidate of candidates) {
+          // Check for finishReason indicating image generation failure
+          if (candidate.finishReason === 'IMAGE_SAFETY') {
+            const errorMessage = candidate.finishMessage || 'Unable to show the generated image. The image was filtered due to safety policies.';
+            yield { type: 'error', content: errorMessage };
+            continue;
+          }
+
           const parts = candidate.content?.parts;
           if (!parts) continue;
           for (const part of parts) {

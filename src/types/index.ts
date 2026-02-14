@@ -22,6 +22,17 @@ export interface Attachment {
 export interface GeneratedImage {
   mimeType: string;
   data: string;
+  imageRef?: string; // IndexedDB key, ada saat loaded dari storage sebelum hydration
+}
+
+export interface StoredImageRecord {
+  key: string;             // Format: img_{conversationId}_{msgIndex}_{imgIndex}
+  conversationId: string;
+  messageIndex: number;
+  imageIndex: number;
+  mimeType: string;
+  data: string;
+  createdAt: number;
 }
 
 export interface Message {

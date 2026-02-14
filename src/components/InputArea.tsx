@@ -7,9 +7,11 @@ import { useProvider } from '../hooks/useProvider.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
+import { XAI_IMAGE_MODELS } from '../providers.ts';
 
 export function InputArea() {
   const [text, setText] = useState('');
+  const [imageAspectRatio, setImageAspectRatio] = useState('auto');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastCursorPosRef = useRef<number>(0);
@@ -18,6 +20,9 @@ export function InputArea() {
   const { handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText } = usePageContext();
   const { providerInfo } = useProvider();
+  const currentModel = useStore((state) => state.providerConfig.model || '');
+  const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
+  const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
 
   const placeholder = store.pageContext
     ? 'Ask about this page...'
@@ -67,12 +72,12 @@ export function InputArea() {
 
   const handleSend = useCallback(() => {
     if (!text.trim() && store.attachments.length === 0) return;
-    sendMessage(text);
+    sendMessage(text, isXAIImageModel ? { aspectRatio: imageAspectRatio } : undefined);
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [text, store.attachments.length, sendMessage]);
+  }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -107,6 +112,32 @@ export function InputArea() {
       <PageContextPreview />
       <FilePreview />
       <SelectionPreview />
+      {isXAIImageModel && (
+        <div className="image-options-row">
+          <label className="image-options-label">Aspect Ratio:</label>
+          <select
+            className="image-options-select"
+            value={imageAspectRatio}
+            onChange={(e) => setImageAspectRatio(e.target.value)}
+            disabled={store.isStreaming}
+          >
+            <option value="auto">auto (Model selects best)</option>
+            <option value="1:1">1:1 (Square)</option>
+            <option value="16:9">16:9 (Landscape)</option>
+            <option value="9:16">9:16 (Portrait)</option>
+            <option value="4:3">4:3 (Standard)</option>
+            <option value="3:4">3:4 (Portrait)</option>
+            <option value="3:2">3:2 (Photo)</option>
+            <option value="2:3">2:3 (Photo Portrait)</option>
+            <option value="2:1">2:1 (Banner)</option>
+            <option value="1:2">1:2 (Header)</option>
+            <option value="19.5:9">19.5:9 (Modern Smartphone)</option>
+            <option value="9:19.5">9:19.5 (Smartphone Portrait)</option>
+            <option value="20:9">20:9 (Ultra-wide)</option>
+            <option value="9:20">9:20 (Ultra-wide Portrait)</option>
+          </select>
+        </div>
+      )}
       <div className="input-row">
         <div className="input-actions">
           <button
