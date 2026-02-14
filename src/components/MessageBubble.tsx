@@ -69,6 +69,112 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     });
   }, []);
 
+  // Handle table toolbar actions
+  const handleTableActions = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+
+    // Toggle download dropdown
+    const downloadBtn = target.closest('.table-download-btn');
+    if (downloadBtn) {
+      const dropdown = downloadBtn.closest('.table-dropdown');
+      if (dropdown) {
+        // Close other dropdowns first
+        document.querySelectorAll('.table-dropdown.open').forEach((el) => {
+          if (el !== dropdown) el.classList.remove('open');
+        });
+        dropdown.classList.toggle('open');
+        e.stopPropagation();
+      }
+      return;
+    }
+
+    // Close dropdown when clicking outside
+    const handleCloseDropdown = () => {
+      document.querySelectorAll('.table-dropdown.open').forEach((el) => {
+        el.classList.remove('open');
+      });
+    };
+
+    // Handle copy table dropdown toggle
+    const copyBtn = target.closest('.table-copy-btn');
+    if (copyBtn) {
+      const dropdown = copyBtn.closest('.table-dropdown');
+      if (dropdown) {
+        // Close other dropdowns first
+        document.querySelectorAll('.table-dropdown.open').forEach((el) => {
+          if (el !== dropdown) el.classList.remove('open');
+        });
+        dropdown.classList.toggle('open');
+        e.stopPropagation();
+      }
+      return;
+    }
+
+    // Handle dropdown items (copy and download actions)
+    const dropdownItem = target.closest('.table-dropdown-item');
+    if (dropdownItem) {
+      const action = dropdownItem.getAttribute('data-action');
+      const tableHtml = decodeURIComponent(dropdownItem.getAttribute('data-table') || '');
+
+      if (tableHtml) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = tableHtml;
+        const table = tempDiv.querySelector('table');
+
+        if (table) {
+          // Find the copy button to show feedback
+          const dropdown = dropdownItem.closest('.table-dropdown');
+          const copyBtn = dropdown?.querySelector('.table-copy-btn') as HTMLElement | null;
+
+          switch (action) {
+            case 'copy-csv':
+              copyTableAsCsv(table).then(() => {
+                if (copyBtn) showButtonFeedback(copyBtn);
+              });
+              break;
+            case 'copy-markdown':
+              copyTableAsMarkdown(table).then(() => {
+                if (copyBtn) showButtonFeedback(copyBtn);
+              });
+              break;
+            case 'copy-plain':
+              copyTableAsPlain(table).then(() => {
+                if (copyBtn) showButtonFeedback(copyBtn);
+              });
+              break;
+            case 'download-csv':
+              downloadTableAsCsv(table);
+              break;
+            case 'download-markdown':
+              downloadTableAsMarkdown(table);
+              break;
+          }
+        }
+      }
+
+      handleCloseDropdown();
+      return;
+    }
+
+    // Handle fullscreen
+    const fullscreenBtn = target.closest('.table-fullscreen-btn');
+    if (fullscreenBtn) {
+      const wrapper = fullscreenBtn.closest('.table-wrapper');
+      if (wrapper) {
+        wrapper.classList.toggle('fullscreen');
+        const btn = fullscreenBtn as HTMLElement;
+        const isFullscreen = wrapper.classList.contains('fullscreen');
+        btn.setAttribute('title', isFullscreen ? 'Exit fullscreen' : 'Fullscreen');
+      }
+      return;
+    }
+
+    // Close dropdowns when clicking elsewhere
+    if (!target.closest('.table-dropdown')) {
+      handleCloseDropdown();
+    }
+  }, []);
+
   const handleMouseUp = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
@@ -131,11 +237,13 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     if (!ref) return;
 
     ref.addEventListener('click', handleCopyCode as unknown as EventListener);
+    ref.addEventListener('click', handleTableActions as unknown as EventListener);
 
     return () => {
       ref.removeEventListener('click', handleCopyCode as unknown as EventListener);
+      ref.removeEventListener('click', handleTableActions as unknown as EventListener);
     };
-  }, [handleCopyCode]);
+  }, [handleCopyCode, handleTableActions]);
 
   const roleLabel = message.role === 'user' ? 'You' : message.role === 'error' ? 'Error' : 'AI';
 
@@ -349,6 +457,97 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       )}
     </div>
   );
+}
+
+// Helper functions for table copy
+function escapeCsvField(field: string): string {
+  // If field contains comma, quote, or newline, wrap in quotes
+  if (/[",\n\r]/.test(field)) {
+    return `"${field.replace(/"/g, '""')}"`;
+  }
+  return field;
+}
+
+function tableToCsv(table: HTMLTableElement): string {
+  const rows = Array.from(table.querySelectorAll('tr'));
+  return rows
+    .map((row) => {
+      const cells = Array.from(row.querySelectorAll('th, td'));
+      return cells.map((cell) => escapeCsvField(cell.textContent || '')).join(',');
+    })
+    .join('\n');
+}
+
+function tableToMarkdown(table: HTMLTableElement): string {
+  const rows = Array.from(table.querySelectorAll('tr'));
+  let markdown = '';
+
+  rows.forEach((row, rowIndex) => {
+    const cells = Array.from(row.querySelectorAll('th, td'));
+    const rowText = cells.map((cell) => cell.textContent || '').join(' | ');
+    markdown += `| ${rowText} |\n`;
+
+    // Add separator after header row
+    if (rowIndex === 0) {
+      const separator = cells.map(() => '---').join(' | ');
+      markdown += `| ${separator} |\n`;
+    }
+  });
+
+  return markdown;
+}
+
+function tableToPlain(table: HTMLTableElement): string {
+  const rows = Array.from(table.querySelectorAll('tr'));
+  return rows
+    .map((row) => {
+      const cells = Array.from(row.querySelectorAll('th, td'));
+      return cells.map((cell) => cell.textContent || '').join('\t');
+    })
+    .join('\n');
+}
+
+async function copyTableAsCsv(table: HTMLTableElement): Promise<void> {
+  const csv = tableToCsv(table);
+  await copyToClipboard(csv);
+}
+
+async function copyTableAsMarkdown(table: HTMLTableElement): Promise<void> {
+  const markdown = tableToMarkdown(table);
+  await copyToClipboard(markdown);
+}
+
+async function copyTableAsPlain(table: HTMLTableElement): Promise<void> {
+  const plain = tableToPlain(table);
+  await copyToClipboard(plain);
+}
+
+function showButtonFeedback(btn: HTMLElement): void {
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.classList.remove('copied');
+  }, 1500);
+}
+
+// Helper functions for table downloads
+function downloadTableAsCsv(table: HTMLTableElement) {
+  const csv = tableToCsv(table);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'table.csv';
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function downloadTableAsMarkdown(table: HTMLTableElement) {
+  const markdown = tableToMarkdown(table);
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'table.md';
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function MessageActions({
