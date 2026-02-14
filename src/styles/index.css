@@ -31,10 +31,16 @@
     --success: #34d399;
     --warning: #fbbf24;
 
+    /* --radius-xs: 4px;
     --radius-sm: 6px;
     --radius-md: 10px;
     --radius-lg: 14px;
-    --radius-xl: 18px;
+    --radius-xl: 18px; */
+    --radius-xs: 0px;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
+    --radius-xl: 0px;
 
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -222,7 +228,7 @@ body {
 
 #messages::-webkit-scrollbar-thumb {
     background: var(--bg-active);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
 }
 
 #messages::-webkit-scrollbar-thumb:hover {
@@ -519,7 +525,7 @@ body {
     background: rgba(129, 140, 248, 0.15);
     color: var(--accent-primary);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-optical-sizing: auto;
     font-size: 0.875em;
@@ -570,7 +576,7 @@ body {
     width: 60px;
     height: 60px;
     object-fit: cover;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border-subtle);
     cursor: pointer;
     transition: transform var(--transition-fast);
@@ -1231,7 +1237,7 @@ body {
 
 .settings-content::-webkit-scrollbar-thumb {
     background: var(--bg-active);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
 }
 
 .settings-section {
@@ -1941,7 +1947,7 @@ body {
 
 .history-list::-webkit-scrollbar-thumb {
     background: var(--bg-active);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
 }
 
 .history-item {
@@ -2034,8 +2040,13 @@ body {
 }
 
 @keyframes branch-pulse {
-    0% { background: rgba(167, 139, 250, 0.25); }
-    100% { background: rgba(167, 139, 250, 0.12); }
+    0% {
+        background: rgba(167, 139, 250, 0.25);
+    }
+
+    100% {
+        background: rgba(167, 139, 250, 0.12);
+    }
 }
 
 .history-item-title-row {
@@ -2059,7 +2070,7 @@ body {
     color: var(--accent-secondary);
     background: rgba(167, 139, 250, 0.15);
     border: 1px solid rgba(167, 139, 250, 0.3);
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     padding: 1px 5px;
     white-space: nowrap;
 }
