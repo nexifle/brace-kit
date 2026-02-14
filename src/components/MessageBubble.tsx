@@ -1,8 +1,23 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import TurndownService from 'turndown';
 import { renderMarkdown } from '../utils/markdown.ts';
 import { copyToClipboard } from '../utils/formatters.ts';
 import { useStore } from '../store/index.ts';
 import type { Message } from '../types/index.ts';
+
+const turndownService = new TurndownService({
+  headingStyle: 'atx',
+  bulletListMarker: '-',
+  codeBlockStyle: 'fenced',
+});
+
+// Remove citation superscripts from the converted markdown
+turndownService.addRule('citations', {
+  filter: (node) => {
+    return node.nodeName === 'SUP' && node.querySelector('a.citation-link') !== null;
+  },
+  replacement: () => '',
+});
 
 interface MessageBubbleProps {
   message: Message;
@@ -68,6 +83,11 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       return;
     }
 
+    // Capture HTML for conversion
+    const container = document.createElement('div');
+    container.appendChild(range.cloneContents());
+    const markdown = turndownService.turndown(container.innerHTML).trim();
+
     const rect = range.getBoundingClientRect();
     const bubbleRect = ref.getBoundingClientRect();
 
@@ -75,7 +95,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       visible: true,
       x: rect.left + rect.width / 2 - bubbleRect.left,
       y: rect.top - bubbleRect.top - 4,
-      text: selectedText,
+      text: markdown,
     });
   }, []);
 
