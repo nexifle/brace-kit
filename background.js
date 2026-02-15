@@ -191,10 +191,13 @@ async function handleChatRequest(message, sendResponse) {
       } else if (chunk.type === 'image') {
         images.push({ mimeType: chunk.mimeType, data: chunk.imageData });
       } else if (chunk.type === 'error') {
-        // Send error message to be displayed
+        // Add error to chunks so it's included in fullContent
+        const errorContent = `\n\n⚠️ ${chunk.content}`;
+        chunks.push(errorContent);
+        // Send error message to be displayed immediately
         chrome.runtime.sendMessage({
           type: 'CHAT_STREAM_CHUNK',
-          content: `\n\n⚠️ ${chunk.content}`,
+          content: errorContent,
           requestId: message.requestId,
         });
       } else if (chunk.type === 'tool_call' || chunk.type === 'tool_call_start') {
