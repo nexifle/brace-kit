@@ -5,6 +5,7 @@ import { copyToClipboard } from '../utils/formatters.ts';
 import { useStore } from '../store/index.ts';
 import type { Message } from '../types/index.ts';
 import { TextFileViewer } from './TextFileViewer.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
 
 const turndownService = new TurndownService({
@@ -27,6 +28,7 @@ interface MessageBubbleProps {
   messageIndex?: number;
   onBranch?: (index: number) => void;
   onRegenerate?: (index: number) => void;
+  onEdit?: (index: number, text: string) => void;
 }
 
 interface QuotePopupState {
@@ -42,10 +44,19 @@ interface TextFileViewerState {
   content: string;
 }
 
-export function MessageBubble({ message, isStreaming, messageIndex, onBranch, onRegenerate }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming, messageIndex, onBranch, onRegenerate, onEdit }: MessageBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [quotePopup, setQuotePopup] = useState<QuotePopupState>({ visible: false, x: 0, y: 0, text: '' });
   const [textFileViewer, setTextFileViewer] = useState<TextFileViewerState>({ isOpen: false, name: '', content: '' });
+
+  // Edit state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const messages = useStore((state) => state.messages);
   const setQuotedText = useStore((state) => state.setQuotedText);
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
@@ -53,6 +64,83 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     GEMINI_NO_TOOLS_MODELS.includes(currentModel) ||
     GEMINI_SEARCH_ONLY_MODELS.includes(currentModel) ||
     (currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel));
+
+  // Check if there are messages after this one
+  const hasAfterMessages = messageIndex !== undefined && messageIndex < messages.length - 1;
+
+  // Focus textarea when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      // Place cursor at the end
+      textareaRef.current.selectionStart = textareaRef.current.value.length;
+      textareaRef.current.selectionEnd = textareaRef.current.value.length;
+    }
+  }, [isEditing]);
+
+  // Handle entering edit mode
+  const handleEditClick = useCallback(() => {
+    const contentToEdit = message.displayContent || message.content;
+    setEditText(contentToEdit);
+    setIsEditing(true);
+  }, [message.displayContent, message.content]);
+
+  // Handle submitting the edit
+  const handleSubmit = useCallback(() => {
+    if (!editText.trim()) return;
+
+    if (hasAfterMessages) {
+      setShowSubmitConfirm(true);
+    } else {
+      // No confirmation needed if no messages after
+      if (onEdit && messageIndex !== undefined) {
+        onEdit(messageIndex, editText);
+      }
+      setIsEditing(false);
+      setEditText('');
+    }
+  }, [editText, hasAfterMessages, onEdit, messageIndex]);
+
+  // Handle confirmed submit
+  const handleConfirmSubmit = useCallback(() => {
+    setShowSubmitConfirm(false);
+    if (onEdit && messageIndex !== undefined) {
+      onEdit(messageIndex, editText);
+    }
+    setIsEditing(false);
+    setEditText('');
+  }, [editText, onEdit, messageIndex]);
+
+  // Handle canceling the edit
+  const handleCancel = useCallback(() => {
+    const originalText = message.displayContent || message.content;
+    if (editText !== originalText) {
+      // Show confirmation if there are unsaved changes
+      setShowCancelConfirm(true);
+    } else {
+      // No changes, just exit edit mode
+      setIsEditing(false);
+      setEditText('');
+    }
+  }, [editText, message.displayContent, message.content]);
+
+  // Handle confirmed cancel
+  const handleConfirmCancel = useCallback(() => {
+    setShowCancelConfirm(false);
+    setIsEditing(false);
+    setEditText('');
+  }, []);
+
+  // Handle keyboard shortcuts
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+    }
+  }, [handleSubmit, handleCancel]);
 
   const handleCopyCode = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -275,12 +363,49 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const roleLabel = message.role === 'user' ? 'You' : message.role === 'error' ? 'Error' : 'AI';
 
   const renderedContent = useMemo(() => {
+    // If in edit mode for user message, show edit UI instead
+    if (isEditing && message.role === 'user') {
+      return (
+        <div className="message-edit-container">
+          <textarea
+            ref={textareaRef}
+            className="message-edit-textarea"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <div className="message-edit-actions">
+            <button
+              className="message-edit-btn cancel"
+              onClick={handleCancel}
+              title="Cancel (Escape)"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              Cancel
+            </button>
+            <button
+              className="message-edit-btn submit"
+              onClick={handleSubmit}
+              title="Submit (Enter)"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Submit
+            </button>
+          </div>
+        </div>
+      );
+    }
     if (message.role === 'assistant' || message.role === 'user') {
       const contentToRender = message.displayContent || message.content;
       return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender) }} />;
     }
     return <>{message.displayContent || message.content}</>;
-  }, [message.content, message.displayContent, message.role]);
+  }, [isEditing, editText, message.content, message.displayContent, message.role]);
 
   const groundingChunks = message.groundingMetadata?.groundingChunks;
 
@@ -325,9 +450,9 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   }
 
   return (
-    <div className={`message ${message.role}`}>
+    <div className={`message ${message.role} ${isEditing ? 'editing' : ''}`}>
       <div className="message-role">{roleLabel}</div>
-      <div className="message-bubble" ref={bubbleRef} onMouseUp={handleMouseUp}>
+      <div className={`message-bubble ${isEditing ? 'editing' : ''}`} ref={bubbleRef} onMouseUp={handleMouseUp}>
         {message.pageContext && (
           <div className="page-attachment">
             <div className="page-attachment-icon">
@@ -494,7 +619,20 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       )}
       {message.role === 'user' && !isStreaming && messageIndex !== undefined && (
         <div className="message-actions">
-          {onRegenerate && (
+          {onEdit && !isEditing && (
+            <button
+              className="msg-action-btn"
+              onClick={handleEditClick}
+              title="Edit message"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              <span>Edit</span>
+            </button>
+          )}
+          {onRegenerate && !isEditing && (
             <button
               className="msg-action-btn"
               onClick={() => onRegenerate(messageIndex)}
@@ -508,7 +646,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
               <span>Regenerate</span>
             </button>
           )}
-          {onBranch && (
+          {onBranch && !isEditing && (
             <button
               className="msg-action-btn"
               onClick={() => onBranch(messageIndex)}
@@ -525,6 +663,30 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
           )}
         </div>
       )}
+
+      {/* Confirm Dialog for Submit with after-messages */}
+      <ConfirmDialog
+        isOpen={showSubmitConfirm}
+        title="Confirm Edit"
+        message="Editing this message will clear all subsequent messages and regenerate the response. Continue?"
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        onConfirm={handleConfirmSubmit}
+        onCancel={() => setShowSubmitConfirm(false)}
+      />
+
+      {/* Confirm Dialog for Cancel with changes */}
+      <ConfirmDialog
+        isOpen={showCancelConfirm}
+        title="Discard Changes"
+        message="You have unsaved changes. Are you sure you want to discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        variant="danger"
+        onConfirm={handleConfirmCancel}
+        onCancel={() => setShowCancelConfirm(false)}
+      />
+
       {textFileViewer.isOpen && (
         <TextFileViewer
           isOpen={textFileViewer.isOpen}

@@ -908,19 +908,22 @@ body {
 .image-generation-skeleton-shimmer {
     width: 100%;
     aspect-ratio: 5 / 4;
-    background: linear-gradient(
-        90deg,
-        var(--bg-secondary) 25%,
-        var(--bg-hover) 50%,
-        var(--bg-secondary) 75%
-    );
+    background: linear-gradient(90deg,
+            var(--bg-secondary) 25%,
+            var(--bg-hover) 50%,
+            var(--bg-secondary) 75%);
     background-size: 200% 100%;
     animation: skeleton-shimmer 1.6s ease-in-out infinite;
 }
 
 @keyframes skeleton-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
 }
 
 .image-generation-skeleton-label {
@@ -946,8 +949,17 @@ body {
 }
 
 @keyframes pulse-dot {
-    0%, 100% { opacity: 0.3; transform: scale(0.8); }
-    50% { opacity: 1; transform: scale(1); }
+
+    0%,
+    100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 /* Page attachment in message bubble */
@@ -2832,6 +2844,7 @@ body {
     word-break: break-word;
     margin: 0;
 }
+
 /* ==================== Gallery View ==================== */
 
 .gallery-view {
@@ -3296,4 +3309,186 @@ body {
 
 .warning-icon {
     font-size: 1rem;
+}
+
+/* ==================== CONFIRM DIALOG ==================== */
+.confirm-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+}
+
+.confirm-dialog {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+    box-shadow: var(--shadow-lg);
+    animation: slideIn 0.2s ease;
+}
+
+.confirm-dialog-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 12px 0;
+}
+
+.confirm-dialog-message {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0 0 20px 0;
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.confirm-dialog-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.confirm-dialog-btn.cancel {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+}
+
+.confirm-dialog-btn.cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--text-tertiary);
+}
+
+.confirm-dialog-btn.confirm {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+.confirm-dialog-btn.confirm:hover {
+    box-shadow: var(--accent-glow);
+    transform: translateY(-1px);
+}
+
+.confirm-dialog-btn.confirm.danger {
+    background: var(--danger);
+}
+
+.confirm-dialog-btn.confirm.danger:hover {
+    box-shadow: 0 0 16px rgba(248, 113, 113, 0.4);
+}
+
+/* ==================== MESSAGE EDIT UI ==================== */
+/* When message is in edit mode, expand to full width */
+.message.user.editing {
+    width: 100%;
+    max-width: 100%;
+}
+
+.message.user .message-bubble.editing {
+    width: 100%;
+    max-width: 100%;
+}
+
+.message-edit-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.message-edit-textarea {
+    margin-top: 12px;
+    width: 100%;
+    min-height: 80px;
+    max-height: 640px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-active);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    resize: vertical;
+    border-radius: var(--radius-sm);
+    outline: none;
+    box-sizing: border-box;
+    overflow-y: auto;
+    /* Auto-resize based on content (Chrome 123+) */
+    field-sizing: content;
+}
+
+.message-edit-textarea:focus {
+    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.15);
+}
+
+.message-edit-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.message-edit-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.message-edit-btn.cancel {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+}
+
+.message-edit-btn.cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.message-edit-btn.submit {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+.message-edit-btn.submit:hover {
+    box-shadow: var(--accent-glow);
+}
+
+.message-edit-btn.edit {
+    background: transparent;
+    color: var(--text-tertiary);
+    padding: 3px 8px;
+    font-size: 0.75rem;
+}
+
+.message-edit-btn.edit:hover {
+    color: var(--accent-primary);
+    background: rgba(129, 140, 248, 0.1);
 }

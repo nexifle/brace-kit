@@ -399,12 +399,109 @@ export function useChat() {
     }
   }, [store, buildAPIMessagesFromList]);
 
+  const editMessage = useCallback(async (messageIndex: number, newText: string) => {
+    if (store.isStreaming) return;
+
+    // Get the message being edited
+    const messageToEdit = store.messages[messageIndex];
+    if (!messageToEdit || messageToEdit.role !== 'user') return;
+
+    // Determine display content and actual content
+    // If the original had pageContext or selectedText, we need to preserve those prefixes
+    let newContent = newText;
+    let newDisplayContent = newText;
+
+    // Check if original message had page context prefix
+    if (messageToEdit.pageContext) {
+      newContent = `[Page Context]\nTitle: ${messageToEdit.pageContext.pageTitle}\nURL: ${messageToEdit.pageContext.pageUrl}\n${messageToEdit.pageContext.metaDescription ? `Description: ${messageToEdit.pageContext.metaDescription}\n` : ''}\nContent:\n${messageToEdit.pageContext.content}\n\n[User Message]\n${newText}`;
+    }
+
+    // Check if original message had selected text prefix
+    if (messageToEdit.selectedText) {
+      const selPrefix = messageToEdit.pageContext
+        ? ''
+        : `[From: ${messageToEdit.selectedText.pageTitle}]\n`;
+      newContent = `${selPrefix}[Selected Text]\n"${messageToEdit.selectedText.selectedText}"\n\n[User Message]\n${newText}`;
+    }
+
+    // Truncate messages after the edited message
+    const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
+
+    // Update the message at the specified index with new content
+    const updatedMessage: Message = {
+      ...messageToEdit,
+      content: newContent,
+      displayContent: newDisplayContent,
+    };
+    messagesUpToIndex[messageIndex] = updatedMessage;
+
+    // Update the store with truncated messages
+    store.setMessages(messagesUpToIndex);
+
+    // Build API messages from the updated list
+    const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);
+
+    // Get MCP tools
+    let tools: MCPTool[] = [];
+    try {
+      const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
+      if (mcpRes?.tools) {
+        const enabledServerIds = new Set(
+          store.mcpServers.filter((s) => s.enabled !== false).map((s) => s.id)
+        );
+        tools = mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) =>
+          enabledServerIds.has(tool._serverId || '')
+        );
+      }
+    } catch {
+      // no MCP tools
+    }
+
+    // Start streaming
+    store.setIsStreaming(true);
+    store.setStreamingContent('');
+    const requestId = `req_${Date.now()}`;
+    store.setCurrentRequestId(requestId);
+
+    const currentModel = store.providerConfig.model || '';
+    const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
+    const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+    const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
+
+    const chatOptions = {
+      enableGoogleSearch:
+        store.enableGoogleSearch &&
+        isGemini &&
+        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
+    };
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'CHAT_REQUEST',
+        messages: apiMessages,
+        providerConfig: store.providerConfig,
+        tools: (supportsFunctionCalling && !isXAIImageModel) ? tools : [],
+        options: chatOptions,
+        requestId,
+      });
+
+      if (response?.error) {
+        store.addMessage({ role: 'error', content: response.error });
+        store.setIsStreaming(false);
+      }
+    } catch (e) {
+      store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
+      store.setIsStreaming(false);
+    }
+  }, [store, buildAPIMessagesFromList]);
+
   return {
     sendMessage,
     stopStreaming,
     newChat,
     branchFrom,
     regenerateFrom,
+    editMessage,
     getProvider,
     isCustomProvider,
     buildAPIMessages,

@@ -8,7 +8,7 @@ export function MessageList() {
   const messages = useStore((state) => state.messages);
   const isStreaming = useStore((state) => state.isStreaming);
   const streamingContent = useStore((state) => state.streamingContent);
-  const { branchFrom, regenerateFrom } = useChat();
+  const { branchFrom, regenerateFrom, editMessage } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
@@ -81,6 +81,7 @@ export function MessageList() {
             messageIndex={idx}
             onBranch={branchFrom}
             onRegenerate={regenerateFrom}
+            onEdit={editMessage}
           />
         );
       })}
