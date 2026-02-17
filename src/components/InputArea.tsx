@@ -7,7 +7,7 @@ import { useProvider } from '../hooks/useProvider.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
-import { XAI_IMAGE_MODELS } from '../providers.ts';
+import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
 
 export function InputArea() {
   const [text, setText] = useState('');
@@ -23,6 +23,15 @@ export function InputArea() {
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+  const isGeminiImageModel = currentProviderId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
+  const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
+
+  // Update default aspect ratio when provider changes (Gemini doesn't support 'auto')
+  useEffect(() => {
+    if (isGeminiImageModel && imageAspectRatio === 'auto') {
+      setImageAspectRatio('1:1');
+    }
+  }, [isGeminiImageModel, imageAspectRatio]);
 
   const placeholder = store.pageContext
     ? 'Ask about this page...'
@@ -72,7 +81,7 @@ export function InputArea() {
 
   const handleSend = useCallback(() => {
     if (!text.trim() && store.attachments.length === 0) return;
-    sendMessage(text, isXAIImageModel ? { aspectRatio: imageAspectRatio } : undefined);
+    sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : undefined);
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -112,7 +121,7 @@ export function InputArea() {
       <PageContextPreview />
       <FilePreview />
       <SelectionPreview />
-      {isXAIImageModel && (
+      {isImageGenerationModel && (
         <div className="image-options-row">
           <label className="image-options-label">Aspect Ratio:</label>
           <select
@@ -121,7 +130,7 @@ export function InputArea() {
             onChange={(e) => setImageAspectRatio(e.target.value)}
             disabled={store.isStreaming}
           >
-            <option value="auto">auto (Model selects best)</option>
+            {isXAIImageModel && <option value="auto">auto (Model selects best)</option>}
             <option value="1:1">1:1 (Square)</option>
             <option value="16:9">16:9 (Landscape)</option>
             <option value="9:16">9:16 (Portrait)</option>
@@ -129,12 +138,15 @@ export function InputArea() {
             <option value="3:4">3:4 (Portrait)</option>
             <option value="3:2">3:2 (Photo)</option>
             <option value="2:3">2:3 (Photo Portrait)</option>
-            <option value="2:1">2:1 (Banner)</option>
-            <option value="1:2">1:2 (Header)</option>
-            <option value="19.5:9">19.5:9 (Modern Smartphone)</option>
-            <option value="9:19.5">9:19.5 (Smartphone Portrait)</option>
-            <option value="20:9">20:9 (Ultra-wide)</option>
-            <option value="9:20">9:20 (Ultra-wide Portrait)</option>
+            {isXAIImageModel && <option value="2:1">2:1 (Banner)</option>}
+            {isXAIImageModel && <option value="1:2">1:2 (Header)</option>}
+            {isGeminiImageModel && <option value="4:5">4:5 (Portrait)</option>}
+            {isGeminiImageModel && <option value="5:4">5:4 (Landscape)</option>}
+            {isGeminiImageModel && <option value="21:9">21:9 (Ultra-wide)</option>}
+            {isXAIImageModel && <option value="19.5:9">19.5:9 (Modern Smartphone)</option>}
+            {isXAIImageModel && <option value="9:19.5">9:19.5 (Smartphone Portrait)</option>}
+            {isXAIImageModel && <option value="20:9">20:9 (Ultra-wide)</option>}
+            {isXAIImageModel && <option value="9:20">9:20 (Ultra-wide Portrait)</option>}
           </select>
         </div>
       )}

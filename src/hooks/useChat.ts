@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { Message, Attachment, APIMessage, PageContext, SelectedText } from '../types/index.ts';
-import { PROVIDER_PRESETS, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
+import { PROVIDER_PRESETS, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
 import type { MCPTool } from '../types/index.ts';
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../types/index.ts';
 
@@ -245,6 +245,7 @@ export function useChat() {
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
     const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+    const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
 
     const chatOptions: { enableGoogleSearch: boolean; aspectRatio?: string } = {
@@ -254,7 +255,7 @@ export function useChat() {
         !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
 
-    if (isXAIImageModel && sendOptions?.aspectRatio) {
+    if ((isXAIImageModel || isGeminiImageModel) && sendOptions?.aspectRatio) {
       chatOptions.aspectRatio = sendOptions.aspectRatio;
     }
 
@@ -370,6 +371,8 @@ export function useChat() {
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
     const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+    const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
+    const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
 
     const chatOptions = {
@@ -384,7 +387,7 @@ export function useChat() {
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools: (supportsFunctionCalling && !isXAIImageModel) ? tools : [],
+        tools: (supportsFunctionCalling && !isImageGenerationModel) ? tools : [],
         options: chatOptions,
         requestId,
       });
@@ -466,6 +469,8 @@ export function useChat() {
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
     const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+    const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
+    const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
 
     const chatOptions = {
@@ -480,7 +485,7 @@ export function useChat() {
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools: (supportsFunctionCalling && !isXAIImageModel) ? tools : [],
+        tools: (supportsFunctionCalling && !isImageGenerationModel) ? tools : [],
         options: chatOptions,
         requestId,
       });

@@ -7,6 +7,8 @@ import type { ProviderFormat, Message, MCPTool } from './types/index.ts';
 export const GEMINI_NO_TOOLS_MODELS = ['gemini-2.5-flash-image'];
 // Gemini models that support google search but not function calling
 export const GEMINI_SEARCH_ONLY_MODELS = ['gemini-3-pro-image-preview'];
+// Gemini image generation models that support aspect ratio selection
+export const GEMINI_IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
 // xAI image generation models
 export const XAI_IMAGE_MODELS = ['grok-2-image-1212', 'grok-imagine-image', 'grok-imagine-image-pro'];
 
@@ -514,6 +516,35 @@ function formatGemini(
   }
 
   const model = provider.model || provider.defaultModel;
+
+  // Add aspect ratio for Gemini image generation models
+  // Supported ratios: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
+  if (options.aspectRatio && GEMINI_IMAGE_MODELS.includes(model)) {
+    const aspectRatioMap: Record<string, string> = {
+      '1:1': '1:1',
+      '16:9': '16:9',
+      '9:16': '9:16',
+      '4:3': '4:3',
+      '3:4': '3:4',
+      '3:2': '3:2',
+      '2:3': '2:3',
+      '4:5': '4:5',
+      '5:4': '5:4',
+      '21:9': '21:9',
+    };
+    const geminiAspectRatio = aspectRatioMap[options.aspectRatio];
+    if (geminiAspectRatio) {
+      const existingConfig = (body.generationConfig as Record<string, unknown>) || {};
+      body.generationConfig = {
+        ...existingConfig,
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: {
+          ...(existingConfig.imageConfig as Record<string, unknown> || {}),
+          aspectRatio: geminiAspectRatio,
+        },
+      };
+    }
+  }
 
   const supportsGoogleSearch = !GEMINI_NO_TOOLS_MODELS.includes(model);
   const supportsFunctionCalling = !GEMINI_NO_TOOLS_MODELS.includes(model) && !GEMINI_SEARCH_ONLY_MODELS.includes(model);
