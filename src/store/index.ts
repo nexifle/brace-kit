@@ -73,6 +73,7 @@ export const useStore = create<AppState>((set, get) => ({
   view: 'chat',
   historyDrawerOpen: false,
   settingsSection: null,
+  showSystemPromptEditor: false,
 
   // Security
   security: {
@@ -191,7 +192,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     // Load target conversation
-    set({ activeConversationId: id });
+    set({ activeConversationId: id, showSystemPromptEditor: false });
     try {
       const data = await chrome.storage.local.get(`conv_${id}`);
       let messages = data[`conv_${id}`] || [];
@@ -256,6 +257,16 @@ export const useStore = create<AppState>((set, get) => ({
     get().saveToStorage();
   },
 
+  updateConversationSystemPrompt: (id: string, systemPrompt: string) => {
+    set((state) => {
+      const updated = state.conversations.map((c) =>
+        c.id === id ? { ...c, systemPrompt, updatedAt: Date.now() } : c
+      );
+      return { conversations: updated };
+    });
+    get().saveToStorage();
+  },
+
   setActiveConversationId: (activeConversationId) => set({ activeConversationId }),
 
   addMemory: (memory) =>
@@ -301,6 +312,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   toggleHistoryDrawer: () =>
     set((state) => ({ historyDrawerOpen: !state.historyDrawerOpen })),
+  
+  setShowSystemPromptEditor: (showSystemPromptEditor) => set({ showSystemPromptEditor }),
 
   // Security Actions
   setSecurity: (security) =>

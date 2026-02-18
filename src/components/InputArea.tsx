@@ -183,6 +183,17 @@ export function InputArea() {
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
+          <button
+            id="btn-prompt"
+            className={`input-icon-btn ${store.showSystemPromptEditor ? 'active' : ''}`}
+            title="System Prompt"
+            onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+          </button>
           <input
             type="file"
             ref={fileInputRef}

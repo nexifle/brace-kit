@@ -96,7 +96,9 @@ export function useChat() {
   const buildAPIMessages = useCallback((): APIMessage[] => {
     const msgs: APIMessage[] = [];
     const memoryBlock = buildMemoryBlock();
-    let systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
+    const activeConv = store.conversations.find(c => c.id === store.activeConversationId);
+    const basePrompt = activeConv?.systemPrompt ?? store.providerConfig.systemPrompt ?? '';
+    let systemContent = basePrompt + memoryBlock;
 
     const historyMessages: APIMessage[] = [];
     for (const msg of store.messages) {
@@ -118,12 +120,14 @@ export function useChat() {
     }
     
     return [...msgs, ...historyMessages];
-  }, [store.messages, store.providerConfig.systemPrompt, buildMemoryBlock, formatMessageForAPI]);
+  }, [store.messages, store.providerConfig.systemPrompt, store.activeConversationId, store.conversations, buildMemoryBlock, formatMessageForAPI]);
 
   const buildAPIMessagesFromList = useCallback((messages: Message[]): APIMessage[] => {
     const msgs: APIMessage[] = [];
     const memoryBlock = buildMemoryBlock();
-    let systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
+    const activeConv = store.conversations.find(c => c.id === store.activeConversationId);
+    const basePrompt = activeConv?.systemPrompt ?? store.providerConfig.systemPrompt ?? '';
+    let systemContent = basePrompt + memoryBlock;
 
     const historyMessages: APIMessage[] = [];
     for (const msg of messages) {
@@ -145,7 +149,7 @@ export function useChat() {
     }
     
     return [...msgs, ...historyMessages];
-  }, [store.providerConfig.systemPrompt, buildMemoryBlock, formatMessageForAPI]);
+  }, [store.providerConfig.systemPrompt, store.activeConversationId, store.conversations, buildMemoryBlock, formatMessageForAPI]);
 
   const compactConversation = useCallback(async () => {
     if (store.isCompacting) return;
@@ -442,8 +446,14 @@ Your output language should be the same as the conversation, if conversation usi
     const parentId = store.activeConversationId;
     const parentConv = store.conversations.find((c) => c.id === parentId);
     const branchTitle = parentConv?.title ?? 'New Chat';
+    const branchSystemPrompt = parentConv?.systemPrompt;
     await store.saveActiveConversation();
     const newConv = store.createConversation({ title: branchTitle, branchedFromId: parentId ?? undefined });
+    
+    if (branchSystemPrompt) {
+      store.updateConversationSystemPrompt(newConv.id, branchSystemPrompt);
+    }
+
     store.setMessages(messagesToCopy);
     await chrome.storage.local.set({ [`conv_${newConv.id}`]: messagesToCopy });
     await store.saveToStorage();

@@ -195,6 +195,7 @@ export interface Conversation {
   updatedAt: number;
   branchedFromId?: string;
   pinned?: boolean;
+  systemPrompt?: string;
 }
 
 // ==================== File Attachment Types ====================
@@ -273,6 +274,7 @@ export interface AppState {
   view: 'chat' | 'settings' | 'gallery';
   historyDrawerOpen: boolean;
   settingsSection: string | null;
+  showSystemPromptEditor: boolean;
 
   // Security
   security: SecuritySettings;
@@ -308,6 +310,7 @@ export interface AppState {
   deleteConversation: (id: string) => Promise<void>;
   updateConversationTitle: (id: string, title: string) => void;
   togglePinConversation: (id: string) => void;
+  updateConversationSystemPrompt: (id: string, prompt: string) => void;
   setActiveConversationId: (id: string | null) => void;
 
   addMemory: (memory: Memory) => void;
@@ -327,6 +330,7 @@ export interface AppState {
   setView: (view: 'chat' | 'settings' | 'gallery') => void;
   setHistoryDrawerOpen: (open: boolean) => void;
   toggleHistoryDrawer: () => void;
+  setShowSystemPromptEditor: (show: boolean) => void;
 
   // Security Actions
   setSecurity: (security: Partial<SecuritySettings>) => void;

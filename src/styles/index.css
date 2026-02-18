@@ -3698,3 +3698,175 @@ body {
     font-size: 11px;
     color: var(--text-tertiary);
 }
+
+/* System Prompt Editor */
+.system-prompt-editor {
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    position: absolute;
+    width: 100%;
+    z-index: 4;
+    animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.editor-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    opacity: 0.9;
+}
+
+.editor-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+}
+
+.editor-body textarea {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    resize: none;
+    outline: none;
+    min-height: 120px;
+    font-family: inherit;
+}
+
+.editor-body textarea::placeholder {
+    color: var(--text-tertiary);
+    opacity: 0.4;
+}
+
+/* Custom Scrollbar for Textarea */
+.editor-body textarea::-webkit-scrollbar {
+    width: 4px;
+}
+
+.editor-body textarea::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.editor-body textarea::-webkit-scrollbar-thumb {
+    background: var(--bg-active);
+    border-radius: var(--radius-xs);
+}
+
+.editor-body textarea::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+}
+
+.editor-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+}
+
+.editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.reset-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 400;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: opacity 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.8;
+}
+
+.reset-btn:hover:not(:disabled) {
+    opacity: 1;
+}
+
+.reset-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.3;
+}
+
+.prompt-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+
+.status-dot.active {
+    background: var(--text-secondary);
+}
+
+.close-btn {
+    opacity: 1;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.close-btn:hover {
+    background: var(--bg-hover);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.close-btn:active {
+    transform: translateY(0);
+    background: var(--bg-secondary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
