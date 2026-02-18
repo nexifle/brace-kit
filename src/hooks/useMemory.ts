@@ -1,18 +1,22 @@
 import { useCallback } from 'react';
 import { useStore } from '../store/index.ts';
-import type { Memory, MemoryCategory } from '../types/index.ts';
+import type { Memory, MemoryCategory, Message } from '../types/index.ts';
 import { MEMORY_CATEGORIES } from '../types/index.ts';
 
 export function useMemory() {
   const store = useStore();
 
-  const extractMemories = useCallback(async () => {
+  const extractMemories = useCallback(async (explicitMessages?: Message[]) => {
     if (!store.memoryEnabled) return;
-    if (store.messages.length < 2) return;
+
+    // Use explicit messages if provided, otherwise read from store
+    const messagesToAnalyze = explicitMessages || store.messages;
+
+    if (messagesToAnalyze.length < 2) return;
     if (store.memories.length >= 100) return; // Stop if already at limit
 
     // Get last 8 messages for context
-    const recentMessages = store.messages.slice(-8);
+    const recentMessages = messagesToAnalyze.slice(-8);
     const existingMemories = store.memories.map((m) => `[${m.category}] ${m.content}`).join('\n');
     const remainingSlots = 100 - store.memories.length;
 

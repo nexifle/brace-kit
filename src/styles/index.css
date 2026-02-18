@@ -286,6 +286,11 @@ body {
     overflow-wrap: break-word;
 }
 
+.message-bubble img {
+    max-width: 100%;
+    height: auto;
+}
+
 .message-bubble .page-attachment {
     margin-top: 8px;
 }

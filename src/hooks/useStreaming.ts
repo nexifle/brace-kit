@@ -40,8 +40,28 @@ export function useStreaming() {
   const currentToolCallRef = useRef<Partial<ToolCall> | null>(null);
   const groundingMetadataRef = useRef<GroundingMetadata | null>(null);
   const imagesRef = useRef<GeneratedImage[]>([]);
+  const processedToolCallsRef = useRef<Set<string>>(new Set());
 
   const handleToolCalls = useCallback(async (toolCalls: ToolCall[]) => {
+    // Check if these specific tool calls have already been processed
+    // This prevents double execution of the same tool calls
+    const toolCallKey = toolCalls.map(tc => tc.id).sort().join(',');
+    if (processedToolCallsRef.current.has(toolCallKey)) {
+      console.log('[useStreaming] Tool calls already processed, skipping:', toolCallKey);
+      return;
+    }
+
+    processedToolCallsRef.current.add(toolCallKey);
+
+    // Clean up old processed keys if too many
+    if (processedToolCallsRef.current.size > 50) {
+      const iterator = processedToolCallsRef.current.values();
+      const first = iterator.next();
+      if (!first.done) {
+        processedToolCallsRef.current.delete(first.value);
+      }
+    }
+
     store.setIsStreaming(true);
 
     for (const tc of toolCalls) {
@@ -115,19 +135,26 @@ export function useStreaming() {
       msgs.push({ role: 'system', content: systemContent });
     }
 
-    for (const msg of store.messages) {
+    // Build message history from store
+    // Use getState() to ensure we have the latest messages including tool results
+    const currentMessages = useStore.getState().messages;
+
+    for (const msg of currentMessages) {
       if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
         const assistantMsg: any = { role: 'assistant', content: msg.content || '' };
-        assistantMsg.toolCalls = msg.toolCalls.map((tc) => ({
+        assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
           id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments || '{}',
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: tc.arguments || '{}',
+          },
         }));
         msgs.push(assistantMsg);
       } else if (msg.role === 'tool') {
         msgs.push({
           role: 'tool',
-          toolCallId: msg.toolCallId,
+          tool_call_id: msg.toolCallId,
           name: msg.name,
           content: msg.content,
         });
@@ -190,19 +217,17 @@ export function useStreaming() {
     const contentWithCitations = addInlineCitations(fullContent, groundingMetadata);
 
     // Always add assistant message - needed for tool call context in follow-up requests
-    {
-      const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata; generatedImages?: GeneratedImage[] } = { role: 'assistant', content: contentWithCitations || '' };
-      if (toolCalls && toolCalls.length > 0) {
-        assistantMsg.toolCalls = toolCalls;
-      }
-      if (groundingMetadata) {
-        assistantMsg.groundingMetadata = groundingMetadata;
-      }
-      if (generatedImages && generatedImages.length > 0) {
-        assistantMsg.generatedImages = generatedImages;
-      }
-      store.addMessage(assistantMsg);
+    const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata; generatedImages?: GeneratedImage[] } = { role: 'assistant', content: contentWithCitations || '' };
+    if (toolCalls && toolCalls.length > 0) {
+      assistantMsg.toolCalls = toolCalls;
     }
+    if (groundingMetadata) {
+      assistantMsg.groundingMetadata = groundingMetadata;
+    }
+    if (generatedImages && generatedImages.length > 0) {
+      assistantMsg.generatedImages = generatedImages;
+    }
+    store.addMessage(assistantMsg);
 
     // Reset state
     store.setStreamingContent('');
@@ -216,9 +241,17 @@ export function useStreaming() {
     store.saveActiveConversation();
     store.updateConversationTimestamp();
 
-    // Extract memories automatically after response
+    // Extract memories automatically after response (only if no tool calls)
+    // When tool calls exist, memory extraction happens after the follow-up response
     if (store.memoryEnabled && !toolCalls?.length) {
-      setTimeout(() => extractMemories(), 1000);
+      // Build complete message list including current assistant message
+      // to ensure memory extraction has full context
+      const currentMessages = [...store.messages, assistantMsg];
+
+      // Delay slightly to allow state to commit, then extract with explicit messages
+      setTimeout(() => {
+        extractMemories(currentMessages);
+      }, 100);
     }
 
     // Auto-generate title after first exchange
@@ -261,6 +294,7 @@ export function useStreaming() {
     }
 
     // Handle tool calls - the agentic loop
+    // Process tool calls if they exist
     if (toolCalls && toolCalls.length > 0) {
       handleToolCalls(toolCalls);
     }
@@ -276,6 +310,9 @@ export function useStreaming() {
     toolCallsRef.current = [];
     currentToolCallRef.current = null;
   }, [store]);
+
+  // Track processed request IDs to prevent double processing
+  const processedDoneRequestsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const listener = (message: {
@@ -300,6 +337,23 @@ export function useStreaming() {
           break;
 
         case 'CHAT_STREAM_DONE':
+          // Guard: prevent processing the same request twice
+          if (message.requestId && processedDoneRequestsRef.current.has(message.requestId)) {
+            console.log('[useStreaming] CHAT_STREAM_DONE already processed for', message.requestId);
+            return;
+          }
+          if (message.requestId) {
+            processedDoneRequestsRef.current.add(message.requestId);
+          }
+          // Clean up old entries if too many
+          if (processedDoneRequestsRef.current.size > 100) {
+            const iterator = processedDoneRequestsRef.current.values();
+            const first = iterator.next();
+            if (!first.done) {
+              processedDoneRequestsRef.current.delete(first.value);
+            }
+          }
+
           const finalContent = message.fullContent || useStore.getState().streamingContent;
           finishStream(
             finalContent,
