@@ -265,6 +265,41 @@ Your output language should be the same as the conversation, if conversation usi
       store.setIsCompacting(false);
     }
   }, [store, buildAPIMessages]);
+  
+  const renameConversation = useCallback(async () => {
+    if (!store.activeConversationId || store.messages.length === 0) return;
+
+    const renamePrompt = `CRITICAL: This is a SYSTEM OPERATION to rename the conversation.
+Based on the conversation history below, generate a concise and descriptive title for this conversation.
+The title MUST:
+1. Be as descriptive as possible about the main topic.
+2. Be in the same language as the conversation (e.g., if the user speaks Indonesian, the title should be in Indonesian).
+3. Be NO MORE than 6 words.
+4. NOT include any punctuation or quotes.
+
+Output ONLY the title string.`;
+
+    const apiMessages = buildAPIMessages();
+    apiMessages.push({ role: 'user', content: renamePrompt });
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'CHAT_REQUEST',
+        messages: apiMessages,
+        providerConfig: store.providerConfig,
+        tools: [],
+        options: { enableGoogleSearch: false, stream: false },
+        requestId: `rename_${Date.now()}`,
+      });
+
+      const newTitle = response?.content?.trim();
+      if (newTitle && !response.error) {
+        store.updateConversationTitle(store.activeConversationId, newTitle);
+      }
+    } catch (e) {
+      console.error('[useChat] Rename failed:', e);
+    }
+  }, [store, buildAPIMessages]);
 
 
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string }) => {
@@ -276,6 +311,11 @@ Your output language should be the same as the conversation, if conversation usi
     // Handle slash commands
     if (text.trim() === '/compact') {
       await compactConversation();
+      return;
+    }
+
+    if (text.trim() === '/rename') {
+      await renameConversation();
       return;
     }
 
@@ -573,6 +613,7 @@ Your output language should be the same as the conversation, if conversation usi
     isCustomProvider,
     buildAPIMessages,
     compactConversation,
+    renameConversation,
     estimateTokenCount,
   };
 }

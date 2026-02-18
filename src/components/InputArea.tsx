@@ -205,7 +205,7 @@ export function InputArea() {
         </div>
         {text.startsWith('/') && !text.includes(' ') && (
           <div className="slash-suggestions">
-            {['/compact'].filter(cmd => cmd.startsWith(text)).map(cmd => (
+            {['/compact', '/rename'].filter(cmd => cmd.startsWith(text)).map(cmd => (
               <div
                 key={cmd}
                 className="slash-suggestion-item"
@@ -216,11 +216,12 @@ export function InputArea() {
               >
                 <div className="slash-command">{cmd}</div>
                 <div className="slash-description">
-                  {cmd === '/compact' ? 'Summarize and compress conversation' : ''}
+                  {cmd === '/compact' ? 'Summarize and compress conversation' :
+                    cmd === '/rename' ? 'Rename conversation based on history' : ''}
                 </div>
               </div>
             ))}
-            {['/compact'].filter(cmd => cmd.startsWith(text)).length === 0 && (
+            {['/compact', '/rename'].filter(cmd => cmd.startsWith(text)).length === 0 && (
               <div className="slash-suggestion-item disabled">
                 <div className="slash-description">No matching commands</div>
               </div>
