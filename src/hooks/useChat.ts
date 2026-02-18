@@ -433,7 +433,12 @@ Your output language should be the same as the conversation, if conversation usi
   }, [store]);
 
   const branchFrom = useCallback(async (messageIndex: number) => {
-    const messagesToCopy = store.messages.slice(0, messageIndex + 1);
+    // Copy messages up to the index, but reset compaction state and remove summaries for the new branch
+    const messagesToCopy = store.messages
+      .slice(0, messageIndex + 1)
+      .filter(m => !m.summary)
+      .map(m => ({ ...m, isCompacted: false }));
+    
     const parentId = store.activeConversationId;
     const parentConv = store.conversations.find((c) => c.id === parentId);
     const branchTitle = parentConv?.title ?? 'New Chat';
