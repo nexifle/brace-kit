@@ -62,6 +62,13 @@ export const useStore = create<AppState>((set, get) => ({
   // Quote
   quotedText: null,
 
+  // Auto Compact
+  compactConfig: {
+    threshold: 0.9,
+    defaultContextWindow: 128000,
+  },
+  isCompacting: false,
+
   // UI State
   view: 'chat',
   historyDrawerOpen: false,
@@ -303,6 +310,19 @@ export const useStore = create<AppState>((set, get) => ({
 
   setIsAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
 
+  // Auto Compact Actions
+  setCompactConfig: (config) =>
+    set((state) => ({
+      compactConfig: { ...state.compactConfig, ...config },
+    })),
+
+  setIsCompacting: (isCompacting) => set({ isCompacting }),
+
+  compactConversation: async (_id) => {
+    // This will be implemented or called from useChat or a dedicated service
+    // For now, it's a placeholder if we want to trigger it from the store
+  },
+
   authenticate: async (password) => {
     const state = get();
     if (!state.security.passwordHash) return false;
@@ -344,6 +364,7 @@ export const useStore = create<AppState>((set, get) => ({
         'memoryEnabled',
         'enableGoogleSearch',
         'security',
+        'compactConfig',
       ]);
 
       const updates: Partial<AppState> = {};
@@ -371,6 +392,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.security) {
         updates.security = data.security;
+      }
+      if (data.compactConfig) {
+        updates.compactConfig = data.compactConfig;
       }
 
       // Load session auth state (persists during browser session)
@@ -457,6 +481,7 @@ export const useStore = create<AppState>((set, get) => ({
         memories: state.memories,
         memoryEnabled: state.memoryEnabled,
         security: state.security,
+        compactConfig: state.compactConfig,
       });
     } catch (e) {
       console.warn('Failed to save settings:', e);

@@ -50,6 +50,8 @@ export interface Message {
   name?: string;
   toolArguments?: Record<string, unknown>;
   generatedImages?: GeneratedImage[];
+  isCompacted?: boolean;
+  summary?: string;
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -112,6 +114,7 @@ export interface ProviderPreset {
   models?: string[];
   staticModels?: string[];
   supportsModelFetch?: boolean;
+  contextWindow?: number;
 }
 
 export interface CustomProvider {
@@ -125,6 +128,7 @@ export interface CustomProvider {
   models: string[];
   staticModels?: string[];
   supportsModelFetch?: boolean;
+  contextWindow?: number;
 }
 
 export interface ProviderConfig {
@@ -134,6 +138,12 @@ export interface ProviderConfig {
   model: string;
   format: ProviderFormat;
   systemPrompt: string;
+  contextWindow?: number; // Custom context window limit
+}
+
+export interface CompactConfig {
+  threshold: number; // 0.0 to 1.0 (default 0.9)
+  defaultContextWindow: number; // default 128000
 }
 
 export interface ProviderKeys {
@@ -255,6 +265,10 @@ export interface AppState {
   // Quote
   quotedText: string | null;
 
+  // Auto Compact
+  compactConfig: CompactConfig;
+  isCompacting: boolean;
+
   // UI State
   view: 'chat' | 'settings' | 'gallery';
   historyDrawerOpen: boolean;
@@ -325,6 +339,11 @@ export interface AppState {
   saveToStorage: () => Promise<void>;
   saveActiveConversation: () => Promise<void>;
   updateConversationTimestamp: () => Promise<void>;
+
+  // Auto Compact Actions
+  setCompactConfig: (config: Partial<CompactConfig>) => void;
+  setIsCompacting: (isCompacting: boolean) => void;
+  compactConversation: (id: string) => Promise<void>;
 }
 
 // ==================== Constants ====================

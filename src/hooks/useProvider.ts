@@ -130,7 +130,7 @@ export function useProvider() {
     return [];
   }, [store.fetchedModels, getProvider]);
 
-  const addCustomProvider = useCallback((name: string, apiUrl: string, format: ProviderFormat) => {
+  const addCustomProvider = useCallback((name: string, apiUrl: string, format: ProviderFormat, contextWindow?: number) => {
     const id = 'custom_' + Date.now();
     const newProvider: CustomProvider = {
       id,
@@ -141,6 +141,7 @@ export function useProvider() {
       defaultModel: '',
       format,
       models: [],
+      contextWindow,
     };
 
     store.addCustomProvider(newProvider);

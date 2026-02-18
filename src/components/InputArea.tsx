@@ -16,7 +16,7 @@ export function InputArea() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastCursorPosRef = useRef<number>(0);
   const store = useStore();
-  const { sendMessage, stopStreaming } = useChat();
+  const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
   const { handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText } = usePageContext();
   const { providerInfo } = useProvider();
@@ -25,6 +25,13 @@ export function InputArea() {
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
   const isGeminiImageModel = currentProviderId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
   const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
+
+  const tokens = estimateTokenCount(store.messages);
+  const contextWindow = store.providerConfig.contextWindow || store.compactConfig.defaultContextWindow;
+  const threshold = store.compactConfig.threshold;
+  const usagePercent = (tokens / contextWindow) * 100;
+  const compactThresholdPercent = (threshold * 100);
+  const percentUntilCompact = Math.max(0, compactThresholdPercent - usagePercent);
 
   // Update default aspect ratio when provider changes (Gemini doesn't support 'auto')
   useEffect(() => {
@@ -185,6 +192,30 @@ export function InputArea() {
             onChange={(e) => handleFileSelect(e.target.files)}
           />
         </div>
+        {text.startsWith('/') && !text.includes(' ') && (
+          <div className="slash-suggestions">
+            {['/compact'].filter(cmd => cmd.startsWith(text)).map(cmd => (
+              <div
+                key={cmd}
+                className="slash-suggestion-item"
+                onClick={() => {
+                  setText(cmd);
+                  textareaRef.current?.focus();
+                }}
+              >
+                <div className="slash-command">{cmd}</div>
+                <div className="slash-description">
+                  {cmd === '/compact' ? 'Summarize and compress conversation' : ''}
+                </div>
+              </div>
+            ))}
+            {['/compact'].filter(cmd => cmd.startsWith(text)).length === 0 && (
+              <div className="slash-suggestion-item disabled">
+                <div className="slash-description">No matching commands</div>
+              </div>
+            )}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           id="chat-input"
@@ -225,12 +256,24 @@ export function InputArea() {
         )}
       </div>
       <div className="input-footer">
-        <span id="provider-label" className="provider-badge">
-          {providerInfo.isConfigured ? providerInfo.providerName : 'No provider configured'}
-        </span>
-        {providerInfo.model && (
-          <span id="model-label" className="model-badge">{providerInfo.model}</span>
-        )}
+        <div className="footer-left">
+          <span id="provider-label" className="provider-badge">
+            {providerInfo.isConfigured ? providerInfo.providerName : 'No provider configured'}
+          </span>
+          {providerInfo.model && (
+            <span id="model-label" className="model-badge">{providerInfo.model}</span>
+          )}
+        </div>
+        <div className="footer-right">
+          {percentUntilCompact <= 15 && (
+            <span
+              className={`context-usage ${percentUntilCompact <= 5 ? 'critical' : percentUntilCompact <= 10 ? 'warning' : ''}`}
+              title={`${tokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens used. Auto-compact at ${compactThresholdPercent}%.`}
+            >
+              {Math.round(percentUntilCompact)}% until autocompact
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

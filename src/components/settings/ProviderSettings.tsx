@@ -156,6 +156,16 @@ export function ProviderSettings() {
                 </select>
               </div>
             )}
+            <div className="form-group compact">
+              <label htmlFor="active-window">Context Window</label>
+              <input
+                type="number"
+                id="active-window"
+                placeholder={String(currentProvider?.contextWindow || 128000)}
+                value={providerConfig.contextWindow || ''}
+                onChange={(e) => updateProviderConfig({ contextWindow: e.target.value ? parseInt(e.target.value, 10) : undefined })}
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -8,13 +8,16 @@ export function CustomProvidersSettings() {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [format, setFormat] = useState<ProviderFormat>('openai');
+  const [contextWindow, setContextWindow] = useState<string>('');
 
   const handleAdd = () => {
     if (!name.trim()) return;
-    addCustomProvider(name.trim(), url.trim(), format);
+    const windowValue = contextWindow ? parseInt(contextWindow, 10) : undefined;
+    addCustomProvider(name.trim(), url.trim(), format, windowValue);
     setName('');
     setUrl('');
     setFormat('openai');
+    setContextWindow('');
     setShowForm(false);
   };
 
@@ -52,6 +55,7 @@ export function CustomProvidersSettings() {
                   {formatLabel[cp.format]}
                   {cp.model ? ` · ${cp.model}` : ''}
                   {cp.apiUrl ? ` · ${new URL(cp.apiUrl).hostname}` : ''}
+                  {cp.contextWindow ? ` · ${cp.contextWindow.toLocaleString()} ctx` : ''}
                 </div>
               </div>
               <button
@@ -103,6 +107,16 @@ export function CustomProvidersSettings() {
               placeholder="https://api.example.com/v1"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+          <div className="form-group compact">
+            <label htmlFor="cp-window">Context Window (Tokens)</label>
+            <input
+              type="number"
+              id="cp-window"
+              placeholder="128000"
+              value={contextWindow}
+              onChange={(e) => setContextWindow(e.target.value)}
             />
           </div>
           <button className="btn-secondary" onClick={handleAdd}>

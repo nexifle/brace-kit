@@ -20,6 +20,24 @@ export function useChat() {
     return store.customProviders.some((cp) => cp.id === providerId);
   }, [store.customProviders]);
 
+  const estimateTokenCount = useCallback((messages: Message[]) => {
+    let totalChars = 0;
+    for (const msg of messages) {
+      // Only count messages that are NOT compacted, OR are summary messages (which are sent to API)
+      if (msg.isCompacted && !msg.summary) continue;
+
+      if (typeof msg.content === 'string') {
+        totalChars += msg.content.length;
+      }
+      if (msg.attachments) {
+        for (const att of msg.attachments) {
+          totalChars += att.name.length + (att.data?.length || 0);
+        }
+      }
+    }
+    return Math.ceil(totalChars / 4);
+  }, []);
+
   const buildMemoryBlock = useCallback(() => {
     if (!store.memoryEnabled || store.memories.length === 0) return '';
 
@@ -27,7 +45,7 @@ export function useChat() {
     for (const cat of MEMORY_CATEGORIES) {
       const items = store.memories.filter((m) => m.category === cat);
       if (items.length === 0) continue;
-      const label = MEMORY_CATEGORY_LABELS[cat].replace(/^[^\s]+\s/, ''); // Remove emoji
+      const label = MEMORY_CATEGORY_LABELS[cat].replace(/^[^\s]+\s/, ''); 
       block += `\n${label}:\n`;
       for (const item of items) {
         block += `- ${item.content}\n`;
@@ -58,11 +76,9 @@ export function useChat() {
       };
     } else if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
       const content: { type: string; text?: string; image_url?: { url: string } }[] = [];
-
       if (msg.content) {
         content.push({ type: 'text', text: msg.content });
       }
-
       for (const att of msg.attachments) {
         if (att.type === 'image') {
           content.push({
@@ -71,7 +87,6 @@ export function useChat() {
           });
         }
       }
-
       return { role: msg.role, content };
     } else {
       return { role: msg.role, content: msg.content };
@@ -80,47 +95,195 @@ export function useChat() {
 
   const buildAPIMessages = useCallback((): APIMessage[] => {
     const msgs: APIMessage[] = [];
-
     const memoryBlock = buildMemoryBlock();
-    const systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
-    if (systemContent) {
-      msgs.push({ role: 'system', content: systemContent });
-    }
+    let systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
 
+    const historyMessages: APIMessage[] = [];
     for (const msg of store.messages) {
+      if (msg.isCompacted && !msg.summary) continue;
+      
+      if (msg.summary) {
+        systemContent += `\n\n[CONVERSATION SUMMARY]\n${msg.summary}\n[END OF SUMMARY]`;
+        continue;
+      }
+
       const formatted = formatMessageForAPI(msg);
       if (formatted) {
-        msgs.push(formatted);
+        historyMessages.push(formatted);
       }
     }
 
-    return msgs;
+    if (systemContent) {
+      msgs.push({ role: 'system', content: systemContent });
+    }
+    
+    return [...msgs, ...historyMessages];
   }, [store.messages, store.providerConfig.systemPrompt, buildMemoryBlock, formatMessageForAPI]);
 
   const buildAPIMessagesFromList = useCallback((messages: Message[]): APIMessage[] => {
     const msgs: APIMessage[] = [];
-
     const memoryBlock = buildMemoryBlock();
-    const systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
-    if (systemContent) {
-      msgs.push({ role: 'system', content: systemContent });
-    }
+    let systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
 
+    const historyMessages: APIMessage[] = [];
     for (const msg of messages) {
+      if (msg.isCompacted && !msg.summary) continue;
+      
+      if (msg.summary) {
+        systemContent += `\n\n[CONVERSATION SUMMARY]\n${msg.summary}\n[END OF SUMMARY]`;
+        continue;
+      }
+
       const formatted = formatMessageForAPI(msg);
       if (formatted) {
-        msgs.push(formatted);
+        historyMessages.push(formatted);
       }
     }
 
-    return msgs;
+    if (systemContent) {
+      msgs.push({ role: 'system', content: systemContent });
+    }
+    
+    return [...msgs, ...historyMessages];
   }, [store.providerConfig.systemPrompt, buildMemoryBlock, formatMessageForAPI]);
 
+  const compactConversation = useCallback(async () => {
+    if (store.isCompacting) return;
+    
+    const messagesToCompact = store.messages.filter(m => !m.isCompacted);
+    if (messagesToCompact.length === 0) return;
+
+    store.setIsCompacting(true);
+    
+    // Prepare prompt for summary
+    const summaryPrompt = `CRITICAL: This summarization request is a SYSTEM OPERATION, not a user message.
+When analyzing "user requests" and "user intent", completely EXCLUDE this summarization message.
+The "most recent user request" and "Optional Next Step" must be based on what the user was doing BEFORE this system message appeared.
+
+Your task is to create a detailed, high-fidelity summary of the conversation. 
+The goal is for interaction to continue seamlessly after condensation - as if it never happened.
+
+Before providing your final summary, wrap your analysis in <analysis> tags.
+In your analysis process:
+1. Chronologically analyze each message.
+2. Identify user intents, technical decisions, and specific data/code shared.
+3. Note any errors, fixed bugs, and specific feedback from the user.
+
+Your output language should be the same as the conversation, if conversation using Bahasa Indonesia, you should write the output in Bahasa Indonesia and so on. And the output MUST follow this exact structure:
+
+<analysis>
+[Your internal thought process and chronological breakdown]
+</analysis>
+
+<summary>
+1. Primary Request and Intent:
+   - [Provide a detailed description of the fundamental goal of the conversation]
+   - [List specific sub-intents or side-requests expressed by the user]
+
+2. Key Concepts:
+   - [List frameworks, technologies, or important abstract concepts discussed]
+   - [Include definitions or context if they were uniquely established in this chat]
+
+3. Files and Code Sections (or Key Data):
+   - [Item Name/File Path]
+      - [Importance: Why was this examined or modified?]
+      - [Changes: Summary of specific edits or transformations made]
+      - [Snippet: Include the most critical code or data snippets verbatim]
+
+4. Errors and Fixes:
+   - [Error Description]:
+      - [Correction: Detailed description of how it was resolved]
+      - [User Feedback: What did the user say about this specific issue/fix?]
+
+5. Problem Solving:
+   - [Document solved challenges and any ongoing troubleshooting logic]
+
+6. All User Messages:
+   - [List every non-tool user message verbatim or closely paraphrased to preserve "voice" and intent evolution]
+
+7. Pending Tasks:
+   - [Explicitly list tasks the user has asked for that haven't been completed yet]
+
+8. Current Work:
+   - [Describe precisely what was being done in the last 2-3 messages]
+   - [Include relevant context or "last known state" of the task]
+
+9. Optional Next Step:
+   - [Proposed next action directly following the current work]
+   - [IMPORTANT: Include a verbatim quote from the most recent part of the chat showing where we left off to prevent context drift]
+</summary>`;
+    
+    const apiMessages = buildAPIMessages();
+    apiMessages.push({ role: 'user', content: summaryPrompt });
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'CHAT_REQUEST',
+        messages: apiMessages,
+        providerConfig: store.providerConfig,
+        tools: [],
+        options: { enableGoogleSearch: false, stream: false },
+        requestId: `compact_${Date.now()}`,
+      });
+
+      const fullContent = response?.content || response?.reasoning_content;
+      
+      if (fullContent) {
+        // Try to extract content between <summary> tags if present
+        let summary = fullContent;
+        const summaryMatch = fullContent.match(/<summary>([\s\S]*?)<\/summary>/i);
+        if (summaryMatch && summaryMatch[1]) {
+          summary = summaryMatch[1].trim();
+        } else {
+          // If no <summary> tags but there are <analysis> tags, try to strip analysis
+          summary = fullContent.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim();
+        }
+
+        // Mark all current messages as compacted and remove previous summary messages to avoid duplicates
+        const updatedMessages = store.messages
+          .filter(m => !m.summary) // Remove old summaries
+          .map(m => ({ ...m, isCompacted: true }));
+          
+        const summaryMessage: Message = {
+          role: 'system',
+          content: `CONVERSATION SUMMARY:\n${summary}`,
+          summary: summary,
+          isCompacted: true
+        };
+        store.setMessages([...updatedMessages, summaryMessage]);
+        await store.saveActiveConversation();
+      } else if (response?.error) {
+        console.error('[useChat] Compaction failed:', response.error);
+      }
+    } catch (e) {
+      console.error('[useChat] Compaction failed:', e);
+    } finally {
+      store.setIsCompacting(false);
+    }
+  }, [store, buildAPIMessages]);
+
+
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string }) => {
-    if (store.isStreaming) return;
+    if (store.isStreaming || store.isCompacting) return;
 
     const validAttachments = store.attachments.filter((a) => a.type !== 'error');
-    if ((!text && validAttachments.length === 0)) return;
+    if (!text && validAttachments.length === 0) return;
+
+    // Handle slash commands
+    if (text.trim() === '/compact') {
+      await compactConversation();
+      return;
+    }
+
+    // Auto compact check
+    const currentProvider = getProvider(store.providerConfig.providerId);
+    const contextWindow = store.providerConfig.contextWindow || currentProvider.contextWindow || store.compactConfig.defaultContextWindow;
+    const estimatedTokens = estimateTokenCount(store.messages);
+    
+    if (estimatedTokens > contextWindow * store.compactConfig.threshold) {
+      console.log('[useChat] Threshold reached, auto compacting...');
+      await compactConversation(); 
+    }
 
     // Ensure we have an active conversation
     if (!store.activeConversationId) {
@@ -142,9 +305,7 @@ export function useChat() {
 
     // Attach selected text if available
     if (store.selectedText) {
-      const selPrefix = store.pageContext
-        ? ''
-        : `[From: ${store.selectedText.pageTitle}]\n`;
+      const selPrefix = store.pageContext ? '' : `[From: ${store.selectedText.pageTitle}]\n`;
       userContent = `${selPrefix}[Selected Text]\n"${store.selectedText.selectedText}"\n\n[User Message]\n${text || ''}`;
       displayContent = text;
       selectedTextAttachment = store.selectedText;
@@ -160,14 +321,11 @@ export function useChat() {
       }));
 
       // For text files, append content to message
-      const textAttachments = validAttachments.filter((a) => a.type === 'text');
-      for (const att of textAttachments) {
+      for (const att of validAttachments.filter((a) => a.type === 'text')) {
         userContent += `\n\n[File: ${att.name}]\n${att.data}`;
       }
-
       // For PDFs, add note
-      const pdfAttachments = validAttachments.filter((a) => a.type === 'pdf');
-      for (const att of pdfAttachments) {
+      for (const att of validAttachments.filter((a) => a.type === 'pdf')) {
         userContent += `\n\n[File: ${att.name}]\n[PDF file attached - text extraction not available in browser]`;
       }
     }
@@ -191,49 +349,27 @@ export function useChat() {
     store.setPageContext(null);
     store.clearAttachments();
 
-    // Build messages for API - include all messages from store + format them
-    const apiMessages: APIMessage[] = [];
-
-    const memoryBlock = buildMemoryBlock();
-    const systemContent = (store.providerConfig.systemPrompt || '') + memoryBlock;
-    if (systemContent) {
-      apiMessages.push({ role: 'system', content: systemContent });
-    }
-
-    // Add all existing messages
-    for (const msg of store.messages) {
-      const formatted = formatMessageForAPI(msg);
-      if (formatted) {
-        apiMessages.push(formatted);
-      }
-    }
-
-    // Add the new user message
-    const formattedNewMessage = formatMessageForAPI(messageData);
-    if (formattedNewMessage) {
-      apiMessages.push(formattedNewMessage);
-    }
+    // Build messages for API
+    const apiMessages = buildAPIMessagesFromList([...store.messages, messageData]);
+    // Add the new user message (not yet in store.messages if added just above?? 
+    // Actually addMessage is sync in zustand if using setState, so it should be there.
+    // However, buildAPIMessages already includes it if it's in store.messages.
+    // Let's re-verify buildAPIMessages. It maps over store.messages.
+    // So apiMessages already has it.
 
     // Get MCP tools from enabled servers only
     let tools: MCPTool[] = [];
     try {
-      console.log('[useChat] Fetching MCP tools, mcpServers:', store.mcpServers.map((s) => ({ id: s.id, enabled: s.enabled, name: s.name })));
       const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
-      console.log('[useChat] MCP response:', mcpRes);
       if (mcpRes?.tools) {
         const enabledServerIds = new Set(
           store.mcpServers.filter((s) => s.enabled !== false).map((s) => s.id)
         );
-        console.log('[useChat] Enabled server IDs:', Array.from(enabledServerIds));
         tools = mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) =>
           enabledServerIds.has(tool._serverId || '')
         );
-        console.log('[useChat] Filtered tools:', tools);
       }
-    } catch (err) {
-      console.log('[useChat] Error fetching MCP tools:', err);
-      // no MCP tools
-    }
+    } catch {}
 
     // Start streaming
     store.setIsStreaming(true);
@@ -241,7 +377,6 @@ export function useChat() {
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
 
-    // Build options for provider-specific features
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
     const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
@@ -249,10 +384,7 @@ export function useChat() {
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
 
     const chatOptions: { enableGoogleSearch: boolean; aspectRatio?: string } = {
-      enableGoogleSearch:
-        store.enableGoogleSearch &&
-        isGemini &&
-        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
+      enableGoogleSearch: store.enableGoogleSearch && isGemini && !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
 
     if ((isXAIImageModel || isGeminiImageModel) && sendOptions?.aspectRatio) {
@@ -260,7 +392,7 @@ export function useChat() {
     }
 
     try {
-      const response = await chrome.runtime.sendMessage({
+      await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
@@ -268,16 +400,11 @@ export function useChat() {
         options: chatOptions,
         requestId,
       });
-
-      if (response?.error) {
-        store.addMessage({ role: 'error', content: response.error });
-        store.setIsStreaming(false);
-      }
     } catch (e) {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
     }
-  }, [store, buildAPIMessages]);
+  }, [store, buildAPIMessages, compactConversation, estimateTokenCount, getProvider, formatMessageForAPI]);
 
   const stopStreaming = useCallback(() => {
     if (abortControllerRef.current) {
@@ -285,10 +412,7 @@ export function useChat() {
     }
     const requestId = store.currentRequestId;
     if (requestId) {
-      chrome.runtime.sendMessage({
-        type: 'STOP_STREAM',
-        requestId,
-      });
+      chrome.runtime.sendMessage({ type: 'STOP_STREAM', requestId });
     }
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
@@ -311,42 +435,22 @@ export function useChat() {
   const branchFrom = useCallback(async (messageIndex: number) => {
     const messagesToCopy = store.messages.slice(0, messageIndex + 1);
     const parentId = store.activeConversationId;
-
-    // Ambil title dari parent conversation
     const parentConv = store.conversations.find((c) => c.id === parentId);
     const branchTitle = parentConv?.title ?? 'New Chat';
-
-    // Save conversation aktif saat ini
     await store.saveActiveConversation();
-
-    // Buat conversation baru dengan title & branchedFromId dari parent
-    const newConv = store.createConversation({
-      title: branchTitle,
-      branchedFromId: parentId ?? undefined,
-    });
-
-    // Set messages ke hasil copy
+    const newConv = store.createConversation({ title: branchTitle, branchedFromId: parentId ?? undefined });
     store.setMessages(messagesToCopy);
-
-    // Simpan conversation baru ke storage & update conversations index
     await chrome.storage.local.set({ [`conv_${newConv.id}`]: messagesToCopy });
     await store.saveToStorage();
-
     store.setView('chat');
     store.setHistoryDrawerOpen(false);
   }, [store]);
 
   const regenerateFrom = useCallback(async (messageIndex: number) => {
     if (store.isStreaming) return;
-
-    // Potong messages s.d. pesan user tersebut (inclusive)
     const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
     store.setMessages(messagesUpToIndex);
-
-    // Build API messages dari list yang sudah dipotong
     const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);
-
-    // Get MCP tools
     let tools: MCPTool[] = [];
     try {
       const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
@@ -358,44 +462,28 @@ export function useChat() {
           enabledServerIds.has(tool._serverId || '')
         );
       }
-    } catch {
-      // no MCP tools
-    }
-
-    // Start streaming
+    } catch {}
     store.setIsStreaming(true);
     store.setStreamingContent('');
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
-
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
     const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
     const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
-    const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
-
     const chatOptions = {
-      enableGoogleSearch:
-        store.enableGoogleSearch &&
-        isGemini &&
-        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
+      enableGoogleSearch: store.enableGoogleSearch && isGemini && !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
-
     try {
-      const response = await chrome.runtime.sendMessage({
+      await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools: (supportsFunctionCalling && !isImageGenerationModel) ? tools : [],
+        tools: (supportsFunctionCalling && !(isXAIImageModel || isGeminiImageModel)) ? tools : [],
         options: chatOptions,
         requestId,
       });
-
-      if (response?.error) {
-        store.addMessage({ role: 'error', content: response.error });
-        store.setIsStreaming(false);
-      }
     } catch (e) {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
@@ -404,47 +492,22 @@ export function useChat() {
 
   const editMessage = useCallback(async (messageIndex: number, newText: string) => {
     if (store.isStreaming) return;
-
-    // Get the message being edited
     const messageToEdit = store.messages[messageIndex];
     if (!messageToEdit || messageToEdit.role !== 'user') return;
-
-    // Determine display content and actual content
-    // If the original had pageContext or selectedText, we need to preserve those prefixes
     let newContent = newText;
     let newDisplayContent = newText;
-
-    // Check if original message had page context prefix
     if (messageToEdit.pageContext) {
       newContent = `[Page Context]\nTitle: ${messageToEdit.pageContext.pageTitle}\nURL: ${messageToEdit.pageContext.pageUrl}\n${messageToEdit.pageContext.metaDescription ? `Description: ${messageToEdit.pageContext.metaDescription}\n` : ''}\nContent:\n${messageToEdit.pageContext.content}\n\n[User Message]\n${newText}`;
     }
-
-    // Check if original message had selected text prefix
     if (messageToEdit.selectedText) {
-      const selPrefix = messageToEdit.pageContext
-        ? ''
-        : `[From: ${messageToEdit.selectedText.pageTitle}]\n`;
+      const selPrefix = messageToEdit.pageContext ? '' : `[From: ${messageToEdit.selectedText.pageTitle}]\n`;
       newContent = `${selPrefix}[Selected Text]\n"${messageToEdit.selectedText.selectedText}"\n\n[User Message]\n${newText}`;
     }
-
-    // Truncate messages after the edited message
     const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
-
-    // Update the message at the specified index with new content
-    const updatedMessage: Message = {
-      ...messageToEdit,
-      content: newContent,
-      displayContent: newDisplayContent,
-    };
+    const updatedMessage: Message = { ...messageToEdit, content: newContent, displayContent: newDisplayContent };
     messagesUpToIndex[messageIndex] = updatedMessage;
-
-    // Update the store with truncated messages
     store.setMessages(messagesUpToIndex);
-
-    // Build API messages from the updated list
     const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);
-
-    // Get MCP tools
     let tools: MCPTool[] = [];
     try {
       const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
@@ -456,44 +519,28 @@ export function useChat() {
           enabledServerIds.has(tool._serverId || '')
         );
       }
-    } catch {
-      // no MCP tools
-    }
-
-    // Start streaming
+    } catch {}
     store.setIsStreaming(true);
     store.setStreamingContent('');
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
-
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
     const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
     const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
-    const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
-
     const chatOptions = {
-      enableGoogleSearch:
-        store.enableGoogleSearch &&
-        isGemini &&
-        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
+      enableGoogleSearch: store.enableGoogleSearch && isGemini && !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
     };
-
     try {
-      const response = await chrome.runtime.sendMessage({
+      await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools: (supportsFunctionCalling && !isImageGenerationModel) ? tools : [],
+        tools: (supportsFunctionCalling && !(isXAIImageModel || isGeminiImageModel)) ? tools : [],
         options: chatOptions,
         requestId,
       });
-
-      if (response?.error) {
-        store.addMessage({ role: 'error', content: response.error });
-        store.setIsStreaming(false);
-      }
     } catch (e) {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
@@ -510,5 +557,7 @@ export function useChat() {
     getProvider,
     isCustomProvider,
     buildAPIMessages,
+    compactConversation,
+    estimateTokenCount,
   };
 }

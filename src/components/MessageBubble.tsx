@@ -54,6 +54,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const [editText, setEditText] = useState('');
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showSummaryContent, setShowSummaryContent] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const messages = useStore((state) => state.messages);
@@ -400,12 +401,41 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
         </div>
       );
     }
-    if (message.role === 'assistant' || message.role === 'user') {
+    if (message.summary) {
+      return (
+        <div className="summary-bubble">
+          <div
+            className="summary-badge clickable"
+            onClick={() => setShowSummaryContent(!showSummaryContent)}
+          >
+            <svg
+              className={`summary-toggle-icon ${showSummaryContent ? 'open' : ''}`}
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            History Memory
+          </div>
+          {showSummaryContent && (
+            <div
+              className="summary-content"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(message.summary) }}
+            />
+          )}
+        </div>
+      );
+    }
+    if (message.role === 'assistant' || message.role === 'user' || message.role === 'system') {
       const contentToRender = message.displayContent || message.content;
       return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender) }} />;
     }
     return <>{message.displayContent || message.content}</>;
-  }, [isEditing, editText, message.content, message.displayContent, message.role]);
+  }, [isEditing, editText, message.content, message.displayContent, message.role, message.summary, showSummaryContent]);
 
   const groundingChunks = message.groundingMetadata?.groundingChunks;
 
@@ -450,9 +480,16 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   }
 
   return (
-    <div className={`message ${message.role} ${isEditing ? 'editing' : ''}`}>
-      <div className="message-role">{roleLabel}</div>
-      <div className={`message-bubble ${isEditing ? 'editing' : ''}`} ref={bubbleRef} onMouseUp={handleMouseUp}>
+    <div className={`message ${message.role} ${isEditing ? 'editing' : ''} ${message.isCompacted ? 'compacted' : ''}`}>
+      <div className="message-role">
+        {!message.summary && roleLabel}
+        {message.isCompacted && !message.summary && (
+          <span className="compacted-indicator" title="This message is compressed & removed from context window">
+            (compacted)
+          </span>
+        )}
+      </div>
+      <div className={`message-bubble ${isEditing ? 'editing' : ''} ${message.summary ? 'is-summary' : ''}`} ref={bubbleRef} onMouseUp={handleMouseUp}>
         {message.pageContext && (
           <div className="page-attachment">
             <div className="page-attachment-icon">

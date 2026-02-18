@@ -46,6 +46,12 @@ export function App() {
     <div id="app">
       {shouldShowLockScreen && <LockScreen />}
       {shouldShowLockScreen && <div className="lock-backdrop" />}
+      {store.isCompacting && (
+        <div className="compacting-overlay">
+          <div className="compacting-spinner"></div>
+          <div>Summarizing conversation...</div>
+        </div>
+      )}
       <Header />
       {view === 'chat' && <ChatView />}
       {view === 'settings' && <SettingsPanel />}

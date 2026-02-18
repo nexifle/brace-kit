@@ -21,6 +21,7 @@ export interface ProviderPreset {
   models?: string[];
   staticModels?: string[];
   supportsModelFetch?: boolean;
+  contextWindow?: number;
 }
 
 export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
@@ -85,6 +86,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
 export interface ChatOptions {
   enableGoogleSearch?: boolean;
   aspectRatio?: string;
+  stream?: boolean;
 }
 
 export async function fetchModels(provider: ProviderPreset & { apiKey?: string }): Promise<{ models?: string[]; error?: string }> {
@@ -301,13 +303,13 @@ function formatOpenAI(
   const body: Record<string, unknown> = {
     model,
     messages: processedMessages,
-    stream: true,
+    stream: _options.stream !== false,
   };
 
   if (tools.length > 0) {
     body.tools = tools.map((t) => ({
       type: 'function',
-      function: { name: t.name, description: t.description, parameters: t.inputSchema },
+      function: { name: t.name, description: t.description, parameters: cleanSchema(t.inputSchema) },
     }));
   }
 
@@ -383,7 +385,7 @@ function formatAnthropic(
   const body: Record<string, unknown> = {
     model,
     max_tokens: 8192,
-    stream: true,
+    stream: _options.stream !== false,
     messages: filtered,
   };
 
@@ -558,7 +560,7 @@ function formatGemini(
       function_declarations: tools.map((t) => ({
         name: t.name,
         description: t.description,
-        parameters: convertToGeminiSchema(t.inputSchema),
+        parameters: cleanSchema(convertToGeminiSchema(t.inputSchema)),
       })),
     });
   }
@@ -567,12 +569,14 @@ function formatGemini(
     body.tools = geminiTools;
   }
 
+  const isStreaming = options.stream !== false;
   const baseUrl = provider.apiUrl.replace(/\/+$/, '');
   let url: string;
   if (baseUrl.includes('/models/')) {
-    url = `${baseUrl}?alt=sse&key=${provider.apiKey}`;
+    url = `${baseUrl}?${isStreaming ? 'alt=sse&' : ''}key=${provider.apiKey}`;
   } else {
-    url = `${baseUrl}/models/${model}:streamGenerateContent?alt=sse&key=${provider.apiKey}`;
+    const method = isStreaming ? ':streamGenerateContent' : ':generateContent';
+    url = `${baseUrl}/models/${model}${method}?${isStreaming ? 'alt=sse&' : ''}key=${provider.apiKey}`;
   }
 
   return {
@@ -595,6 +599,39 @@ export interface StreamChunk {
   groundingMetadata?: unknown;
   mimeType?: string;
   imageData?: string;
+}
+
+function cleanSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  // Deep clone
+  const cleaned = JSON.parse(JSON.stringify(schema));
+
+  const removeIncompatible = (obj: any) => {
+    if (!obj || typeof obj !== 'object') return;
+
+    // Remove additionalProperties: false as it often breaks custom providers
+    // only if it's explicitly false.
+    if (obj.additionalProperties === false) {
+      delete obj.additionalProperties;
+    }
+
+    // Recursively clean properties
+    if (obj.properties) {
+      for (const key in obj.properties) {
+        removeIncompatible(obj.properties[key]);
+      }
+    }
+
+    if (obj.items) {
+      removeIncompatible(obj.items);
+    }
+  };
+
+  removeIncompatible(cleaned);
+  return cleaned;
 }
 
 export async function* parseXAIImageResponse(response: Response): AsyncGenerator<StreamChunk> {

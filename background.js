@@ -166,6 +166,25 @@ async function handleChatRequest(message, sendResponse) {
       return;
     }
 
+    // If non-streaming, return full response directly
+    if (options?.stream === false) {
+      const data = await response.json();
+      let text = '';
+      if (provider.format === 'openai') {
+        const message = data.choices?.[0]?.message;
+        text = message?.content || '';
+        const reasoning = message?.reasoning_content || '';
+        sendResponse({ content: text, reasoning_content: reasoning });
+      } else if (provider.format === 'anthropic') {
+        text = data.content?.map(c => c.text).filter(Boolean).join('') || '';
+        sendResponse({ content: text });
+      } else if (provider.format === 'gemini') {
+        text = data.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
+        sendResponse({ content: text });
+      }
+      return;
+    }
+
     // Stream response back to sidebar via ports
     // Since sendResponse can only be called once, we use a different approach:
     // We'll collect chunks via a port-based streaming mechanism
@@ -317,7 +336,8 @@ async function handleMemoryExtract(message, sendResponse) {
     // Extract text content based on format
     let text = '';
     if (provider.format === 'openai') {
-      text = data.choices?.[0]?.message?.content || '';
+      const message = data.choices?.[0]?.message;
+      text = (message?.content || '') + (message?.reasoning_content || '');
     } else if (provider.format === 'anthropic') {
       text = data.content?.map(c => c.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'gemini') {
@@ -414,7 +434,8 @@ async function handleTitleGenerate(message, sendResponse) {
 
     let title = '';
     if (provider.format === 'openai') {
-      title = data.choices?.[0]?.message?.content || '';
+      const message = data.choices?.[0]?.message;
+      title = (message?.content || '') + (message?.reasoning_content || '');
     } else if (provider.format === 'anthropic') {
       title = data.content?.map(c => c.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'gemini') {
