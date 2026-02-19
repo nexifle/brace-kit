@@ -905,6 +905,139 @@ body {
     color: var(--text-primary);
 }
 
+/* Markdown image wrapper with hover actions */
+.md-image-wrapper {
+    display: inline-block;
+    position: relative;
+    line-height: 0;
+}
+
+.md-image-wrapper img {
+    display: block;
+    border-radius: var(--radius-sm);
+    cursor: zoom-in;
+}
+
+.md-image-actions {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    pointer-events: none;
+}
+
+.md-image-wrapper:hover .md-image-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.md-image-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-xs);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    padding: 0;
+    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    backdrop-filter: blur(4px);
+}
+
+.md-image-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.md-image-btn.md-image-btn-success {
+    color: var(--success);
+    border-color: var(--success);
+    background: rgba(52, 211, 153, 0.15);
+}
+
+/* Lightbox */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    box-sizing: border-box;
+    animation: lightbox-fade-in 0.15s ease;
+}
+
+@keyframes lightbox-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.lightbox-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-bottom: 12px;
+}
+
+.lightbox-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-xs);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    padding: 0;
+    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.lightbox-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.lightbox-btn.lightbox-btn-success {
+    color: var(--success);
+    border-color: var(--success);
+    background: rgba(52, 211, 153, 0.15);
+}
+
+.lightbox-close-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.lightbox-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+
+.lightbox-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 48px rgba(0, 0, 0, 0.6);
+}
+
 /* Image generation skeleton loader */
 .image-generation-skeleton {
     margin-top: 10px;

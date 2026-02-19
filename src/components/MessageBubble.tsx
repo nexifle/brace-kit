@@ -48,6 +48,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [quotePopup, setQuotePopup] = useState<QuotePopupState>({ visible: false, x: 0, y: 0, text: '' });
   const [textFileViewer, setTextFileViewer] = useState<TextFileViewerState>({ isOpen: false, name: '', content: '' });
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
@@ -142,6 +143,44 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       handleCancel();
     }
   }, [handleSubmit, handleCancel]);
+
+  const handleImageActions = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+
+    const copyBtn = target.closest('.md-image-copy-btn');
+    if (copyBtn) {
+      const src = copyBtn.getAttribute('data-src');
+      if (!src) return;
+      copyImageToClipboard(src).then((ok) => {
+        if (ok) {
+          copyBtn.classList.add('md-image-btn-success');
+          setTimeout(() => copyBtn.classList.remove('md-image-btn-success'), 1500);
+        }
+      });
+      return;
+    }
+
+    const downloadBtn = target.closest('.md-image-download-btn');
+    if (downloadBtn) {
+      const src = downloadBtn.getAttribute('data-src');
+      if (!src) return;
+      const a = document.createElement('a');
+      a.href = src;
+      const ext = src.split('.').pop()?.split('?')[0] || 'png';
+      a.download = `image.${ext}`;
+      a.click();
+      downloadBtn.classList.add('md-image-btn-success');
+      setTimeout(() => downloadBtn.classList.remove('md-image-btn-success'), 1500);
+      return;
+    }
+
+    // Open lightbox when clicking the image itself
+    const img = target.closest('.md-image-wrapper img') as HTMLImageElement | null;
+    if (img && !target.closest('.md-image-btn')) {
+      setLightboxSrc(img.src);
+      return;
+    }
+  }, []);
 
   const handleCopyCode = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -353,13 +392,25 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     ref.addEventListener('click', handleCopyCode as unknown as EventListener);
     ref.addEventListener('click', handleTableActions as unknown as EventListener);
     ref.addEventListener('click', handleLinkClick as unknown as EventListener);
+    ref.addEventListener('click', handleImageActions as unknown as EventListener);
 
     return () => {
       ref.removeEventListener('click', handleCopyCode as unknown as EventListener);
       ref.removeEventListener('click', handleTableActions as unknown as EventListener);
       ref.removeEventListener('click', handleLinkClick as unknown as EventListener);
+      ref.removeEventListener('click', handleImageActions as unknown as EventListener);
     };
-  }, [handleCopyCode, handleTableActions, handleLinkClick]);
+  }, [handleCopyCode, handleTableActions, handleLinkClick, handleImageActions]);
+
+  // Close lightbox on Escape
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxSrc(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [lightboxSrc]);
 
   const roleLabel = message.role === 'user' ? 'You' : message.role === 'error' ? 'Error' : 'AI';
 
@@ -724,6 +775,10 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
         onCancel={() => setShowCancelConfirm(false)}
       />
 
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      )}
+
       {textFileViewer.isOpen && (
         <TextFileViewer
           isOpen={textFileViewer.isOpen}
@@ -732,6 +787,102 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
           content={textFileViewer.content}
         />
       )}
+    </div>
+  );
+}
+
+function copyImageToClipboard(src: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(false); return; }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(false); return; }
+        navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+          .then(() => resolve(true))
+          .catch(() => resolve(false));
+      }, 'image/png');
+    };
+    img.onerror = () => resolve(false);
+    img.src = src;
+  });
+}
+
+function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+
+  const handleCopy = () => {
+    copyImageToClipboard(src).then((ok) => {
+      if (ok) {
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 1500);
+      }
+    });
+  };
+
+  const handleDownload = () => {
+    const a = document.createElement('a');
+    a.href = src;
+    const ext = src.split('.').pop()?.split('?')[0] || 'png';
+    a.download = `image.${ext}`;
+    a.click();
+    setDownloadSuccess(true);
+    setTimeout(() => setDownloadSuccess(false), 1500);
+  };
+
+  return (
+    <div className="lightbox-overlay" onClick={onClose}>
+      <div className="lightbox-toolbar" onClick={(e) => e.stopPropagation()}>
+        <button
+          className={`lightbox-btn${copySuccess ? ' lightbox-btn-success' : ''}`}
+          onClick={handleCopy}
+          title="Copy image"
+        >
+          {copySuccess ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          )}
+        </button>
+        <button
+          className={`lightbox-btn${downloadSuccess ? ' lightbox-btn-success' : ''}`}
+          onClick={handleDownload}
+          title="Download image"
+        >
+          {downloadSuccess ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          )}
+        </button>
+        <button className="lightbox-btn lightbox-close-btn" onClick={onClose} title="Close (Esc)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+        <img src={src} alt="Lightbox preview" className="lightbox-img" />
+      </div>
     </div>
   );
 }
