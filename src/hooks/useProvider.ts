@@ -93,13 +93,19 @@ export function useProvider() {
       return;
     }
 
+    // Use the stored API key for this specific provider, fallback to active config if it's the same provider
+    const apiKey = store.providerKeys[providerId]?.apiKey
+      || (providerId === store.providerConfig.providerId ? store.providerConfig.apiKey : '');
+
+    if (!apiKey) return;
+
     store.setFetchingModels(true);
 
     try {
       const provider = getProvider(providerId);
       const result = await fetchModels({
         ...provider,
-        apiKey: store.providerConfig.apiKey,
+        apiKey,
       });
 
       if (result?.models && result.models.length > 0) {
@@ -158,6 +164,24 @@ export function useProvider() {
     store.saveToStorage();
   }, [store]);
 
+  const addModelToCustomProvider = useCallback((providerId: string, modelName: string) => {
+    const cp = store.customProviders.find(p => p.id === providerId);
+    if (!cp || cp.models.includes(modelName)) return;
+    store.updateCustomProvider(providerId, { models: [...cp.models, modelName] });
+    store.saveToStorage();
+  }, [store]);
+
+  const removeModelFromCustomProvider = useCallback((providerId: string, modelName: string) => {
+    const cp = store.customProviders.find(p => p.id === providerId);
+    if (!cp) return;
+    const updatedModels = cp.models.filter(m => m !== modelName);
+    store.updateCustomProvider(providerId, {
+      models: updatedModels,
+      model: cp.model === modelName ? (updatedModels[0] || '') : cp.model,
+    });
+    store.saveToStorage();
+  }, [store]);
+
   const removeCustomProvider = useCallback((id: string) => {
     store.removeCustomProvider(id);
 
@@ -203,6 +227,8 @@ export function useProvider() {
     getAvailableModels,
     addCustomProvider,
     removeCustomProvider,
+    addModelToCustomProvider,
+    removeModelFromCustomProvider,
     setShowCustomModel: store.setShowCustomModel,
   };
 }

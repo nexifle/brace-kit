@@ -7,13 +7,16 @@ import { useProvider } from '../hooks/useProvider.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
+import { ProviderPopover } from './ProviderPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
 
 export function InputArea() {
   const [text, setText] = useState('');
   const [imageAspectRatio, setImageAspectRatio] = useState('auto');
+  const [showProviderPopover, setShowProviderPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
   const lastCursorPosRef = useRef<number>(0);
   const store = useStore();
   const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
@@ -39,6 +42,28 @@ export function InputArea() {
       setImageAspectRatio('1:1');
     }
   }, [isGeminiImageModel, imageAspectRatio]);
+
+  // Close popover on click outside
+  useEffect(() => {
+    if (!showProviderPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (footerRef.current && !footerRef.current.contains(e.target as Node)) {
+        setShowProviderPopover(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showProviderPopover]);
+
+  // Close popover on Escape
+  useEffect(() => {
+    if (!showProviderPopover) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowProviderPopover(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [showProviderPopover]);
 
   const placeholder = store.pageContext
     ? 'Ask about this page...'
@@ -267,13 +292,24 @@ export function InputArea() {
           </button>
         )}
       </div>
-      <div className="input-footer">
+      <div className="input-footer" ref={footerRef} style={{ position: 'relative' }}>
+        <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
         <div className="footer-left">
-          <span id="provider-label" className="provider-badge">
+          <button
+            id="provider-label"
+            className={`provider-badge clickable${showProviderPopover ? ' open' : ''}`}
+            onClick={() => setShowProviderPopover(v => !v)}
+          >
             {providerInfo.isConfigured ? providerInfo.providerName : 'No provider configured'}
-          </span>
+          </button>
           {providerInfo.model && (
-            <span id="model-label" className="model-badge">{providerInfo.model}</span>
+            <button
+              id="model-label"
+              className={`model-badge clickable${showProviderPopover ? ' open' : ''}`}
+              onClick={() => setShowProviderPopover(v => !v)}
+            >
+              {providerInfo.model}
+            </button>
           )}
         </div>
         <div className="footer-right">
