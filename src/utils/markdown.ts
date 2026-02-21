@@ -16,6 +16,49 @@ marked.setOptions({
   gfm: true,
 });
 
+// GitHub-style callout types configuration
+type CalloutType = 'NOTE' | 'TIP' | 'IMPORTANT' | 'WARNING' | 'CAUTION';
+
+interface CalloutConfig {
+  icon: string;
+  borderColor: string;
+  iconBg: string;
+  titleColor: string;
+}
+
+const calloutConfigs: Record<CalloutType, CalloutConfig> = {
+  NOTE: {
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>`,
+    borderColor: 'border-l-blue-500',
+    iconBg: 'text-blue-400',
+    titleColor: 'text-blue-400',
+  },
+  TIP: {
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>`,
+    borderColor: 'border-l-green-500',
+    iconBg: 'text-green-400',
+    titleColor: 'text-green-400',
+  },
+  IMPORTANT: {
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>`,
+    borderColor: 'border-l-purple-500',
+    iconBg: 'text-purple-400',
+    titleColor: 'text-purple-400',
+  },
+  WARNING: {
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
+    borderColor: 'border-l-amber-500',
+    iconBg: 'text-amber-400',
+    titleColor: 'text-amber-400',
+  },
+  CAUTION: {
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>`,
+    borderColor: 'border-l-red-500',
+    iconBg: 'text-red-400',
+    titleColor: 'text-red-400',
+  },
+};
+
 // Custom renderer: buka semua link external di tab baru
 const renderer = new marked.Renderer();
 renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
@@ -26,6 +69,38 @@ renderer.link = ({ href, title, text }: { href: string; title?: string | null; t
   }
   return `<a href="${href}"${titleAttr}>${text}</a>`;
 };
+
+// Custom blockquote renderer for GitHub-style callouts
+renderer.blockquote = ({ text }: { text: string }) => {
+  // Check if this is a GitHub-style callout
+  const calloutMatch = text.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i);
+
+  if (calloutMatch) {
+    const calloutType = calloutMatch[1].toUpperCase() as CalloutType;
+    const config = calloutConfigs[calloutType];
+    const rawContent = text.slice(calloutMatch[0].length).trim();
+
+    // Parse the content to handle codeblocks, images, tables, etc.
+    const parsedContent = marked.parse(rawContent, { async: false }) as string;
+
+    return `
+      <div class="border-l-4 ${config.borderColor} bg-white/5 rounded-r-md my-3 p-3 pl-4">
+        <div class="flex items-center gap-2 mb-1">
+          <div class="flex-shrink-0 ${config.iconBg}">
+            ${config.icon}
+          </div>
+          <div class="font-semibold uppercase tracking-wide ${config.titleColor}">${calloutType.charAt(0) + calloutType.slice(1).toLowerCase()}</div>
+        </div>
+        <div class="text-text-default leading-relaxed">${parsedContent}</div>
+      </div>
+    `;
+  }
+
+  // Default blockquote - also parse content for proper rendering
+  const parsedText = marked.parse(text, { async: false }) as string;
+  return `<blockquote class="border-l-4 border-l-accent bg-white/5 rounded-r-md my-3 p-3 pl-4 italic text-text-muted">${parsedText}</blockquote>`;
+};
+
 marked.use({ renderer });
 
 function decodeHtmlEntities(code: string): string {
