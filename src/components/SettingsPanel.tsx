@@ -5,6 +5,7 @@ import { ChatSettings } from './settings/ChatSettings.tsx';
 import { MemorySettings } from './settings/MemorySettings.tsx';
 import { MCPServersSettings } from './settings/MCPServersSettings.tsx';
 import { SecuritySettings } from './settings/SecuritySettings.tsx';
+import { DataSettings } from './settings/DataSettings.tsx';
 import { IconButton } from './ui/IconButton.tsx';
 import {
   SparklesIcon,
@@ -12,11 +13,11 @@ import {
   BrainIcon,
   ShieldCheckIcon,
   ChevronLeftIcon,
-  ServerIcon
+  ServerIcon,
+  HardDriveIcon
 } from 'lucide-react';
 
-type SettingsTab = 'ai' | 'chat' | 'context' | 'mcp' | 'security';
-
+type SettingsTab = 'ai' | 'chat' | 'context' | 'mcp' | 'security' | 'data';
 export function SettingsPanel() {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
@@ -26,6 +27,7 @@ export function SettingsPanel() {
     { id: 'chat' as const, label: 'Chat', icon: MessageSquareIcon },
     { id: 'context' as const, label: 'Memory', icon: BrainIcon },
     { id: 'mcp' as const, label: 'MCP', icon: ServerIcon },
+    { id: 'data' as const, label: 'Data', icon: HardDriveIcon },
     { id: 'security' as const, label: 'Safety', icon: ShieldCheckIcon },
   ];
 
@@ -82,6 +84,8 @@ export function SettingsPanel() {
           {activeTab === 'context' && <MemorySettings />}
 
           {activeTab === 'mcp' && <MCPServersSettings />}
+
+          {activeTab === 'data' && <DataSettings />}
 
           {activeTab === 'security' && <SecuritySettings />}
         </div>

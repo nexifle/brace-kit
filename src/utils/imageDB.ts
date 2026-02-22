@@ -211,3 +211,34 @@ export async function hydrateMessages(messages: Message[]): Promise<Message[]> {
     })
   );
 }
+
+export async function clearAllImages(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.clear();
+      request.onsuccess = () => resolve();
+      request.onerror = (e) => reject((e.target as IDBRequest).error);
+    });
+  } catch (e) {
+    console.warn('[ImageDB] clearAllImages error:', e);
+  }
+}
+
+export async function importImages(records: StoredImageRecord[]): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+
+    // Save each record preserving its original data including createdAt
+    records.forEach((record) => {
+      store.put(record);
+    });
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject((e.target as IDBRequest).error);
+  });
+}

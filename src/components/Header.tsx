@@ -37,11 +37,17 @@ export function Header() {
       <div className="flex items-center gap-2">
         <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary p-1 shadow-sm">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20">
-            <g fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round">
-              <path d="M14.8,10.9 A16,16 0 0,1 33.2,10.9" />
-              <path d="M39.9,22.6 A16,16 0 0,1 30.8,38.5" />
-              <path d="M17.2,38.5 A16,16 0 0,1 8.1,22.6" />
-            </g>
+
+            <path
+              d="M17,8 Q17,14 14,17 Q10,20 10,24 Q10,28 14,31 Q17,34 17,40"
+              fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round"
+            />
+
+            <path
+              d="M31,8 Q31,14 34,17 Q38,20 38,24 Q38,28 34,31 Q31,34 31,40"
+              fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round"
+            />
+
             <circle cx="24" cy="24" r="4" fill="currentColor" />
           </svg>
         </div>
