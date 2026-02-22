@@ -36,7 +36,7 @@ export function LockScreen() {
       />
 
       {/* Dialog Card - Compact Version */}
-      <div className="relative w-full max-w-[280px] p-6 rounded-lg bg-card/95 backdrop-blur-2xl border border-white/10 shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-500">
+      <div className="relative w-full max-w-[400px] p-6 rounded-lg bg-card/95 backdrop-blur-2xl border border-white/10 shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-500">
 
         {/* Lock Icon Section */}
         <div className="relative">
