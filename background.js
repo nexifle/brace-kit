@@ -139,6 +139,44 @@ async function forwardToContentScript(message, sendResponse) {
   }
 }
 
+// Helper to get user-friendly error messages from API responses
+async function getFriendlyErrorMessage(response, prefix = 'API Error') {
+  const status = response.status;
+  let details = '';
+  
+  try {
+    const errorText = await response.text();
+    try {
+      const errJson = JSON.parse(errorText);
+      // Try common error pathways:
+      // OpenAI/Anthropic: errJson.error.message
+      // Gemini: errJson.error.message OR errJson[0].error.message
+      // Generic: errJson.message
+      details = 
+        errJson.error?.message || 
+        errJson.message || 
+        (typeof errJson.error === 'string' ? errJson.error : null) ||
+        (Array.isArray(errJson) ? errJson[0]?.error?.message : null) ||
+        errorText;
+    } catch {
+      details = errorText;
+    }
+  } catch {
+    details = response.statusText;
+  }
+
+  if (!details || details.length > 500) details = response.statusText || 'Unknown error';
+
+  let statusPrefix = `${prefix} (${status})`;
+  if (status === 401) statusPrefix = "Invalid API Key (401)";
+  else if (status === 403) statusPrefix = "Permission Denied (403)";
+  else if (status === 404) statusPrefix = "Not Found (404)";
+  else if (status === 429) statusPrefix = "Rate Limit Exceeded (429)";
+  else if (status >= 500) statusPrefix = "Provider Server Error (" + status + ")";
+
+  return `${statusPrefix}: ${details}`;
+}
+
 async function handleChatRequest(message, sendResponse) {
   const { messages, providerConfig, tools, options } = message;
 
@@ -163,15 +201,8 @@ async function handleChatRequest(message, sendResponse) {
     const response = await fetch(url, fetchOptions);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      let errorMsg;
-      try {
-        const errJson = JSON.parse(errorText);
-        errorMsg = errJson.error?.message || errJson.message || errorText;
-      } catch {
-        errorMsg = errorText;
-      }
-      sendResponse({ error: `API Error (${response.status}): ${errorMsg}` });
+      const error = await getFriendlyErrorMessage(response);
+      sendResponse({ error });
       return;
     }
 
@@ -336,7 +367,8 @@ async function handleMemoryExtract(message, sendResponse) {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      sendResponse({ error: `API Error ${response.status}` });
+      const error = await getFriendlyErrorMessage(response);
+      sendResponse({ error });
       return;
     }
 
@@ -422,15 +454,8 @@ async function handleGoogleSearchTool(message, sendResponse) {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      let errorMsg;
-      try {
-        const errJson = JSON.parse(errorText);
-        errorMsg = errJson.error?.message || errorText;
-      } catch {
-        errorMsg = errorText;
-      }
-      sendResponse({ content: [{ text: `Google Search Error (${response.status}): ${errorMsg}` }] });
+      const error = await getFriendlyErrorMessage(response, 'Google Search Error');
+      sendResponse({ content: [{ text: error }] });
       return;
     }
 
@@ -515,7 +540,8 @@ async function handleTitleGenerate(message, sendResponse) {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      sendResponse({ error: `API Error ${response.status}` });
+      const error = await getFriendlyErrorMessage(response);
+      sendResponse({ error });
       return;
     }
 

@@ -7,7 +7,7 @@ import type { Message, Attachment, PageContext, SelectedText } from '../types/in
 import { TextFileViewer } from './TextFileViewer.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon, DownloadIcon, StarIcon } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon, DownloadIcon, StarIcon, QuoteIcon } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
 import { MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '../types/index.ts';
 
@@ -911,7 +911,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
                 title="Quote"
               >
                 <div className="flex items-center justify-center">
-                  <CopyIcon size={14} />
+                  <QuoteIcon size={14} />
                 </div>
               </button>
             </div>
@@ -1076,7 +1076,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
               onClick={handleQuoteClick}
               title="Quote"
             >
-              <CopyIcon size={14} />
+              <QuoteIcon size={14} />
             </button>
           </div>
         )}

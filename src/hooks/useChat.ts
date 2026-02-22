@@ -356,7 +356,7 @@ Output ONLY the title string.`;
     }
 
     try {
-      await chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
@@ -364,6 +364,11 @@ Output ONLY the title string.`;
         options: chatOptions,
         requestId,
       });
+
+      if (response?.error) {
+        store.addMessage({ role: 'error', content: response.error });
+        store.setIsStreaming(false);
+      }
     } catch (e) {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
