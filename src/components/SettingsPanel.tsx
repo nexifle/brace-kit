@@ -1,11 +1,10 @@
-import { useStore } from '../store/index.ts';
-import { ProviderSettings } from './settings/ProviderSettings.tsx';
-import { ChatSettings } from './settings/ChatSettings.tsx';
 import { MemorySettings } from './settings/MemorySettings.tsx';
-import { CustomProvidersSettings } from './settings/CustomProvidersSettings.tsx';
 import { MCPServersSettings } from './settings/MCPServersSettings.tsx';
 import { SecuritySettings } from './settings/SecuritySettings.tsx';
+import { ProviderSettings } from './settings/ProviderSettings.tsx';
+import { ChatSettings } from './settings/ChatSettings.tsx';
 import { IconButton } from './ui/IconButton.tsx';
+import { useStore } from '../store/index.ts';
 
 export function SettingsPanel() {
   const store = useStore();
@@ -26,7 +25,6 @@ export function SettingsPanel() {
         <ProviderSettings />
         <ChatSettings />
         <MemorySettings />
-        <CustomProvidersSettings />
         <MCPServersSettings />
         <SecuritySettings />
 
