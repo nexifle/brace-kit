@@ -17,7 +17,7 @@ const result = await build({
   format: 'esm',
   target: 'browser',
   minify: true,
-  sourcemap: 'external',
+  sourcemap: 'none',
   splitting: false,
   external: ['chrome', './mcp.js'],
   define: {
@@ -105,7 +105,7 @@ if (result.success) {
   // Flatten dist/src/* to dist/ (Bun preserves src/ subdir structure)
   const srcOutDir = join(outDir, 'src');
   if (existsSync(srcOutDir)) {
-    const flatFiles = ['index.js', 'index.js.map', 'content.js', 'content.js.map', 'index.css', 'onboarding.js', 'onboarding.js.map', 'onboarding.css'];
+    const flatFiles = ['index.js', 'content.js', 'index.css', 'onboarding.js', 'onboarding.css'];
     for (const file of flatFiles) {
       const from = join(srcOutDir, file);
       const to = join(outDir, file);

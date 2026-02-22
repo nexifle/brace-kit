@@ -32,7 +32,7 @@ export function ChatSettings() {
           <textarea
             id="system-prompt"
             rows={3}
-            className="w-full min-h-[70px] px-2.5 py-2 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/50 text-foreground resize-none"
+            className="w-full min-h-[70px] max-h-[640px] px-2.5 py-2 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/50 text-foreground max-inline-max field-sizing-content resize-none"
             placeholder="You are a helpful assistant..."
             value={store.providerConfig.systemPrompt}
             onChange={(e) => {
