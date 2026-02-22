@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useMCP } from '../../hooks/useMCP.ts';
-import { XIcon, ChevronDownIcon, TerminalIcon } from 'lucide-react';
-import type { MCPTool } from '../../types/index.ts';
+import { XIcon, ChevronDownIcon, TerminalIcon, PencilIcon, PlusIcon } from 'lucide-react';
+import type { MCPTool, MCPServer } from '../../types/index.ts';
 
 function ToolItem({ tool }: { tool: MCPTool }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -34,8 +34,9 @@ function ToolItem({ tool }: { tool: MCPTool }) {
 }
 
 export function MCPServersSettings() {
-  const { mcpServers, addMCPServer, removeMCPServer, toggleMCPServer, listTools } = useMCP();
+  const { mcpServers, addMCPServer, removeMCPServer, toggleMCPServer, updateMCPServer, listTools } = useMCP();
   const [showForm, setShowForm] = useState(false);
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [headers, setHeaders] = useState('');
@@ -59,19 +60,62 @@ export function MCPServersSettings() {
     }
   }, [expandedServerId, fetchTools]);
 
-  const handleAdd = async () => {
+  const handleSave = async () => {
     if (!name.trim() || !url.trim()) return;
     setIsConnecting(true);
-    const result = await addMCPServer(name.trim(), url.trim(), headers);
+
+    let result;
+    if (editingServerId) {
+      // Parse headers
+      const headersMap: Record<string, string> = {};
+      const headerLines = headers.trim().split('\n');
+      for (const line of headerLines) {
+        const idx = line.indexOf(':');
+        if (idx > 0) {
+          const key = line.slice(0, idx).trim();
+          const val = line.slice(idx + 1).trim();
+          if (key) headersMap[key] = val;
+        }
+      }
+
+      result = await updateMCPServer(editingServerId, {
+        name: name.trim(),
+        url: url.trim(),
+        headers: headersMap,
+      });
+    } else {
+      result = await addMCPServer(name.trim(), url.trim(), headers);
+    }
+
     setIsConnecting(false);
     if (result.success) {
-      setName('');
-      setUrl('');
-      setHeaders('');
-      setShowForm(false);
+      resetForm();
     } else {
-      alert(`Failed to connect: ${result.error || 'Unknown error'}`);
+      alert(`Failed: ${result.error || 'Unknown error'}`);
     }
+  };
+
+  const resetForm = () => {
+    setName('');
+    setUrl('');
+    setHeaders('');
+    setShowForm(false);
+    setEditingServerId(null);
+  };
+
+  const handleEdit = (server: MCPServer) => {
+    setName(server.name);
+    setUrl(server.url);
+
+    // Format headers back to text
+    const headersText = Object.entries(server.headers || {})
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n');
+    setHeaders(headersText);
+
+    setEditingServerId(server.id);
+    setShowForm(true);
+    // Scroll to top of form
   };
 
   const toggleExpand = (id: string) => {
@@ -86,22 +130,33 @@ export function MCPServersSettings() {
           <p className="text-xs text-muted-foreground leading-none">External tools and data sources</p>
         </div>
         <button
-          className={`w-7 h-7 flex items-center justify-center rounded-md transition-all ${showForm
+          className={`w-7 h-7 flex items-center justify-center rounded-md transition-all ${showForm && !editingServerId
             ? 'bg-primary text-primary-foreground shadow-sm'
             : 'bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground'
             }`}
           title="Add server"
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            if (showForm && editingServerId) {
+              setEditingServerId(null);
+              setName('');
+              setUrl('');
+              setHeaders('');
+            } else {
+              setShowForm(!showForm);
+            }
+          }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform duration-200 ${showForm ? 'rotate-45' : ''}`}>
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
+          {editingServerId ? <XIcon size={14} /> : (
+            <PlusIcon size={14} className={`transition-transform duration-200 ${showForm ? 'rotate-45' : ''}`} />
+          )}
         </button>
       </div>
 
       {showForm && (
         <div className="flex flex-col gap-3 p-3 mb-2 rounded-lg bg-secondary/30 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+            {editingServerId ? 'Edit MCP Server' : 'New MCP Server'}
+          </div>
           <div className="flex flex-col gap-1 px-0.5">
             <label htmlFor="mcp-name" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Server Name</label>
             <input
@@ -137,21 +192,28 @@ export function MCPServersSettings() {
               onChange={(e) => setHeaders(e.target.value)}
             />
           </div>
-          <button
-            className="w-full h-9 flex items-center justify-center gap-2 bg-primary text-primary-foreground text-sm font-medium rounded-md hover:bg-primary/90 transition-all disabled:opacity-50 shadow-sm active:scale-[0.98]"
-            onClick={handleAdd}
-            disabled={isConnecting}
-          >
-            {isConnecting ? (
-              <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+          <div className="flex gap-2">
+            <button
+              className="flex-1 h-9 flex items-center justify-center gap-2 bg-primary text-primary-foreground text-sm font-medium rounded-md hover:bg-primary/90 transition-all disabled:opacity-50 shadow-sm active:scale-[0.98]"
+              onClick={handleSave}
+              disabled={isConnecting}
+            >
+              {isConnecting ? (
+                <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+              ) : (
+                <PlusIcon size={14} />
+              )}
+              {isConnecting ? 'Connecting...' : editingServerId ? 'Update Server' : 'Connect Server'}
+            </button>
+            {editingServerId && (
+              <button
+                className="px-4 h-9 bg-muted text-muted-foreground text-sm font-medium rounded-md hover:bg-muted/80 transition-all"
+                onClick={resetForm}
+              >
+                Cancel
+              </button>
             )}
-            {isConnecting ? 'Connecting...' : 'Connect Server'}
-          </button>
+          </div>
         </div>
       )}
 
@@ -201,7 +263,14 @@ export function MCPServersSettings() {
                     <div className="w-7 h-4 bg-muted rounded-full peer peer-checked:bg-primary transition-all duration-200 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-3"></div>
                   </label>
                   <button
-                    className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-all group-hover:opacity-100"
+                    className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-all"
+                    title="Edit server"
+                    onClick={() => handleEdit(server)}
+                  >
+                    <PencilIcon size={14} />
+                  </button>
+                  <button
+                    className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-all"
                     title="Remove server"
                     onClick={() => removeMCPServer(server.id)}
                   >

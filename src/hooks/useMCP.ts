@@ -58,6 +58,45 @@ export function useMCP() {
     store.saveToStorage();
   }, [store]);
 
+  const updateMCPServer = useCallback(async (
+    id: string,
+    updates: Partial<MCPServer>
+  ): Promise<{ success: boolean; error?: string; toolCount?: number }> => {
+    const existing = store.mcpServers.find(s => s.id === id);
+    if (!existing) return { success: false, error: 'Server not found' };
+
+    const updated = { ...existing, ...updates };
+    store.updateMCPServer(id, updates);
+
+    // If critical connection info changed, reconnect
+    if (updates.url !== undefined || updates.headers !== undefined) {
+      try {
+        const result = await chrome.runtime.sendMessage({
+          type: 'MCP_CONNECT',
+          config: updated,
+        });
+
+        if (result.success) {
+          store.updateMCPServer(id, {
+            connected: true,
+            toolCount: result.tools?.length || 0,
+          });
+          store.saveToStorage();
+          return { success: true, toolCount: result.tools?.length || 0 };
+        } else {
+          store.updateMCPServer(id, { connected: false, toolCount: 0 });
+          store.saveToStorage();
+          return { success: false, error: result.error || 'Connection failed after update' };
+        }
+      } catch (e) {
+        return { success: false, error: (e as Error).message };
+      }
+    }
+
+    store.saveToStorage();
+    return { success: true };
+  }, [store]);
+
   const toggleMCPServer = useCallback((id: string, enabled: boolean) => {
     store.toggleMCPServer(id, enabled);
     store.saveToStorage();
@@ -90,6 +129,7 @@ export function useMCP() {
     addMCPServer,
     removeMCPServer,
     toggleMCPServer,
+    updateMCPServer,
     listTools,
     callTool,
   };
