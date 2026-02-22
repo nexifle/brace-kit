@@ -70,19 +70,18 @@ renderer.link = ({ href, title, text }: { href: string; title?: string | null; t
   return `<a href="${href}"${titleAttr}>${text}</a>`;
 };
 
-// Custom blockquote renderer for GitHub-style callouts
-renderer.blockquote = ({ text }: { text: string }) => {
-  return `<blockquote class="border-l-4 border-l-accent bg-white/5 rounded-r-md my-3 p-3 pl-4 italic text-text-muted">${text}</blockquote>`;
-};
-
 marked.use({ renderer });
 
-// Pre-process markdown to convert GitHub-style callouts to custom HTML
+// Store for blockquote placeholders (regular + callouts)
+const blockquotePlaceholders = new Map<string, { type: 'blockquote' | CalloutType; content: string; config?: CalloutConfig }>();
+
+// Pre-process markdown to convert GitHub-style callouts AND regular blockquotes to custom HTML
 // This must be done BEFORE marked parses the markdown
-function processCallouts(markdown: string): string {
+function processBlockquotes(markdown: string): string {
+  // First, process GitHub-style callouts
   const calloutPattern = /^> *\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n((?:>.*\n?)+)/gim;
 
-  return markdown.replace(calloutPattern, (_match, type: string, content: string) => {
+  markdown = markdown.replace(calloutPattern, (_match, type: string, content: string) => {
     const calloutType = type.toUpperCase() as CalloutType;
     const config = calloutConfigs[calloutType];
 
@@ -93,12 +92,10 @@ function processCallouts(markdown: string): string {
       .join('\n')
       .trim();
 
-    // Create a unique placeholder that will be replaced after markdown parsing
-    // Use a format that won't be affected by markdown parsing
-    const placeholder = `[[CALLOUT-${calloutType}-${Date.now()}-${Math.random().toString(36).slice(2)}-END]]`;
+    // Create a unique placeholder
+    const placeholder = `[[BLOCKQUOTE-${calloutType}-${Date.now()}-${Math.random().toString(36).slice(2)}-END]]`;
 
-    // Store the callout data for later processing
-    calloutPlaceholders.set(placeholder, {
+    blockquotePlaceholders.set(placeholder, {
       type: calloutType,
       content: cleanContent,
       config,
@@ -106,39 +103,76 @@ function processCallouts(markdown: string): string {
 
     return placeholder + '\n';
   });
+
+  // Then, process regular blockquotes (that are NOT callouts)
+  // Match blockquote lines, including multi-line and nested content
+  const blockquotePattern = /^((?:>.*\n?)+)/gm;
+
+  markdown = markdown.replace(blockquotePattern, (match) => {
+    // Skip if this was already processed as a callout (placeholder)
+    if (match.includes('[[BLOCKQUOTE-')) return match;
+
+    // Remove the leading '> ' from each line
+    const cleanContent = match
+      .split('\n')
+      .map((line: string) => line.replace(/^> ?/, ''))
+      .filter((line: string) => line.trim())
+      .join('\n')
+      .trim();
+
+    if (!cleanContent) return match;
+
+    // Create a unique placeholder
+    const placeholder = `[[BLOCKQUOTE-REGULAR-${Date.now()}-${Math.random().toString(36).slice(2)}-END]]`;
+
+    blockquotePlaceholders.set(placeholder, {
+      type: 'blockquote',
+      content: cleanContent,
+    });
+
+    return placeholder + '\n';
+  });
+
+  return markdown;
 }
 
-// Store for callout placeholders
-const calloutPlaceholders = new Map<string, { type: CalloutType; content: string; config: CalloutConfig }>();
-
-// Replace placeholders with actual callout HTML after markdown parsing
-function replaceCalloutPlaceholders(html: string): string {
-  calloutPlaceholders.forEach((data, placeholder) => {
-    // Parse the markdown content inside the callout
+// Replace placeholders with actual blockquote HTML after markdown parsing
+function replaceBlockquotePlaceholders(html: string): string {
+  blockquotePlaceholders.forEach((data, placeholder) => {
+    // Parse the markdown content inside the blockquote
     const parsedContent = marked.parse(data.content, { async: false }) as string;
 
-    const calloutHtml = `
-      <div class="border-l-4 ${data.config.borderColor} bg-white/5 rounded-r-md my-3 p-3 pl-4">
+    let blockquoteHtml: string;
+
+    if (data.type === 'blockquote') {
+      // Regular blockquote
+      blockquoteHtml = `<blockquote class="border-l-4 border-l-accent bg-white/5 rounded-r-md my-3 p-3 pl-4 text-text-muted">${parsedContent}</blockquote>`;
+    } else {
+      // Callout blockquote
+      const config = data.config!;
+      blockquoteHtml = `
+      <div class="border-l-4 ${config.borderColor} bg-white/5 rounded-r-md my-3 p-3 pl-4">
         <div class="flex items-center gap-2 mb-1">
-          <div class="flex-shrink-0 ${data.config.iconBg}">
-            ${data.config.icon}
+          <div class="flex-shrink-0 ${config.iconBg}">
+            ${config.icon}
           </div>
-          <div class="font-semibold uppercase tracking-wide ${data.config.titleColor}">${data.type.charAt(0) + data.type.slice(1).toLowerCase()}</div>
+          <div class="font-semibold uppercase tracking-wide ${config.titleColor}">${data.type.charAt(0) + data.type.slice(1).toLowerCase()}</div>
         </div>
         <div class="text-text-default leading-relaxed prose-p:my-2">${parsedContent}</div>
       </div>
     `;
+    }
 
     // Escape special regex characters in placeholder
     const escapedPlaceholder = placeholder.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
 
     // Replace both with and without surrounding <p> tags
-    html = html.replace(new RegExp(`<p>${escapedPlaceholder}</p>`, 'g'), calloutHtml);
-    html = html.replace(new RegExp(escapedPlaceholder, 'g'), calloutHtml);
+    html = html.replace(new RegExp(`<p>${escapedPlaceholder}</p>`, 'g'), blockquoteHtml);
+    html = html.replace(new RegExp(escapedPlaceholder, 'g'), blockquoteHtml);
   });
 
   // Clear the placeholders after use
-  calloutPlaceholders.clear();
+  blockquotePlaceholders.clear();
 
   return html;
 }
@@ -167,14 +201,14 @@ export function renderMarkdown(text: string): string {
   // Convert citation markers [1][2] to clickable superscript links
   let processedText = text.replace(/\[(\d+)\]/g, '<sup><a href="#cite-$1" class="citation-link">[$1]</a></sup>');
 
-  // Pre-process GitHub-style callouts BEFORE markdown parsing
-  processedText = processCallouts(processedText);
+  // Pre-process blockquotes (callouts + regular) BEFORE markdown parsing
+  processedText = processBlockquotes(processedText);
 
   // Parse markdown
   let html = marked.parse(processedText, { async: false }) as string;
 
-  // Replace callout placeholders with actual HTML
-  html = replaceCalloutPlaceholders(html);
+  // Replace blockquote placeholders with actual HTML
+  html = replaceBlockquotePlaceholders(html);
 
   // Add code block copy buttons, language labels, and syntax highlighting
   html = html.replace(

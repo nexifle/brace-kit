@@ -531,21 +531,36 @@ Output ONLY the title string.`;
     await dispatchChatRequest(apiMessages);
   }, [store, buildAPIMessagesFromList, dispatchChatRequest]);
 
-  const editMessage = useCallback(async (messageIndex: number, newText: string) => {
+  const editMessage = useCallback(async (messageIndex: number, editData: { text: string; pageContext?: PageContext | null; selectedText?: SelectedText | null; attachments?: Attachment[] }) => {
     if (store.isStreaming) return;
     const messageToEdit = store.messages[messageIndex];
     if (!messageToEdit || messageToEdit.role !== 'user') return;
+
+    const { text: newText, pageContext: newPageContext, selectedText: newSelectedText, attachments: newAttachments } = editData;
+
     let newContent = newText;
     let newDisplayContent = newText;
-    if (messageToEdit.pageContext) {
-      newContent = `[Page Context]\nTitle: ${messageToEdit.pageContext.pageTitle}\nURL: ${messageToEdit.pageContext.pageUrl}\n${messageToEdit.pageContext.metaDescription ? `Description: ${messageToEdit.pageContext.metaDescription}\n` : ''}\nContent:\n${messageToEdit.pageContext.content}\n\n[User Message]\n${newText}`;
+    if (newPageContext) {
+      newContent = `[Page Context]\nTitle: ${newPageContext.pageTitle}\nURL: ${newPageContext.pageUrl}\n${newPageContext.metaDescription ? `Description: ${newPageContext.metaDescription}\n` : ''}\nContent:\n${newPageContext.content}\n\n[User Message]\n${newText}`;
     }
-    if (messageToEdit.selectedText) {
-      const selPrefix = messageToEdit.pageContext ? '' : `[From: ${messageToEdit.selectedText.pageTitle}]\n`;
-      newContent = `${selPrefix}[Selected Text]\n"${messageToEdit.selectedText.selectedText}"\n\n[User Message]\n${newText}`;
+    if (newSelectedText) {
+      const selPrefix = newPageContext ? '' : `[From: ${newSelectedText.pageTitle}]\n`;
+      newContent = `${selPrefix}[Selected Text]\n"${newSelectedText.selectedText}"\n\n[User Message]\n${newText}`;
     }
     const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
-    const updatedMessage: Message = { ...messageToEdit, content: newContent, displayContent: newDisplayContent };
+    const updatedMessage: Message = {
+      ...messageToEdit,
+      content: newContent,
+      displayContent: newDisplayContent,
+      pageContext: newPageContext || undefined,
+      selectedText: newSelectedText || undefined,
+      attachments: newAttachments && newAttachments.length > 0 ? newAttachments : undefined,
+    };
+    // Remove undefined fields
+    if (!updatedMessage.pageContext) delete updatedMessage.pageContext;
+    if (!updatedMessage.selectedText) delete updatedMessage.selectedText;
+    if (!updatedMessage.attachments) delete updatedMessage.attachments;
+
     messagesUpToIndex[messageIndex] = updatedMessage;
     store.setMessages(messagesUpToIndex);
     const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);

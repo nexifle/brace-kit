@@ -4,12 +4,13 @@ import { renderMarkdown } from '../utils/markdown.ts';
 import { copyToClipboard } from '../utils/formatters.ts';
 import { useStore } from '../store/index.ts';
 import { CloseIcon } from './icons/CloseIcon.tsx';
-import type { Message } from '../types/index.ts';
+import type { Message, Attachment, PageContext, SelectedText } from '../types/index.ts';
 import { TextFileViewer } from './TextFileViewer.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
+import { MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '../types/index.ts';
 
 const turndownService = new TurndownService({
   headingStyle: 'atx',
@@ -25,13 +26,20 @@ turndownService.addRule('citations', {
   replacement: () => '',
 });
 
+export interface EditedMessageData {
+  text: string;
+  pageContext?: PageContext | null;
+  selectedText?: SelectedText | null;
+  attachments?: Attachment[];
+}
+
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
   messageIndex?: number;
   onBranch?: (index: number) => void;
   onRegenerate?: (index: number) => void;
-  onEdit?: (index: number, text: string) => void;
+  onEdit?: (index: number, data: EditedMessageData) => void;
 }
 
 interface QuotePopupState {
@@ -56,10 +64,14 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
+  const [editPageContext, setEditPageContext] = useState<PageContext | null>(null);
+  const [editSelectedText, setEditSelectedText] = useState<SelectedText | null>(null);
+  const [editAttachments, setEditAttachments] = useState<Attachment[]>([]);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showSummaryContent, setShowSummaryContent] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   const messages = useStore((state) => state.messages);
   const setQuotedText = useStore((state) => state.setQuotedText);
@@ -87,8 +99,11 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const handleEditClick = useCallback(() => {
     const contentToEdit = message.displayContent || message.content;
     setEditText(contentToEdit);
+    setEditPageContext(message.pageContext || null);
+    setEditSelectedText(message.selectedText || null);
+    setEditAttachments(message.attachments || []);
     setIsEditing(true);
-  }, [message.displayContent, message.content]);
+  }, [message.displayContent, message.content, message.pageContext, message.selectedText, message.attachments]);
 
   // Handle submitting the edit
   const handleSubmit = useCallback(() => {
@@ -99,41 +114,69 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     } else {
       // No confirmation needed if no messages after
       if (onEdit && messageIndex !== undefined) {
-        onEdit(messageIndex, editText);
+        onEdit(messageIndex, {
+          text: editText,
+          pageContext: editPageContext,
+          selectedText: editSelectedText,
+          attachments: editAttachments,
+        });
       }
       setIsEditing(false);
       setEditText('');
+      setEditPageContext(null);
+      setEditSelectedText(null);
+      setEditAttachments([]);
     }
-  }, [editText, hasAfterMessages, onEdit, messageIndex]);
+  }, [editText, editPageContext, editSelectedText, editAttachments, hasAfterMessages, onEdit, messageIndex]);
 
   // Handle confirmed submit
   const handleConfirmSubmit = useCallback(() => {
     setShowSubmitConfirm(false);
     if (onEdit && messageIndex !== undefined) {
-      onEdit(messageIndex, editText);
+      onEdit(messageIndex, {
+        text: editText,
+        pageContext: editPageContext,
+        selectedText: editSelectedText,
+        attachments: editAttachments,
+      });
     }
     setIsEditing(false);
     setEditText('');
-  }, [editText, onEdit, messageIndex]);
+    setEditPageContext(null);
+    setEditSelectedText(null);
+    setEditAttachments([]);
+  }, [editText, editPageContext, editSelectedText, editAttachments, onEdit, messageIndex]);
 
   // Handle canceling the edit
   const handleCancel = useCallback(() => {
     const originalText = message.displayContent || message.content;
-    if (editText !== originalText) {
+    const hasChanges =
+      editText !== originalText ||
+      editPageContext !== (message.pageContext || null) ||
+      editSelectedText !== (message.selectedText || null) ||
+      JSON.stringify(editAttachments) !== JSON.stringify(message.attachments || []);
+
+    if (hasChanges) {
       // Show confirmation if there are unsaved changes
       setShowCancelConfirm(true);
     } else {
       // No changes, just exit edit mode
       setIsEditing(false);
       setEditText('');
+      setEditPageContext(null);
+      setEditSelectedText(null);
+      setEditAttachments([]);
     }
-  }, [editText, message.displayContent, message.content]);
+  }, [editText, editPageContext, editSelectedText, editAttachments, message.displayContent, message.content, message.pageContext, message.selectedText, message.attachments]);
 
   // Handle confirmed cancel
   const handleConfirmCancel = useCallback(() => {
     setShowCancelConfirm(false);
     setIsEditing(false);
     setEditText('');
+    setEditPageContext(null);
+    setEditSelectedText(null);
+    setEditAttachments([]);
   }, []);
 
   // Handle keyboard shortcuts
@@ -146,6 +189,93 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       handleCancel();
     }
   }, [handleSubmit, handleCancel]);
+
+  // Edit mode attachment handlers
+  const handleRemoveEditPageContext = useCallback(() => {
+    setEditPageContext(null);
+  }, []);
+
+  const handleRemoveEditSelectedText = useCallback(() => {
+    setEditSelectedText(null);
+  }, []);
+
+  const handleRemoveEditAttachment = useCallback((index: number) => {
+    setEditAttachments(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleAddPageContextInEdit = useCallback(() => {
+    chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTENT' }).then((response: any) => {
+      if (response?.error) {
+        console.error('Failed to get page context:', response.error);
+      } else {
+        setEditPageContext(response);
+      }
+    });
+  }, []);
+
+  const handleAddSelectedTextInEdit = useCallback(() => {
+    chrome.runtime.sendMessage({ type: 'GET_SELECTED_TEXT' }).then((response: any) => {
+      if (response?.error) {
+        console.error('Failed to get selected text:', response.error);
+      } else if (response?.selectedText) {
+        setEditSelectedText(response);
+      }
+    });
+  }, []);
+
+  const handleEditFileSelect = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
+      'image/jpeg': 'image',
+      'image/png': 'image',
+      'image/gif': 'image',
+      'image/webp': 'image',
+      'text/plain': 'text',
+      'text/csv': 'text',
+      'application/pdf': 'pdf',
+    };
+
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) {
+        console.error('File too large:', file.name);
+        continue;
+      }
+
+      const fileType = ALLOWED_FILE_TYPES[file.type];
+      if (!fileType) {
+        console.error('Unsupported file type:', file.name);
+        continue;
+      }
+
+      try {
+        if (fileType === 'image') {
+          const dataUrl = await processImageForEdit(file);
+          setEditAttachments(prev => [...prev, {
+            type: 'image',
+            name: file.name,
+            data: dataUrl,
+          }]);
+        } else if (fileType === 'text') {
+          const text = await file.text();
+          setEditAttachments(prev => [...prev, {
+            type: 'text',
+            name: file.name,
+            data: text,
+          }]);
+        } else if (fileType === 'pdf') {
+          const dataUrl = await readFileAsDataURL(file);
+          setEditAttachments(prev => [...prev, {
+            type: 'pdf',
+            name: file.name,
+            data: dataUrl,
+          }]);
+        }
+      } catch (err) {
+        console.error('Failed to process file:', file.name, err);
+      }
+    }
+  }, []);
 
   const handleImageActions = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -422,14 +552,122 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     if (isEditing && message.role === 'user') {
       return (
         <div className="">
+          {/* Edit Page Context */}
+          {editPageContext && (
+            <div className="flex items-center gap-2.5 px-3 py-2 mb-2.5 bg-brand-400/[0.08] border border-brand-400/15 rounded-md animate-slide-down">
+              <div className="flex items-center justify-center w-8 h-8 bg-brand-400/15 rounded-sm text-accent shrink-0">
+                <GlobeIcon size={16} />
+              </div>
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <div className="text-[0.85rem] font-semibold text-text-default truncate mb-0.5">{editPageContext.pageTitle}</div>
+                <div className="text-[0.7rem] text-text-subtle truncate">{editPageContext.pageUrl}</div>
+              </div>
+              <button
+                className="flex items-center justify-center w-6 h-6 border-none bg-transparent text-text-subtle rounded-full cursor-pointer shrink-0 transition-all duration-150 hover:bg-danger-400/20 hover:text-danger-400"
+                onClick={handleRemoveEditPageContext}
+                title="Remove page context"
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Edit Selected Text */}
+          {editSelectedText && (
+            <div className="flex items-center justify-between px-2.5 py-2 mb-2.5 bg-purple-400/[0.08] border border-purple-400/15 rounded-sm animate-slide-down">
+              <div className="flex items-center gap-1.5 text-[0.8rem] text-accent-subtle overflow-hidden flex-1">
+                <FileTextIcon size={12} />
+                <span className="truncate max-w-60">
+                  {editSelectedText.selectedText.length > 80
+                    ? `${editSelectedText.selectedText.substring(0, 80)}...`
+                    : editSelectedText.selectedText}
+                </span>
+              </div>
+              <button
+                className="flex items-center justify-center w-6 h-6 border-none bg-transparent text-text-subtle rounded-full cursor-pointer shrink-0 transition-all duration-150 hover:bg-danger-400/20 hover:text-danger-400"
+                onClick={handleRemoveEditSelectedText}
+                title="Remove selection"
+              >
+                <CloseIcon size={10} />
+              </button>
+            </div>
+          )}
+
+          {/* Edit Attachments */}
+          {editAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2.5 animate-slide-down">
+              {editAttachments.map((att, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-1.5 px-2 py-1.5 bg-bg-surface-raised border border-border rounded-sm text-[0.8rem] text-text-muted"
+                >
+                  {att.type === 'image' ? (
+                    <>
+                      <img src={att.data} alt={att.name} className="w-10 h-10 object-cover rounded-sm" />
+                      <span className="truncate max-w-20">{att.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{att.type === 'pdf' ? '📄' : '📃'}</span>
+                      <span className="truncate max-w-20">{att.name}</span>
+                    </>
+                  )}
+                  <button
+                    className="flex items-center justify-center w-4 h-4 border-none bg-transparent text-text-subtle cursor-pointer rounded-full shrink-0 transition-all duration-150 hover:bg-danger-400/20 hover:text-danger-400"
+                    onClick={() => handleRemoveEditAttachment(idx)}
+                    title="Remove"
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add attachments buttons */}
+          <div className="flex items-center gap-1 mb-2">
+            <Btn
+              variant='ghost'
+              size='sm'
+              onClick={handleAddPageContextInEdit}
+              title="Add page context"
+            >
+              <GlobeIcon size={14} />
+            </Btn>
+            <Btn
+              variant='ghost'
+              size='sm'
+              onClick={handleAddSelectedTextInEdit}
+              title="Add selected text"
+            >
+              <FileTextIcon size={14} />
+            </Btn>
+            <Btn
+              variant='ghost'
+              size='sm'
+              onClick={() => editFileInputRef.current?.click()}
+              title="Attach file"
+            >
+              <PlusIcon size={14} />
+            </Btn>
+            <input
+              type="file"
+              ref={editFileInputRef}
+              className="hidden"
+              accept="image/*,.txt,.csv,.pdf"
+              multiple
+              onChange={(e) => handleEditFileSelect(e.target.files)}
+            />
+          </div>
+
           <textarea
             ref={textareaRef}
-            className="w-full mt-5 mb-0 overflow-y-autoborder-none outline-none resize-none max-inline-max field-sizing-content max-h-[150px]"
+            className="w-full mt-2 mb-0 overflow-y-auto border-none outline-none resize-none max-inline-max field-sizing-content max-h-[150px]"
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          <div className="mb-5 w-full flex justify-end gap-2">
+          <div className="mb-5 w-full flex justify-end gap-2 mt-2">
             <Btn
               variant='ghost'
               size='sm'
@@ -476,7 +714,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender) }} />;
     }
     return <>{message.displayContent || message.content}</>;
-  }, [isEditing, editText, message.content, message.displayContent, message.role, message.summary, showSummaryContent]);
+  }, [isEditing, editText, editPageContext, editSelectedText, editAttachments, message.content, message.displayContent, message.role, message.summary, showSummaryContent, handleRemoveEditPageContext, handleRemoveEditSelectedText, handleRemoveEditAttachment, handleAddPageContextInEdit, handleAddSelectedTextInEdit, handleEditFileSelect, handleKeyDown, handleSubmit, handleCancel]);
 
   const groundingChunks = message.groundingMetadata?.groundingChunks;
 
@@ -546,7 +784,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       </div>
       <div className={`prose prose-invert prose-img:m-0 max-w-none relative break-words overflow-wrap px-4 py-0 ${bubbleBgClass} ${isEditing ? 'editing' : ''} ${message.summary ? 'is-summary' : ''}`} ref={bubbleRef} onMouseUp={handleMouseUp}>
         {message.pageContext && (
-          <div className="flex items-center gap-2.5 px-3 py-2.5 mb-2.5 bg-black/30 border border-border rounded-md">
+          <div className="flex items-center gap-2.5 px-3 py-2.5 mb-2.5 bg-black/30 border border-border rounded-md mt-4">
             <div className="flex items-center justify-center w-8 h-8 bg-brand-400/15 rounded-sm text-accent shrink-0">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -969,6 +1207,47 @@ function downloadTableAsMarkdown(table: HTMLTableElement) {
   link.download = 'table.md';
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+// Helper functions for file processing in edit mode
+function processImageForEdit(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+          const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function MessageActions({

@@ -241,21 +241,19 @@ export function GalleryView() {
       {/* Tabs */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] shrink-0">
         <button
-          className={`px-3 py-1.5 text-[0.8125rem] font-medium transition-colors duration-150 ${
-            activeTab === 'all'
+          className={`px-3 py-1.5 text-[0.8125rem] font-medium transition-colors duration-150 ${activeTab === 'all'
               ? 'text-[var(--text-primary)] bg-[var(--bg-active)]'
               : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
-          }`}
+            }`}
           onClick={() => setActiveTab('all')}
         >
           Semua
         </button>
         <button
-          className={`px-3 py-1.5 text-[0.8125rem] font-medium transition-colors duration-150 flex items-center gap-1.5 ${
-            activeTab === 'favorites'
+          className={`px-3 py-1.5 text-[0.8125rem] font-medium transition-colors duration-150 flex items-center gap-1.5 ${activeTab === 'favorites'
               ? 'text-[var(--text-primary)] bg-[var(--bg-active)]'
               : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
-          }`}
+            }`}
           onClick={() => setActiveTab('favorites')}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill={activeTab === 'favorites' ? "#fbbf24" : "none"} stroke={activeTab === 'favorites' ? "#fbbf24" : "currentColor"} strokeWidth="2">
@@ -327,89 +325,90 @@ export function GalleryView() {
           }
 
           return (
-          <div className="grid grid-cols-3 gap-2.5">
-            {filteredItems.map((item) => {
-              const isMd = isMarkdownImage(item);
-              const itemKey = isMd ? `md:${(item as MarkdownImage).conversationId}::${(item as MarkdownImage).url}` : (item as StoredImageRecord).key;
-              const imgSrc = isMd ? (item as MarkdownImage).url : `data:${(item as StoredImageRecord).mimeType};base64,${(item as StoredImageRecord).data}`;
-              const fav = isFavorite(item);
+            <div className="grid grid-cols-3 gap-2.5">
+              {filteredItems.map((item) => {
+                const isMd = isMarkdownImage(item);
+                const itemKey = isMd ? `md:${(item as MarkdownImage).conversationId}::${(item as MarkdownImage).url}` : (item as StoredImageRecord).key;
+                const imgSrc = isMd ? (item as MarkdownImage).url : `data:${(item as StoredImageRecord).mimeType};base64,${(item as StoredImageRecord).data}`;
+                const fav = isFavorite(item);
 
-              return (
-              <div
-                key={itemKey}
-                className="bg-[var(--bg-secondary)] border border-[var(--border-subtle)] overflow-hidden cursor-pointer transition-all duration-150 hover:border-[var(--border-active)]"
-                onClick={() => setLightbox(item)}
-              >
-                <div className="relative aspect-square overflow-hidden bg-[var(--bg-tertiary)]">
-                  <img
-                    src={imgSrc}
-                    alt="Generated image"
-                    className="w-full h-full object-cover block"
-                    crossOrigin={isMd ? "anonymous" : undefined}
-                  />
-                  {/* Favorite indicator */}
-                  {fav && (
-                    <div className="absolute top-1.5 left-1.5">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" strokeWidth="2">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </div>
-                  )}
+                return (
                   <div
-                    className="absolute inset-0 bg-black/60 flex items-center justify-center gap-1.5 opacity-0 transition-opacity duration-150 hover:opacity-100"
-                    onClick={(e) => e.stopPropagation()}
+                    key={itemKey}
+                    className="bg-[var(--bg-secondary)] border border-[var(--border-subtle)] overflow-hidden cursor-pointer transition-all duration-150 hover:border-[var(--border-active)]"
+                    onClick={() => setLightbox(item)}
                   >
-                    <button
-                      className="flex items-center justify-center w-7 h-7 bg-white/12 border border-white/15 text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]"
-                      title="Lihat"
-                      onClick={() => setLightbox(item)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    </button>
-                    <button
-                      className={`flex items-center justify-center w-7 h-7 ${fav ? 'bg-amber-500/30 border-amber-400/50' : 'bg-white/12 border-white/15'} text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]`}
-                      title={fav ? "Hapus Favorit" : "Favorit"}
-                      onClick={() => toggleFavorite(item)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill={fav ? "#fbbf24" : "none"} stroke={fav ? "#fbbf24" : "currentColor"} strokeWidth="2">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </button>
-                    <button
-                      className="flex items-center justify-center w-7 h-7 bg-white/12 border border-white/15 text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]"
-                      title="Download"
-                      onClick={() => handleDownload(item)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                      </svg>
-                    </button>
-                    <button
-                      className="flex items-center justify-center w-7 h-7 bg-white/12 border border-white/15 text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]"
-                      title="Salin"
-                      onClick={() => handleCopy(item)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="9" y="9" width="13" height="13" rx="2" />
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                      </svg>
-                    </button>
+                    <div className="relative aspect-square overflow-hidden bg-[var(--bg-tertiary)]">
+                      <img
+                        src={imgSrc}
+                        alt="Generated image"
+                        className="w-full h-full object-cover block"
+                        crossOrigin={isMd ? "anonymous" : undefined}
+                      />
+                      {/* Favorite indicator */}
+                      {fav && (
+                        <div className="absolute top-1.5 left-1.5">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" strokeWidth="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                        </div>
+                      )}
+                      <div
+                        className="absolute inset-0 bg-black/60 flex items-center justify-center gap-1.5 opacity-0 transition-opacity duration-150 hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          className="flex items-center justify-center w-7 h-7 bg-white/12 border border-white/15 text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]"
+                          title="Lihat"
+                          onClick={() => setLightbox(item)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </button>
+                        <button
+                          className={`flex items-center justify-center w-7 h-7 ${fav ? 'bg-amber-500/30 border-amber-400/50' : 'bg-white/12 border-white/15'} text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]`}
+                          title={fav ? "Hapus Favorit" : "Favorit"}
+                          onClick={() => toggleFavorite(item)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={fav ? "#fbbf24" : "none"} stroke={fav ? "#fbbf24" : "currentColor"} strokeWidth="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                        </button>
+                        <button
+                          className="flex items-center justify-center w-7 h-7 bg-white/12 border border-white/15 text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]"
+                          title="Download"
+                          onClick={() => handleDownload(item)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                        </button>
+                        <button
+                          className="flex items-center justify-center w-7 h-7 bg-white/12 border border-white/15 text-[var(--text-primary)] cursor-pointer transition-colors duration-150 hover:bg-white/[0.22]"
+                          title="Salin"
+                          onClick={() => handleCopy(item)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="px-2 py-1.5 flex flex-col gap-0.5">
+                      <span className="text-[0.6875rem] text-[var(--text-primary)] whitespace-nowrap overflow-hidden text-ellipsis font-medium">
+                        {getConvTitle(item.conversationId)}
+                      </span>
+                      <span className="text-[0.625rem] text-[var(--text-tertiary)]">{formatDate(item.createdAt)}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="px-2 py-1.5 flex flex-col gap-0.5">
-                  <span className="text-[0.6875rem] text-[var(--text-primary)] whitespace-nowrap overflow-hidden text-ellipsis font-medium">
-                    {getConvTitle(item.conversationId)}
-                  </span>
-                  <span className="text-[0.625rem] text-[var(--text-tertiary)]">{formatDate(item.createdAt)}</span>
-                </div>
-              </div>
-            );})}
-          </div>
+                );
+              })}
+            </div>
           );
         })()}
       </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
 import { useChat } from '../hooks/useChat.ts';
 import { useFileAttachments } from '../hooks/useFileAttachments.ts';
@@ -10,11 +10,20 @@ import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
 
+const SLASH_COMMANDS = [
+  { cmd: '/compact', desc: 'Summarize and compress conversation' },
+  { cmd: '/rename', desc: 'Rename conversation based on history' },
+  { cmd: '/resume', desc: 'Resume previous conversation context' },
+  { cmd: '/clear', desc: 'Clear conversation history' },
+  { cmd: '/help', desc: 'Show available commands' },
+];
+
 export function InputArea() {
   const [text, setText] = useState('');
   const [imageAspectRatio, setImageAspectRatio] = useState('auto');
   const [showProviderPopover, setShowProviderPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const lastCursorPosRef = useRef<number>(0);
@@ -28,6 +37,18 @@ export function InputArea() {
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
   const isGeminiImageModel = currentProviderId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
   const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
+
+  // Autocomplete suggestion logic
+  const autocompleteSuggestion = useMemo(() => {
+    if (!text.startsWith('/') || text.includes(' ')) return null;
+    const match = SLASH_COMMANDS.find(c => c.cmd.startsWith(text) && c.cmd !== text);
+    return match ? match.cmd : null;
+  }, [text]);
+
+  const filteredCommands = useMemo(() => {
+    if (!text.startsWith('/') || text.includes(' ')) return [];
+    return SLASH_COMMANDS.filter(c => c.cmd.startsWith(text));
+  }, [text]);
 
   const tokens = estimateTokenCount(store.messages);
   const contextWindow = store.providerConfig.contextWindow || store.compactConfig.defaultContextWindow;
@@ -121,16 +142,33 @@ export function InputArea() {
   }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Tab to accept autocomplete suggestion
+    if (e.key === 'Tab' && autocompleteSuggestion) {
+      e.preventDefault();
+      setText(autocompleteSuggestion + ' ');
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
-  }, [handleSend]);
+  }, [handleSend, autocompleteSuggestion]);
 
   const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
     target.style.height = 'auto';
     target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+  }, []);
+
+  // Sync scroll between textarea and ghost overlay
+  const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (ghostRef.current) {
+      ghostRef.current.scrollTop = e.currentTarget.scrollTop;
+      ghostRef.current.scrollLeft = e.currentTarget.scrollLeft;
+    }
   }, []);
 
   const handleAttachClick = useCallback(() => {
@@ -153,11 +191,13 @@ export function InputArea() {
       <PageContextPreview />
       <FilePreview />
       <SelectionPreview />
+
+      {/* Image Options Row */}
       {isImageGenerationModel && (
-        <div className="image-options-row">
-          <label className="image-options-label">Aspect Ratio:</label>
+        <div className="flex items-center gap-2 px-1 pt-1.5 pb-1">
+          <label className="text-xs text-text-muted whitespace-nowrap">Aspect Ratio:</label>
           <select
-            className="image-options-select"
+            className="text-xs text-text-default bg-bg-surface-raised border border-border-subtle rounded px-1.5 py-0.5 cursor-pointer outline-none focus:border-border-active disabled:opacity-50 disabled:cursor-not-allowed"
             value={imageAspectRatio}
             onChange={(e) => setImageAspectRatio(e.target.value)}
             disabled={store.isStreaming}
@@ -182,15 +222,20 @@ export function InputArea() {
           </select>
         </div>
       )}
-      <div className="input-row">
-        <div className="input-actions">
+
+      {/* Input Row */}
+      <div className="group relative flex items-center gap-1.5 bg-bg-surface-raised border border-text-subtle rounded-lg p-1.5 transition-all duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-brand-400/20">
+        {/* Left Action Buttons */}
+        <div className="flex shrink-0 items-center">
           <button
-            id="btn-attach"
-            className={`input-icon-btn ${store.pageContext ? 'active' : ''}`}
+            type="button"
+            className={`flex items-center justify-center w-8 h-8 border-none bg-transparent rounded transition-all duration-150 ${store.pageContext
+              ? 'text-accent bg-brand-400/15'
+              : 'text-text-subtle hover:text-accent hover:bg-brand-400/10'
+              }`}
             title="Add current page to context"
             onClick={handleAttachClick}
           >
-            {/* Globe/page icon for "add current page" */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <line x1="2" y1="12" x2="22" y2="12" />
@@ -198,19 +243,21 @@ export function InputArea() {
             </svg>
           </button>
           <button
-            id="btn-upload"
-            className="input-icon-btn"
+            type="button"
+            className="flex items-center justify-center w-8 h-8 border-none bg-transparent text-text-subtle rounded transition-all duration-150 hover:text-accent hover:bg-brand-400/10"
             title="Attach file (image, txt, csv, pdf)"
             onClick={() => fileInputRef.current?.click()}
           >
-            {/* Paperclip icon for file attachment */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
           <button
-            id="btn-prompt"
-            className={`input-icon-btn ${store.showSystemPromptEditor ? 'active' : ''}`}
+            type="button"
+            className={`flex items-center justify-center w-8 h-8 border-none bg-transparent rounded transition-all duration-150 ${store.showSystemPromptEditor
+              ? 'text-accent bg-brand-400/15'
+              : 'text-text-subtle hover:text-accent hover:bg-brand-400/10'
+              }`}
             title="System Prompt"
             onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
           >
@@ -228,59 +275,81 @@ export function InputArea() {
             onChange={(e) => handleFileSelect(e.target.files)}
           />
         </div>
-        {text.startsWith('/') && !text.includes(' ') && (
-          <div className="slash-suggestions">
-            {['/compact', '/rename'].filter(cmd => cmd.startsWith(text)).map(cmd => (
+
+        {/* Slash Commands Popover */}
+        {filteredCommands.length > 0 && (
+          <div className="absolute bottom-full left-0 right-0 bg-bg-surface border border-border-subtle rounded-md shadow-lg mb-2 overflow-hidden z-[100] animate-in slide-in-from-bottom-2 duration-200">
+            {filteredCommands.map(({ cmd, desc }) => (
               <div
                 key={cmd}
-                className="slash-suggestion-item"
+                className={`px-3.5 py-2.5 cursor-pointer flex flex-col gap-0.5 transition-colors ${cmd === autocompleteSuggestion
+                  ? 'bg-bg-selected'
+                  : 'hover:bg-bg-hover'
+                  }`}
                 onClick={() => {
-                  setText(cmd);
+                  setText(cmd + ' ');
                   textareaRef.current?.focus();
                 }}
               >
-                <div className="slash-command">{cmd}</div>
-                <div className="slash-description">
-                  {cmd === '/compact' ? 'Summarize and compress conversation' :
-                    cmd === '/rename' ? 'Rename conversation based on history' : ''}
-                </div>
+                <div className="font-semibold text-[13px] text-accent font-mono">{cmd}</div>
+                <div className="text-[11px] text-text-subtle">{desc}</div>
               </div>
             ))}
-            {['/compact', '/rename'].filter(cmd => cmd.startsWith(text)).length === 0 && (
-              <div className="slash-suggestion-item disabled">
-                <div className="slash-description">No matching commands</div>
-              </div>
-            )}
           </div>
         )}
-        <textarea
-          ref={textareaRef}
-          id="chat-input"
-          placeholder={placeholder}
-          rows={1}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            updateCursorPos();
-          }}
-          onKeyUp={updateCursorPos}
-          onMouseUp={updateCursorPos}
-          onBlur={updateCursorPos}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          onPaste={(e) => handlePaste(e.nativeEvent)}
-          disabled={store.isStreaming}
-        />
+
+        {/* Textarea with Ghost Overlay */}
+        <div className="relative flex-1 min-w-0">
+          {/* Ghost text overlay for autocomplete */}
+          <div
+            ref={ghostRef}
+            className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-[0.95rem] leading-[1.5] py-1 px-0.5 max-h-[120px]"
+            aria-hidden="true"
+          >
+            <span className="text-transparent">{text}</span>
+            {autocompleteSuggestion && (
+              <span className="text-text-subtle/50 italic">
+                {autocompleteSuggestion.slice(text.length)}
+              </span>
+            )}
+          </div>
+          <textarea
+            ref={textareaRef}
+            className="relative w-full border-none bg-transparent text-text-default font-sans text-[0.95rem] resize-none leading-[1.5] max-h-[120px] py-1 px-0.5 outline-none placeholder:text-text-subtle"
+            placeholder={placeholder}
+            rows={1}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              updateCursorPos();
+            }}
+            onKeyUp={updateCursorPos}
+            onMouseUp={updateCursorPos}
+            onBlur={updateCursorPos}
+            onKeyDown={handleKeyDown}
+            onInput={handleInput}
+            onScroll={handleScroll}
+            onPaste={(e) => handlePaste(e.nativeEvent)}
+            disabled={store.isStreaming}
+          />
+        </div>
+
+        {/* Send/Stop Button */}
         {store.isStreaming ? (
-          <button id="btn-stop" className="stop-btn" onClick={stopStreaming} title="Stop generating">
+          <button
+            type="button"
+            className="flex items-center justify-center w-8 h-8 border-none rounded bg-red-500/80 text-white cursor-pointer transition-all duration-150 shrink-0 hover:bg-red-500"
+            onClick={stopStreaming}
+            title="Stop generating"
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
           </button>
         ) : (
           <button
-            id="btn-send"
-            className="send-btn"
+            type="button"
+            className="flex items-center justify-center w-8 h-8 border-none rounded cursor-pointer transition-all duration-150 shrink-0 bg-gradient-to-br from-brand-400 to-purple-400 text-white shadow-glow hover:shadow-glow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             onClick={handleSend}
             disabled={!text.trim() && store.attachments.length === 0}
             title="Send message"
@@ -292,30 +361,47 @@ export function InputArea() {
           </button>
         )}
       </div>
-      <div className="input-footer" ref={footerRef} style={{ position: 'relative' }}>
+
+      {/* Input Footer */}
+      <div className="relative flex justify-between items-center px-1 pt-1.5" ref={footerRef}>
         <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
-        <div className="footer-left">
+
+        {/* Footer Left - Provider Info */}
+        <div className="flex gap-2 items-center">
           <button
-            id="provider-label"
-            className={`provider-badge clickable${showProviderPopover ? ' open' : ''}`}
+            type="button"
+            className={`text-[0.7rem] px-1.5 py-0.5 rounded-full font-medium cursor-pointer border-none transition-all duration-150 font-sans ${showProviderPopover
+              ? 'bg-brand-400/20 text-accent'
+              : 'bg-brand-400/10 text-accent hover:bg-brand-400/20'
+              }`}
             onClick={() => setShowProviderPopover(v => !v)}
           >
             {providerInfo.isConfigured ? providerInfo.providerName : 'No provider configured'}
           </button>
           {providerInfo.model && (
             <button
-              id="model-label"
-              className={`model-badge clickable${showProviderPopover ? ' open' : ''}`}
+              type="button"
+              className={`text-[0.7rem] px-1.5 py-0.5 rounded-full font-medium cursor-pointer border-none transition-all duration-150 font-sans ${showProviderPopover
+                ? 'bg-purple-400/20 text-purple-400'
+                : 'bg-purple-400/10 text-purple-400 hover:bg-purple-400/20'
+                }`}
               onClick={() => setShowProviderPopover(v => !v)}
             >
               {providerInfo.model}
             </button>
           )}
         </div>
-        <div className="footer-right">
+
+        {/* Footer Right - Context Usage */}
+        <div className="flex items-center">
           {percentUntilCompact <= 15 && (
             <span
-              className={`context-usage ${percentUntilCompact <= 5 ? 'critical' : percentUntilCompact <= 10 ? 'warning' : ''}`}
+              className={`text-[10.5px] font-medium px-1.5 py-0.5 rounded-[10px] border transition-all duration-200 ${percentUntilCompact <= 5
+                ? 'text-red-400 bg-red-400/10 border-red-400/20 font-semibold'
+                : percentUntilCompact <= 10
+                  ? 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+                  : 'text-text-subtle bg-bg-surface-glass border-border-subtle'
+                }`}
               title={`${tokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens used. Auto-compact at ${compactThresholdPercent}%.`}
             >
               {Math.round(percentUntilCompact)}% until autocompact
@@ -326,4 +412,3 @@ export function InputArea() {
     </div>
   );
 }
-
