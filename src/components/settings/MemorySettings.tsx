@@ -2,21 +2,27 @@ import { useState } from 'react';
 import { useStore } from '../../store/index.ts';
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../../types/index.ts';
 import type { MemoryCategory, Memory } from '../../types/index.ts';
-import { PencilIcon, PlusIcon, XIcon } from 'lucide-react';
+import { PencilIcon, PlusIcon, XIcon, Trash2Icon } from 'lucide-react';
+import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
+import { useMemory } from '../../hooks/useMemory.ts';
 
 export function MemorySettings() {
   const store = useStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newMemoryCategory, setNewMemoryCategory] = useState<MemoryCategory>('personal');
   const [newMemoryContent, setNewMemoryContent] = useState('');
+  const { clearAllMemories } = useMemory();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [editingMemory, setEditingMemory] = useState<Memory | null>(null);
   const [editContent, setEditContent] = useState('');
 
   const handleClearMemories = () => {
-    if (confirm('Clear all memories? This cannot be undone.')) {
-      store.clearMemories();
-      store.saveToStorage();
-    }
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearMemories = () => {
+    clearAllMemories();
+    setShowClearConfirm(false);
   };
 
   const handleDeleteMemory = (id: string) => {
@@ -182,12 +188,23 @@ export function MemorySettings() {
 
       {store.memories.length > 0 && (
         <button
-          className="mt-2 w-full h-8 flex items-center justify-center bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] font-bold uppercase tracking-wider rounded border border-destructive/20 transition-all"
+          className="mt-2 w-full h-8 flex items-center justify-center gap-2 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] font-bold uppercase tracking-wider rounded border border-destructive/20 transition-all"
           onClick={handleClearMemories}
         >
+          <Trash2Icon size={12} />
           Clear All Memories ({store.memories.length})
         </button>
       )}
+
+      <ConfirmDialog
+        isOpen={showClearConfirm}
+        title="Clear All Memories?"
+        message="This will permanently delete all your assistant's learned knowledge and manual memories. This action cannot be undone."
+        confirmLabel="Clear Memories"
+        variant="danger"
+        onConfirm={confirmClearMemories}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </section>
   );
 }

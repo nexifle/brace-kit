@@ -173,10 +173,8 @@ Return ONLY the JSON array:`;
   );
 
   const clearAllMemories = useCallback(() => {
-    if (confirm('Clear all memories? This cannot be undone.')) {
-      store.clearMemories();
-      store.saveToStorage();
-    }
+    store.clearMemories();
+    store.saveToStorage();
   }, [store]);
 
   const setMemoryEnabled = useCallback(

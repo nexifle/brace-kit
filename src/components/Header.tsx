@@ -1,16 +1,48 @@
+import { useState } from 'react';
 import { useStore } from '../store/index.ts';
 import { IconButton } from './ui/IconButton.tsx';
 import { MoonIcon, SunIcon } from 'lucide-react';
+import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
+import { useChat } from '../hooks/useChat.ts';
 
 export function Header() {
   const store = useStore();
+  const { stopStreaming, newChat } = useChat();
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleNewChat = () => {
+    if (store.isStreaming) {
+      setShowConfirm(true);
+    } else {
+      newChat();
+    }
+  };
+
+  const confirmNewChat = () => {
+    stopStreaming();
+    newChat();
+    setShowConfirm(false);
+  };
 
   return (
     <header className="flex items-center justify-between px-3.5 py-2.5 bg-background border-b border-border shrink-0 backdrop-blur-md sticky top-0 z-10">
+      <ConfirmDialog
+        isOpen={showConfirm}
+        title="Stop Chat?"
+        message="The current request will be automatically stopped if you try to create a new chat."
+        confirmLabel="Yes, New Chat"
+        onConfirm={confirmNewChat}
+        onCancel={() => setShowConfirm(false)}
+      />
       <div className="flex items-center gap-2">
         <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary p-1 shadow-sm">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="brightness-125">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" className="text-primary-foreground" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20">
+            <g fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round">
+              <path d="M14.8,10.9 A16,16 0 0,1 33.2,10.9" />
+              <path d="M39.9,22.6 A16,16 0 0,1 30.8,38.5" />
+              <path d="M17.2,38.5 A16,16 0 0,1 8.1,22.6" />
+            </g>
+            <circle cx="24" cy="24" r="4" fill="currentColor" />
           </svg>
         </div>
         <span className="font-bold text-base tracking-tight text-foreground">AI Sidebar</span>
@@ -44,17 +76,7 @@ export function Header() {
         </IconButton>
         <IconButton
           title="New Chat"
-          onClick={() => {
-            store.saveActiveConversation();
-            store.setIsStreaming(false);
-            store.setCurrentRequestId(null);
-            store.setPageContext(null);
-            store.setSelectedText(null);
-            store.clearAttachments();
-            store.createConversation();
-            store.setView('chat');
-            store.setHistoryDrawerOpen(false);
-          }}
+          onClick={handleNewChat}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="12" y1="5" x2="12" y2="19" />

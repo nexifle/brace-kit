@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
+import { useChat } from '../hooks/useChat.ts';
+import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import fuzzysort from 'fuzzysort';
 import type { Message, Conversation } from '../types/index.ts';
 import {
@@ -64,6 +66,29 @@ export function HistoryDrawer() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const { stopStreaming } = useChat();
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingConvId, setPendingConvId] = useState<string | null>(null);
+
+  const handleSwitchConversation = (id: string) => {
+    if (id === store.activeConversationId) return;
+
+    if (store.isStreaming) {
+      setPendingConvId(id);
+      setShowConfirm(true);
+    } else {
+      store.switchConversation(id);
+    }
+  };
+
+  const confirmSwitch = () => {
+    if (pendingConvId) {
+      stopStreaming();
+      store.switchConversation(pendingConvId);
+      setPendingConvId(null);
+    }
+    setShowConfirm(false);
+  };
 
   const branchRelations = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -224,7 +249,7 @@ export function HistoryDrawer() {
           ${isActive ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted/40'}
           ${isHighlighted ? 'ring-2 ring-primary/40 bg-primary/5 animate-pulse' : ''}
           ${isRenaming ? 'bg-muted/30 ring-1 ring-border' : ''}`}
-        onClick={() => !isRenaming && store.switchConversation(conv.id)}
+        onClick={() => !isRenaming && handleSwitchConversation(conv.id)}
         onDoubleClick={() => !isRenaming && startRename(conv)}
       >
         <div className="flex-1 min-w-0 overflow-hidden">
@@ -303,6 +328,17 @@ export function HistoryDrawer() {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end overflow-hidden">
+      <ConfirmDialog
+        isOpen={showConfirm}
+        title="Switch Chat?"
+        message="The current request will be automatically stopped if you switch to another conversation."
+        confirmLabel="Yes, Switch"
+        onConfirm={confirmSwitch}
+        onCancel={() => {
+          setShowConfirm(false);
+          setPendingConvId(null);
+        }}
+      />
       <div
         className={`absolute inset-0 bg-background/60 backdrop-blur-sm transition-all duration-300 ${isVisible ? 'animate-in fade-in' : 'animate-out fade-out opacity-0'}`}
         onClick={() => store.setHistoryDrawerOpen(false)}

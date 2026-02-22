@@ -5,7 +5,7 @@ import { copyToClipboard } from '../utils/formatters.ts';
 import { useStore } from '../store/index.ts';
 import type { Message, Attachment, PageContext, SelectedText } from '../types/index.ts';
 import { TextFileViewer } from './TextFileViewer.tsx';
-import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
 import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon, DownloadIcon, StarIcon } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
@@ -856,7 +856,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
           {showSummaryContent && (
             <div
               className=" leading-normal max-h-[250px] overflow-y-auto text-text-default pt-0 pb-1 mt-2 border-t border-border"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(message.summary) }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(message.summary, isStreaming) }}
             />
           )}
         </div>
@@ -864,10 +864,10 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     }
     if (message.role === 'assistant' || message.role === 'user' || message.role === 'system') {
       const contentToRender = message.displayContent || message.content;
-      return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender) }} />;
+      return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender, isStreaming) }} />;
     }
     return <>{message.displayContent || message.content}</>;
-  }, [isEditing, editText, editPageContext, editSelectedText, editAttachments, message.content, message.displayContent, message.role, message.summary, showSummaryContent, handleRemoveEditPageContext, handleRemoveEditSelectedText, handleRemoveEditAttachment, handleAddPageContextInEdit, handleAddSelectedTextInEdit, handleEditFileSelect, handleKeyDown, handleSubmit, handleCancel]);
+  }, [isEditing, isStreaming, editText, editPageContext, editSelectedText, editAttachments, message.content, message.displayContent, message.role, message.summary, showSummaryContent, handleRemoveEditPageContext, handleRemoveEditSelectedText, handleRemoveEditAttachment, handleAddPageContextInEdit, handleAddSelectedTextInEdit, handleEditFileSelect, handleKeyDown, handleSubmit, handleCancel]);
 
   const groundingChunks = message.groundingMetadata?.groundingChunks;
 
@@ -877,11 +877,11 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       : 'bg-muted/40 border border-border rounded-lg rounded-bl-sm';
 
     return (
-      <div className={`group flex flex-col gap-1 max-w-[92%] animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
+      <div className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
         <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">{roleLabel}</div>
         <div className={`prose dark:prose-invert prose-sm prose-p:my-2 prose-hr:my-4 max-w-none relative break-words px-3.5 py-1.5 pb-2.5 ${bubbleBgClass}`} ref={bubbleRef} onMouseUp={handleMouseUp}>
           {message.content ? (
-            <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
+            <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content, isStreaming) }} />
           ) : (
             <div className="flex gap-1 py-2">
               <span className="w-1.5 h-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]"></span>
@@ -928,7 +928,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       : 'bg-muted/40 border border-border rounded-lg rounded-bl-sm';
 
   return (
-    <div className={`group flex flex-col gap-1 max-w-[92%] animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
+    <div className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
       <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
         {!message.summary && roleLabel}
         {message.isCompacted && !message.summary && (
@@ -976,7 +976,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
                 <div key={idx} className="group/img w-full relative rounded-md overflow-hidden border border-border/50 shadow-md transition-transform hover:scale-[1.02]">
                   <img src={src} alt="Generated" className="my-0! w-full cursor-zoom-in" onClick={() => setLightboxSrc(src)} />
                   {isFavorited && (
-                    <div className="absolute top-2.5 left-2.5 p-1.5 bg-amber-500 rounded-lg shadow-lg shadow-amber-500/40 z-10 animate-in zoom-in-50 duration-300">
+                    <div className={`absolute top-2.5 left-2.5 p-1.5 bg-amber-500 rounded-lg shadow-lg shadow-amber-500/40 z-10 ${isStreaming ? '' : 'animate-in zoom-in-50 duration-300'}`}>
                       <StarIcon size={12} fill="white" className="text-white" />
                     </div>
                   )}
