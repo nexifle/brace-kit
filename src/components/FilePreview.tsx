@@ -1,6 +1,6 @@
+import { XIcon } from 'lucide-react';
 import { useFileAttachments } from '../hooks/useFileAttachments.ts';
 import { escapeHtml } from '../utils/markdown.ts';
-import { CloseIcon } from './icons/CloseIcon.tsx';
 
 export function FilePreview() {
   const { attachments, removeAttachment, clearAllAttachments } = useFileAttachments();
@@ -26,7 +26,7 @@ export function FilePreview() {
                   onClick={() => removeAttachment(att.id)}
                   title="Remove"
                 >
-                  <CloseIcon size={10} />
+                  <XIcon size={10} />
                 </button>
               </>
             ) : att.type === 'image' ? (
@@ -38,7 +38,7 @@ export function FilePreview() {
                     onClick={() => removeAttachment(att.id)}
                     title="Remove"
                   >
-                    <CloseIcon size={10} />
+                    <XIcon size={10} />
                   </button>
                 </div>
                 <div className="flex items-center gap-1 min-w-0 w-full overflow-hidden">
@@ -56,7 +56,7 @@ export function FilePreview() {
                   onClick={() => removeAttachment(att.id)}
                   title="Remove"
                 >
-                  <CloseIcon size={10} />
+                  <XIcon size={10} />
                 </button>
               </>
             )}
@@ -68,7 +68,7 @@ export function FilePreview() {
         onClick={clearAllAttachments}
         title="Remove all files"
       >
-        <CloseIcon size={12} />
+        <XIcon size={12} />
       </button>
     </div>
   );

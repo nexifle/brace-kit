@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useProvider } from '../hooks/useProvider.ts';
 import { PROVIDER_PRESETS } from '../providers.ts';
 import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
-import { CloseIcon } from './icons/CloseIcon.tsx';
+import { XIcon } from 'lucide-react';
 
 interface ProviderPopoverProps {
   isOpen: boolean;
@@ -94,7 +94,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
           <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">AI Provider & Model</span>
           <button className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all rounded-sm" onClick={onClose} title="Close">
-            <CloseIcon size={12} />
+            <XIcon size={12} />
           </button>
         </div>
 
@@ -210,7 +210,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                             }}
                             title="Remove model"
                           >
-                            <CloseIcon size={10} />
+                            <XIcon size={10} />
                           </button>
                         )}
                       </div>

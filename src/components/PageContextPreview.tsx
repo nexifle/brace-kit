@@ -1,5 +1,5 @@
+import { XIcon } from 'lucide-react';
 import { usePageContext } from '../hooks/usePageContext.ts';
-import { CloseIcon } from './icons/CloseIcon.tsx';
 
 export function PageContextPreview() {
   const { pageContext, clearPageContext } = usePageContext();
@@ -24,7 +24,7 @@ export function PageContextPreview() {
           onClick={clearPageContext}
           title="Remove page context"
         >
-          <CloseIcon size={12} />
+          <XIcon size={12} />
         </button>
       </div>
     </div>

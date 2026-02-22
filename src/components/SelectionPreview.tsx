@@ -1,5 +1,5 @@
+import { XIcon } from 'lucide-react';
 import { usePageContext } from '../hooks/usePageContext.ts';
-import { CloseIcon } from './icons/CloseIcon.tsx';
 
 export function SelectionPreview() {
   const { selectedText, clearSelection } = usePageContext();
@@ -23,7 +23,7 @@ export function SelectionPreview() {
         onClick={clearSelection}
         title="Remove selection"
       >
-        <CloseIcon size={10} />
+        <XIcon size={10} />
       </button>
     </div>
   );
