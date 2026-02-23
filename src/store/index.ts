@@ -29,6 +29,7 @@ export const useStore = create<AppState>((set, get) => ({
   isStreaming: false,
   currentRequestId: null,
   streamingContent: '',
+  streamingReasoningContent: '',
 
   // Context
   pageContext: null,
@@ -55,6 +56,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Gemini options
   enableGoogleSearch: false,
+
+  // Reasoning options
+  enableReasoning: false,
 
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: false,
@@ -102,6 +106,7 @@ export const useStore = create<AppState>((set, get) => ({
   setIsStreaming: (isStreaming) => set({ isStreaming }),
   setCurrentRequestId: (currentRequestId) => set({ currentRequestId }),
   setStreamingContent: (streamingContent) => set({ streamingContent }),
+  setStreamingReasoningContent: (streamingReasoningContent) => set({ streamingReasoningContent }),
 
   setPageContext: (pageContext) => set({ pageContext }),
   setSelectedText: (selectedText) => set({ selectedText }),
@@ -296,6 +301,7 @@ export const useStore = create<AppState>((set, get) => ({
   clearMemories: () => set({ memories: [] }),
 
   setEnableGoogleSearch: (enableGoogleSearch) => set({ enableGoogleSearch }),
+  setEnableReasoning: (enableReasoning) => set({ enableReasoning }),
   setEnableGoogleSearchTool: (enableGoogleSearchTool) => set({ enableGoogleSearchTool }),
   setGoogleSearchApiKey: (googleSearchApiKey) => set({ googleSearchApiKey }),
 
@@ -388,6 +394,7 @@ export const useStore = create<AppState>((set, get) => ({
         'memories',
         'memoryEnabled',
         'enableGoogleSearch',
+        'enableReasoning',
         'enableGoogleSearchTool',
         'googleSearchApiKey',
         'security',
@@ -417,6 +424,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.enableGoogleSearch !== undefined) {
         updates.enableGoogleSearch = data.enableGoogleSearch;
+      }
+      if (data.enableReasoning !== undefined) {
+        updates.enableReasoning = data.enableReasoning;
       }
       if (data.enableGoogleSearchTool !== undefined) {
         updates.enableGoogleSearchTool = data.enableGoogleSearchTool;
@@ -512,6 +522,7 @@ export const useStore = create<AppState>((set, get) => ({
         customProviders: state.customProviders,
         mcpServers: state.mcpServers,
         enableGoogleSearch: state.enableGoogleSearch,
+        enableReasoning: state.enableReasoning,
         enableGoogleSearchTool: state.enableGoogleSearchTool,
         googleSearchApiKey: state.googleSearchApiKey,
         conversations: conversationsToSave,

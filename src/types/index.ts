@@ -53,6 +53,8 @@ export interface Message {
   isCompacted?: boolean;
   summary?: string;
   isCachedResult?: boolean;
+  // Reasoning/thinking content
+  reasoningContent?: string;
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -234,6 +236,7 @@ export interface AppState {
   isStreaming: boolean;
   currentRequestId: string | null;
   streamingContent: string;
+  streamingReasoningContent: string;
 
   // Context
   pageContext: PageContext | null;
@@ -260,6 +263,9 @@ export interface AppState {
 
   // Gemini options
   enableGoogleSearch: boolean;
+
+  // Reasoning options
+  enableReasoning: boolean;
 
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: boolean;
@@ -293,6 +299,7 @@ export interface AppState {
   setIsStreaming: (isStreaming: boolean) => void;
   setCurrentRequestId: (requestId: string | null) => void;
   setStreamingContent: (content: string) => void;
+  setStreamingReasoningContent: (content: string) => void;
 
   setPageContext: (context: PageContext | null) => void;
   setSelectedText: (text: SelectedText | null) => void;
@@ -326,6 +333,7 @@ export interface AppState {
   clearMemories: () => void;
 
   setEnableGoogleSearch: (enabled: boolean) => void;
+  setEnableReasoning: (enabled: boolean) => void;
   setEnableGoogleSearchTool: (enabled: boolean) => void;
   setGoogleSearchApiKey: (key: string) => void;
 

@@ -6,6 +6,9 @@ import { MCPManager } from './mcp.js';
 
 const mcpManager = new MCPManager();
 
+// Track active streaming requests for cancellation
+const activeRequests = new Map(); // requestId -> { abortController, aborted }
+
 // Restore MCP connections on startup
 (async () => {
   const { mcpServers } = await chrome.storage.local.get('mcpServers');
@@ -70,6 +73,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'CHAT_REQUEST':
       handleChatRequest(message, sendResponse);
       return true; // async
+
+    case 'STOP_STREAM':
+      handleStopStream(message, sendResponse);
+      return false;
 
     case 'GET_PAGE_CONTENT':
       forwardToContentScript(message, sendResponse);
@@ -143,6 +150,22 @@ async function forwardToContentScript(message, sendResponse) {
   }
 }
 
+function handleStopStream(message, sendResponse) {
+  const { requestId } = message;
+  const activeRequest = activeRequests.get(requestId);
+
+  if (activeRequest) {
+    console.log('[Background] Stopping stream for requestId:', requestId);
+    activeRequest.aborted = true;
+    activeRequest.abortController?.abort();
+    activeRequests.delete(requestId);
+    sendResponse({ success: true });
+  } else {
+    console.log('[Background] No active request found for requestId:', requestId);
+    sendResponse({ success: false, error: 'No active request' });
+  }
+}
+
 // Helper to get user-friendly error messages from API responses
 async function getFriendlyErrorMessage(response, prefix = 'API Error') {
   const status = response.status;
@@ -182,7 +205,15 @@ async function getFriendlyErrorMessage(response, prefix = 'API Error') {
 }
 
 async function handleChatRequest(message, sendResponse) {
-  const { messages, providerConfig, tools, options } = message;
+  const { messages, providerConfig, tools, options, requestId } = message;
+  console.log('[handleChatRequest] options:', options);
+
+  // Create AbortController for this request
+  const abortController = new AbortController();
+  const activeRequest = { abortController, aborted: false };
+  if (requestId) {
+    activeRequests.set(requestId, activeRequest);
+  }
 
   try {
     // Merge provider preset with user config
@@ -201,6 +232,9 @@ async function handleChatRequest(message, sendResponse) {
 
     // Format and send request
     const { url, options: fetchOptions } = formatRequest(provider, messages, tools || [], options || {});
+
+    // Add abort signal to fetch options
+    fetchOptions.signal = abortController.signal;
 
     const response = await fetch(url, fetchOptions);
 
@@ -226,6 +260,10 @@ async function handleChatRequest(message, sendResponse) {
         text = data.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('') || '';
         sendResponse({ content: text });
       }
+      // Cleanup for non-streaming
+      if (requestId) {
+        activeRequests.delete(requestId);
+      }
       return;
     }
 
@@ -235,6 +273,7 @@ async function handleChatRequest(message, sendResponse) {
     // But for simplicity in MV3, we'll use runtime messaging with chunked responses
 
     const chunks = [];
+    const reasoningChunks = [];
     const toolCalls = [];
     const images = [];
     let currentToolCall = null;
@@ -242,12 +281,28 @@ async function handleChatRequest(message, sendResponse) {
 
     const isXAIImageModel = provider.id === 'xai' && XAI_IMAGE_MODELS.includes(provider.model || '');
 
-    for await (const chunk of (isXAIImageModel ? parseXAIImageResponse(response) : parseStream(provider, response))) {
+    for await (const chunk of (isXAIImageModel ? parseXAIImageResponse(response) : parseStream(provider, response, abortController.signal))) {
+      // Check if request was aborted during streaming
+      if (activeRequest.aborted) {
+        console.log('[handleChatRequest] Request aborted during streaming');
+        return;
+      }
+
       if (chunk.type === 'text') {
         chunks.push(chunk.content);
         // Send incremental update
         chrome.runtime.sendMessage({
           type: 'CHAT_STREAM_CHUNK',
+          content: chunk.content,
+          requestId: message.requestId,
+        });
+      } else if (chunk.type === 'reasoning') {
+        // Handle reasoning/thinking content
+        console.log('[handleChatRequest] Received reasoning chunk:', chunk.content?.substring(0, 100));
+        reasoningChunks.push(chunk.content);
+        chrome.runtime.sendMessage({
+          type: 'CHAT_STREAM_CHUNK',
+          chunkType: 'reasoning',
           content: chunk.content,
           requestId: message.requestId,
         });
@@ -290,6 +345,7 @@ async function handleChatRequest(message, sendResponse) {
     chrome.runtime.sendMessage({
       type: 'CHAT_STREAM_DONE',
       fullContent: chunks.join(''),
+      reasoningContent: reasoningChunks.length > 0 ? reasoningChunks.join('') : undefined,
       toolCalls: mergedToolCalls.length > 0 ? mergedToolCalls : undefined,
       groundingMetadata: groundingMetadata,
       images: images.length > 0 ? images : undefined,
@@ -298,12 +354,23 @@ async function handleChatRequest(message, sendResponse) {
 
     sendResponse({ started: true });
   } catch (e) {
-    sendResponse({ error: e.message });
-    chrome.runtime.sendMessage({
-      type: 'CHAT_STREAM_ERROR',
-      error: e.message,
-      requestId: message.requestId,
-    });
+    // Don't send error if request was aborted
+    if (e.name === 'AbortError' || activeRequest.aborted) {
+      console.log('[handleChatRequest] Request was aborted');
+      sendResponse({ error: 'Request cancelled' });
+    } else {
+      sendResponse({ error: e.message });
+      chrome.runtime.sendMessage({
+        type: 'CHAT_STREAM_ERROR',
+        error: e.message,
+        requestId: message.requestId,
+      });
+    }
+  } finally {
+    // Cleanup active request
+    if (requestId) {
+      activeRequests.delete(requestId);
+    }
   }
 }
 

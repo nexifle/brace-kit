@@ -154,7 +154,7 @@ function replaceBlockquotePlaceholders(html: string, isStreaming?: boolean): str
       blockquoteHtml = `
       <div class="border-l-4 ${config.borderColor} bg-muted/30 rounded-r-md my-4 p-4 shadow-sm ${animationClass}">
         <div class="flex items-center gap-2 mb-2">
-          <div class="flex-shrink-0 ${config.iconBg}">
+          <div class="shrink-0 ${config.iconBg}">
             ${config.icon}
           </div>
           <div class="text-[10px] font-bold uppercase tracking-widest ${config.titleColor}">${data.type}</div>
@@ -199,8 +199,81 @@ function encodeForAttribute(text: string): string {
 export function renderMarkdown(text: string, isStreaming?: boolean): string {
   if (!text) return '';
 
-  // Convert citation markers [1][2] to clickable superscript links
-  let processedText = text.replace(/\[(\d+)\]/g, '<sup><a href="#cite-$1" class="citation-link text-primary hover:underline">[$1]</a></sup>');
+  // Store for footnote definitions and references
+  const footnoteDefs = new Map<string, string>();
+  const footnoteRefs: { id: string; num: number }[] = [];
+  const idToNum = new Map<string, number>();
+  let nextNum = 1;
+
+  // 1. Extract footnote definitions first (Gfm style: [^id]: content)
+  // We do this by line to handle multi-line indented content properly
+  let processedText = text;
+  const lines = processedText.split('\n');
+  const nonDefLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Check for footnote definition start: [^id]: content
+    const match = line.match(/^\[\^([^\]\s]+)\]: +(.*)/);
+    
+    if (match) {
+      const id = match[1];
+      let content = match[2];
+      
+      // Look ahead for subsequent lines that are indented by 4 spaces or a tab
+      // or empty lines that might be followed by indented lines
+      while (i + 1 < lines.length) {
+        const nextLine = lines[i + 1];
+        if (nextLine.startsWith('    ') || nextLine.startsWith('\t') || nextLine.trim() === '') {
+          // Check if this is truly part of the footnote or just an empty line
+          // If it's an empty line, we peek further to see if there's more indented content
+          if (nextLine.trim() === '') {
+            let foundMore = false;
+            for (let j = i + 2; j < lines.length; j++) {
+              if (lines[j].trim() === '') continue;
+              if (lines[j].startsWith('    ') || lines[j].startsWith('\t')) {
+                foundMore = true;
+                break;
+              }
+              break;
+            }
+            if (!foundMore) break;
+          }
+          
+          content += '\n' + nextLine;
+          i++;
+        } else {
+          break;
+        }
+      }
+      
+      // Store cleaned content (removing indentation)
+      footnoteDefs.set(id, content.replace(/^(?: {4}|\t)/gm, '').trim());
+    } else {
+      nonDefLines.push(line);
+    }
+  }
+  processedText = nonDefLines.join('\n');
+
+  // 2. Process footnote references: [^id]
+  // We replace them with placeholders FIRST to avoid issues during markdown parsing
+  processedText = processedText.replace(/\[\^([^\]\s]+)\]/g, (match, id) => {
+    // Only turn into a footnote if we actually have a definition for it
+    if (!footnoteDefs.has(id)) return match;
+    
+    if (!idToNum.has(id)) {
+      const num = nextNum++;
+      idToNum.set(id, num);
+      footnoteRefs.push({ id, num });
+    }
+    
+    const num = idToNum.get(id)!;
+    // Use a unique placeholder that marked won't mess with
+    return `[[FOOTNOTE-REF-${num}-${id}-END]]`;
+  });
+
+  // Convert citation markers [1][2] to clickable superscript links (non-footnote citations)
+  processedText = processedText.replace(/\[(\d+)\]/g, '<sup><a href="#cite-$1" class="citation-link text-primary hover:underline">[$1]</a></sup>');
 
   // Pre-process blockquotes (callouts + regular) BEFORE markdown parsing
   processedText = processBlockquotes(processedText);
@@ -221,6 +294,52 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
 
   // Replace blockquote placeholders with actual HTML
   html = replaceBlockquotePlaceholders(html, isStreaming);
+
+  // 3. Post-process footnote references in the generated HTML
+  footnoteRefs.forEach(({ id, num }) => {
+    const fnHtml = `<sup><a href="#fn-${id}" id="fnref-${id}" class="footnote-link inline-block px-0.5 text-[0.75rem] font-bold text-primary hover:text-primary/80 transition-colors" title="Jump to footnote ${num}">[${num}]</a></sup>`;
+    
+    // Replace placeholders: they might be wrapped in <p> tags by marked if they were alone
+    const placeholder = `[[FOOTNOTE-REF-${num}-${id}-END]]`;
+    const escapedPlaceholder = placeholder.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    
+    // Replace all occurrences
+    html = html.replace(new RegExp(escapedPlaceholder, 'g'), fnHtml);
+  });
+
+  // 4. Append Footnote Section at the bottom if any exist
+  if (footnoteRefs.length > 0) {
+    let fnSectionHtml = `
+      <div class="mt-12 pt-6 border-t border-border/60 not-prose">
+        <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50 mb-2">References & Notes</h3>
+        <ol class="space-y-1">
+    `;
+
+    footnoteRefs.forEach(({ id, num }) => {
+      const content = footnoteDefs.get(id) || '';
+      // Parse the content of the footnote as markdown
+      fnSectionHtml += `
+        <li id="fn-${id}" class="footnote-item group/fn flex gap-3 text-[13px] leading-relaxed text-muted-foreground hover:text-foreground transition-all duration-300">
+          <div class="shrink-0 font-bold text-primary/40 group-hover/fn:text-primary transition-colors mt-0.5 min-w-[1.2rem]">
+            ${num}.
+          </div>
+          <div class="grow prose-compact">
+          <a href="#fnref-${id}" class="text-primary underline" title="Back to content">
+          ${content}
+              ⏎
+            </a>
+          </div>
+        </li>
+      `;
+    });
+
+    fnSectionHtml += `
+        </ol>
+      </div>
+    `;
+
+    html += fnSectionHtml;
+  }
 
   // Add code block copy buttons, language labels, and syntax highlighting
   html = html.replace(

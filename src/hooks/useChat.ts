@@ -304,7 +304,7 @@ Output ONLY the title string.`;
 
   const dispatchChatRequest = useCallback(async (
     apiMessages: APIMessage[],
-    opts?: { aspectRatio?: string }
+    opts?: { aspectRatio?: string; enableReasoning?: boolean }
   ) => {
     // Get MCP tools from enabled servers only
     let tools: MCPTool[] = [];
@@ -348,8 +348,9 @@ Output ONLY the title string.`;
     const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
 
-    const chatOptions: { enableGoogleSearch: boolean; aspectRatio?: string } = {
+    const chatOptions: { enableGoogleSearch: boolean; aspectRatio?: string; enableReasoning?: boolean } = {
       enableGoogleSearch: store.enableGoogleSearch && isGemini && !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
+      enableReasoning: opts?.enableReasoning,
     };
     if ((isXAIImageModel || isGeminiImageModel) && opts?.aspectRatio) {
       chatOptions.aspectRatio = opts.aspectRatio;
@@ -375,7 +376,7 @@ Output ONLY the title string.`;
     }
   }, [store]);
 
-  const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string }) => {
+  const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean }) => {
     if (store.isStreaming || store.isCompacting) return;
 
     const validAttachments = store.attachments.filter((a) => a.type !== 'error');

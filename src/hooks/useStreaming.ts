@@ -43,6 +43,7 @@ export function useStreaming() {
   const groundingMetadataRef = useRef<GroundingMetadata | null>(null);
   const imagesRef = useRef<GeneratedImage[]>([]);
   const processedToolCallsRef = useRef<Set<string>>(new Set());
+  const reasoningContentRef = useRef<string>('');
 
   const handleToolCalls = useCallback(async (toolCalls: ToolCall[]) => {
     // Check if these specific tool calls have already been processed
@@ -64,9 +65,16 @@ export function useStreaming() {
       }
     }
 
+    // Set streaming to true for tool execution
     store.setIsStreaming(true);
 
     for (const tc of toolCalls) {
+      // Check if streaming was cancelled during loop
+      if (!useStore.getState().isStreaming) {
+        console.log('[useStreaming] Streaming cancelled during tool calls, aborting remaining');
+        return;
+      }
+
       if (!tc.name) continue;
 
       let args = {};
@@ -175,6 +183,12 @@ export function useStreaming() {
     // (OpenAI, Anthropic-compatible, Gemini, etc.)
     const msgs = buildAPIMessagesFromList(useStore.getState().messages);
 
+    // Check if streaming was cancelled before sending follow-up request
+    if (!useStore.getState().isStreaming) {
+      console.log('[useStreaming] Streaming cancelled, not sending follow-up request');
+      return;
+    }
+
     // Get MCP tools
     let tools: MCPTool[] = [];
     try {
@@ -192,6 +206,7 @@ export function useStreaming() {
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
     store.setStreamingContent('');
+    store.setStreamingReasoningContent('');
 
     const currentModel = store.providerConfig.model || '';
     const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
@@ -220,6 +235,7 @@ export function useStreaming() {
         store.enableGoogleSearch &&
         isGemini &&
         !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
+      enableReasoning: store.enableReasoning,
     };
 
     try {
@@ -242,12 +258,12 @@ export function useStreaming() {
     }
   }, [store, buildAPIMessagesFromList]);
 
-  const finishStream = useCallback((fullContent: string, toolCalls?: ToolCall[], groundingMetadata?: GroundingMetadata, generatedImages?: GeneratedImage[]) => {
+  const finishStream = useCallback((fullContent: string, toolCalls?: ToolCall[], groundingMetadata?: GroundingMetadata, generatedImages?: GeneratedImage[], reasoningContent?: string) => {
     // Add inline citations if grounding metadata exists
     const contentWithCitations = addInlineCitations(fullContent, groundingMetadata);
 
     // Always add assistant message - needed for tool call context in follow-up requests
-    const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata; generatedImages?: GeneratedImage[] } = { role: 'assistant', content: contentWithCitations || '' };
+    const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata; generatedImages?: GeneratedImage[]; reasoningContent?: string } = { role: 'assistant', content: contentWithCitations || '' };
     if (toolCalls && toolCalls.length > 0) {
       assistantMsg.toolCalls = toolCalls;
     }
@@ -257,14 +273,19 @@ export function useStreaming() {
     if (generatedImages && generatedImages.length > 0) {
       assistantMsg.generatedImages = generatedImages;
     }
+    if (reasoningContent) {
+      assistantMsg.reasoningContent = reasoningContent;
+    }
     store.addMessage(assistantMsg);
 
     // Reset state
     store.setStreamingContent('');
+    store.setStreamingReasoningContent('');
     toolCallsRef.current = [];
     currentToolCallRef.current = null;
     groundingMetadataRef.current = null;
     imagesRef.current = [];
+    reasoningContentRef.current = '';
 
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
@@ -350,6 +371,8 @@ export function useStreaming() {
       requestId?: string;
       content?: string;
       fullContent?: string;
+      reasoningContent?: string;
+      chunkType?: string;
       toolCalls?: ToolCall[];
       groundingMetadata?: GroundingMetadata;
       images?: GeneratedImage[];
@@ -360,7 +383,11 @@ export function useStreaming() {
 
       switch (message.type) {
         case 'CHAT_STREAM_CHUNK':
-          if (message.content) {
+          if (message.chunkType === 'reasoning' && message.content) {
+            // Handle reasoning content - update both ref and store for real-time display
+            reasoningContentRef.current += message.content;
+            store.setStreamingReasoningContent(reasoningContentRef.current);
+          } else if (message.content) {
             const currentContent = useStore.getState().streamingContent;
             store.setStreamingContent(currentContent + message.content);
           }
@@ -385,11 +412,13 @@ export function useStreaming() {
           }
 
           const finalContent = message.fullContent || useStore.getState().streamingContent;
+          const finalReasoningContent = message.reasoningContent || reasoningContentRef.current || undefined;
           finishStream(
             finalContent,
             message.toolCalls || toolCallsRef.current,
             message.groundingMetadata || groundingMetadataRef.current || undefined,
-            message.images || imagesRef.current
+            message.images || imagesRef.current,
+            finalReasoningContent
           );
           break;
 

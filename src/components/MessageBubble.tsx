@@ -7,7 +7,7 @@ import type { Message, Attachment, PageContext, SelectedText } from '../types/in
 import { TextFileViewer } from './TextFileViewer.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
-import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon, DownloadIcon, StarIcon, QuoteIcon } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon, DownloadIcon, StarIcon, QuoteIcon, BrainIcon } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
 import { MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '../types/index.ts';
 
@@ -26,6 +26,59 @@ turndownService.addRule('citations', {
   },
   replacement: () => '',
 });
+
+// Reasoning Section Component
+function ReasoningSection({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="mt-4 w-full flex flex-col gap-1 max-w-full self-start mb-2">
+      <div className="relative group px-3 py-2 dark:bg-muted bg-muted-foreground/5 backdrop-blur-md border rounded-lg transition-all duration-300">
+        {/* Header */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-2">
+            <div className={`p-1.5 rounded-lg ${isStreaming ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-500/15 text-purple-400'}`}>
+              <BrainIcon size={12} />
+            </div>
+            <div className="flex flex-col gap-0">
+              <span className="text-[10px] font-black uppercase tracking-widest text-foreground/80 leading-none">
+                Reasoning
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isStreaming ? (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-purple-500/15 border border-purple-500/20">
+                <RefreshCwIcon size={10} className="text-purple-400 animate-spin" />
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20">
+                <CheckIcon size={10} className="text-success" />
+              </div>
+            )}
+            <ChevronRightIcon
+              size={14}
+              className={`text-muted-foreground transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
+            />
+          </div>
+        </button>
+
+        {/* Expandable Content */}
+        {isExpanded && (
+          <div className="mt-2">
+            <div className="text-xs my-0! font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto scrollbar-thin text-muted-foreground leading-relaxed">
+              {content}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export interface EditedMessageData {
   text: string;
@@ -78,6 +131,7 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   const setQuotedText = useStore((state) => state.setQuotedText);
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
+  const streamingReasoningContent = useStore((state) => state.streamingReasoningContent);
   const isImageGenerationModel =
     GEMINI_NO_TOOLS_MODELS.includes(currentModel) ||
     GEMINI_SEARCH_ONLY_MODELS.includes(currentModel) ||
@@ -515,15 +569,35 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
     const link = target.closest('a');
     if (!link) return;
 
-    // Check if it's an external link (has href and starts with http)
     const href = link.getAttribute('href');
-    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-      // Allow default behavior - let the browser handle the link
-      // Chrome extension popup will handle this appropriately
+    if (!href) return;
+
+    // Check if it's an external link
+    if (href.startsWith('http://') || href.startsWith('https://')) {
       return;
     }
 
-    // For citation links or other internal links, prevent default
+    // Handle internal anchor links (like footnotes)
+    if (href.startsWith('#')) {
+      e.preventDefault();
+      const targetId = href.substring(1);
+      const host = bubbleRef.current;
+      if (host) {
+        const targetElement = host.querySelector(`[id="${targetId}"]`);
+        if (targetElement) {
+          targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+          // Trigger a brief highlight effect
+          targetElement.classList.add('footnote-active');
+          setTimeout(() => {
+            targetElement.classList.remove('footnote-active');
+          }, 2500);
+        }
+      }
+      return;
+    }
+
+    // For other citation links or internal links, prevent default
     e.preventDefault();
   }, []);
 
@@ -880,6 +954,10 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
       <div className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
         <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">{roleLabel}</div>
         <div className={`prose dark:prose-invert prose-sm prose-p:my-2 prose-hr:my-4 max-w-none relative break-words px-3.5 py-1.5 pb-2.5 ${bubbleBgClass}`} ref={bubbleRef} onMouseUp={handleMouseUp}>
+          {/* Reasoning Section during streaming */}
+          {streamingReasoningContent && (
+            <ReasoningSection content={streamingReasoningContent} isStreaming={true} />
+          )}
           {message.content ? (
             <div className="text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content, isStreaming) }} />
           ) : (
@@ -960,6 +1038,13 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
               </div>
             </div>
           </div>
+        )}
+        {/* Reasoning Section */}
+        {(message.reasoningContent || (isStreaming && streamingReasoningContent)) && (
+          <ReasoningSection
+            content={isStreaming ? streamingReasoningContent : message.reasoningContent || ''}
+            isStreaming={isStreaming && !!streamingReasoningContent}
+          />
         )}
         <div className="text-foreground text-sm leading-relaxed py-2.5">
           {renderedContent}

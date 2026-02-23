@@ -9,7 +9,7 @@ import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
-import { GlobeIcon, PaperclipIcon, SquareTerminal } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon } from 'lucide-react';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -94,6 +94,10 @@ export function InputArea() {
 
   const { quotedText, setQuotedText } = store;
 
+  // Reasoning state from store
+  const enableReasoning = useStore((state) => state.enableReasoning);
+  const setEnableReasoning = useStore((state) => state.setEnableReasoning);
+
   const updateCursorPos = useCallback(() => {
     if (textareaRef.current) {
       lastCursorPosRef.current = textareaRef.current.selectionStart;
@@ -132,12 +136,12 @@ export function InputArea() {
 
   const handleSend = useCallback(() => {
     if (!text.trim() && store.attachments.length === 0) return;
-    sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : undefined);
+    sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : { enableReasoning });
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio]);
+  }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio, enableReasoning]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Tab to accept autocomplete suggestion
@@ -254,6 +258,17 @@ export function InputArea() {
             onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
           >
             <SquareTerminal size={16} />
+          </button>
+          <button
+            type="button"
+            className={`flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${enableReasoning
+              ? 'text-primary bg-primary/15'
+              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
+              }`}
+            title="Activate Reasoning - Enable extended thinking for supported models"
+            onClick={() => setEnableReasoning(!enableReasoning)}
+          >
+            <BrainIcon size={16} />
           </button>
           <input
             type="file"

@@ -12,6 +12,26 @@ export const GEMINI_IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-3-pro-imag
 // xAI image generation models
 export const XAI_IMAGE_MODELS = ['grok-2-image-1212', 'grok-imagine-image', 'grok-imagine-image-pro'];
 
+// Models that support reasoning/thinking capabilities
+// Note: For Anthropic, ALL Claude models support extended thinking
+// For other providers, we check specific model patterns
+export const REASONING_MODELS = {
+  anthropic: ['claude', 'claude-sonnet', 'claude-opus', 'claude-haiku', 'glm'], // All Claude models + GLM models
+  openai: ['o1', 'o3'], // o1-preview, o1-mini, o3-mini, o3
+  gemini: ['thinking', 'gemini-2.5-pro'], // Thinking models
+  deepseek: ['reasoner', 'r1'], // deepseek-reasoner, deepseek-r1
+  xai: ['grok'], // Grok models have reasoning
+};
+
+// Helper to check if a model supports reasoning
+export function supportsReasoning(providerId: string, model: string): boolean {
+  const providerModels = REASONING_MODELS[providerId as keyof typeof REASONING_MODELS];
+  if (!providerModels) return false;
+
+  const modelLower = model.toLowerCase();
+  return providerModels.some(m => modelLower.includes(m.toLowerCase()));
+}
+
 export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   openai: {
     id: 'openai',
@@ -75,6 +95,7 @@ export interface ChatOptions {
   enableGoogleSearch?: boolean;
   aspectRatio?: string;
   stream?: boolean;
+  enableReasoning?: boolean;
 }
 
 export async function fetchModels(provider: ProviderPreset & { apiKey?: string }): Promise<{ models?: string[]; error?: string }> {
@@ -329,6 +350,10 @@ function formatAnthropic(
   let system = '';
   const filtered: Record<string, unknown>[] = [];
 
+  // Check if reasoning is enabled and model supports it
+  const shouldEnableReasoning = _options.enableReasoning && supportsReasoning('anthropic', model);
+  console.log('[formatAnthropic] enableReasoning:', _options.enableReasoning, 'model:', model, 'shouldEnableReasoning:', shouldEnableReasoning);
+
   // First pass: batch consecutive tool results together
   // Anthropic expects all tool results in a single user message
   const batchedMessages: (Message | { role: 'tool_batch'; tools: Message[] })[] = [];
@@ -436,6 +461,14 @@ function formatAnthropic(
     messages: filtered,
   };
 
+  // Add thinking parameter for Anthropic models when reasoning is enabled
+  if (shouldEnableReasoning) {
+    body.thinking = {
+      type: 'enabled',
+      budget_tokens: 4096, // Minimum recommended for meaningful thinking
+    };
+  }
+
   if (system) body.system = system;
   if (tools.length > 0) {
     body.tools = tools.map((t) => ({
@@ -485,6 +518,9 @@ function formatGemini(
 ): RequestConfig {
   let systemInstruction = '';
   const contents: GeminiContent[] = [];
+
+  const model = provider.model || provider.defaultModel;
+  const shouldEnableReasoning = options.enableReasoning && supportsReasoning('gemini', model);
 
   for (const msg of messages) {
     if (msg.role === 'system') {
@@ -564,7 +600,15 @@ function formatGemini(
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const model = provider.model || provider.defaultModel;
+  // Add thinking config for Gemini thinking models when reasoning is enabled
+  if (shouldEnableReasoning) {
+    body.generationConfig = {
+      ...(body.generationConfig as Record<string, unknown> || {}),
+      thinkingConfig: {
+        thinkingBudget: 24576, // Allow up to 24k tokens for thinking
+      },
+    };
+  }
 
   // Add aspect ratio for Gemini image generation models
   // Supported ratios: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
@@ -637,7 +681,7 @@ function formatGemini(
 }
 
 export interface StreamChunk {
-  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata' | 'image' | 'error';
+  type: 'text' | 'tool_call' | 'tool_call_start' | 'tool_call_delta' | 'grounding_metadata' | 'image' | 'error' | 'reasoning';
   content?: string;
   id?: string;
   index?: number;
@@ -694,30 +738,37 @@ export async function* parseXAIImageResponse(response: Response): AsyncGenerator
   }
 }
 
-export async function* parseStream(provider: ProviderPreset, response: Response): AsyncGenerator<StreamChunk> {
+export async function* parseStream(provider: ProviderPreset, response: Response, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
   switch (provider.format) {
     case 'openai':
-      yield* parseOpenAIStream(response);
+      yield* parseOpenAIStream(response, signal);
       break;
     case 'anthropic':
-      yield* parseAnthropicStream(response);
+      yield* parseAnthropicStream(response, signal);
       break;
     case 'gemini':
-      yield* parseGeminiStream(response);
+      yield* parseGeminiStream(response, signal);
       break;
     default:
-      yield* parseOpenAIStream(response);
+      yield* parseOpenAIStream(response, signal);
   }
 }
 
-async function* parseOpenAIStream(response: Response): AsyncGenerator<StreamChunk> {
+async function* parseOpenAIStream(response: Response, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      // Check for abort before each read
+      if (signal?.aborted) {
+        try { reader.cancel(); } catch {}
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
@@ -753,116 +804,149 @@ async function* parseOpenAIStream(response: Response): AsyncGenerator<StreamChun
       }
     }
   }
-}
-
-async function* parseAnthropicStream(response: Response): AsyncGenerator<StreamChunk> {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-
-      try {
-        const json = JSON.parse(data);
-        if (json.type === 'content_block_delta') {
-          if (json.delta?.type === 'text_delta') {
-            yield { type: 'text', content: json.delta.text };
-          }
-          if (json.delta?.type === 'input_json_delta') {
-            yield { type: 'tool_call_delta', content: json.delta.partial_json };
-          }
-        }
-        if (json.type === 'content_block_start' && json.content_block?.type === 'tool_use') {
-          yield {
-            type: 'tool_call_start',
-            id: json.content_block.id,
-            name: json.content_block.name,
-          };
-        }
-        if (json.type === 'message_stop') return;
-      } catch {
-        // skip
-      }
-    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
   }
 }
 
-async function* parseGeminiStream(response: Response): AsyncGenerator<StreamChunk> {
+async function* parseAnthropicStream(response: Response, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      // Check for abort before each read
+      if (signal?.aborted) {
+        try { reader.cancel(); } catch {}
+        return;
+      }
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-      try {
-        const json = JSON.parse(data);
-        const candidates = json.candidates;
-        if (!candidates) continue;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
 
-        for (const candidate of candidates) {
-          // Check for finishReason indicating image generation failure
-          if (candidate.finishReason === 'IMAGE_SAFETY' || candidate.finishReason === 'IMAGE_OTHER') {
-            const defaultMessage = candidate.finishReason === 'IMAGE_SAFETY'
-              ? 'Unable to show the generated image. The image was filtered due to safety policies.'
-              : 'Unable to show the generated image. The model could not generate the image based on the prompt provided.';
-            const errorMessage = candidate.finishMessage || defaultMessage;
-            yield { type: 'error', content: errorMessage };
-            continue;
-          }
-
-          const parts = candidate.content?.parts;
-          if (!parts) continue;
-          for (const part of parts) {
-            if (part.text && !part.thought) {
-              yield { type: 'text', content: part.text };
+        try {
+          const json = JSON.parse(data);
+          if (json.type === 'content_block_delta') {
+            if (json.delta?.type === 'text_delta') {
+              yield { type: 'text', content: json.delta.text };
             }
-            if (part.functionCall) {
-              yield {
-                type: 'tool_call',
-                name: part.functionCall.name,
-                arguments: JSON.stringify(part.functionCall.args),
-              };
+            if (json.delta?.type === 'thinking_delta') {
+              yield { type: 'reasoning', content: json.delta.thinking };
             }
-            if (part.inlineData && !part.thought) {
-              yield {
-                type: 'image',
-                mimeType: part.inlineData.mimeType,
-                imageData: part.inlineData.data,
-              };
+            if (json.delta?.type === 'input_json_delta') {
+              yield { type: 'tool_call_delta', content: json.delta.partial_json };
             }
           }
+          if (json.type === 'content_block_start') {
+            if (json.content_block?.type === 'tool_use') {
+              yield {
+                type: 'tool_call_start',
+                id: json.content_block.id,
+                name: json.content_block.name,
+              };
+            }
+            // Note: thinking blocks start with type: "thinking" but content comes in deltas
+          }
+          if (json.type === 'message_stop') return;
+        } catch {
+          // skip
         }
-
-        const groundingMetadata = candidates[0]?.groundingMetadata;
-        if (groundingMetadata) {
-          yield { type: 'grounding_metadata', groundingMetadata };
-        }
-      } catch {
-        // skip
       }
     }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
+async function* parseGeminiStream(response: Response, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      // Check for abort before each read
+      if (signal?.aborted) {
+        try { reader.cancel(); } catch {}
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+
+        try {
+          const json = JSON.parse(data);
+          const candidates = json.candidates;
+          if (!candidates) continue;
+
+          for (const candidate of candidates) {
+            // Check for finishReason indicating image generation failure
+            if (candidate.finishReason === 'IMAGE_SAFETY' || candidate.finishReason === 'IMAGE_OTHER') {
+              const defaultMessage = candidate.finishReason === 'IMAGE_SAFETY'
+                ? 'Unable to show the generated image. The image was filtered due to safety policies.'
+                : 'Unable to show the generated image. The model could not generate the image based on the prompt provided.';
+              const errorMessage = candidate.finishMessage || defaultMessage;
+              yield { type: 'error', content: errorMessage };
+              continue;
+            }
+
+            const parts = candidate.content?.parts;
+            if (!parts) continue;
+            for (const part of parts) {
+              // Handle thinking/reasoning content from Gemini thinking models
+              if (part.thought && part.text) {
+                yield { type: 'reasoning', content: part.text };
+              }
+              if (part.text && !part.thought) {
+                yield { type: 'text', content: part.text };
+              }
+              if (part.functionCall) {
+                yield {
+                  type: 'tool_call',
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args),
+                };
+              }
+              if (part.inlineData && !part.thought) {
+                yield {
+                  type: 'image',
+                  mimeType: part.inlineData.mimeType,
+                  imageData: part.inlineData.data,
+                };
+              }
+            }
+          }
+
+          const groundingMetadata = candidates[0]?.groundingMetadata;
+          if (groundingMetadata) {
+            yield { type: 'grounding_metadata', groundingMetadata };
+          }
+        } catch {
+          // skip
+        }
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
   }
 }
 
