@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { Message, Attachment, APIMessage, PageContext, SelectedText } from '../types/index.ts';
+import { saveConversationMessages } from '../utils/conversationDB.ts';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
 import type { MCPTool } from '../types/index.ts';
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../types/index.ts';
@@ -350,7 +351,7 @@ Output ONLY the title string.`;
 
     const chatOptions: { enableGoogleSearch: boolean; aspectRatio?: string; enableReasoning?: boolean } = {
       enableGoogleSearch: store.enableGoogleSearch && isGemini && !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
-      enableReasoning: opts?.enableReasoning,
+      enableReasoning: opts?.enableReasoning ?? store.enableReasoning,
     };
     if ((isXAIImageModel || isGeminiImageModel) && opts?.aspectRatio) {
       chatOptions.aspectRatio = opts.aspectRatio;
@@ -523,7 +524,7 @@ Output ONLY the title string.`;
     }
 
     store.setMessages(messagesToCopy);
-    await chrome.storage.local.set({ [`conv_${newConv.id}`]: messagesToCopy });
+    await saveConversationMessages(newConv.id, messagesToCopy);
     await store.saveToStorage();
     store.setView('chat');
     store.setHistoryDrawerOpen(false);

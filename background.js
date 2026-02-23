@@ -3,6 +3,7 @@
 
 import { PROVIDER_PRESETS, formatRequest, parseStream, parseXAIImageResponse, fetchModels, GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from './src/providers.ts';
 import { MCPManager } from './mcp.js';
+import { migrateOldConversations } from './src/utils/conversationDB.ts';
 
 const mcpManager = new MCPManager();
 
@@ -39,6 +40,11 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') });
+  }
+
+  // Handle data migrations
+  if (details.reason === 'install' || details.reason === 'update') {
+    migrateOldConversations().catch(e => console.error('[Background] Migration error:', e));
   }
 
   chrome.contextMenus.create({

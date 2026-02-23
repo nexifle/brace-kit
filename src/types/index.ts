@@ -199,6 +199,7 @@ export interface Conversation {
   branchedFromId?: string;
   pinned?: boolean;
   systemPrompt?: string;
+  markdownImages?: string[];
 }
 
 // ==================== File Attachment Types ====================

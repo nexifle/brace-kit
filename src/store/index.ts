@@ -10,6 +10,15 @@ import {
   hydrateMessages,
   deleteImagesByConversation,
 } from '../utils/imageDB.ts';
+import {
+  saveConversationMessages,
+  getConversationMessages,
+  deleteConversationMessages,
+  migrateOldConversations,
+  saveConversationMetadata,
+  deleteConversationMetadata,
+  getAllConversationMetadata,
+} from '../utils/conversationDB.ts';
 import { sha256 } from '../utils/crypto.ts';
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. When the user shares page content or selected text, help them understand and work with it. Be concise and helpful.';
@@ -183,6 +192,10 @@ export const useStore = create<AppState>((set, get) => ({
       activeConversationId: id,
       messages: [],
     }));
+
+    // Async save metadata to DB
+    saveConversationMetadata(conv).catch((e) => console.warn('[Store] Failed to save conversation metadata:', e));
+    
     return conv;
   },
 
@@ -196,6 +209,7 @@ export const useStore = create<AppState>((set, get) => ({
       set((s) => ({
         conversations: s.conversations.filter((c) => c.id !== currentId),
       }));
+      deleteConversationMetadata(currentId).catch((e) => console.warn('[Store] Failed to delete empty conversation metadata:', e));
     } else {
       // Save current conversation first
       await state.saveActiveConversation();
@@ -204,8 +218,20 @@ export const useStore = create<AppState>((set, get) => ({
     // Load target conversation
     set({ activeConversationId: id, showSystemPromptEditor: false });
     try {
-      const data = await chrome.storage.local.get(`conv_${id}`);
-      let messages = data[`conv_${id}`] || [];
+      let messagesOrNull = await getConversationMessages(id);
+      let messages: Message[] = [];
+
+      // Fallback/migrate from local storage if not found in IndexedDB
+      if (!messagesOrNull) {
+        const data = await chrome.storage.local.get(`conv_${id}`);
+        messages = data[`conv_${id}`] || [];
+        if (messages.length > 0) {
+          await saveConversationMessages(id, messages);
+          await chrome.storage.local.remove(`conv_${id}`);
+        }
+      } else {
+        messages = messagesOrNull;
+      }
 
       // Hydrate gambar dari IndexedDB berdasarkan imageRef keys
       try {
@@ -227,7 +253,9 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     const newConversations = state.conversations.filter((c) => c.id !== id);
 
-    await chrome.storage.local.remove(`conv_${id}`);
+    await deleteConversationMessages(id);
+    await deleteConversationMetadata(id); // Delete metadata in IDB
+    await chrome.storage.local.remove(`conv_${id}`); // just in case it was migrated lazily
 
     // Cleanup gambar dari IndexedDB (async, tidak blocking)
     deleteImagesByConversation(id).catch((e) =>
@@ -244,37 +272,49 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     set({ conversations: newConversations });
-    await chrome.storage.local.set({ conversations: newConversations });
+    // Note: no longer saved in local storage array
   },
 
   updateConversationTitle: (id, title) => {
     set((state) => {
-      const updated = state.conversations.map((c) =>
-        c.id === id ? { ...c, title, updatedAt: Date.now() } : c
-      );
+      const updated = state.conversations.map((c) => {
+        if (c.id === id) {
+          const newConv = { ...c, title, updatedAt: Date.now() };
+          saveConversationMetadata(newConv).catch(e => console.warn(e));
+          return newConv;
+        }
+        return c;
+      });
       return { conversations: updated };
     });
-    get().saveToStorage();
   },
 
   togglePinConversation: (id) => {
     set((state) => {
-      const updated = state.conversations.map((c) =>
-        c.id === id ? { ...c, pinned: !c.pinned } : c
-      );
+      const updated = state.conversations.map((c) => {
+        if (c.id === id) {
+          const newConv = { ...c, pinned: !c.pinned };
+          saveConversationMetadata(newConv).catch(e => console.warn(e));
+          return newConv;
+        }
+        return c;
+      });
       return { conversations: updated };
     });
-    get().saveToStorage();
   },
 
   updateConversationSystemPrompt: (id: string, systemPrompt: string) => {
     set((state) => {
-      const updated = state.conversations.map((c) =>
-        c.id === id ? { ...c, systemPrompt, updatedAt: Date.now() } : c
-      );
+      const updated = state.conversations.map((c) => {
+        if (c.id === id) {
+          const newConv = { ...c, systemPrompt, updatedAt: Date.now() };
+          saveConversationMetadata(newConv).catch(e => console.warn(e));
+          return newConv;
+        }
+        return c;
+      });
       return { conversations: updated };
     });
-    get().saveToStorage();
   },
 
   setActiveConversationId: (activeConversationId) => set({ activeConversationId }),
@@ -300,10 +340,22 @@ export const useStore = create<AppState>((set, get) => ({
 
   clearMemories: () => set({ memories: [] }),
 
-  setEnableGoogleSearch: (enableGoogleSearch) => set({ enableGoogleSearch }),
-  setEnableReasoning: (enableReasoning) => set({ enableReasoning }),
-  setEnableGoogleSearchTool: (enableGoogleSearchTool) => set({ enableGoogleSearchTool }),
-  setGoogleSearchApiKey: (googleSearchApiKey) => set({ googleSearchApiKey }),
+  setEnableGoogleSearch: (enableGoogleSearch) => {
+    set({ enableGoogleSearch });
+    get().saveToStorage();
+  },
+  setEnableReasoning: (enableReasoning) => {
+    set({ enableReasoning });
+    get().saveToStorage();
+  },
+  setEnableGoogleSearchTool: (enableGoogleSearchTool) => {
+    set({ enableGoogleSearchTool });
+    get().saveToStorage();
+  },
+  setGoogleSearchApiKey: (googleSearchApiKey) => {
+    set({ googleSearchApiKey });
+    get().saveToStorage();
+  },
 
   addAttachment: (attachment) =>
     set((state) => ({
@@ -383,13 +435,15 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Persistence
   loadFromStorage: async () => {
+    // Run full migration asynchronously in the background
+    migrateOldConversations().catch((e) => console.warn('[Store] Background migration error:', e));
+
     try {
       const data = await chrome.storage.local.get([
         'providerConfig',
         'providerKeys',
         'customProviders',
         'mcpServers',
-        'conversations',
         'activeConversationId',
         'memories',
         'memoryEnabled',
@@ -454,14 +508,21 @@ export const useStore = create<AppState>((set, get) => ({
         // storage.session might not be available in all contexts
       }
 
-      // Load conversations index
-      if (data.conversations) {
-        updates.conversations = data.conversations;
+      // Load conversations from IndexedDB
+      try {
+        const metadataArray = await getAllConversationMetadata();
+        if (metadataArray && metadataArray.length > 0) {
+          updates.conversations = metadataArray;
+        } else if (data.conversations) { // fallback
+           updates.conversations = data.conversations;
+        }
+      } catch (e) {
+        if (data.conversations) updates.conversations = data.conversations;
       }
 
       // Migrate legacy chatHistory or load active conversation
       const legacyData = await chrome.storage.local.get(['chatHistory']);
-      if (legacyData.chatHistory && legacyData.chatHistory.length > 0 && !data.conversations) {
+      if (legacyData.chatHistory && legacyData.chatHistory.length > 0 && !updates.conversations) {
         // Migrate legacy data
         const id = `conv_${Date.now()}`;
         const firstUserMsg = legacyData.chatHistory.find((m: Message) => m.role === 'user');
@@ -475,18 +536,31 @@ export const useStore = create<AppState>((set, get) => ({
         updates.activeConversationId = id;
         updates.messages = legacyData.chatHistory;
 
+        await saveConversationMessages(id, legacyData.chatHistory);
+        await saveConversationMetadata(conv);
         await chrome.storage.local.set({
-          [`conv_${id}`]: legacyData.chatHistory,
-          conversations: [conv],
           activeConversationId: id,
         });
         await chrome.storage.local.remove('chatHistory');
       } else if (data.activeConversationId) {
         updates.activeConversationId = data.activeConversationId;
-        const convData = await chrome.storage.local.get(`conv_${data.activeConversationId}`);
-        if (convData[`conv_${data.activeConversationId}`]) {
-          let messages = convData[`conv_${data.activeConversationId}`];
+        
+        let messagesOrNull = await getConversationMessages(data.activeConversationId);
+        let messages: Message[] = [];
 
+        // Fallback/migrate from local storage if not found
+        if (!messagesOrNull) {
+          const convData = await chrome.storage.local.get(`conv_${data.activeConversationId}`);
+          messages = convData[`conv_${data.activeConversationId}`] || [];
+          if (messages.length > 0) {
+            await saveConversationMessages(data.activeConversationId, messages);
+            await chrome.storage.local.remove(`conv_${data.activeConversationId}`);
+          }
+        } else {
+          messages = messagesOrNull;
+        }
+
+        if (messages.length > 0) {
           // Hydrate gambar dari IndexedDB saat extension pertama dibuka
           try {
             messages = await hydrateMessages(messages);
@@ -509,12 +583,6 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       // Jangan simpan conversation aktif yang masih kosong (belum pernah kirim pesan)
       const activeIsEmpty = state.messages.length === 0;
-      const conversationsToSave = state.conversations.filter((c) => {
-        if (c.id === state.activeConversationId) {
-          return !activeIsEmpty;
-        }
-        return true;
-      });
 
       await chrome.storage.local.set({
         providerConfig: state.providerConfig,
@@ -525,7 +593,6 @@ export const useStore = create<AppState>((set, get) => ({
         enableReasoning: state.enableReasoning,
         enableGoogleSearchTool: state.enableGoogleSearchTool,
         googleSearchApiKey: state.googleSearchApiKey,
-        conversations: conversationsToSave,
         // Jika aktif kosong, simpan null agar saat reload tidak coba load conversation ini
         activeConversationId: activeIsEmpty ? null : state.activeConversationId,
         memories: state.memories,
@@ -575,8 +642,35 @@ export const useStore = create<AppState>((set, get) => ({
         return { ...msg, generatedImages: imagesWithRefs };
       });
 
-      await chrome.storage.local.set({
-        [`conv_${convId}`]: messagesToSave,
+      await saveConversationMessages(convId, messagesToSave);
+
+      // Extract markdown images and update conversation metadata
+      const MD_IMAGE_REGEX = /!\[.*?\]\((https?:\/\/[^)\s]+)\)/g;
+      const mdImages = new Set<string>();
+      messagesToSave.forEach((m) => {
+        if (m.content) {
+          let match;
+          MD_IMAGE_REGEX.lastIndex = 0;
+          while ((match = MD_IMAGE_REGEX.exec(m.content)) !== null) {
+            mdImages.add(match[1]);
+          }
+        }
+      });
+
+      const newMdImages = Array.from(mdImages);
+      set((s) => {
+        const conv = s.conversations.find((c) => c.id === convId);
+        if (conv) {
+          // Update only if it changed
+          if (JSON.stringify(conv.markdownImages || []) !== JSON.stringify(newMdImages)) {
+            const updatedConv = { ...conv, markdownImages: newMdImages };
+            saveConversationMetadata(updatedConv).catch((e) => console.warn(e));
+            return {
+              conversations: s.conversations.map((c) => (c.id === convId ? updatedConv : c)),
+            };
+          }
+        }
+        return s;
       });
     } catch (e) {
       console.warn('Failed to save conversation:', e);
@@ -591,9 +685,7 @@ export const useStore = create<AppState>((set, get) => ({
       const conv = state.conversations.find((c) => c.id === state.activeConversationId);
       if (conv) {
         conv.updatedAt = Date.now();
-        await chrome.storage.local.set({
-          conversations: state.conversations,
-        });
+        await saveConversationMetadata(conv);
       }
     } catch (e) {
       console.warn('Failed to update conversation timestamp:', e);

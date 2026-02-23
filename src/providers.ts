@@ -351,8 +351,10 @@ function formatAnthropic(
   const filtered: Record<string, unknown>[] = [];
 
   // Check if reasoning is enabled and model supports it
-  const shouldEnableReasoning = _options.enableReasoning && supportsReasoning('anthropic', model);
-  console.log('[formatAnthropic] enableReasoning:', _options.enableReasoning, 'model:', model, 'shouldEnableReasoning:', shouldEnableReasoning);
+  const shouldEnableReasoning = !!_options.enableReasoning && supportsReasoning('anthropic', model);
+  if (_options.enableReasoning !== undefined) {
+    console.log('[formatAnthropic] enableReasoning:', _options.enableReasoning, 'model:', model, 'shouldEnableReasoning:', shouldEnableReasoning);
+  }
 
   // First pass: batch consecutive tool results together
   // Anthropic expects all tool results in a single user message

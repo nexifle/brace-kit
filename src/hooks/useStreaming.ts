@@ -121,15 +121,20 @@ export function useStreaming() {
       });
 
       try {
-        const result = await chrome.runtime.sendMessage({
-          type: 'MCP_CALL_TOOL',
-          name: tc.name,
-          arguments: args,
-        });
+        let resultText = '';
+        if (tc.name === 'continue_message') {
+          resultText = 'Chain message initiated. You may continue your response now.';
+        } else {
+          const result = await chrome.runtime.sendMessage({
+            type: 'MCP_CALL_TOOL',
+            name: tc.name,
+            arguments: args,
+          });
 
-        const resultText =
-          result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
-          JSON.stringify(result);
+          resultText =
+            result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
+            JSON.stringify(result);
+        }
 
         // Use fresh state to avoid stale closure race condition with multiple tool calls
         const freshMessages = useStore.getState().messages;
@@ -229,6 +234,23 @@ export function useStreaming() {
       ];
     }
     const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
+
+    if (supportsFunctionCalling) {
+      tools = [
+        ...tools,
+        {
+          name: 'continue_message',
+          description: 'Use this tool to continue your response in a new message chunk. This is useful when you have more to say but want to break it up, or if you want to perform a chain of thought before the next response.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              reason: { type: 'string', description: 'Brief reason why you are continuing' },
+            },
+            required: ['reason'],
+          },
+        },
+      ];
+    }
 
     const chatOptions = {
       enableGoogleSearch:

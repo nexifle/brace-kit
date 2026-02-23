@@ -35,32 +35,19 @@ function getItemId(item: GalleryItem): string {
 
 const FAVORITES_STORAGE_KEY = 'gallery_favorites';
 
-const MD_IMAGE_REGEX = /!\[.*?\]\((https?:\/\/[^)\s]+)\)/g;
-
-async function getMarkdownImages(conversations: { id: string; updatedAt: number }[]): Promise<MarkdownImage[]> {
+async function getMarkdownImages(conversations: { id: string; updatedAt: number; markdownImages?: string[] }[]): Promise<MarkdownImage[]> {
   const results: MarkdownImage[] = [];
   const seen = new Set<string>();
 
   for (const conv of conversations) {
-    try {
-      const data = await chrome.storage.local.get(`conv_${conv.id}`);
-      const messages: { role: string; content: string }[] = data[`conv_${conv.id}`] || [];
-
-      for (const msg of messages) {
-        if (!msg.content) continue;
-        let match: RegExpExecArray | null;
-        MD_IMAGE_REGEX.lastIndex = 0;
-        while ((match = MD_IMAGE_REGEX.exec(msg.content)) !== null) {
-          const url = match[1];
-          const key = `${conv.id}::${url}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            results.push({ type: 'url', url, conversationId: conv.id, createdAt: conv.updatedAt });
-          }
+    if (conv.markdownImages && conv.markdownImages.length > 0) {
+      for (const url of conv.markdownImages) {
+        const key = `${conv.id}::${url}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push({ type: 'url', url, conversationId: conv.id, createdAt: conv.updatedAt });
         }
       }
-    } catch {
-      // ignore
     }
   }
 

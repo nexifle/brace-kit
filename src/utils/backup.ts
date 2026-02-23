@@ -1,11 +1,13 @@
 import { getAllImages, clearAllImages, importImages } from './imageDB.ts';
-import type { StoredImageRecord } from '../types';
+import { clearAllConversationMessages, saveConversationMessages, _getAllConversationData } from './conversationDB.ts';
+import type { StoredImageRecord, Message } from '../types';
 
 export interface BackupData {
   version: number;
   timestamp: number;
   storage: Record<string, any>;
   images: StoredImageRecord[];
+  conversations?: { id: string; messages: Message[] }[];
 }
 
 export interface BackupPayload {
@@ -19,12 +21,16 @@ export async function exportData(password?: string): Promise<void> {
   
   // Get all images from IndexedDB
   const images = await getAllImages();
+  
+  // Get all conversations from IndexedDB
+  const conversations = await _getAllConversationData();
 
   const backup: BackupData = {
     version: 1,
     timestamp: Date.now(),
     storage,
-    images
+    images,
+    conversations
   };
 
   const jsonString = JSON.stringify(backup);
@@ -105,6 +111,14 @@ export async function importData(file: File, password?: string): Promise<void> {
         if (backupData.images && Array.isArray(backupData.images)) {
           await clearAllImages();
           await importImages(backupData.images);
+        }
+        
+        // 3. Restore conversations to IndexedDB
+        if (backupData.conversations && Array.isArray(backupData.conversations)) {
+          await clearAllConversationMessages();
+          for (const conv of backupData.conversations) {
+            await saveConversationMessages(conv.id, conv.messages);
+          }
         }
 
         resolve();

@@ -4,6 +4,7 @@ import { useChat } from '../hooks/useChat.ts';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import fuzzysort from 'fuzzysort';
 import type { Message, Conversation } from '../types/index.ts';
+import { getConversationMessages } from '../utils/conversationDB.ts';
 import {
   XIcon,
   SearchIcon,
@@ -147,29 +148,38 @@ export function HistoryDrawer() {
     }
   }, [store.historyDrawerOpen]);
 
+  // Refactored: Only load full messages when searching to avoid memory limits
   useEffect(() => {
     if (!shouldRender) return;
 
-    const loadConversations = async () => {
-      setIsLoading(true);
-      const loaded: ConversationWithMessages[] = [];
-
-      for (const conv of store.conversations) {
-        try {
-          const data = await chrome.storage.local.get(`conv_${conv.id}`);
-          loaded.push({ ...conv, messages: data[`conv_${conv.id}`] || [] });
-        } catch (e) {
-          console.warn('Failed to load conversation:', conv.id, e);
-          loaded.push({ ...conv, messages: [] });
+    if (searchQuery.trim().length > 0) {
+      // If there's a search query, fetch full messages for fuzzy search
+      const loadMessagesForSearch = async () => {
+        setIsLoading(true);
+        const loaded: ConversationWithMessages[] = [];
+        for (const conv of store.conversations) {
+          try {
+            let messagesOrNull = await getConversationMessages(conv.id);
+            let messages: Message[] = [];
+            if (messagesOrNull) {
+              messages = messagesOrNull;
+            }
+            loaded.push({ ...conv, messages });
+          } catch (e) {
+            loaded.push({ ...conv, messages: [] });
+          }
         }
-      }
+        setConversationsWithData(loaded);
+        setIsLoading(false);
+      };
 
-      setConversationsWithData(loaded);
-      setIsLoading(false);
-    };
-
-    loadConversations();
-  }, [shouldRender, store.conversations, store.updateConversationTitle]);
+      const timeoutId = setTimeout(loadMessagesForSearch, 300); // Debounce search load
+      return () => clearTimeout(timeoutId);
+    } else {
+      // If no search, just pass mapped metadata
+      setConversationsWithData(store.conversations.map(c => ({ ...c, messages: [] })));
+    }
+  }, [shouldRender, store.conversations, searchQuery]);
 
   const sorted = useMemo(() => {
     return [...conversationsWithData].sort((a, b) => {
