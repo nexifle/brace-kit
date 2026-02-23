@@ -3,29 +3,68 @@
  * Executes Google search using Gemini's grounding feature
  */
 
+export interface ToolExecutionContext {
+  googleSearchApiKey?: string;
+}
+
+export interface ToolResult {
+  content: Array<{ text: string }>;
+}
+
+export interface GoogleSearchArgs {
+  query?: string;
+  q?: string;
+}
+
+interface GeminiGroundingChunk {
+  web?: {
+    uri: string;
+    title?: string;
+  };
+}
+
+interface GeminiCandidate {
+  content?: {
+    parts?: Array<{ text?: string }>;
+  };
+  groundingMetadata?: {
+    groundingChunks?: GeminiGroundingChunk[];
+    webSearchQueries?: string[];
+  };
+}
+
+interface GeminiResponse {
+  candidates?: GeminiCandidate[];
+}
+
 /**
  * Get user-friendly error messages from API responses
- * @param {Response} response - The fetch response object
- * @param {string} prefix - Error prefix to use
- * @returns {Promise<string>} User-friendly error message
+ * @param response - The fetch response object
+ * @param prefix - Error prefix to use
+ * @returns User-friendly error message
  */
-async function getFriendlyErrorMessage(response, prefix = 'API Error') {
+async function getFriendlyErrorMessage(
+  response: Response,
+  prefix: string = 'API Error'
+): Promise<string> {
   const status = response.status;
   let details = '';
 
   try {
     const errorText = await response.text();
     try {
-      const errJson = JSON.parse(errorText);
-      // Try common error pathways:
-      // OpenAI/Anthropic: errJson.error.message
-      // Gemini: errJson.error.message OR errJson[0].error.message
-      // Generic: errJson.message
+      const errJson = JSON.parse(errorText) as Record<string, unknown>;
+      const errorObj = errJson.error as Record<string, unknown> | undefined;
       details =
-        errJson.error?.message ||
-        errJson.message ||
+        (errorObj?.message as string | undefined) ||
+        (errJson.message as string | undefined) ||
         (typeof errJson.error === 'string' ? errJson.error : null) ||
-        (Array.isArray(errJson) ? errJson[0]?.error?.message : null) ||
+        (Array.isArray(errJson)
+          ? (errJson[0] as Record<string, unknown>)?.error
+            ? ((errJson[0] as Record<string, unknown>).error as Record<string, unknown>)
+                .message as string
+            : null
+          : null) ||
         errorText;
     } catch {
       details = errorText;
@@ -34,7 +73,8 @@ async function getFriendlyErrorMessage(response, prefix = 'API Error') {
     details = response.statusText;
   }
 
-  if (!details || details.length > 500) details = response.statusText || 'Unknown error';
+  if (!details || details.length > 500)
+    details = response.statusText || 'Unknown error';
 
   let statusPrefix = `${prefix} (${status})`;
   if (status === 401) statusPrefix = 'Invalid API Key (401)';
@@ -48,12 +88,14 @@ async function getFriendlyErrorMessage(response, prefix = 'API Error') {
 
 /**
  * Handle Google Search tool execution
- * @param {Object} args - Tool arguments
- * @param {Object} context - Execution context
- * @param {string} context.googleSearchApiKey - Gemini API key for search
- * @returns {Promise<Object>} Tool result
+ * @param args - Tool arguments
+ * @param context - Execution context
+ * @returns Tool result
  */
-export async function handleGoogleSearch(args, context) {
+export async function handleGoogleSearch(
+  args: GoogleSearchArgs | undefined,
+  context: ToolExecutionContext | undefined
+): Promise<ToolResult> {
   const query = args?.query || args?.q || '';
 
   if (!query) {
@@ -91,7 +133,7 @@ export async function handleGoogleSearch(args, context) {
       return { content: [{ text: error }] };
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as GeminiResponse;
     const candidate = data.candidates?.[0];
     const text =
       candidate?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
@@ -100,12 +142,12 @@ export async function handleGoogleSearch(args, context) {
     let result = text;
 
     // Append source links if available
-    if (groundingMetadata?.groundingChunks?.length > 0) {
+    if (groundingMetadata?.groundingChunks?.length && groundingMetadata.groundingChunks.length > 0) {
       const sources = groundingMetadata.groundingChunks
         .filter((c) => c.web?.uri)
         .map(
           (c, i) =>
-            `[${i + 1}] ${c.web.title ? c.web.title + ' - ' : ''}${c.web.uri}`
+            `[${i + 1}] ${c.web!.title ? c.web!.title + ' - ' : ''}${c.web!.uri}`
         )
         .join('\n');
       if (sources) {
@@ -113,12 +155,12 @@ export async function handleGoogleSearch(args, context) {
       }
     }
 
-    if (groundingMetadata?.webSearchQueries?.length > 0) {
+    if (groundingMetadata?.webSearchQueries?.length && groundingMetadata.webSearchQueries.length > 0) {
       result = `Search queries: ${groundingMetadata.webSearchQueries.join(', ')}\n\n${result}`;
     }
 
     return { content: [{ text: result || 'No results found.' }] };
   } catch (e) {
-    return { content: [{ text: `Google Search Error: ${e.message}` }] };
+    return { content: [{ text: `Google Search Error: ${(e as Error).message}` }] };
   }
 }

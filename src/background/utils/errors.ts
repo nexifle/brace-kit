@@ -5,27 +5,36 @@
 
 /**
  * Get user-friendly error messages from API responses
- * @param {Response} response - Fetch response object
- * @param {string} prefix - Error prefix (default: 'API Error')
- * @returns {Promise<string>} User-friendly error message
+ * @param response - Fetch response object
+ * @param prefix - Error prefix (default: 'API Error')
+ * @returns User-friendly error message
  */
-export async function getFriendlyErrorMessage(response, prefix = 'API Error') {
+export async function getFriendlyErrorMessage(
+  response: Response,
+  prefix: string = 'API Error'
+): Promise<string> {
   const status = response.status;
   let details = '';
 
   try {
     const errorText = await response.text();
     try {
-      const errJson = JSON.parse(errorText);
+      const errJson = JSON.parse(errorText) as Record<string, unknown>;
       // Try common error pathways:
       // OpenAI/Anthropic: errJson.error.message
       // Gemini: errJson.error.message OR errJson[0].error.message
       // Generic: errJson.message
+      const errorObj = errJson.error as Record<string, unknown> | undefined;
       details =
-        errJson.error?.message ||
-        errJson.message ||
+        (errorObj?.message as string | undefined) ||
+        (errJson.message as string | undefined) ||
         (typeof errJson.error === 'string' ? errJson.error : null) ||
-        (Array.isArray(errJson) ? errJson[0]?.error?.message : null) ||
+        (Array.isArray(errJson)
+          ? (errJson[0] as Record<string, unknown>)?.error
+            ? ((errJson[0] as Record<string, unknown>).error as Record<string, unknown>)
+                .message as string
+            : null
+          : null) ||
         errorText;
     } catch {
       details = errorText;
@@ -34,7 +43,8 @@ export async function getFriendlyErrorMessage(response, prefix = 'API Error') {
     details = response.statusText;
   }
 
-  if (!details || details.length > 500) details = response.statusText || 'Unknown error';
+  if (!details || details.length > 500)
+    details = response.statusText || 'Unknown error';
 
   let statusPrefix = `${prefix} (${status})`;
   if (status === 401) statusPrefix = 'Invalid API Key (401)';

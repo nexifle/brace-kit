@@ -2,7 +2,10 @@
  * Google Search Tool Definition
  * Uses Gemini's grounding feature to search the web
  */
-export const GOOGLE_SEARCH_TOOL = {
+
+import type { MCPTool } from '../../../types';
+
+export const GOOGLE_SEARCH_TOOL: MCPTool = {
   name: 'google_search',
   description:
     'Search the web using Google. Use this to find current information, news, facts, or any topic that requires up-to-date web search results.',

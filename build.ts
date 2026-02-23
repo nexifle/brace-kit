@@ -12,14 +12,14 @@ if (!existsSync(outDir)) {
 
 // Build the React app
 const result = await build({
-  entrypoints: ['./src/index.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.js'],
+  entrypoints: ['./src/index.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts'],
   outdir: outDir,
   format: 'esm',
   target: 'browser',
   minify: true,
   sourcemap: 'none',
   splitting: false,
-  external: ['chrome', './mcp.js'],
+  external: ['chrome'],
   define: {
     'process.env.NODE_ENV': '"production"',
   },
@@ -58,18 +58,6 @@ if (result.success) {
     }
   }
 
-  // Copy background and content scripts
-  const scriptFiles = [
-    'mcp.js',
-  ];
-
-  for (const file of scriptFiles) {
-    const from = join('.', file);
-    const to = join(outDir, file);
-    if (existsSync(from)) {
-      filesToCopy.push({ from, to });
-    }
-  }
 
   // Copy icons if they exist
   const iconsDir = './icons';
