@@ -85,9 +85,9 @@ export async function copyTableAsPlain(table: HTMLTableElement): Promise<void> {
  * Show button feedback animation
  */
 export function showButtonFeedback(btn: HTMLElement): void {
-  btn.classList.add('copied');
+  btn.setAttribute('data-state', 'success');
   setTimeout(() => {
-    btn.classList.remove('copied');
+    btn.removeAttribute('data-state');
   }, 1500);
 }
 

@@ -1,4 +1,5 @@
-import { StarIcon, CopyIcon, DownloadIcon } from 'lucide-react';
+import { useState } from 'react';
+import { StarIcon, CopyIcon, DownloadIcon, CheckIcon } from 'lucide-react';
 import type { ImagesSectionProps } from '../MessageBubble.types';
 import { copyImageToClipboard } from '../utils/imageProcessing';
 
@@ -10,6 +11,15 @@ export function ImagesSection({
   favorites,
   activeConversationId,
 }: ImagesSectionProps) {
+  const [feedback, setFeedback] = useState<{ [key: string]: 'copied' | 'downloaded' | null }>({});
+
+  const showFeedback = (id: string, type: 'copied' | 'downloaded') => {
+    setFeedback((prev) => ({ ...prev, [id]: type }));
+    setTimeout(() => {
+      setFeedback((prev) => ({ ...prev, [id]: null }));
+    }, 1500);
+  };
+
   return (
     <div className="flex flex-wrap gap-2 mb-3">
       {images.map((img, idx) => {
@@ -18,6 +28,8 @@ export function ImagesSection({
           img.imageRef || (activeConversationId ? `img_${activeConversationId}_${messageIndex}_${idx}` : '');
         const favId = `db:${imageKey}`;
         const isFavorited = favorites.has(favId);
+
+        const currentFeedback = feedback[imageKey];
 
         return (
           <div
@@ -43,27 +55,32 @@ export function ImagesSection({
                 <StarIcon size={12} fill={isFavorited ? 'currentColor' : 'none'} />
               </button>
               <button
-                className="h-6 w-6 flex items-center justify-center bg-black/60 backdrop-blur-md text-white rounded-sm hover:bg-primary transition-all"
+                className={`h-6 w-6 flex items-center justify-center backdrop-blur-md text-white rounded-sm transition-all
+                  ${currentFeedback === 'copied' ? 'bg-green-500 hover:bg-green-600' : 'bg-black/60 hover:bg-primary'}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  copyImageToClipboard(src);
+                  copyImageToClipboard(src).then(ok => {
+                    if (ok) showFeedback(imageKey, 'copied');
+                  });
                 }}
                 title="Copy"
               >
-                <CopyIcon size={12} />
+                {currentFeedback === 'copied' ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
               </button>
               <button
-                className="h-6 w-6 flex items-center justify-center bg-black/60 backdrop-blur-md text-white rounded-sm hover:bg-primary transition-all"
+                className={`h-6 w-6 flex items-center justify-center backdrop-blur-md text-white rounded-sm transition-all
+                  ${currentFeedback === 'downloaded' ? 'bg-green-500 hover:bg-green-600' : 'bg-black/60 hover:bg-primary'}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   const a = document.createElement('a');
                   a.href = src;
                   a.download = `generated-${Date.now()}.${img.mimeType.split('/')[1] || 'png'}`;
                   a.click();
+                  showFeedback(imageKey, 'downloaded');
                 }}
                 title="Download"
               >
-                <DownloadIcon size={12} />
+                {currentFeedback === 'downloaded' ? <CheckIcon size={12} /> : <DownloadIcon size={12} />}
               </button>
             </div>
           </div>

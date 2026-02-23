@@ -132,35 +132,45 @@ export function MessageBubble({
   const handleImageActions = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
 
-    const copyBtn = target.closest('.md-image-copy-btn');
+    const copyBtn = target.closest('.att-image-copy-btn');
     if (copyBtn) {
+      e.stopPropagation();
+      e.preventDefault();
       const src = copyBtn.getAttribute('data-src');
       if (!src) return;
-      copyImageToClipboard(src).then((ok) => {
-        if (ok) {
-          copyBtn.classList.add('md-image-btn-success');
-          setTimeout(() => copyBtn.classList.remove('md-image-btn-success'), 1500);
-        }
+      import('../../utils/formatters').then(() => {
+        copyImageToClipboard(src).then((ok) => {
+          if (ok) {
+            copyBtn.setAttribute('data-state', 'success');
+            setTimeout(() => copyBtn.removeAttribute('data-state'), 1500);
+          }
+        });
       });
       return;
     }
 
-    const downloadBtn = target.closest('.md-image-download-btn');
+    const downloadBtn = target.closest('.att-image-download-btn');
     if (downloadBtn) {
+      e.stopPropagation();
+      e.preventDefault();
       const src = downloadBtn.getAttribute('data-src');
+      const name = downloadBtn.getAttribute('data-name');
       if (!src) return;
-      const a = document.createElement('a');
-      a.href = src;
-      const ext = src.split('.').pop()?.split('?')[0] || 'png';
-      a.download = `image.${ext}`;
-      a.click();
-      downloadBtn.classList.add('md-image-btn-success');
-      setTimeout(() => downloadBtn.classList.remove('md-image-btn-success'), 1500);
+
+      const link = document.createElement('a');
+      link.href = src;
+      link.download = name || `image-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      downloadBtn.setAttribute('data-state', 'success');
+      setTimeout(() => downloadBtn.removeAttribute('data-state'), 1500);
       return;
     }
 
-    const img = target.closest('.md-image-wrapper img') as HTMLImageElement | null;
-    if (img && !target.closest('.md-image-btn')) {
+    const img = target.closest('.md-image-wrapper img, .group\\/att img') as HTMLImageElement | null;
+    if (img && !target.closest('.att-image-btn, .md-image-btn')) {
       setLightboxSrc(img.src);
       return;
     }
@@ -170,6 +180,9 @@ export function MessageBubble({
     const target = e.target as HTMLElement;
     const btn = target.closest('.copy-code-btn');
     if (!btn) return;
+
+    e.stopPropagation();
+    e.preventDefault();
 
     const code = btn.getAttribute('data-code');
     if (!code) return;
@@ -184,8 +197,8 @@ export function MessageBubble({
 
     import('../../utils/formatters').then(({ copyToClipboard }) => {
       copyToClipboard(decodedCode).then(() => {
-        btn.classList.add('copied');
-        setTimeout(() => btn.classList.remove('copied'), 1500);
+        btn.setAttribute('data-state', 'success');
+        setTimeout(() => btn.removeAttribute('data-state'), 1500);
       });
     });
   }, []);
@@ -440,15 +453,9 @@ export function MessageBubble({
         if (src) {
           copyImageToClipboard(src).then((ok) => {
             if (ok) {
-              const originalHtml = copyBtn.innerHTML;
-              copyBtn.classList.add('bg-green-500', 'text-white');
-              copyBtn.classList.remove('bg-black/60', 'hover:bg-primary');
-              copyBtn.innerHTML =
-                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+              copyBtn.setAttribute('data-state', 'success');
               setTimeout(() => {
-                copyBtn.classList.remove('bg-green-500', 'text-white');
-                copyBtn.classList.add('bg-black/60', 'hover:bg-primary');
-                copyBtn.innerHTML = originalHtml;
+                copyBtn.removeAttribute('data-state');
               }, 1500);
             }
           });
@@ -462,11 +469,7 @@ export function MessageBubble({
         e.stopPropagation();
         const src = (downloadBtn as HTMLElement).dataset.src;
         if (src) {
-          const originalHtml = downloadBtn.innerHTML;
-          downloadBtn.classList.add('bg-primary', 'text-white');
-          downloadBtn.classList.remove('bg-black/60');
-          downloadBtn.innerHTML =
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+          downloadBtn.setAttribute('data-state', 'success');
 
           const link = document.createElement('a');
           link.href = src;
@@ -476,9 +479,7 @@ export function MessageBubble({
           document.body.removeChild(link);
 
           setTimeout(() => {
-            downloadBtn.classList.remove('bg-primary', 'text-white');
-            downloadBtn.classList.add('bg-black/60');
-            downloadBtn.innerHTML = originalHtml;
+            downloadBtn.removeAttribute('data-state');
           }, 1500);
         }
       }
