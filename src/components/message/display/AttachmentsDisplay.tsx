@@ -1,0 +1,38 @@
+import { FileTextIcon } from 'lucide-react';
+import type { Attachment } from '../../../types';
+
+interface AttachmentsDisplayProps {
+  attachments: Attachment[];
+  onImageClick: (src: string) => void;
+  onTextFileClick: (name: string, content: string) => void;
+}
+
+export function AttachmentsDisplay({ attachments, onImageClick, onTextFileClick }: AttachmentsDisplayProps) {
+  if (!attachments || attachments.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-3">
+      {attachments.map((att, idx) =>
+        att.type === 'image' ? (
+          <div key={idx} className="relative rounded-sm overflow-hidden border border-border/50 group/att">
+            <img
+              src={att.data}
+              alt={att.name}
+              className="w-12 h-12 object-cover cursor-zoom-in"
+              onClick={() => onImageClick(att.data)}
+            />
+          </div>
+        ) : (
+          <button
+            key={idx}
+            className="flex items-center gap-2 px-2.5 py-1.5 bg-muted/30 border border-border/50 rounded-sm hover:bg-muted/50 transition-all text-xs text-muted-foreground group/att"
+            onClick={() => onTextFileClick(att.name, att.data)}
+          >
+            <FileTextIcon size={14} className="text-primary/60" />
+            <span className="font-medium truncate max-w-[120px]">{att.name}</span>
+          </button>
+        )
+      )}
+    </div>
+  );
+}
