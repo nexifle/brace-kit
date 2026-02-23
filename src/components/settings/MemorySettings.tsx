@@ -95,39 +95,51 @@ export function MemorySettings() {
         AI automatically learns your preferences from conversations. You can also add memories manually.
       </p>
 
-      {!showAddForm ? (
-        <button
-          className="w-full h-8 flex items-center justify-center gap-2 bg-secondary/60 hover:bg-secondary text-foreground text-xs font-medium rounded-md border border-border/50 transition-all shadow-sm group"
-          onClick={() => setShowAddForm(true)}
-        >
-          <PlusIcon size={14} />
-          Add Memory
-        </button>
-      ) : (
-        <div className="flex flex-col gap-2 p-3 rounded-lg bg-secondary/30 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
-          <select
-            className="w-full h-8 px-2 text-xs bg-muted/40 border border-input rounded focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
-            value={newMemoryCategory}
-            onChange={(e) => setNewMemoryCategory(e.target.value as MemoryCategory)}
+      <div className="sticky top-0 z-10 -mx-4 p-4 bg-background">
+        {!showAddForm ? (
+          <button
+            className="w-full h-8 flex items-center justify-center gap-2 bg-secondary/60 hover:bg-secondary text-foreground text-xs font-medium rounded-md border border-border/50 transition-all shadow-sm group"
+            onClick={() => setShowAddForm(true)}
           >
-            {MEMORY_CATEGORIES.map(cat => (
-              <option key={cat} value={cat}>{MEMORY_CATEGORY_LABELS[cat]}</option>
-            ))}
-          </select>
-          <textarea
-            className="w-full min-h-[60px] p-2 text-xs bg-muted/40 border border-input rounded focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground resize-none"
-            value={newMemoryContent}
-            onChange={(e) => setNewMemoryContent(e.target.value)}
-            placeholder="What should I remember?"
-          />
-          <div className="flex gap-2">
-            <button className="flex-1 h-7 bg-primary text-primary-foreground text-xs font-medium rounded hover:bg-primary/90 transition-colors" onClick={handleAddMemory}>Save</button>
-            <button className="flex-1 h-7 bg-muted text-muted-foreground text-xs font-medium rounded hover:bg-muted/80 transition-colors" onClick={() => { setShowAddForm(false); setNewMemoryContent(''); }}>Cancel</button>
+            <PlusIcon size={14} />
+            Add Memory
+          </button>
+        ) : (
+          <div className="flex flex-col gap-2 p-3 rounded-lg bg-secondary/30 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
+            <select
+              className="w-full h-8 px-2 text-xs bg-muted/40 border border-input rounded focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
+              value={newMemoryCategory}
+              onChange={(e) => setNewMemoryCategory(e.target.value as MemoryCategory)}
+            >
+              {MEMORY_CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>{MEMORY_CATEGORY_LABELS[cat]}</option>
+              ))}
+            </select>
+            <textarea
+              className="w-full min-h-[60px] p-2 text-xs bg-muted/40 border border-input rounded focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground resize-none"
+              value={newMemoryContent}
+              onChange={(e) => setNewMemoryContent(e.target.value)}
+              placeholder="What should I remember?"
+            />
+            <div className="flex gap-2">
+              <button className="flex-1 h-7 bg-primary text-primary-foreground text-xs font-medium rounded hover:bg-primary/90 transition-colors" onClick={handleAddMemory}>Save</button>
+              <button className="flex-1 h-7 bg-muted text-muted-foreground text-xs font-medium rounded hover:bg-muted/80 transition-colors" onClick={() => { setShowAddForm(false); setNewMemoryContent(''); }}>Cancel</button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex flex-col gap-4 mt-1 max-h-[320px] overflow-y-auto pr-1 scroll-smooth">
+        {store.memories.length > 0 && (
+          <button
+            className="mt-2 w-full h-8 flex items-center justify-center gap-2 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] font-bold uppercase tracking-wider rounded border border-destructive/20 transition-all"
+            onClick={handleClearMemories}
+          >
+            <Trash2Icon size={12} />
+            Clear All Memories ({store.memories.length})
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-4 mt-1">
         {store.memories.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-4 px-2 text-center rounded-lg border border-dashed border-border/50 bg-secondary/10">
             <p className="text-xs text-muted-foreground italic">No memories yet. Chat more to build personalization.</p>
@@ -185,16 +197,6 @@ export function MemorySettings() {
           })
         )}
       </div>
-
-      {store.memories.length > 0 && (
-        <button
-          className="mt-2 w-full h-8 flex items-center justify-center gap-2 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] font-bold uppercase tracking-wider rounded border border-destructive/20 transition-all"
-          onClick={handleClearMemories}
-        >
-          <Trash2Icon size={12} />
-          Clear All Memories ({store.memories.length})
-        </button>
-      )}
 
       <ConfirmDialog
         isOpen={showClearConfirm}
