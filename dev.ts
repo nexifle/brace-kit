@@ -1,5 +1,5 @@
 import { build } from 'bun';
-import { existsSync, mkdirSync, copyFileSync, renameSync, watch } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync, watch } from 'fs';
 import { join } from 'path';
 import tailwindPlugin from 'bun-plugin-tailwind';
 
@@ -35,7 +35,7 @@ async function runBuild(): Promise<boolean> {
   }
 
   const result = await build({
-    entrypoints: ['./src/index.tsx', './src/content.ts', './src/onboarding.tsx', './background.js'],
+    entrypoints: ['./src/index.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts'],
     outdir: outDir,
     format: 'esm',
     target: 'browser',
@@ -102,6 +102,32 @@ async function runBuild(): Promise<boolean> {
       const from = join(srcOutDir, file);
       const to = join(outDir, file);
       if (existsSync(from)) renameSync(from, to);
+    }
+    // Clean up empty src directory
+    try {
+      rmdirSync(srcOutDir);
+    } catch {
+      // Directory not empty or doesn't exist, ignore
+    }
+  }
+
+  // Flatten background script from dist/background/index.js to dist/background.js
+  const bgSrcDir = join(outDir, 'background');
+  const bgFrom = join(bgSrcDir, 'index.js');
+  const bgTo = join(outDir, 'background.js');
+  if (existsSync(bgFrom)) {
+    renameSync(bgFrom, bgTo);
+    // Also move sourcemap if exists
+    const mapFrom = join(bgSrcDir, 'index.js.map');
+    const mapTo = join(outDir, 'background.js.map');
+    if (existsSync(mapFrom)) {
+      renameSync(mapFrom, mapTo);
+    }
+    // Clean up empty background directory
+    try {
+      rmdirSync(bgSrcDir);
+    } catch {
+      // Directory not empty or doesn't exist, ignore
     }
   }
 
@@ -180,7 +206,7 @@ const debouncedRebuild = debounce(async () => {
   }
 }, 300);
 
-const watchDirs = ['./src', './public', './background.js', './manifest.json', './mcp.js'];
+const watchDirs = ['./src', './public', './manifest.json', './mcp.js'];
 
 for (const dir of watchDirs) {
   if (existsSync(dir)) {
@@ -188,7 +214,7 @@ for (const dir of watchDirs) {
   }
 }
 
-console.log('[dev] Watching for changes in: src/, public/, background.js, manifest.json');
+console.log('[dev] Watching for changes in: src/, public/, manifest.json');
 console.log('[dev] Load extension from dist/ folder and enable Developer Mode in Chrome.\n');
 
 // Keep process alive

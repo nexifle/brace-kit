@@ -1,24 +1,81 @@
-// MCP (Model Context Protocol) client for Chrome extension
-// Supports Streamable HTTP and SSE transports
+/**
+ * MCP (Model Context Protocol) client for Chrome extension
+ * Supports Streamable HTTP and SSE transports
+ */
+
+import type { MCPServer, MCPTool } from '../types';
+
+interface MCPToolInternal extends MCPTool {
+  _serverId?: string;
+  _serverName?: string;
+}
+
+interface ConnectResult {
+  success: boolean;
+  tools?: MCPTool[];
+  error?: string;
+}
+
+interface JSONRPCResponse<T = unknown> {
+  jsonrpc: string;
+  id?: number;
+  result?: T;
+  error?: {
+    message: string;
+    code?: number;
+  };
+}
+
+interface InitializeResult {
+  protocolVersion: string;
+  capabilities: Record<string, unknown>;
+  serverInfo: {
+    name: string;
+    version: string;
+  };
+}
+
+interface ToolsListResult {
+  tools: MCPTool[];
+}
+
+interface ToolCallResult {
+  content: Array<{ type: string; text: string }>;
+}
+
+interface SSEReader {
+  cancel: () => Promise<void>;
+}
 
 export class MCPClient {
-  constructor(serverUrl, headers = {}) {
+  private serverUrl: string;
+  private customHeaders: Record<string, string>;
+  private tools: MCPTool[];
+  private connected: boolean;
+  private sessionId: string | null;
+  private transport: 'streamable' | 'sse' | null;
+  private postEndpoint: string | null;
+  private sseReader: SSEReader | null;
+
+  constructor(serverUrl: string, headers: Record<string, string> = {}) {
     this.serverUrl = serverUrl.replace(/\/+$/, ''); // trim trailing slashes
     this.customHeaders = headers;
     this.tools = [];
     this.connected = false;
     this.sessionId = null; // Mcp-Session-Id
-    this.transport = null; // 'streamable' | 'sse'
+    this.transport = null;
     this.postEndpoint = null;
+    this.sseReader = null;
   }
 
-  async connect() {
+  async connect(): Promise<ConnectResult> {
     // Strategy 1: Streamable HTTP — POST initialize to the base URL
     try {
       const result = await this.connectStreamable();
       if (result.success) return result;
     } catch (e) {
-      console.log('Streamable HTTP failed:', e.message);
+      const error = e as Error;
+      console.log('Streamable HTTP failed:', error.message);
     }
 
     // Strategy 2: SSE transport
@@ -26,13 +83,14 @@ export class MCPClient {
       const result = await this.connectSSE();
       if (result.success) return result;
     } catch (e) {
-      console.log('SSE transport failed:', e.message);
+      const error = e as Error;
+      console.log('SSE transport failed:', error.message);
     }
 
     return { success: false, error: 'Could not connect to MCP server' };
   }
 
-  async connectStreamable() {
+  private async connectStreamable(): Promise<ConnectResult> {
     const res = await fetch(this.serverUrl, {
       method: 'POST',
       headers: {
@@ -63,7 +121,7 @@ export class MCPClient {
     }
 
     // Parse response — could be JSON or SSE
-    const data = await this.parseResponse(res);
+    const data = await this.parseResponse<InitializeResult>(res);
     if (!data || !data.result) {
       throw new Error('Invalid initialize response');
     }
@@ -82,13 +140,15 @@ export class MCPClient {
           method: 'notifications/initialized',
         }),
       });
-    } catch (_) { /* optional notification */ }
+    } catch {
+      /* optional notification */
+    }
 
     await this.listTools();
     return { success: true, tools: this.tools };
   }
 
-  async connectSSE() {
+  private async connectSSE(): Promise<ConnectResult> {
     const url = `${this.serverUrl}/sse`;
 
     const res = await fetch(url, {
@@ -102,12 +162,16 @@ export class MCPClient {
       throw new Error(`SSE connection failed: ${res.status}`);
     }
 
-    const reader = res.body.getReader();
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
     const decoder = new TextDecoder();
     let buffer = '';
 
     // Read until we get the endpoint event
-    const endpoint = await new Promise((resolve, reject) => {
+    const endpoint = await new Promise<string>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('SSE connection timeout'));
       }, 10000);
@@ -130,15 +194,18 @@ export class MCPClient {
       };
 
       const read = () => {
-        reader.read().then(({ done, value }) => {
-          if (done) {
-            reject(new Error('SSE stream ended'));
-            return;
-          }
-          buffer += decoder.decode(value, { stream: true });
-          processBuffer();
-          read();
-        }).catch(reject);
+        reader
+          .read()
+          .then(({ done, value }) => {
+            if (done) {
+              reject(new Error('SSE stream ended'));
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            processBuffer();
+            read();
+          })
+          .catch(reject);
       };
 
       read();
@@ -158,15 +225,17 @@ export class MCPClient {
   }
 
   // Parse response that may be JSON or SSE stream
-  async parseResponse(res) {
+  private async parseResponse<T>(res: Response): Promise<JSONRPCResponse<T> | null> {
     const contentType = res.headers.get('content-type') || '';
 
     if (contentType.includes('text/event-stream')) {
       // Parse SSE stream to extract JSON-RPC response
-      const reader = res.body.getReader();
+      const reader = res.body?.getReader();
+      if (!reader) return null;
+
       const decoder = new TextDecoder();
       let buffer = '';
-      let result = null;
+      let result: JSONRPCResponse<T> | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -179,8 +248,10 @@ export class MCPClient {
         for (const line of lines) {
           if (line.startsWith('data:')) {
             try {
-              result = JSON.parse(line.slice(5).trim());
-            } catch (_) { /* not JSON yet */ }
+              result = JSON.parse(line.slice(5).trim()) as JSONRPCResponse<T>;
+            } catch {
+              /* not JSON yet */
+            }
           }
         }
 
@@ -191,10 +262,10 @@ export class MCPClient {
     }
 
     // Default: parse as JSON
-    return await res.json();
+    return (await res.json()) as JSONRPCResponse<T>;
   }
 
-  buildHeaders() {
+  private buildHeaders(): Record<string, string> {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream',
@@ -203,7 +274,7 @@ export class MCPClient {
     };
   }
 
-  async sendRequest(method, params = {}) {
+  private async sendRequest<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     const body = {
       jsonrpc: '2.0',
       id: Date.now(),
@@ -229,16 +300,16 @@ export class MCPClient {
       this.sessionId = mcpSessionId;
     }
 
-    const data = await this.parseResponse(res);
+    const data = await this.parseResponse<T>(res);
     if (data?.error) {
       throw new Error(`MCP error: ${data.error.message}`);
     }
-    return data?.result;
+    return data?.result as T;
   }
 
-  async listTools() {
+  private async listTools(): Promise<MCPTool[]> {
     try {
-      const result = await this.sendRequest('tools/list');
+      const result = await this.sendRequest<ToolsListResult>('tools/list');
       this.tools = result?.tools || [];
       return this.tools;
     } catch (e) {
@@ -248,16 +319,22 @@ export class MCPClient {
     }
   }
 
-  async callTool(name, args = {}) {
+  async callTool(name: string, args: Record<string, unknown> = {}): Promise<ToolCallResult> {
     try {
-      const result = await this.sendRequest('tools/call', { name, arguments: args });
+      const result = await this.sendRequest<ToolCallResult>('tools/call', {
+        name,
+        arguments: args,
+      });
       return result;
     } catch (e) {
-      return { content: [{ type: 'text', text: `Error calling tool: ${e.message}` }] };
+      const error = e as Error;
+      return {
+        content: [{ type: 'text', text: `Error calling tool: ${error.message}` }],
+      };
     }
   }
 
-  disconnect() {
+  disconnect(): void {
     if (this.sseReader) {
       this.sseReader.cancel().catch(() => {});
     }
@@ -266,27 +343,56 @@ export class MCPClient {
     this.sessionId = null;
     this.transport = null;
   }
+
+  getTools(): MCPTool[] {
+    return this.tools;
+  }
+
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  getTransport(): 'streamable' | 'sse' | null {
+    return this.transport;
+  }
+}
+
+interface MCPClientEntry {
+  client: MCPClient;
+  config: MCPServer;
+  tools: MCPTool[];
 }
 
 // Manage multiple MCP servers
 export class MCPManager {
+  private clients: Map<string, MCPClientEntry>;
+
   constructor() {
     this.clients = new Map();
   }
 
-  async addServer(config) {
+  async addServer(config: MCPServer): Promise<ConnectResult> {
     console.log('[MCPManager] addServer called:', config.id, config.name);
     const client = new MCPClient(config.url, config.headers || {});
     const result = await client.connect();
-    console.log('[MCPManager] connect result:', result.success, 'tools:', result.tools?.length);
+    console.log(
+      '[MCPManager] connect result:',
+      result.success,
+      'tools:',
+      result.tools?.length
+    );
     if (result.success) {
-      this.clients.set(config.id, { client, config, tools: result.tools });
+      this.clients.set(config.id, {
+        client,
+        config,
+        tools: result.tools || [],
+      });
       console.log('[MCPManager] Server added, total clients:', this.clients.size);
     }
     return result;
   }
 
-  removeServer(id) {
+  removeServer(id: string): void {
     const entry = this.clients.get(id);
     if (entry) {
       entry.client.disconnect();
@@ -294,11 +400,15 @@ export class MCPManager {
     }
   }
 
-  getAllTools() {
+  getAllTools(): MCPToolInternal[] {
     console.log('[MCPManager] getAllTools called, clients:', this.clients.size);
-    const tools = [];
+    const tools: MCPToolInternal[] = [];
     for (const [serverId, entry] of this.clients) {
-      console.log(`[MCPManager] Server ${serverId}:`, entry.tools?.length || 0, 'tools');
+      console.log(
+        `[MCPManager] Server ${serverId}:`,
+        entry.tools?.length || 0,
+        'tools'
+      );
       for (const tool of entry.tools || []) {
         tools.push({
           ...tool,
@@ -311,7 +421,7 @@ export class MCPManager {
     return tools;
   }
 
-  async callTool(name) {
+  async callTool(name: string): Promise<{ client: MCPClient; tool: MCPTool } | null> {
     // Find which server has this tool
     for (const [, entry] of this.clients) {
       const tool = entry.tools.find((t) => t.name === name);
@@ -322,10 +432,14 @@ export class MCPManager {
     return null;
   }
 
-  disconnectAll() {
+  disconnectAll(): void {
     for (const [, entry] of this.clients) {
       entry.client.disconnect();
     }
     this.clients.clear();
+  }
+
+  getClientCount(): number {
+    return this.clients.size;
   }
 }

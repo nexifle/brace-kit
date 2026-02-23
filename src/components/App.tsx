@@ -6,7 +6,7 @@ import { SettingsPanel } from './SettingsPanel.tsx';
 import { HistoryDrawer } from './HistoryDrawer.tsx';
 import { GalleryView } from './GalleryView.tsx';
 import { LockScreen } from './LockScreen.tsx';
-import { useStreaming } from '../hooks/useStreaming.ts';
+import { useStreaming } from '../hooks';
 
 export function App() {
   const store = useStore();

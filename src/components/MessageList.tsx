@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import { MessageBubble } from './MessageBubble.tsx';
 import { ToolMessage } from './ToolMessage.tsx';
-import { useChat } from '../hooks/useChat.ts';
+import { useChat } from '../hooks';
 
 export function MessageList() {
   const messages = useStore((state) => state.messages);

@@ -68,8 +68,9 @@ export function GalleryView() {
   // Load favorites
   useEffect(() => {
     chrome.storage.local.get(FAVORITES_STORAGE_KEY).then((data) => {
-      if (data[FAVORITES_STORAGE_KEY]) {
-        setFavorites(new Set(data[FAVORITES_STORAGE_KEY]));
+      const favorites = data[FAVORITES_STORAGE_KEY];
+      if (favorites && Array.isArray(favorites)) {
+        setFavorites(new Set(favorites));
       }
     });
   }, []);

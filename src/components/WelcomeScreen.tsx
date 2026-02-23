@@ -1,5 +1,5 @@
 import { BookOpenIcon, MousePointer2Icon, SparklesIcon } from 'lucide-react';
-import { usePageContext } from '../hooks/usePageContext.ts';
+import { usePageContext } from '../hooks';
 import { Btn } from './ui/Btn.tsx';
 
 export function WelcomeScreen() {

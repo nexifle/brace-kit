@@ -4,6 +4,12 @@ import type {
   Message,
   ProviderConfig,
   Conversation,
+  ProviderKeys,
+  CustomProvider,
+  MCPServer,
+  Memory,
+  SecuritySettings,
+  CompactConfig,
 } from '../types/index.ts';
 import {
   saveImagesForConversation,
@@ -20,6 +26,26 @@ import {
   getAllConversationMetadata,
 } from '../utils/conversationDB.ts';
 import { sha256 } from '../utils/crypto.ts';
+
+// Type for chrome.storage.local.get() return value
+interface StorageData {
+  providerConfig?: ProviderConfig;
+  providerKeys?: ProviderKeys;
+  customProviders?: CustomProvider[];
+  mcpServers?: MCPServer[];
+  activeConversationId?: string;
+  memories?: Memory[];
+  memoryEnabled?: boolean;
+  enableGoogleSearch?: boolean;
+  enableReasoning?: boolean;
+  enableGoogleSearchTool?: boolean;
+  googleSearchApiKey?: string;
+  security?: SecuritySettings;
+  compactConfig?: CompactConfig;
+  theme?: 'light' | 'dark';
+  conversations?: Conversation[];
+  chatHistory?: Message[];
+}
 
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant. When the user shares page content or selected text, help them understand and work with it. Be concise and helpful.';
 
@@ -223,7 +249,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Fallback/migrate from local storage if not found in IndexedDB
       if (!messagesOrNull) {
-        const data = await chrome.storage.local.get(`conv_${id}`);
+        const data = await chrome.storage.local.get(`conv_${id}`) as Record<string, Message[] | undefined>;
         messages = data[`conv_${id}`] || [];
         if (messages.length > 0) {
           await saveConversationMessages(id, messages);
@@ -454,7 +480,7 @@ export const useStore = create<AppState>((set, get) => ({
         'security',
         'compactConfig',
         'theme',
-      ]);
+      ]) as StorageData;
 
       const updates: Partial<AppState> = {};
 
@@ -500,7 +526,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Load session auth state (persists during browser session)
       try {
-        const sessionData = await chrome.storage.session.get('isAuthenticated');
+        const sessionData = await chrome.storage.session.get('isAuthenticated') as { isAuthenticated?: boolean };
         if (sessionData.isAuthenticated !== undefined) {
           updates.isAuthenticated = sessionData.isAuthenticated;
         }
@@ -521,7 +547,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // Migrate legacy chatHistory or load active conversation
-      const legacyData = await chrome.storage.local.get(['chatHistory']);
+      const legacyData = await chrome.storage.local.get(['chatHistory']) as { chatHistory?: Message[] };
       if (legacyData.chatHistory && legacyData.chatHistory.length > 0 && !updates.conversations) {
         // Migrate legacy data
         const id = `conv_${Date.now()}`;
@@ -544,13 +570,13 @@ export const useStore = create<AppState>((set, get) => ({
         await chrome.storage.local.remove('chatHistory');
       } else if (data.activeConversationId) {
         updates.activeConversationId = data.activeConversationId;
-        
+
         let messagesOrNull = await getConversationMessages(data.activeConversationId);
         let messages: Message[] = [];
 
         // Fallback/migrate from local storage if not found
         if (!messagesOrNull) {
-          const convData = await chrome.storage.local.get(`conv_${data.activeConversationId}`);
+          const convData = await chrome.storage.local.get(`conv_${data.activeConversationId}`) as Record<string, Message[] | undefined>;
           messages = convData[`conv_${data.activeConversationId}`] || [];
           if (messages.length > 0) {
             await saveConversationMessages(data.activeConversationId, messages);

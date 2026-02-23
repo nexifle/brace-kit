@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat } from '../hooks/useChat.ts';
+import { useChat } from '../hooks';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import fuzzysort from 'fuzzysort';
 import type { Message, Conversation } from '../types/index.ts';

@@ -6,7 +6,7 @@ import { useStore } from '../store/index.ts';
 import type { Message, Attachment, PageContext, SelectedText } from '../types/index.ts';
 import { TextFileViewer } from './TextFileViewer.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
-import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
+import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers';
 import { CheckIcon, ChevronRightIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon, XIcon, PlusIcon, FileTextIcon, GlobeIcon, DownloadIcon, StarIcon, QuoteIcon, BrainIcon } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
 import { MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '../types/index.ts';
@@ -636,8 +636,9 @@ export function MessageBubble({ message, isStreaming, messageIndex, onBranch, on
   // Load favorites from storage
   useEffect(() => {
     chrome.storage.local.get(FAVORITES_STORAGE_KEY).then((data) => {
-      if (data[FAVORITES_STORAGE_KEY]) {
-        setFavorites(new Set(data[FAVORITES_STORAGE_KEY]));
+      const favorites = data[FAVORITES_STORAGE_KEY];
+      if (favorites && Array.isArray(favorites)) {
+        setFavorites(new Set(favorites));
       }
     });
   }, []);

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { PROVIDER_PRESETS, fetchModels } from '../providers.ts';
+import { PROVIDER_PRESETS, fetchModels } from '../providers';
 import type { ProviderPreset, CustomProvider, ProviderFormat } from '../types/index.ts';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
 

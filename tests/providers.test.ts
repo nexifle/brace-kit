@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { formatRequest, PROVIDER_PRESETS } from "../src/providers.ts";
+import { formatRequest, PROVIDER_PRESETS } from "../src/providers";
 import type { Message } from "../src/types/index.ts";
 
 describe("providers - formatAnthropic", () => {

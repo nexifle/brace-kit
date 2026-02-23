@@ -1,85 +1,246 @@
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { motion, AnimatePresence } from 'framer-motion';
 import './styles/onboarding.css';
-import { Zap, MessagesSquare, Puzzle, ArrowRight } from 'lucide-react';
+import {
+    Puzzle,
+    ArrowRight,
+    ShieldCheck,
+    ChevronLeft,
+    Sparkles,
+    Layers,
+    Cpu,
+    Zap,
+    GitBranchIcon
+} from 'lucide-react';
 import { Logo } from './components/ui/Logo.tsx';
 
 const steps = [
     {
-        title: 'Your Autonomous Copilot',
-        desc: 'BraceKit actively reads your active pages, understands context, and leverages multiple LLMs at your command.',
-        icon: <Zap className="w-8 h-8" strokeWidth={1} />,
+        id: 'intro',
+        title: 'The Future of Web Interactivity',
+        subtitle: 'Welcome to BraceKit',
+        description: 'A sovereign, context-aware AI workspace that lives where you work.',
+        icon: <Sparkles className="w-12 h-12" />,
+        color: 'from-blue-500/20 to-purple-500/20'
     },
     {
-        title: 'Model Context Protocol',
-        desc: 'Connect raw tools directly into BraceKit. Give your LLM the power to search, act, and execute via custom MCP servers.',
-        icon: <Puzzle className="w-8 h-8" strokeWidth={1} />,
+        id: 'context',
+        title: 'Context is Everything',
+        subtitle: 'Deep Page Awareness',
+        description: 'BraceKit doesn\'t just chat; it reads. Active pages, selected text, and document structures are all part of its thinking process.',
+        icon: <Layers className="w-12 h-12" />,
+        color: 'from-emerald-500/20 to-cyan-500/20'
     },
     {
-        title: 'Seamless Integration',
-        desc: 'Highlight text to instantly grab context, or read the entire document with a single click.',
-        icon: <MessagesSquare className="w-8 h-8" strokeWidth={1} />,
+        id: 'mcp',
+        title: 'Extend with Real Tools',
+        subtitle: 'Model Context Protocol',
+        description: 'Connect your favorite tools via MCP. From GitHub to Google Search, give your AI the hands it needs to reach the real world.',
+        icon: <Puzzle className="w-12 h-12" />,
+        color: 'from-orange-500/20 to-red-500/20'
+    },
+    {
+        id: 'memory',
+        title: 'AI that Remembers',
+        subtitle: 'Predictive Memory',
+        description: 'BraceKit automatically learns your preferences, project details, and habits from conversations to provide truly personalized assistance.',
+        icon: <Cpu className="w-12 h-12" />,
+        color: 'from-pink-500/20 to-rose-500/20'
+    },
+    {
+        id: 'models',
+        title: 'Cognitive Sovereignty',
+        subtitle: 'Multi-Model Switcher',
+        description: 'Switch instantly between GPT-4o, Claude 3.5, Gemini 1.5 Pro, or DeepSeek. Use the right brain for every specific task.',
+        icon: <Zap className="w-12 h-12" />,
+        color: 'from-amber-500/20 to-orange-500/20'
+    },
+    {
+        id: 'gallery',
+        title: 'Visual Inspiration',
+        subtitle: 'Media Gallery',
+        description: 'Every image generated or captured across your conversations is archived here. Build your own library of visual assets and ideas.',
+        icon: <Sparkles className="w-12 h-12" />,
+        color: 'from-violet-500/20 to-fuchsia-500/20'
+    },
+    {
+        id: 'branching',
+        title: 'Branching Power',
+        subtitle: 'Timeline Control',
+        description: 'Explore different paths without losing context. Pick any message in your history and branch it into a new, independent timeline.',
+        icon: <GitBranchIcon className="w-12 h-12" />,
+        color: 'from-lime-500/20 to-emerald-500/20'
+    },
+    {
+        id: 'privacy',
+        title: 'Privacy by Design',
+        subtitle: 'Bring Your Own Key',
+        description: 'Your data, your keys. We don\'t proxy your requests. BraceKit talks directly to providers from your browser with full encryption.',
+        icon: <ShieldCheck className="w-12 h-12" />,
+        color: 'from-indigo-500/20 to-blue-500/20'
     }
 ];
 
+const Background = () => (
+    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#050505]">
+        {/* Cinematic Grain */}
+        <div
+            className="absolute inset-0 opacity-[0.3] mix-blend-overlay pointer-events-none"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}
+        />
+
+        <motion.div
+            animate={{
+                scale: [1, 1.1, 1],
+                x: [0, 30, 0],
+                y: [0, -20, 0]
+            }}
+            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute top-[-10%] left-[-5%] w-[60vw] h-[60vw] rounded-full bg-[#4f46e5]/10 blur-[120px]"
+        />
+        <motion.div
+            animate={{
+                scale: [1, 1.2, 1],
+                x: [0, -40, 0],
+                y: [0, 40, 0]
+            }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute bottom-[-10%] right-[-5%] w-[50vw] h-[50vw] rounded-full bg-[#9333ea]/10 blur-[120px]"
+        />
+    </div>
+);
+
 const Onboarding = () => {
-    useEffect(() => {
-        // initialization here if needed
-    }, []);
+    const [currentStep, setCurrentStep] = useState(0);
+    const isLastStep = currentStep === steps.length - 1;
+
+    const next = () => {
+        if (isLastStep) {
+            window.close();
+        } else {
+            setCurrentStep(s => s + 1);
+        }
+    };
+
+    const prev = () => {
+        if (currentStep > 0) setCurrentStep(s => s - 1);
+    };
 
     return (
-        <div className="min-h-screen w-full relative overflow-hidden bg-[#050505] text-[#fafafa] selection:bg-white selection:text-black flex flex-col items-center">
-            {/* Dynamic Background Noise & Gradient */}
-            <div className="fixed inset-0 z-0 pointer-events-none">
-                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSIvPjwvc3ZnPg==')] opacity-[0.15] mix-blend-overlay"></div>
-                <div className="absolute -top-[30%] -left-[10%] w-[70vw] h-[70vw] rounded-full bg-gradient-to-br from-[#4f20b2] to-transparent blur-[120px] opacity-20 mix-blend-screen animate-pulse-slow"></div>
-                <div className="absolute -bottom-[20%] -right-[10%] w-[60vw] h-[60vw] rounded-full bg-gradient-to-tl from-[#2b2b2b] to-transparent blur-[150px] opacity-40 mix-blend-screen"></div>
-            </div>
+        <div className="min-h-screen w-full relative flex flex-col items-center justify-center selection:bg-white selection:text-black">
+            <Background />
 
-            <main className="relative z-10 w-full max-w-7xl px-8 py-12 min-h-screen flex flex-col justify-between">
-                <header className="flex items-center justify-between animate-fade-in w-full">
-                    <div className="text-xl font-bold tracking-tighter uppercase flex items-center gap-3">
-                        <Logo className="w-6 h-6 text-white" />
-                        BraceKit
+            <main className="relative z-10 w-full max-w-4xl px-6 py-12 flex flex-col items-center">
+                <header className="absolute top-12 left-0 right-0 px-12 flex items-center justify-between w-full">
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-3"
+                    >
+                        <Logo className="w-8 h-8 text-white" />
+                        <span className="text-xl font-bold tracking-tight font-bricolage">BraceKit</span>
+                    </motion.div>
+
+                    <div className="flex items-center gap-6">
+                        <div className="hidden md:flex gap-1.5">
+                            {steps.map((_, idx) => (
+                                <div
+                                    key={idx}
+                                    className={`h-1 rounded-full transition-all duration-500 ${idx === currentStep ? 'w-8 bg-white' : 'w-2 bg-white/20'}`}
+                                />
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => window.close()}
+                            className="text-[10px] uppercase tracking-[0.2em] text-white/40 hover:text-white transition-colors cursor-pointer"
+                        >
+                            Skip
+                        </button>
                     </div>
-                    <button onClick={() => window.close()} className="text-xs uppercase tracking-[0.2em] text-white/50 hover:text-white transition-colors border-b border-transparent hover:border-white/50 pb-1 cursor-pointer">
-                        Skip & Close
-                    </button>
                 </header>
 
-                <section className="flex-1 flex flex-col justify-center items-start mt-20 w-full">
-                    <h1 className="text-5xl md:text-8xl tracking-tighter leading-[0.95] mb-8 font-bricolage translate-y-4 opacity-0 animate-slide-up" style={{ animationDelay: '200ms', animationFillMode: 'forwards' }}>
-                        Unleash<br />
-                        <span className="italic font-light opacity-80 pl-8 md:pl-16">Absolute</span><br />
-                        Context.
-                    </h1>
-                    <p className="text-lg md:text-2xl text-white/50 max-w-2xl font-light translate-y-4 opacity-0 animate-slide-up leading-relaxed" style={{ animationDelay: '400ms', animationFillMode: 'forwards' }}>
-                        Configure your keys, attach an MCP server, and reshape how you interact with the web. BraceKit is ready.
-                    </p>
-
-                    <div className="mt-24 grid grid-cols-1 md:grid-cols-3 gap-12 w-full translate-y-4 opacity-0 animate-slide-up" style={{ animationDelay: '600ms', animationFillMode: 'forwards' }}>
-                        {steps.map((step, idx) => (
-                            <div key={idx} className="group border-t border-white/10 pt-8 hover:border-white/50 transition-colors cursor-default">
-                                <div className="text-white/30 mb-6 group-hover:scale-110 group-hover:text-white transition-all transform origin-left duration-500">
-                                    {step.icon}
-                                </div>
-                                <h3 className="text-2xl font-semibold mb-3 tracking-tight font-bricolage text-white/90 group-hover:text-white">{step.title}</h3>
-                                <p className="text-base text-white/40 leading-relaxed group-hover:text-white/70 transition-colors duration-500">{step.desc}</p>
+                <section className="w-full mt-12">
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={currentStep}
+                            initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
+                            animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                            exit={{ opacity: 0, x: -20, filter: 'blur(10px)' }}
+                            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                            className="flex flex-col items-center text-center"
+                        >
+                            <div className={`mb-12 p-8 rounded-3xl bg-gradient-to-br ${steps[currentStep].color} border border-white/10 relative group`}>
+                                <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl blur-xl" />
+                                <motion.div
+                                    initial={{ scale: 0.8, rotate: -10 }}
+                                    animate={{ scale: 1, rotate: 0 }}
+                                    transition={{ delay: 0.2, type: 'spring' }}
+                                    className="relative z-10 text-white"
+                                >
+                                    {steps[currentStep].icon}
+                                </motion.div>
                             </div>
-                        ))}
-                    </div>
+
+                            <motion.span
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.1 }}
+                                className="text-white/40 text-sm uppercase tracking-[0.3em] font-medium mb-4"
+                            >
+                                {steps[currentStep].subtitle}
+                            </motion.span>
+
+                            <motion.h1
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 }}
+                                className="text-5xl md:text-7xl font-serif italic mb-8 tracking-tight leading-tight"
+                            >
+                                {steps[currentStep].title}
+                            </motion.h1>
+
+                            <motion.p
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.3 }}
+                                className="text-lg md:text-xl text-white/50 max-w-xl leading-relaxed font-light mb-12"
+                            >
+                                {steps[currentStep].description}
+                            </motion.p>
+                        </motion.div>
+                    </AnimatePresence>
                 </section>
 
-                <footer className="mt-24 flex flex-col md:flex-row justify-between items-center md:items-end w-full translate-y-4 opacity-0 animate-slide-up" style={{ animationDelay: '800ms', animationFillMode: 'forwards' }}>
-                    <div className="text-[10px] text-white/30 uppercase tracking-[0.3em] mb-8 md:mb-0 flex flex-col gap-1 text-center md:text-left">
-                        <span>v{chrome.runtime.getManifest().version} // Setup required</span>
-                        <span className="text-white/20 tracking-[0.4em] mt-1">PART OF NEXIFLE LABS</span>
-                    </div>
-                    <button onClick={() => window.close()} className="group flex items-center gap-4 bg-white text-black px-10 py-5 rounded-full font-medium tracking-wide hover:bg-white/90 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer">
-                        Start Exploring
-                        <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform" />
+                <footer className="mt-8 flex items-center gap-4">
+                    {currentStep > 0 && (
+                        <button
+                            onClick={prev}
+                            className="p-5 rounded-full border border-white/10 text-white/40 hover:text-white hover:border-white/30 transition-all active:scale-95 cursor-pointer"
+                        >
+                            <ChevronLeft className="w-6 h-6" />
+                        </button>
+                    )}
+
+                    <button
+                        onClick={next}
+                        className="group flex items-center gap-4 bg-white text-black px-12 py-5 rounded-full font-semibold tracking-wide hover:bg-[#eaeaea] transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer overflow-hidden relative"
+                    >
+                        <span className="relative z-10">
+                            {isLastStep ? 'Get Started' : 'Next Step'}
+                        </span>
+                        <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform relative z-10" />
+                        <motion.div
+                            className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/20 to-blue-400/0 -translate-x-full"
+                            animate={{ x: ['100%', '-100%'] }}
+                            transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                        />
                     </button>
                 </footer>
+
+                <div className="mt-16 text-[10px] text-white/20 uppercase tracking-[0.4em] font-medium text-center">
+                    BraceKit OS // v{chrome.runtime.getManifest().version} // Secure Local Runtime
+                </div>
             </main>
         </div>
     );

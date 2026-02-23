@@ -1,14 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat } from '../hooks/useChat.ts';
-import { useFileAttachments } from '../hooks/useFileAttachments.ts';
-import { usePageContext } from '../hooks/usePageContext.ts';
-import { useProvider } from '../hooks/useProvider.ts';
+import { useChat, useFileAttachments, usePageContext, useProvider } from '../hooks';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
-import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
+import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon } from 'lucide-react';
 
 const SLASH_COMMANDS = [

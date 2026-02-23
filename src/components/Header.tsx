@@ -4,7 +4,7 @@ import { IconButton } from './ui/IconButton.tsx';
 import { MoonIcon, SunIcon } from 'lucide-react';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { Logo } from './ui/Logo.tsx';
-import { useChat } from '../hooks/useChat.ts';
+import { useChat } from '../hooks';
 
 const isDev = process.env.NODE_ENV === 'development';
 
