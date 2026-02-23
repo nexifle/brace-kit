@@ -8,7 +8,7 @@ import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
-import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers.ts';
+import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon } from 'lucide-react';
 
 const SLASH_COMMANDS = [

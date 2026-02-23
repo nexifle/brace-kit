@@ -1,4 +1,4 @@
-import { PROVIDER_PRESETS } from '../providers.ts';
+import { PROVIDER_PRESETS } from '../providers';
 import type { ProviderPreset, CustomProvider } from '../types/index.ts';
 
 export function getProvider(

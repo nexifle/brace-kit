@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useProvider } from '../../hooks/useProvider.ts';
-import { PROVIDER_PRESETS } from '../../providers.ts';
+import { PROVIDER_PRESETS } from '../../providers';
 import type { ProviderFormat, ProviderPreset } from '../../types/index.ts';
 import { PlusIcon, XIcon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';

@@ -3,7 +3,7 @@
  * @module background/handlers/title
  */
 
-import { PROVIDER_PRESETS, formatRequest } from '../../providers.ts';
+import { PROVIDER_PRESETS, formatRequest } from '../../providers';
 import { getFriendlyErrorMessage } from '../utils/errors.js';
 
 /**

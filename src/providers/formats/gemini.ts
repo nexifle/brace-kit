@@ -1,0 +1,367 @@
+/**
+ * Gemini Format Module
+ *
+ * Request formatting, stream parsing, and model fetching for Google Gemini API.
+ */
+
+import type { MCPTool, Message } from '../../types/index.ts';
+import type { ChatOptions, GeminiContent, GeminiPart, RequestConfig, StreamChunk } from '../types.ts';
+import {
+  GEMINI_IMAGE_MODELS,
+  GEMINI_NO_TOOLS_MODELS,
+  GEMINI_SEARCH_ONLY_MODELS,
+  GEMINI_ASPECT_RATIO_MAP,
+  supportsReasoning,
+} from '../presets.ts';
+import { cleanSchema, convertToGeminiSchema } from '../utils/schema.ts';
+
+// ==================== Request Formatting ====================
+
+/**
+ * Format request for Google Gemini API
+ *
+ * Handles:
+ * - System instructions (extracted from system messages)
+ * - Tool calls in assistant messages
+ * - Tool result messages
+ * - Image content (base64)
+ * - Google Search grounding
+ * - Extended thinking/reasoning mode
+ * - Image generation with aspect ratios
+ *
+ * @param provider - Provider configuration with API key and model
+ * @param messages - Conversation messages
+ * @param tools - Available MCP tools
+ * @param options - Chat options including enableGoogleSearch, aspectRatio, enableReasoning
+ * @returns Request configuration with URL and fetch options
+ */
+export function formatGemini(
+  provider: { apiUrl: string; apiKey?: string; model?: string; defaultModel: string },
+  messages: Message[],
+  tools: MCPTool[],
+  options: ChatOptions
+): RequestConfig {
+  let systemInstruction = '';
+  const contents: GeminiContent[] = [];
+
+  const model = provider.model || provider.defaultModel;
+  const shouldEnableReasoning = options.enableReasoning && supportsReasoning('gemini', model);
+
+  // Transform messages to Gemini format
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      // Accumulate system instructions
+      systemInstruction += (systemInstruction ? '\n' : '') + msg.content;
+    } else if (msg.role === 'assistant') {
+      // Assistant messages → model role
+      const parts: GeminiPart[] = [];
+      if (msg.content) {
+        parts.push({ text: msg.content });
+      }
+      if (msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          let args = {};
+          try {
+            args = JSON.parse(tc.arguments || '{}');
+          } catch {
+            args = {};
+          }
+          parts.push({
+            functionCall: {
+              name: tc.name,
+              args,
+            },
+          });
+        }
+      }
+      if (parts.length > 0) {
+        contents.push({ role: 'model', parts });
+      }
+    } else if (msg.role === 'tool') {
+      // Tool results → functionResponse in user message
+      contents.push({
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              name: msg.name || 'unknown',
+              response: typeof msg.content === 'string' ? { result: msg.content } : msg.content,
+            },
+          },
+        ],
+      });
+    } else if (msg.role === 'user' && Array.isArray(msg.content)) {
+      // Multimodal content (text + images)
+      const parts: GeminiPart[] = [];
+      for (const item of msg.content) {
+        if (item.type === 'text') {
+          parts.push({ text: item.text });
+        } else if (item.type === 'image_url') {
+          const imageUrl = item.image_url?.url || item.image_url;
+          if (imageUrl) {
+            const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              const [, mimeType, base64Data] = match;
+              parts.push({
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
+                },
+              });
+            }
+          }
+        }
+      }
+      if (parts.length > 0) {
+        contents.push({ role: 'user', parts });
+      }
+    } else {
+      // Simple text message
+      contents.push({
+        role: 'user',
+        parts: [{ text: msg.content }],
+      });
+    }
+  }
+
+  const body: Record<string, unknown> = { contents };
+
+  // Add system instructions if present
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  // Add thinking config for Gemini thinking models when reasoning is enabled
+  if (shouldEnableReasoning) {
+    body.generationConfig = {
+      ...((body.generationConfig as Record<string, unknown>) || {}),
+      thinkingConfig: {
+        thinkingBudget: 24576, // Allow up to 24k tokens for thinking
+      },
+    };
+  }
+
+  // Add aspect ratio for Gemini image generation models
+  if (options.aspectRatio && GEMINI_IMAGE_MODELS.includes(model)) {
+    const geminiAspectRatio = GEMINI_ASPECT_RATIO_MAP[options.aspectRatio];
+    if (geminiAspectRatio) {
+      const existingConfig = (body.generationConfig as Record<string, unknown>) || {};
+      body.generationConfig = {
+        ...existingConfig,
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: {
+          ...((existingConfig.imageConfig as Record<string, unknown>) || {}),
+          aspectRatio: geminiAspectRatio,
+        },
+      };
+    }
+  }
+
+  // Determine tool support
+  const supportsGoogleSearchFlag = !GEMINI_NO_TOOLS_MODELS.includes(model);
+  const supportsFunctionCallingFlag =
+    !GEMINI_NO_TOOLS_MODELS.includes(model) && !GEMINI_SEARCH_ONLY_MODELS.includes(model);
+
+  const geminiTools: Record<string, unknown>[] = [];
+
+  // Add Google Search grounding or function declarations
+  if (options.enableGoogleSearch && supportsGoogleSearchFlag) {
+    geminiTools.push({ google_search: {} });
+  } else if (tools.length > 0 && supportsFunctionCallingFlag) {
+    geminiTools.push({
+      function_declarations: tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        parameters: cleanSchema(convertToGeminiSchema(t.inputSchema)),
+      })),
+    });
+  }
+
+  if (geminiTools.length > 0) {
+    body.tools = geminiTools;
+  }
+
+  // Build URL with API key
+  const isStreaming = options.stream !== false;
+  const baseUrl = provider.apiUrl.replace(/\/+$/, '');
+  let url: string;
+
+  if (baseUrl.includes('/models/')) {
+    // Custom URL with model path already included
+    url = `${baseUrl}?${isStreaming ? 'alt=sse&' : ''}key=${provider.apiKey}`;
+  } else {
+    // Standard URL construction
+    const method = isStreaming ? ':streamGenerateContent' : ':generateContent';
+    url = `${baseUrl}/models/${model}${method}?${isStreaming ? 'alt=sse&' : ''}key=${provider.apiKey}`;
+  }
+
+  return {
+    url,
+    options: {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
+// ==================== Stream Parsing ====================
+
+/**
+ * Parse Gemini streaming response
+ *
+ * Handles:
+ * - Text content
+ * - Thinking/reasoning content
+ * - Tool calls
+ * - Image generation (inline data)
+ * - Image generation errors (IMAGE_SAFETY, IMAGE_OTHER)
+ * - Grounding metadata
+ * - Abort signal for cancellation
+ *
+ * @param response - Fetch response with streaming body
+ * @param signal - Optional abort signal for cancellation
+ * @yields StreamChunk objects for each parsed element
+ */
+export async function* parseGeminiStream(
+  response: Response,
+  signal?: AbortSignal
+): AsyncGenerator<StreamChunk> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      // Check for abort before each read
+      if (signal?.aborted) {
+        try {
+          reader.cancel();
+        } catch {}
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+
+        try {
+          const json = JSON.parse(data);
+          const candidates = json.candidates;
+          if (!candidates) continue;
+
+          for (const candidate of candidates) {
+            // Check for image generation failure
+            if (candidate.finishReason === 'IMAGE_SAFETY' || candidate.finishReason === 'IMAGE_OTHER') {
+              const defaultMessage =
+                candidate.finishReason === 'IMAGE_SAFETY'
+                  ? 'Unable to show the generated image. The image was filtered due to safety policies.'
+                  : 'Unable to show the generated image. The model could not generate the image based on the prompt provided.';
+              const errorMessage = candidate.finishMessage || defaultMessage;
+              yield { type: 'error', content: errorMessage };
+              continue;
+            }
+
+            const parts = candidate.content?.parts;
+            if (!parts) continue;
+
+            for (const part of parts) {
+              // Thinking/reasoning content from Gemini thinking models
+              if (part.thought && part.text) {
+                yield { type: 'reasoning', content: part.text };
+              }
+
+              // Regular text content
+              if (part.text && !part.thought) {
+                yield { type: 'text', content: part.text };
+              }
+
+              // Tool calls
+              if (part.functionCall) {
+                yield {
+                  type: 'tool_call',
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args),
+                };
+              }
+
+              // Generated images
+              if (part.inlineData && !part.thought) {
+                yield {
+                  type: 'image',
+                  mimeType: part.inlineData.mimeType,
+                  imageData: part.inlineData.data,
+                };
+              }
+            }
+          }
+
+          // Grounding metadata for Google Search
+          const groundingMetadata = candidates[0]?.groundingMetadata;
+          if (groundingMetadata) {
+            yield { type: 'grounding_metadata', groundingMetadata };
+          }
+        } catch {
+          // Skip malformed JSON
+        }
+      }
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {}
+  }
+}
+
+// ==================== Model Fetching ====================
+
+/**
+ * Fetch available models from Gemini API
+ *
+ * Filters models to only include those supporting generateContent
+ *
+ * @param apiUrl - API base URL
+ * @param apiKey - API key for authentication
+ * @returns Object with models array
+ * @throws Error if API request fails
+ */
+export async function fetchGeminiModels(
+  apiUrl: string,
+  apiKey: string
+): Promise<{ models: string[] }> {
+  const baseUrl = apiUrl.replace(/\/+$/, '');
+  const url = `${baseUrl}/models?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  // Filter and transform models
+  const models = (data.models || [])
+    .filter((m: { supportedGenerationMethods?: string[] }) => {
+      const supportedMethods = m.supportedGenerationMethods || [];
+      return supportedMethods.includes('generateContent');
+    })
+    .map((m: { name?: string }) => {
+      const name = m.name || '';
+      return name.replace(/^models\//, '');
+    })
+    .filter((name: string) => name)
+    .sort((a: string, b: string) => a.localeCompare(b));
+
+  return { models };
+}

@@ -3,8 +3,8 @@
  * @module background/services/streaming
  */
 
-import { parseStream, parseXAIImageResponse } from '../../providers.ts';
-import { XAI_IMAGE_MODELS } from '../../providers.ts';
+import { parseStream, parseXAIImageResponse } from '../../providers';
+import { XAI_IMAGE_MODELS } from '../../providers';
 
 /**
  * Create a streaming service instance

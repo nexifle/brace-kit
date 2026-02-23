@@ -3,7 +3,7 @@
  * @module background/handlers/models
  */
 
-import { fetchModels } from '../../providers.ts';
+import { fetchModels } from '../../providers';
 
 /**
  * Handle fetch models message

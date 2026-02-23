@@ -3,7 +3,7 @@
  * @module background/services/chat
  */
 
-import { PROVIDER_PRESETS, formatRequest } from '../../providers.ts';
+import { PROVIDER_PRESETS, formatRequest } from '../../providers';
 import { getFriendlyErrorMessage } from '../utils/errors.js';
 import { createStreamingService } from './streaming.service.js';
 

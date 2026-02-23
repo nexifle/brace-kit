@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import type { ToolCall, GroundingMetadata, MCPTool, GeneratedImage } from '../types/index.ts';
-import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers.ts';
+import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers';
 import { useMemory } from './useMemory.ts';
 import { useChat } from './useChat.ts';
 import { getAllTools, isBuiltinTool as isBuiltinToolCheck } from '../services/toolRegistry.ts';
