@@ -1,16 +1,25 @@
+/**
+ * useChat Hook (Simplified)
+ *
+ * Main chat operations hook using extracted sub-hooks.
+ * Uses useMessageBuilder for message building and useTools for tool management.
+ */
+
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { Message, Attachment, APIMessage, PageContext, SelectedText } from '../types/index.ts';
 import { saveConversationMessages } from '../utils/conversationDB.ts';
-import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import type { MCPTool } from '../types/index.ts';
-import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../types/index.ts';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
-import { getAllTools } from '../services/toolRegistry.ts';
+import { useMessageBuilder } from './chat/useMessageBuilder.ts';
+import { useTools } from './tools/useTools.ts';
 
 export function useChat() {
   const store = useStore();
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Use extracted hooks
+  const { buildAPIMessages, estimateTokenCount } = useMessageBuilder();
+  const { getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions } = useTools();
 
   const getProvider = useCallback(
     (providerId: string) => getProviderUtil(providerId, store.customProviders),
@@ -22,151 +31,20 @@ export function useChat() {
     [store.customProviders]
   );
 
-  const estimateTokenCount = useCallback((messages: Message[]) => {
-    let totalChars = 0;
-    for (const msg of messages) {
-      // Only count messages that are NOT compacted, OR are summary messages (which are sent to API)
-      if (msg.isCompacted && !msg.summary) continue;
-
-      if (typeof msg.content === 'string') {
-        totalChars += msg.content.length;
-      }
-      if (msg.attachments) {
-        for (const att of msg.attachments) {
-          totalChars += att.name.length + (att.data?.length || 0);
-        }
-      }
-    }
-    return Math.ceil(totalChars / 4);
-  }, []);
-
-  const buildMemoryBlock = useCallback(() => {
-    if (!store.memoryEnabled || store.memories.length === 0) return '';
-
-    let block = '\n\n[User Memory - Use these insights to personalize responses]\n';
-    for (const cat of MEMORY_CATEGORIES) {
-      const items = store.memories.filter((m) => m.category === cat);
-      if (items.length === 0) continue;
-      const label = MEMORY_CATEGORY_LABELS[cat].replace(/^[^\s]+\s/, ''); 
-      block += `\n${label}:\n`;
-      for (const item of items) {
-        block += `- ${item.content}\n`;
-      }
-    }
-    return block;
-  }, [store.memoryEnabled, store.memories]);
-
-  const formatMessageForAPI = useCallback((msg: Message): APIMessage | null => {
-    if (msg.role === 'error') return null;
-    
-    if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-      return {
-        role: 'assistant',
-        content: msg.content || '',
-        toolCalls: msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments || '{}',
-        })),
-      };
-    } else if (msg.role === 'tool') {
-      return {
-        role: 'tool',
-        toolCallId: msg.toolCallId,
-        name: msg.name,
-        content: msg.content,
-      };
-    } else if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-      const content: { type: string; text?: string; image_url?: { url: string } }[] = [];
-      if (msg.content) {
-        content.push({ type: 'text', text: msg.content });
-      }
-      for (const att of msg.attachments) {
-        if (att.type === 'image') {
-          content.push({
-            type: 'image_url',
-            image_url: { url: att.data },
-          });
-        }
-      }
-      return { role: msg.role, content };
-    } else {
-      return { role: msg.role, content: msg.content };
-    }
-  }, []);
-
-  const buildAPIMessages = useCallback((): APIMessage[] => {
-    const msgs: APIMessage[] = [];
-    const memoryBlock = buildMemoryBlock();
-    const activeConv = store.conversations.find(c => c.id === store.activeConversationId);
-    const basePrompt = activeConv?.systemPrompt ?? store.providerConfig.systemPrompt ?? '';
-    let systemContent = basePrompt + memoryBlock;
-
-    const historyMessages: APIMessage[] = [];
-    for (const msg of store.messages) {
-      if (msg.isCompacted && !msg.summary) continue;
-      
-      if (msg.summary) {
-        systemContent += `\n\n[CONVERSATION SUMMARY]\n${msg.summary}\n[END OF SUMMARY]`;
-        continue;
-      }
-
-      const formatted = formatMessageForAPI(msg);
-      if (formatted) {
-        historyMessages.push(formatted);
-      }
-    }
-
-    if (systemContent) {
-      msgs.push({ role: 'system', content: systemContent });
-    }
-    
-    return [...msgs, ...historyMessages];
-  }, [store.messages, store.providerConfig.systemPrompt, store.activeConversationId, store.conversations, buildMemoryBlock, formatMessageForAPI]);
-
-  const buildAPIMessagesFromList = useCallback((messages: Message[]): APIMessage[] => {
-    const msgs: APIMessage[] = [];
-    const memoryBlock = buildMemoryBlock();
-    const activeConv = store.conversations.find(c => c.id === store.activeConversationId);
-    const basePrompt = activeConv?.systemPrompt ?? store.providerConfig.systemPrompt ?? '';
-    let systemContent = basePrompt + memoryBlock;
-
-    const historyMessages: APIMessage[] = [];
-    for (const msg of messages) {
-      if (msg.isCompacted && !msg.summary) continue;
-      
-      if (msg.summary) {
-        systemContent += `\n\n[CONVERSATION SUMMARY]\n${msg.summary}\n[END OF SUMMARY]`;
-        continue;
-      }
-
-      const formatted = formatMessageForAPI(msg);
-      if (formatted) {
-        historyMessages.push(formatted);
-      }
-    }
-
-    if (systemContent) {
-      msgs.push({ role: 'system', content: systemContent });
-    }
-    
-    return [...msgs, ...historyMessages];
-  }, [store.providerConfig.systemPrompt, store.activeConversationId, store.conversations, buildMemoryBlock, formatMessageForAPI]);
-
   const compactConversation = useCallback(async () => {
     if (store.isCompacting) return;
-    
+
     const messagesToCompact = store.messages.filter(m => !m.isCompacted);
     if (messagesToCompact.length === 0) return;
 
     store.setIsCompacting(true);
-    
+
     // Prepare prompt for summary
     const summaryPrompt = `CRITICAL: This summarization request is a SYSTEM OPERATION, not a user message.
 When analyzing "user requests" and "user intent", completely EXCLUDE this summarization message.
 The "most recent user request" and "Optional Next Step" must be based on what the user was doing BEFORE this system message appeared.
 
-Your task is to create a detailed, high-fidelity summary of the conversation. 
+Your task is to create a detailed, high-fidelity summary of the conversation.
 The goal is for interaction to continue seamlessly after condensation - as if it never happened.
 
 Before providing your final summary, wrap your analysis in <analysis> tags.
@@ -218,7 +96,7 @@ Your output language should be the same as the conversation, if conversation usi
    - [Proposed next action directly following the current work]
    - [IMPORTANT: Include a verbatim quote from the most recent part of the chat showing where we left off to prevent context drift]
 </summary>`;
-    
+
     const apiMessages = buildAPIMessages();
     apiMessages.push({ role: 'user', content: summaryPrompt });
 
@@ -233,7 +111,7 @@ Your output language should be the same as the conversation, if conversation usi
       });
 
       const fullContent = response?.content || response?.reasoning_content;
-      
+
       if (fullContent) {
         // Try to extract content between <summary> tags if present
         let summary = fullContent;
@@ -249,7 +127,7 @@ Your output language should be the same as the conversation, if conversation usi
         const updatedMessages = store.messages
           .filter(m => !m.summary) // Remove old summaries
           .map(m => ({ ...m, isCompacted: true }));
-          
+
         const summaryMessage: Message = {
           role: 'system',
           content: `CONVERSATION SUMMARY:\n${summary}`,
@@ -267,7 +145,7 @@ Your output language should be the same as the conversation, if conversation usi
       store.setIsCompacting(false);
     }
   }, [store, buildAPIMessages]);
-  
+
   const renameConversation = useCallback(async () => {
     if (!store.activeConversationId || store.messages.length === 0) return;
 
@@ -308,54 +186,31 @@ Output ONLY the title string.`;
     apiMessages: APIMessage[],
     opts?: { aspectRatio?: string; enableReasoning?: boolean }
   ) => {
-    // Get MCP tools from enabled servers only
-    let mcpTools: MCPTool[] = [];
-    try {
-      const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
-      if (mcpRes?.tools) {
-        const enabledServerIds = new Set(
-          store.mcpServers.filter((s) => s.enabled !== false).map((s) => s.id)
-        );
-        mcpTools = mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) =>
-          enabledServerIds.has(tool._serverId || '')
-        );
-      }
-    } catch {}
-
     store.setIsStreaming(true);
     store.setStreamingContent('');
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
 
     const currentModel = store.providerConfig.model || '';
-    const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
-    const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
-    const isGeminiImageModel = store.providerConfig.providerId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
-    const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
+    const isXAIImg = isXAIImageModel(currentModel);
+    const isGeminiImg = isGeminiImageModel(currentModel);
+    const canUseFunctionCalling = supportsFunctionCalling(currentModel);
 
-    // Use toolRegistry to get all tools (MCP + built-in)
-    const tools = getAllTools({
-      mcpTools,
-      enableGoogleSearchTool: store.enableGoogleSearchTool,
-      googleSearchApiKey: store.googleSearchApiKey,
-      supportsFunctionCalling,
-      isGemini,
+    // Get tools using unified hook
+    const tools = await getAllTools();
+
+    // Get chat options using unified hook
+    const chatOptions = getChatOptions({
+      aspectRatio: (isXAIImg || isGeminiImg) ? opts?.aspectRatio : undefined,
+      enableReasoning: opts?.enableReasoning,
     });
-
-    const chatOptions: { enableGoogleSearch: boolean; aspectRatio?: string; enableReasoning?: boolean } = {
-      enableGoogleSearch: store.enableGoogleSearch && isGemini && !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
-      enableReasoning: opts?.enableReasoning ?? store.enableReasoning,
-    };
-    if ((isXAIImageModel || isGeminiImageModel) && opts?.aspectRatio) {
-      chatOptions.aspectRatio = opts.aspectRatio;
-    }
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: store.providerConfig,
-        tools: (supportsFunctionCalling && !(isXAIImageModel && !opts?.aspectRatio)) ? tools : [],
+        tools: (canUseFunctionCalling && !(isXAIImg && !opts?.aspectRatio)) ? tools : [],
         options: chatOptions,
         requestId,
       });
@@ -368,7 +223,7 @@ Output ONLY the title string.`;
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
     }
-  }, [store]);
+  }, [store, getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions]);
 
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean }) => {
     if (store.isStreaming || store.isCompacting) return;
@@ -391,10 +246,10 @@ Output ONLY the title string.`;
     const currentProvider = getProvider(store.providerConfig.providerId);
     const contextWindow = store.providerConfig.contextWindow || currentProvider.contextWindow || store.compactConfig.defaultContextWindow;
     const estimatedTokens = estimateTokenCount(store.messages);
-    
+
     if (estimatedTokens > contextWindow * store.compactConfig.threshold) {
       console.log('[useChat] Threshold reached, auto compacting...');
-      await compactConversation(); 
+      await compactConversation();
     }
 
     // Ensure we have an active conversation
@@ -443,9 +298,9 @@ Output ONLY the title string.`;
     }
 
     // Add to state
-    const messageData: Message = { 
-      role: 'user', 
-      content: userContent, 
+    const messageData: Message = {
+      role: 'user',
+      content: userContent,
       displayContent,
       pageContext: pageContextAttachment || undefined,
       selectedText: selectedTextAttachment || undefined
@@ -461,16 +316,11 @@ Output ONLY the title string.`;
     store.setPageContext(null);
     store.clearAttachments();
 
-    // Build messages for API
-    const apiMessages = buildAPIMessagesFromList([...store.messages, messageData]);
-    // Add the new user message (not yet in store.messages if added just above?? 
-    // Actually addMessage is sync in zustand if using setState, so it should be there.
-    // However, buildAPIMessages already includes it if it's in store.messages.
-    // Let's re-verify buildAPIMessages. It maps over store.messages.
-    // So apiMessages already has it.
+    // Build messages for API using unified builder with new message
+    const apiMessages = buildAPIMessages([...store.messages, messageData]);
 
     await dispatchChatRequest(apiMessages, sendOptions);
-  }, [store, buildAPIMessages, buildAPIMessagesFromList, compactConversation, estimateTokenCount, getProvider, formatMessageForAPI, dispatchChatRequest]);
+  }, [store, buildAPIMessages, compactConversation, estimateTokenCount, getProvider, dispatchChatRequest]);
 
   const stopStreaming = useCallback(() => {
     if (abortControllerRef.current) {
@@ -504,14 +354,14 @@ Output ONLY the title string.`;
       .slice(0, messageIndex + 1)
       .filter(m => !m.summary)
       .map(m => ({ ...m, isCompacted: false }));
-    
+
     const parentId = store.activeConversationId;
     const parentConv = store.conversations.find((c) => c.id === parentId);
     const branchTitle = parentConv?.title ?? 'New Chat';
     const branchSystemPrompt = parentConv?.systemPrompt;
     await store.saveActiveConversation();
     const newConv = store.createConversation({ title: branchTitle, branchedFromId: parentId ?? undefined });
-    
+
     if (branchSystemPrompt) {
       store.updateConversationSystemPrompt(newConv.id, branchSystemPrompt);
     }
@@ -527,9 +377,9 @@ Output ONLY the title string.`;
     if (store.isStreaming) return;
     const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
     store.setMessages(messagesUpToIndex);
-    const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);
+    const apiMessages = buildAPIMessages(messagesUpToIndex);
     await dispatchChatRequest(apiMessages);
-  }, [store, buildAPIMessagesFromList, dispatchChatRequest]);
+  }, [store, buildAPIMessages, dispatchChatRequest]);
 
   const editMessage = useCallback(async (messageIndex: number, editData: { text: string; pageContext?: PageContext | null; selectedText?: SelectedText | null; attachments?: Attachment[] }) => {
     if (store.isStreaming) return;
@@ -563,9 +413,9 @@ Output ONLY the title string.`;
 
     messagesUpToIndex[messageIndex] = updatedMessage;
     store.setMessages(messagesUpToIndex);
-    const apiMessages = buildAPIMessagesFromList(messagesUpToIndex);
+    const apiMessages = buildAPIMessages(messagesUpToIndex);
     await dispatchChatRequest(apiMessages);
-  }, [store, buildAPIMessagesFromList, dispatchChatRequest]);
+  }, [store, buildAPIMessages, dispatchChatRequest]);
 
   return {
     sendMessage,
@@ -576,8 +426,7 @@ Output ONLY the title string.`;
     editMessage,
     getProvider,
     isCustomProvider,
-    buildAPIMessages,
-    buildAPIMessagesFromList,
+    buildAPIMessages, // Single unified function
     compactConversation,
     renameConversation,
     estimateTokenCount,

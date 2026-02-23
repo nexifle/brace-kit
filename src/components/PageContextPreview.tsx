@@ -1,5 +1,5 @@
 import { XIcon } from 'lucide-react';
-import { usePageContext } from '../hooks/usePageContext.ts';
+import { usePageContext } from '../hooks';
 
 export function PageContextPreview() {
   const { pageContext, clearPageContext } = usePageContext();

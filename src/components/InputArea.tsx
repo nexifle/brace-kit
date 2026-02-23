@@ -1,9 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat } from '../hooks/useChat.ts';
-import { useFileAttachments } from '../hooks/useFileAttachments.ts';
-import { usePageContext } from '../hooks/usePageContext.ts';
-import { useProvider } from '../hooks/useProvider.ts';
+import { useChat, useFileAttachments, usePageContext, useProvider } from '../hooks';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';

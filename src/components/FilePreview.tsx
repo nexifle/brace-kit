@@ -1,5 +1,5 @@
 import { XIcon } from 'lucide-react';
-import { useFileAttachments } from '../hooks/useFileAttachments.ts';
+import { useFileAttachments } from '../hooks';
 import { escapeHtml } from '../utils/markdown.ts';
 
 export function FilePreview() {

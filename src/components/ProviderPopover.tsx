@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useProvider } from '../hooks/useProvider.ts';
+import { useProvider } from '../hooks';
 import { PROVIDER_PRESETS } from '../providers';
 import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
 import { XIcon } from 'lucide-react';

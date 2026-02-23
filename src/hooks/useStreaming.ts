@@ -1,95 +1,60 @@
+/**
+ * useStreaming Hook (Simplified)
+ *
+ * Handles streaming responses using extracted sub-hooks.
+ * Uses useMessageBuilder, useTools, and useStreamProcessor.
+ */
+
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
-import type { ToolCall, GroundingMetadata, MCPTool, GeneratedImage } from '../types/index.ts';
-import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../providers';
+import type { ToolCall, GroundingMetadata, GeneratedImage } from '../types/index.ts';
+import { GEMINI_NO_TOOLS_MODELS, XAI_IMAGE_MODELS } from '../providers/presets.ts';
 import { useMemory } from './useMemory.ts';
-import { useChat } from './useChat.ts';
-import { getAllTools, isBuiltinTool as isBuiltinToolCheck } from '../services/toolRegistry.ts';
-
-function addInlineCitations(text: string, groundingMetadata?: GroundingMetadata): string {
-  if (!groundingMetadata?.groundingSupports || !groundingMetadata?.groundingChunks) {
-    return text;
-  }
-
-  const supports = groundingMetadata.groundingSupports;
-  const chunks = groundingMetadata.groundingChunks;
-
-  // Sort by endIndex descending to avoid index shifting
-  const sorted = [...supports].sort((a, b) => (b.segment?.endIndex ?? 0) - (a.segment?.endIndex ?? 0));
-
-  let result = text;
-  for (const support of sorted) {
-    const endIndex = support.segment?.endIndex;
-    if (endIndex === undefined || !support.groundingChunkIndices?.length) continue;
-
-    const citations = support.groundingChunkIndices
-      .filter(i => i < chunks.length)
-      .map(i => `[${i + 1}]`)
-      .join('');
-
-    if (citations) {
-      result = result.slice(0, endIndex) + citations + result.slice(endIndex);
-    }
-  }
-
-  return result;
-}
+import { useMessageBuilder } from './chat/useMessageBuilder.ts';
+import { useTools } from './tools/useTools.ts';
+import { useStreamProcessor } from './streaming/useStreamProcessor.ts';
 
 export function useStreaming() {
   const store = useStore();
   const { extractMemories } = useMemory();
-  const { buildAPIMessagesFromList } = useChat();
-  const toolCallsRef = useRef<ToolCall[]>([]);
-  const currentToolCallRef = useRef<Partial<ToolCall> | null>(null);
-  const groundingMetadataRef = useRef<GroundingMetadata | null>(null);
-  const imagesRef = useRef<GeneratedImage[]>([]);
-  const processedToolCallsRef = useRef<Set<string>>(new Set());
-  const reasoningContentRef = useRef<string>('');
+  const { buildAPIMessages } = useMessageBuilder();
+  const { getAllTools, supportsFunctionCalling, getChatOptions } = useTools();
+  const streamProcessor = useStreamProcessor();
 
+  // Track processed request IDs to prevent double processing
+  const processedDoneRequestsRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Handle tool calls from stream
+   */
   const handleToolCalls = useCallback(async (toolCalls: ToolCall[]) => {
-    // Check if these specific tool calls have already been processed
-    // This prevents double execution of the same tool calls
-    const toolCallKey = toolCalls.map(tc => tc.id).sort().join(',');
-    if (processedToolCallsRef.current.has(toolCallKey)) {
+    // Check if already processed
+    const toolCallKey = toolCalls.map((tc) => tc.id).sort().join(',');
+    if (streamProcessor.isToolCallProcessed(toolCallKey)) {
       console.log('[useStreaming] Tool calls already processed, skipping:', toolCallKey);
       return;
     }
+    streamProcessor.markToolCallsProcessed(toolCallKey);
 
-    processedToolCallsRef.current.add(toolCallKey);
-
-    // Clean up old processed keys if too many
-    if (processedToolCallsRef.current.size > 50) {
-      const iterator = processedToolCallsRef.current.values();
-      const first = iterator.next();
-      if (!first.done) {
-        processedToolCallsRef.current.delete(first.value);
-      }
-    }
-
-    // Set streaming to true for tool execution
     store.setIsStreaming(true);
 
     for (const tc of toolCalls) {
-      // Check if streaming was cancelled during loop
       if (!useStore.getState().isStreaming) {
-        console.log('[useStreaming] Streaming cancelled during tool calls, aborting remaining');
+        console.log('[useStreaming] Streaming cancelled during tool calls, aborting');
         return;
       }
-
       if (!tc.name) continue;
 
       let args = {};
       try {
         args = JSON.parse(tc.arguments || '{}');
       } catch {
-        args = {}
+        args = {};
       }
 
-      // Guard: check if an identical tool call (same name + same arguments) was already
-      // successfully executed in this conversation. If so, return its cached result
-      // directly to the agent instead of calling the tool again.
-      const argsKey = JSON.stringify(args);
+      // Check for cached result (duplicate tool call)
       const freshMsgs = useStore.getState().messages;
+      const argsKey = JSON.stringify(args);
       const previousSuccessful = freshMsgs.find(
         (m) =>
           m.role === 'tool' &&
@@ -100,7 +65,7 @@ export function useStreaming() {
       );
 
       if (previousSuccessful) {
-        console.log('[useStreaming] Duplicate tool call detected, reusing cached result:', tc.name, argsKey);
+        console.log('[useStreaming] Duplicate tool call, reusing cached result:', tc.name);
         store.addMessage({
           role: 'tool',
           toolCallId: tc.id,
@@ -112,7 +77,7 @@ export function useStreaming() {
         continue;
       }
 
-      // Add "calling" status message with arguments
+      // Add "calling" status
       store.addMessage({
         role: 'tool',
         toolCallId: tc.id,
@@ -121,14 +86,12 @@ export function useStreaming() {
         toolArguments: args as Record<string, unknown>,
       });
 
+      // Execute tool
       try {
         let resultText = '';
-
-        // Handle continue_message locally (built-in tool)
         if (tc.name === 'continue_message') {
           resultText = 'Chain message initiated. You may continue your response now.';
-        } else if (isBuiltinToolCheck(tc.name)) {
-          // Other built-in tools go through background
+        } else {
           const result = await chrome.runtime.sendMessage({
             type: 'MCP_CALL_TOOL',
             name: tc.name,
@@ -137,123 +100,38 @@ export function useStreaming() {
           resultText =
             result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
             JSON.stringify(result);
-        } else {
-          // MCP tools go through background
-          const result = await chrome.runtime.sendMessage({
-            type: 'MCP_CALL_TOOL',
-            name: tc.name,
-            arguments: args,
-          });
-
-          resultText =
-            result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
-            JSON.stringify(result);
         }
 
-        // Use fresh state to avoid stale closure race condition with multiple tool calls
-        const freshMessages = useStore.getState().messages;
-        const callingIdx = [...freshMessages].reverse().findIndex((m) => 
-          m.role === 'tool' && 
-          String(m.toolCallId) === String(tc.id) &&
-          String(m.content).includes('Calling...')
-        );
-        
-        if (callingIdx !== -1) {
-          const actualIdx = (freshMessages.length - 1) - callingIdx;
-          const updated = [...freshMessages];
-          updated[actualIdx] = { ...updated[actualIdx], content: resultText };
-          store.setMessages(updated);
-        } else {
-          store.addMessage({
-            role: 'tool',
-            toolCallId: tc.id,
-            name: tc.name,
-            content: resultText,
-            toolArguments: args as Record<string, unknown>,
-          });
-        }
+        // Update message with result
+        updateToolMessage(tc.id, resultText);
       } catch (e) {
-        // Use fresh state to avoid stale closure race condition with multiple tool calls
-        const freshMessages = useStore.getState().messages;
-        const callingIdx = [...freshMessages].reverse().findIndex((m) => 
-          m.role === 'tool' && 
-          String(m.toolCallId) === String(tc.id) &&
-          String(m.content).includes('Calling...')
-        );
-
-        if (callingIdx !== -1) {
-          const actualIdx = (freshMessages.length - 1) - callingIdx;
-          const updated = [...freshMessages];
-          updated[actualIdx] = { ...updated[actualIdx], content: `Error: ${(e as Error).message}` };
-          store.setMessages(updated);
-        } else {
-          store.addMessage({
-            role: 'tool',
-            toolCallId: tc.id,
-            name: tc.name,
-            content: `Error: ${(e as Error).message}`,
-            toolArguments: args as Record<string, unknown>,
-          });
-        }
+        updateToolMessage(tc.id, `Error: ${(e as Error).message}`);
       }
     }
 
-    // Build API messages using fresh state to avoid stale closure race condition
-    // (OpenAI, Anthropic-compatible, Gemini, etc.)
-    const msgs = buildAPIMessagesFromList(useStore.getState().messages);
+    // Build follow-up request
+    const msgs = buildAPIMessages(useStore.getState().messages);
 
-    // Check if streaming was cancelled before sending follow-up request
-    if (!useStore.getState().isStreaming) {
-      console.log('[useStreaming] Streaming cancelled, not sending follow-up request');
-      return;
-    }
+    if (!useStore.getState().isStreaming) return;
 
-    // Get MCP tools
-    let mcpTools: MCPTool[] = [];
-    try {
-      const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
-      if (mcpRes?.tools) {
-        const enabledServerIds = new Set(
-          store.mcpServers.filter((s) => s.enabled !== false).map((s) => s.id)
-        );
-        mcpTools = mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) =>
-          enabledServerIds.has(tool._serverId || '')
-        );
-      }
-    } catch {}
+    // Get tools using unified hook
+    const tools = await getAllTools();
 
     const requestId = `req_${Date.now()}`;
     store.setCurrentRequestId(requestId);
     store.setStreamingContent('');
     store.setStreamingReasoningContent('');
 
+    const chatOptions = getChatOptions();
     const currentModel = store.providerConfig.model || '';
-    const isGemini = store.providerConfig.providerId === 'gemini' || store.providerConfig.format === 'gemini';
-    const supportsFunctionCalling = !isGemini || (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) && !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel));
-
-    // Use toolRegistry to get all tools (MCP + built-in)
-    const tools = getAllTools({
-      mcpTools,
-      enableGoogleSearchTool: store.enableGoogleSearchTool,
-      googleSearchApiKey: store.googleSearchApiKey,
-      supportsFunctionCalling,
-      isGemini,
-    });
-
-    const chatOptions = {
-      enableGoogleSearch:
-        store.enableGoogleSearch &&
-        isGemini &&
-        !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
-      enableReasoning: store.enableReasoning,
-    };
+    const canUseFunctionCalling = supportsFunctionCalling(currentModel);
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: msgs,
         providerConfig: store.providerConfig,
-        tools: supportsFunctionCalling ? tools : [],
+        tools: canUseFunctionCalling ? tools : [],
         options: chatOptions,
         requestId,
       });
@@ -266,115 +144,116 @@ export function useStreaming() {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
     }
-  }, [store, buildAPIMessagesFromList]);
+  }, [store, buildAPIMessages, getAllTools, supportsFunctionCalling, getChatOptions, streamProcessor]);
 
-  const finishStream = useCallback((fullContent: string, toolCalls?: ToolCall[], groundingMetadata?: GroundingMetadata, generatedImages?: GeneratedImage[], reasoningContent?: string) => {
-    // Add inline citations if grounding metadata exists
-    const contentWithCitations = addInlineCitations(fullContent, groundingMetadata);
+  /**
+   * Finish stream and create assistant message
+   */
+  const finishStream = useCallback(
+    (
+      fullContent: string,
+      toolCalls?: ToolCall[],
+      _groundingMetadata?: GroundingMetadata,
+      _generatedImages?: GeneratedImage[],
+      reasoningContent?: string
+    ) => {
+      const result = streamProcessor.getFinalResult(fullContent, reasoningContent);
 
-    // Always add assistant message - needed for tool call context in follow-up requests
-    const assistantMsg: { role: 'assistant'; content: string; toolCalls?: ToolCall[]; groundingMetadata?: GroundingMetadata; generatedImages?: GeneratedImage[]; reasoningContent?: string } = { role: 'assistant', content: contentWithCitations || '' };
-    if (toolCalls && toolCalls.length > 0) {
-      assistantMsg.toolCalls = toolCalls;
-    }
-    if (groundingMetadata) {
-      assistantMsg.groundingMetadata = groundingMetadata;
-    }
-    if (generatedImages && generatedImages.length > 0) {
-      assistantMsg.generatedImages = generatedImages;
-    }
-    if (reasoningContent) {
-      assistantMsg.reasoningContent = reasoningContent;
-    }
-    store.addMessage(assistantMsg);
+      // Add assistant message
+      const assistantMsg: {
+        role: 'assistant';
+        content: string;
+        toolCalls?: ToolCall[];
+        groundingMetadata?: GroundingMetadata;
+        generatedImages?: GeneratedImage[];
+        reasoningContent?: string;
+      } = {
+        role: 'assistant',
+        content: result.content || '',
+        ...(result.toolCalls && { toolCalls: result.toolCalls }),
+        ...(result.groundingMetadata && { groundingMetadata: result.groundingMetadata }),
+        ...(result.images && { generatedImages: result.images }),
+        ...(result.reasoningContent && { reasoningContent: result.reasoningContent }),
+      };
 
-    // Reset state
-    store.setStreamingContent('');
-    store.setStreamingReasoningContent('');
-    toolCallsRef.current = [];
-    currentToolCallRef.current = null;
-    groundingMetadataRef.current = null;
-    imagesRef.current = [];
-    reasoningContentRef.current = '';
+      store.addMessage(assistantMsg);
 
-    store.setIsStreaming(false);
-    store.setCurrentRequestId(null);
-    store.saveActiveConversation();
-    store.updateConversationTimestamp();
+      // Reset state
+      store.setStreamingContent('');
+      store.setStreamingReasoningContent('');
+      streamProcessor.reset();
+      store.setIsStreaming(false);
+      store.setCurrentRequestId(null);
+      store.saveActiveConversation();
+      store.updateConversationTimestamp();
 
-    // Extract memories automatically after response (only if no tool calls)
-    // When tool calls exist, memory extraction happens after the follow-up response
-    if (store.memoryEnabled && !toolCalls?.length) {
-      // Build complete message list including current assistant message
-      // to ensure memory extraction has full context
-      const currentMessages = [...store.messages, assistantMsg];
-
-      // Delay slightly to allow state to commit, then extract with explicit messages
-      setTimeout(() => {
-        extractMemories(currentMessages);
-      }, 100);
-    }
-
-    // Auto-generate title after first exchange
-    if (!toolCalls?.length && store.activeConversationId) {
-      const conv = store.conversations.find((c) => c.id === store.activeConversationId);
-      if (conv?.title === 'New Chat' && store.messages.length >= 1) {
-        setTimeout(async () => {
-          const msgs = store.messages.slice(0, 4).map((m) => ({
-            role: m.role as 'user' | 'assistant',
-            content: m.displayContent || m.content,
-          }));
-          
-          try {
-            const currentModel = store.providerConfig.model || '';
-            const isGeminiImageModel = GEMINI_NO_TOOLS_MODELS.includes(currentModel) || GEMINI_SEARCH_ONLY_MODELS.includes(currentModel);
-            const isXAIImageModel = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
-            const titleProviderConfig = isGeminiImageModel
-              ? { ...store.providerConfig, model: 'gemini-2.5-flash-lite' }
-              : isXAIImageModel
-                ? { ...store.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
-                : store.providerConfig;
-            const response = await chrome.runtime.sendMessage({
-              type: 'TITLE_GENERATE',
-              messages: [
-                { role: 'system', content: 'Generate a concise 3-5 word title for this conversation. Return ONLY the title, no quotes, no explanation.' },
-                ...msgs
-              ],
-              providerConfig: titleProviderConfig,
-            });
-            
-            if (response?.title && store.activeConversationId) {
-              const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
-              store.updateConversationTitle(store.activeConversationId, title);
-            }
-          } catch (e) {
-            console.warn('[TitleGen] Failed:', e);
-          }
-        }, 1500);
+      // Extract memories if no tool calls
+      if (store.memoryEnabled && !toolCalls?.length) {
+        const currentMessages = [...store.messages, assistantMsg];
+        setTimeout(() => extractMemories(currentMessages), 100);
       }
-    }
 
-    // Handle tool calls - the agentic loop
-    // Process tool calls if they exist
-    if (toolCalls && toolCalls.length > 0) {
-      handleToolCalls(toolCalls);
-    }
+      // Auto-generate title
+      if (!toolCalls?.length && store.activeConversationId) {
+        const conv = store.conversations.find((c) => c.id === store.activeConversationId);
+        if (conv?.title === 'New Chat' && store.messages.length >= 1) {
+          setTimeout(async () => {
+            const msgs = store.messages.slice(0, 4).map((m) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.displayContent || m.content,
+            }));
 
-    return null;
-  }, [store, handleToolCalls, extractMemories]);
+            try {
+              const currentModel = store.providerConfig.model || '';
+              const isGeminiImg = GEMINI_NO_TOOLS_MODELS.includes(currentModel);
+              const isXAIImg = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
+              const titleProviderConfig = isGeminiImg
+                ? { ...store.providerConfig, model: 'gemini-2.5-flash-lite' }
+                : isXAIImg
+                  ? { ...store.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
+                  : store.providerConfig;
+              const response = await chrome.runtime.sendMessage({
+                type: 'TITLE_GENERATE',
+                messages: [
+                  { role: 'system', content: 'Generate a concise 3-5 word title for this conversation. Return ONLY the title, no quotes, no explanation.' },
+                  ...msgs
+                ],
+                providerConfig: titleProviderConfig,
+              });
 
+              if (response?.title && store.activeConversationId) {
+                const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
+                store.updateConversationTitle(store.activeConversationId, title);
+              }
+            } catch (e) {
+              console.warn('[TitleGen] Failed:', e);
+            }
+          }, 1500);
+        }
+      }
+
+      // Handle tool calls
+      if (toolCalls && toolCalls.length > 0) {
+        handleToolCalls(toolCalls);
+      }
+
+      return null;
+    },
+    [store, streamProcessor, extractMemories, handleToolCalls]
+  );
+
+  /**
+   * Handle stream error
+   */
   const handleStreamError = useCallback((error: string) => {
     store.addMessage({ role: 'error', content: error });
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
     store.setStreamingContent('');
-    toolCallsRef.current = [];
-    currentToolCallRef.current = null;
-  }, [store]);
+    streamProcessor.reset();
+  }, [store, streamProcessor]);
 
-  // Track processed request IDs to prevent double processing
-  const processedDoneRequestsRef = useRef<Set<string>>(new Set());
-
+  // Listen for stream messages
   useEffect(() => {
     const listener = (message: {
       type: string;
@@ -388,16 +267,15 @@ export function useStreaming() {
       images?: GeneratedImage[];
       error?: string;
     }) => {
-      // OLD WE USE: const currentRequestId = store.currentRequestId;
       const currentRequestId = useStore.getState().currentRequestId;
       if (message.requestId !== currentRequestId) return;
 
       switch (message.type) {
         case 'CHAT_STREAM_CHUNK':
           if (message.chunkType === 'reasoning' && message.content) {
-            // Handle reasoning content - update both ref and store for real-time display
-            reasoningContentRef.current += message.content;
-            store.setStreamingReasoningContent(reasoningContentRef.current);
+            store.setStreamingReasoningContent(
+              useStore.getState().streamingReasoningContent + message.content
+            );
           } else if (message.content) {
             const currentContent = useStore.getState().streamingContent;
             store.setStreamingContent(currentContent + message.content);
@@ -423,12 +301,12 @@ export function useStreaming() {
           }
 
           const finalContent = message.fullContent || useStore.getState().streamingContent;
-          const finalReasoningContent = message.reasoningContent || reasoningContentRef.current || undefined;
+          const finalReasoningContent = message.reasoningContent || streamProcessor.getReasoningContent() || undefined;
           finishStream(
             finalContent,
-            message.toolCalls || toolCallsRef.current,
-            message.groundingMetadata || groundingMetadataRef.current || undefined,
-            message.images || imagesRef.current,
+            message.toolCalls || streamProcessor.getToolCalls(),
+            message.groundingMetadata || streamProcessor.getGroundingMetadata() || undefined,
+            message.images || streamProcessor.getImages(),
             finalReasoningContent
           );
           break;
@@ -443,5 +321,34 @@ export function useStreaming() {
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
-  }, [finishStream, handleStreamError]);
+  }, [finishStream, handleStreamError, streamProcessor, store]);
+
+  return {
+    handleToolCalls,
+    finishStream,
+    handleStreamError,
+  };
+}
+
+/**
+ * Helper function to update tool message content
+ */
+function updateToolMessage(toolCallId: string, content: string) {
+  const store = useStore.getState();
+  const freshMessages = store.messages;
+  const callingIdx = [...freshMessages]
+    .reverse()
+    .findIndex(
+      (m) =>
+        m.role === 'tool' &&
+        String(m.toolCallId) === String(toolCallId) &&
+        String(m.content).includes('Calling...')
+    );
+
+  if (callingIdx !== -1) {
+    const actualIdx = freshMessages.length - 1 - callingIdx;
+    const updated = [...freshMessages];
+    updated[actualIdx] = { ...updated[actualIdx], content };
+    store.setMessages(updated);
+  }
 }
