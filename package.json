@@ -1,5 +1,6 @@
 {
   "name": "brace-kit",
+  "version": "0.1.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -32,6 +33,5 @@
     "@types/turndown": "^5.0.6",
     "bun-plugin-tailwind": "^0.1.2",
     "typescript": "^5.7.0"
-  },
-  "packageManager": "pnpm@10.13.1+sha512.37ebf1a5c7a30d5fabe0c5df44ee8da4c965ca0c5af3dbab28c3a1681b70a256218d05c81c9c0dcf767ef6b8551eb5b960042b9ed4300c59242336377e01cfad"
+  }
 }
