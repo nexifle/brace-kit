@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { formatGemini, parseGeminiStream } from '../../../src/providers/formats/gemini.ts';
 import type { Message, MCPTool } from '../../../src/types/index.ts';
-import { createMockStreamResponse } from '../../helpers/stream-mock';
+import { createMockStreamResponse, createGeminiUsageChunks } from '../../helpers/stream-mock';
 
 describe('Gemini Format', () => {
   describe('formatGemini', () => {
@@ -351,6 +351,136 @@ describe('Gemini Format', () => {
       }
 
       expect(results).toHaveLength(1);
+    });
+
+    // Token Usage Tests
+    describe('token usage parsing', () => {
+      it('should parse basic usage metadata', async () => {
+        const chunks = createGeminiUsageChunks({
+          content: 'Hello',
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          totalTokenCount: 150,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseGeminiStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(2);
+        expect(results[0]).toEqual({ type: 'text', content: 'Hello' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage).toEqual({
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          totalTokenCount: 150,
+        });
+      });
+
+      it('should parse usage with thoughts token count for thinking models', async () => {
+        const chunks = createGeminiUsageChunks({
+          promptTokenCount: 3540,
+          candidatesTokenCount: 30,
+          totalTokenCount: 3746,
+          thoughtsTokenCount: 176,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseGeminiStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 3540,
+          candidatesTokenCount: 30,
+          totalTokenCount: 3746,
+          thoughtsTokenCount: 176,
+        });
+      });
+
+      it('should parse usage with cached content token count', async () => {
+        const chunks = createGeminiUsageChunks({
+          promptTokenCount: 2000,
+          candidatesTokenCount: 100,
+          totalTokenCount: 2100,
+          cachedContentTokenCount: 1500,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseGeminiStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 2000,
+          candidatesTokenCount: 100,
+          totalTokenCount: 2100,
+          cachedContentTokenCount: 1500,
+        });
+      });
+
+      it('should parse complete usage metadata with all fields', async () => {
+        const chunks = createGeminiUsageChunks({
+          content: 'Complete response',
+          promptTokenCount: 5000,
+          candidatesTokenCount: 200,
+          totalTokenCount: 5376,
+          thoughtsTokenCount: 176,
+          cachedContentTokenCount: 3000,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseGeminiStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(2);
+        expect(results[0]).toEqual({ type: 'text', content: 'Complete response' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage).toEqual({
+          promptTokenCount: 5000,
+          candidatesTokenCount: 200,
+          totalTokenCount: 5376,
+          thoughtsTokenCount: 176,
+          cachedContentTokenCount: 3000,
+        });
+      });
+
+      it('should handle cumulative usage across multiple chunks', async () => {
+        // Gemini returns cumulative usage in each chunk
+        const chunks = [
+          'data: {"candidates":[{"content":{"parts":[{"text":"Hello"}]}}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":10,"totalTokenCount":110}}\n\n',
+          'data: {"candidates":[{"content":{"parts":[{"text":" world"}]}}],"usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":20,"totalTokenCount":120}}\n\n',
+        ];
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseGeminiStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(4);
+        expect(results[0]).toEqual({ type: 'text', content: 'Hello' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage.candidatesTokenCount).toBe(10);
+        expect(results[2]).toEqual({ type: 'text', content: ' world' });
+        expect(results[3].type).toBe('usage');
+        expect(results[3].usage.candidatesTokenCount).toBe(20);
+      });
     });
   });
 });

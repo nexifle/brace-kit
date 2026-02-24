@@ -45,9 +45,11 @@ export function InputArea() {
     return SLASH_COMMANDS.filter(c => c.cmd.startsWith(text));
   }, [text]);
 
+  // Token usage for autocompact indicator (only when enabled)
   const tokens = estimateTokenCount(store.messages);
-  const contextWindow = store.providerConfig.contextWindow || store.compactConfig.defaultContextWindow;
-  const threshold = store.compactConfig.threshold;
+  const contextWindow = store.providerConfig.contextWindow || (store.compactConfig.defaultContextWindow ?? 128000);
+  const threshold = store.compactConfig.threshold ?? 0.9;
+  const compactEnabled = store.compactConfig.enabled ?? true;
   const usagePercent = (tokens / contextWindow) * 100;
   const compactThresholdPercent = (threshold * 100);
   const percentUntilCompact = Math.max(0, compactThresholdPercent - usagePercent);
@@ -393,9 +395,9 @@ export function InputArea() {
           )}
         </div>
 
-        {/* Footer Right - Context Usage */}
-        <div className="flex items-center">
-          {percentUntilCompact <= 15 && (
+        {/* Footer Right - Context Usage (only when autocompact enabled) */}
+        {compactEnabled && percentUntilCompact <= 15 && (
+          <div className="flex items-center">
             <span
               className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${percentUntilCompact <= 5
                 ? 'text-destructive bg-destructive/10 border-destructive/20 animate-pulse'
@@ -407,8 +409,8 @@ export function InputArea() {
             >
               {Math.round(percentUntilCompact)}% until autocompact
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

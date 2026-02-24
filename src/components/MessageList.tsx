@@ -8,6 +8,7 @@ export function MessageList() {
   const messages = useStore((state) => state.messages);
   const isStreaming = useStore((state) => state.isStreaming);
   const streamingContent = useStore((state) => state.streamingContent);
+  const streamingReasoningContent = useStore((state) => state.streamingReasoningContent);
   const { branchFrom, regenerateFrom, editMessage } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,10 +80,16 @@ export function MessageList() {
             />
           );
         }
-        // Hide empty assistant messages that only carry tool calls (used for API context only)
-        if (msg.role === 'assistant' && !msg.content && msg.toolCalls && msg.toolCalls.length > 0 && !msg.generatedImages?.length) {
-          return null;
+        // Hide empty assistant messages (e.g., those that only carry tool calls or are residues)
+        if (msg.role === 'assistant') {
+          const hasContent = msg.content || msg.displayContent || msg.reasoningContent;
+          const hasAssets = msg.generatedImages?.length || msg.attachments?.length || msg.summary || msg.groundingMetadata;
+
+          if (!hasContent && !hasAssets) {
+            return null;
+          }
         }
+
         return (
           <MessageBubble
             key={idx}
@@ -94,7 +101,7 @@ export function MessageList() {
           />
         );
       })}
-      {isStreaming && messages.length > 0 && (
+      {isStreaming && (streamingContent || streamingReasoningContent) && (
         <MessageBubble message={{ role: 'assistant', content: streamingContent }} isStreaming />
       )}
       <div ref={messagesEndRef} style={{ height: '20px' }} />

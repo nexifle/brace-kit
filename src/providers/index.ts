@@ -35,6 +35,7 @@ export type {
   ModelFetchResult,
   GeminiPart,
   GeminiContent,
+  TokenUsage,
 } from './types.ts';
 
 // Presets and constants

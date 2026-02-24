@@ -16,6 +16,19 @@ export { addInlineCitations } from './streaming/useStreamProcessor.ts';
 // Tool hooks
 export { useTools } from './tools/useTools.ts';
 
+// Compact hooks
+export { useAutoCompact } from './compact/index.ts';
+export {
+  SUMMARY_PROMPT,
+  extractSummaryFromResponse,
+  getContextWindow,
+  createCondenseId,
+  tagMessagesWithCondenseParent,
+  createSummaryMessage,
+  getMessagesToCompact,
+  shouldCompact,
+} from './compact/index.ts';
+
 // Other hooks
 export { useMemory } from './useMemory.ts';
 export { useMCP } from './useMCP.ts';

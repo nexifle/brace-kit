@@ -25,6 +25,31 @@ export interface ChatOptions {
 // ==================== Stream Chunk ====================
 
 /**
+ * Normalized token usage metadata from API responses
+ *
+ * This is a unified format that provider-specific parsers convert to.
+ * Different providers have different field names:
+ * - Gemini: promptTokenCount, candidatesTokenCount, thoughtsTokenCount
+ * - OpenAI: prompt_tokens, completion_tokens (when available in streaming)
+ * - Anthropic: input_tokens, output_tokens (via message_start event)
+ *
+ * Currently implemented for: Gemini
+ * Future: OpenAI, Anthropic (when they provide usage in streaming)
+ */
+export interface TokenUsage {
+  /** Input/prompt tokens (Gemini: promptTokenCount, OpenAI: prompt_tokens, Anthropic: input_tokens) */
+  promptTokenCount: number;
+  /** Output/candidate tokens (Gemini: candidatesTokenCount, OpenAI: completion_tokens, Anthropic: output_tokens) */
+  candidatesTokenCount: number;
+  /** Total tokens (prompt + candidates) */
+  totalTokenCount: number;
+  /** Thinking/reasoning tokens for thinking models (Gemini-specific, optional) */
+  thoughtsTokenCount?: number;
+  /** Cached content tokens when using context caching (Gemini/Anthropic-specific, optional) */
+  cachedContentTokenCount?: number;
+}
+
+/**
  * Types of streaming chunks
  */
 export type StreamChunkType =
@@ -35,7 +60,8 @@ export type StreamChunkType =
   | 'grounding_metadata'
   | 'image'
   | 'error'
-  | 'reasoning';
+  | 'reasoning'
+  | 'usage';
 
 /**
  * Streaming response chunk
@@ -59,6 +85,8 @@ export interface StreamChunk {
   mimeType?: string;
   /** Base64 image data */
   imageData?: string;
+  /** Token usage metadata */
+  usage?: TokenUsage;
 }
 
 // ==================== Request Configuration ====================

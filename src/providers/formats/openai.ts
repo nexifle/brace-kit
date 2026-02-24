@@ -6,7 +6,7 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
-import type { ChatOptions, RequestConfig, StreamChunk } from '../types.ts';
+import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
 
 // ==================== Request Formatting ====================
@@ -148,11 +148,35 @@ export async function* parseOpenAIStream(
         try {
           const json = JSON.parse(data);
           const delta = json.choices?.[0]?.delta;
+
+          // Token usage metadata - OpenAI returns this in chunks with usage field
+          // Some providers (GLM/Zhipu) include usage in final chunks
+          // OpenAI native may include it with stream_options: { include_usage: true }
+          if (json.usage) {
+            const usage: TokenUsage = {
+              promptTokenCount: json.usage.prompt_tokens ?? 0,
+              candidatesTokenCount: json.usage.completion_tokens ?? 0,
+              totalTokenCount: json.usage.total_tokens ?? 0,
+            };
+
+            // Add cached tokens if available (some providers like GLM support this)
+            if (json.usage.prompt_tokens_details?.cached_tokens !== undefined) {
+              usage.cachedContentTokenCount = json.usage.prompt_tokens_details.cached_tokens;
+            }
+
+            yield { type: 'usage', usage };
+          }
+
           if (!delta) continue;
 
           // Text content
           if (delta.content) {
             yield { type: 'text', content: delta.content };
+          }
+
+          // Reasoning content (o1, o3, o4 models)
+          if (delta.reasoning_content) {
+            yield { type: 'reasoning', content: delta.reasoning_content };
           }
 
           // Tool calls (streaming)

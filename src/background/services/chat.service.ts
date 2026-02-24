@@ -8,6 +8,7 @@ import {
   formatRequest,
   type ProviderWithConfig,
   type ChatOptions,
+  type TokenUsage,
 } from '../../providers';
 import type { Message, MCPTool, ProviderConfig, ToolCall } from '../../types';
 import { getFriendlyErrorMessage } from '../utils/errors';
@@ -41,6 +42,7 @@ interface StreamDoneMessage {
   toolCalls?: ToolCall[];
   groundingMetadata?: unknown;
   images?: Array<{ mimeType: string; data: string }>;
+  usage?: TokenUsage;
   requestId?: string;
 }
 
@@ -195,6 +197,7 @@ export function createChatService(): ChatService {
       const images: Array<{ mimeType: string; data: string }> = [];
       let currentToolCall: ToolCallFragment | null = null;
       let groundingMetadata: unknown = null;
+      let tokenUsage: TokenUsage | undefined;
 
       for await (const chunk of streamingService.processStream(
         response,
@@ -252,6 +255,9 @@ export function createChatService(): ChatService {
           currentToolCall.arguments += chunk.content || '';
         } else if (chunk.type === 'grounding_metadata') {
           groundingMetadata = chunk.groundingMetadata;
+        } else if (chunk.type === 'usage') {
+          // Update token usage - keep the latest (cumulative) count
+          tokenUsage = chunk.usage;
         }
       }
 
@@ -270,6 +276,7 @@ export function createChatService(): ChatService {
             : undefined,
         groundingMetadata: groundingMetadata,
         images: images.length > 0 ? images : undefined,
+        usage: tokenUsage,
         requestId: message.requestId,
       } as StreamDoneMessage);
 

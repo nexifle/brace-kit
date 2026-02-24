@@ -5,7 +5,7 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
-import type { ChatOptions, GeminiContent, GeminiPart, RequestConfig, StreamChunk } from '../types.ts';
+import type { ChatOptions, GeminiContent, GeminiPart, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import {
   GEMINI_IMAGE_MODELS,
   GEMINI_NO_TOOLS_MODELS,
@@ -137,6 +137,7 @@ export function formatGemini(
       ...((body.generationConfig as Record<string, unknown>) || {}),
       thinkingConfig: {
         thinkingBudget: 24576, // Allow up to 24k tokens for thinking
+        includeThoughts: true, // Include thinking process in response
       },
     };
   }
@@ -275,12 +276,22 @@ export async function* parseGeminiStream(
 
             for (const part of parts) {
               // Thinking/reasoning content from Gemini thinking models
-              if (part.thought && part.text) {
-                yield { type: 'reasoning', content: part.text };
+              // Handle two formats:
+              // 1. thought is a string: {"thought": "reasoning", "text": "response"}
+              // 2. thought is boolean: {"thought": true, "text": "reasoning"}
+              if (part.thought) {
+                if (typeof part.thought === 'string') {
+                  // New format: thought contains reasoning string
+                  yield { type: 'reasoning', content: part.thought };
+                } else if (part.text) {
+                  // Legacy format: thought is boolean, text contains reasoning
+                  yield { type: 'reasoning', content: part.text };
+                  continue; // Skip yielding text as regular content
+                }
               }
 
-              // Regular text content
-              if (part.text && !part.thought) {
+              // Regular text content (final response, not thinking)
+              if (part.text) {
                 yield { type: 'text', content: part.text };
               }
 
@@ -308,6 +319,29 @@ export async function* parseGeminiStream(
           const groundingMetadata = candidates[0]?.groundingMetadata;
           if (groundingMetadata) {
             yield { type: 'grounding_metadata', groundingMetadata };
+          }
+
+          // Token usage metadata - extract from response
+          // Gemini returns usageMetadata in each streaming chunk with cumulative counts
+          const usageMetadata = json.usageMetadata;
+          if (usageMetadata) {
+            const usage: TokenUsage = {
+              promptTokenCount: usageMetadata.promptTokenCount ?? 0,
+              candidatesTokenCount: usageMetadata.candidatesTokenCount ?? 0,
+              totalTokenCount: usageMetadata.totalTokenCount ?? 0,
+            };
+
+            // Add thoughts token count for thinking models
+            if (usageMetadata.thoughtsTokenCount !== undefined) {
+              usage.thoughtsTokenCount = usageMetadata.thoughtsTokenCount;
+            }
+
+            // Add cached content token count if available (context caching)
+            if (usageMetadata.cachedContentTokenCount !== undefined) {
+              usage.cachedContentTokenCount = usageMetadata.cachedContentTokenCount;
+            }
+
+            yield { type: 'usage', usage };
           }
         } catch {
           // Skip malformed JSON

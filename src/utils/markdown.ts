@@ -367,12 +367,20 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
         <div class="not-prose md-codeblock-wrapper group relative my-4 rounded-md border border-white/10 bg-[#0d1117] overflow-hidden shadow-xl">
           <div class="flex items-center justify-between px-3 py-1.5 bg-black/30 border-b border-white/5">
             <span class="text-[10px] font-bold uppercase tracking-widest text-white/50">${lang}</span>
-            <button class="copy-code-btn h-6 px-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-tight text-white/50 hover:text-white transition-all rounded-sm hover:bg-white/10" data-code="${escapedCode}" title="Copy code">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              <span>Copy</span>
+            <button class="copy-code-btn group/copy h-6 px-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-tight text-white/50 hover:text-white transition-all rounded-sm hover:bg-white/10" data-code="${escapedCode}" title="Copy code">
+              <span class="flex items-center gap-1.5 group-data-[state=success]/copy:hidden">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <span>Copy</span>
+              </span>
+              <span class="hidden items-center gap-1.5 group-data-[state=success]/copy:flex text-green-400">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Copied</span>
+              </span>
             </button>
           </div>
           <pre class="not-prose md-codeblock text-[13px] leading-relaxed overflow-x-auto"><code class="hljs language-${lang}">${highlightedCode}</code></pre>
@@ -402,12 +410,20 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
         <div class="not-prose md-codeblock-wrapper group relative my-4 rounded-md border border-white/10 bg-[#0d1117] overflow-hidden shadow-xl">
           <div class="flex items-center justify-between px-3 py-1.5 bg-black/30 border-b border-white/5">
             <span class="text-[10px] font-bold uppercase tracking-widest text-white/50">code</span>
-            <button class="copy-code-btn h-6 px-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-tight text-white/50 hover:text-white transition-all rounded-sm hover:bg-white/10" data-code="${escapedCode}" title="Copy code">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              <span>Copy</span>
+            <button class="copy-code-btn group/copy h-6 px-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-tight text-white/50 hover:text-white transition-all rounded-sm hover:bg-white/10" data-code="${escapedCode}" title="Copy code">
+              <span class="flex items-center gap-1.5 group-data-[state=success]/copy:hidden">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <span>Copy</span>
+              </span>
+              <span class="hidden items-center gap-1.5 group-data-[state=success]/copy:flex text-green-400">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Copied</span>
+              </span>
             </button>
           </div>
           <pre class="not-prose md-codeblock text-[13px] leading-relaxed overflow-x-auto"><code class="hljs">${highlightedCode}</code></pre>
@@ -435,17 +451,23 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
               </svg>
             </button>
-            <button class="md-image-btn md-image-copy-btn h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md text-white rounded-sm hover:bg-primary transition-all shadow-lg" data-src="${encodedSrc}" title="Copy image">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <button class="group/img md-image-btn md-image-copy-btn h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md text-white rounded-sm hover:bg-primary transition-all shadow-lg" data-src="${encodedSrc}" title="Copy image">
+              <svg class="group-data-[state=success]/img:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
+              <svg class="hidden group-data-[state=success]/img:block text-green-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
             </button>
-            <button class="md-image-btn md-image-download-btn h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md text-white rounded-sm hover:bg-primary transition-all shadow-lg" data-src="${encodedSrc}" title="Download image">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <button class="group/img md-image-btn md-image-download-btn h-7 w-7 flex items-center justify-center bg-black/60 backdrop-blur-md text-white rounded-sm hover:bg-primary transition-all shadow-lg" data-src="${encodedSrc}" title="Download image">
+              <svg class="group-data-[state=success]/img:hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
                 <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <svg class="hidden group-data-[state=success]/img:block text-green-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
             </button>
           </span>
@@ -516,9 +538,12 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
                 </div>
               </div>
               <div class="table-dropdown relative">
-                <button class="table-btn table-copy-btn h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-sm transition-all" title="Copy">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <button class="group/table table-btn table-copy-btn h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-sm transition-all" title="Copy">
+                  <svg class="group-data-[state=success]/table:hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  <svg class="hidden group-data-[state=success]/table:block text-green-500" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"></polyline>
                   </svg>
                 </button>
                 <div class="table-dropdown-menu hidden absolute right-0 bottom-full mb-2 w-32 bg-card border border-border rounded-md shadow-2xl z-50 flex-col p-1 animate-in fade-in slide-in-from-bottom-2">

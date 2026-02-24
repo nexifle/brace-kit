@@ -2,7 +2,8 @@
  * useChat Hook (Simplified)
  *
  * Main chat operations hook using extracted sub-hooks.
- * Uses useMessageBuilder for message building and useTools for tool management.
+ * Uses useMessageBuilder for message building, useTools for tool management,
+ * and useAutoCompact for conversation compaction.
  */
 
 import { useCallback, useRef } from 'react';
@@ -12,6 +13,7 @@ import { saveConversationMessages } from '../utils/conversationDB.ts';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
+import { useAutoCompact } from './compact/index.ts';
 
 export function useChat() {
   const store = useStore();
@@ -20,6 +22,7 @@ export function useChat() {
   // Use extracted hooks
   const { buildAPIMessages, estimateTokenCount } = useMessageBuilder();
   const { getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions } = useTools();
+  const { compactConversation, checkAndAutoCompact } = useAutoCompact();
 
   const getProvider = useCallback(
     (providerId: string) => getProviderUtil(providerId, store.customProviders),
@@ -31,123 +34,9 @@ export function useChat() {
     [store.customProviders]
   );
 
-  const compactConversation = useCallback(async () => {
-    if (store.isCompacting) return;
-
-    const messagesToCompact = store.messages.filter(m => !m.isCompacted);
-    if (messagesToCompact.length === 0) return;
-
-    store.setIsCompacting(true);
-
-    // Prepare prompt for summary
-    const summaryPrompt = `CRITICAL: This summarization request is a SYSTEM OPERATION, not a user message.
-When analyzing "user requests" and "user intent", completely EXCLUDE this summarization message.
-The "most recent user request" and "Optional Next Step" must be based on what the user was doing BEFORE this system message appeared.
-
-Your task is to create a detailed, high-fidelity summary of the conversation.
-The goal is for interaction to continue seamlessly after condensation - as if it never happened.
-
-Before providing your final summary, wrap your analysis in <analysis> tags.
-In your analysis process:
-1. Chronologically analyze each message.
-2. Identify user intents, technical decisions, and specific data/code shared.
-3. Note any errors, fixed bugs, and specific feedback from the user.
-
-Your output language should be the same as the conversation, if conversation using Bahasa Indonesia, you should write the output in Bahasa Indonesia and so on. And the output MUST follow this exact structure:
-
-<analysis>
-[Your internal thought process and chronological breakdown]
-</analysis>
-
-<summary>
-1. Primary Request and Intent:
-   - [Provide a detailed description of the fundamental goal of the conversation]
-   - [List specific sub-intents or side-requests expressed by the user]
-
-2. Key Concepts:
-   - [List frameworks, technologies, or important abstract concepts discussed]
-   - [Include definitions or context if they were uniquely established in this chat]
-
-3. Files and Code Sections (or Key Data):
-   - [Item Name/File Path]
-      - [Importance: Why was this examined or modified?]
-      - [Changes: Summary of specific edits or transformations made]
-      - [Snippet: Include the most critical code or data snippets verbatim]
-
-4. Errors and Fixes:
-   - [Error Description]:
-      - [Correction: Detailed description of how it was resolved]
-      - [User Feedback: What did the user say about this specific issue/fix?]
-
-5. Problem Solving:
-   - [Document solved challenges and any ongoing troubleshooting logic]
-
-6. All User Messages:
-   - [List every non-tool user message verbatim or closely paraphrased to preserve "voice" and intent evolution]
-
-7. Pending Tasks:
-   - [Explicitly list tasks the user has asked for that haven't been completed yet]
-
-8. Current Work:
-   - [Describe precisely what was being done in the last 2-3 messages]
-   - [Include relevant context or "last known state" of the task]
-
-9. Optional Next Step:
-   - [Proposed next action directly following the current work]
-   - [IMPORTANT: Include a verbatim quote from the most recent part of the chat showing where we left off to prevent context drift]
-</summary>`;
-
-    const apiMessages = buildAPIMessages();
-    apiMessages.push({ role: 'user', content: summaryPrompt });
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'CHAT_REQUEST',
-        messages: apiMessages,
-        providerConfig: store.providerConfig,
-        tools: [],
-        options: { enableGoogleSearch: false, stream: false },
-        requestId: `compact_${Date.now()}`,
-      });
-
-      const fullContent = response?.content || response?.reasoning_content;
-
-      if (fullContent) {
-        // Try to extract content between <summary> tags if present
-        let summary = fullContent;
-        const summaryMatch = fullContent.match(/<summary>([\s\S]*?)<\/summary>/i);
-        if (summaryMatch && summaryMatch[1]) {
-          summary = summaryMatch[1].trim();
-        } else {
-          // If no <summary> tags but there are <analysis> tags, try to strip analysis
-          summary = fullContent.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim();
-        }
-
-        // Mark all current messages as compacted and remove previous summary messages to avoid duplicates
-        const updatedMessages = store.messages
-          .filter(m => !m.summary) // Remove old summaries
-          .map(m => ({ ...m, isCompacted: true }));
-
-        const summaryMessage: Message = {
-          role: 'system',
-          content: `CONVERSATION SUMMARY:\n${summary}`,
-          summary: summary,
-          isCompacted: true
-        };
-        store.setMessages([...updatedMessages, summaryMessage]);
-        await store.saveActiveConversation();
-      } else if (response?.error) {
-        console.error('[useChat] Compaction failed:', response.error);
-      }
-    } catch (e) {
-      console.error('[useChat] Compaction failed:', e);
-    } finally {
-      store.setIsCompacting(false);
-    }
-  }, [store, buildAPIMessages]);
-
   const renameConversation = useCallback(async () => {
-    if (!store.activeConversationId || store.messages.length === 0) return;
+    const currentState = useStore.getState();
+    if (!currentState.activeConversationId || currentState.messages.length === 0) return;
 
     const renamePrompt = `CRITICAL: This is a SYSTEM OPERATION to rename the conversation.
 Based on the conversation history below, generate a concise and descriptive title for this conversation.
@@ -166,32 +55,33 @@ Output ONLY the title string.`;
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
-        providerConfig: store.providerConfig,
+        providerConfig: currentState.providerConfig,
         tools: [],
         options: { enableGoogleSearch: false, stream: false },
         requestId: `rename_${Date.now()}`,
       });
 
       const newTitle = response?.content?.trim();
-      if (newTitle && !response.error) {
-        store.updateConversationTitle(store.activeConversationId, newTitle);
+      if (newTitle && !response.error && currentState.activeConversationId) {
+        currentState.updateConversationTitle(currentState.activeConversationId, newTitle);
       }
     } catch (e) {
       console.error('[useChat] Rename failed:', e);
     }
-  }, [store, buildAPIMessages]);
+  }, [buildAPIMessages]);
 
 
   const dispatchChatRequest = useCallback(async (
     apiMessages: APIMessage[],
     opts?: { aspectRatio?: string; enableReasoning?: boolean }
   ) => {
-    store.setIsStreaming(true);
-    store.setStreamingContent('');
+    const currentState = useStore.getState();
+    currentState.setIsStreaming(true);
+    currentState.setStreamingContent('');
     const requestId = `req_${Date.now()}`;
-    store.setCurrentRequestId(requestId);
+    currentState.setCurrentRequestId(requestId);
 
-    const currentModel = store.providerConfig.model || '';
+    const currentModel = currentState.providerConfig.model || '';
     const isXAIImg = isXAIImageModel(currentModel);
     const isGeminiImg = isGeminiImageModel(currentModel);
     const canUseFunctionCalling = supportsFunctionCalling(currentModel);
@@ -209,26 +99,27 @@ Output ONLY the title string.`;
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: apiMessages,
-        providerConfig: store.providerConfig,
+        providerConfig: currentState.providerConfig,
         tools: (canUseFunctionCalling && !(isXAIImg && !opts?.aspectRatio)) ? tools : [],
         options: chatOptions,
         requestId,
       });
 
       if (response?.error) {
-        store.addMessage({ role: 'error', content: response.error });
-        store.setIsStreaming(false);
+        currentState.addMessage({ role: 'error', content: response.error });
+        currentState.setIsStreaming(false);
       }
     } catch (e) {
-      store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
-      store.setIsStreaming(false);
+      currentState.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
+      currentState.setIsStreaming(false);
     }
-  }, [store, getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions]);
+  }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions]);
 
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean }) => {
-    if (store.isStreaming || store.isCompacting) return;
+    const currentState = useStore.getState();
+    if (currentState.isStreaming || currentState.isCompacting) return;
 
-    const validAttachments = store.attachments.filter((a) => a.type !== 'error');
+    const validAttachments = currentState.attachments.filter((a) => a.type !== 'error');
     if (!text && validAttachments.length === 0) return;
 
     // Handle slash commands
@@ -243,18 +134,14 @@ Output ONLY the title string.`;
     }
 
     // Auto compact check
-    const currentProvider = getProvider(store.providerConfig.providerId);
-    const contextWindow = store.providerConfig.contextWindow || currentProvider.contextWindow || store.compactConfig.defaultContextWindow;
-    const estimatedTokens = estimateTokenCount(store.messages);
+    await checkAndAutoCompact();
 
-    if (estimatedTokens > contextWindow * store.compactConfig.threshold) {
-      console.log('[useChat] Threshold reached, auto compacting...');
-      await compactConversation();
-    }
+    // Re-get state after potential compaction
+    const stateAfterCompact = useStore.getState();
 
     // Ensure we have an active conversation
-    if (!store.activeConversationId) {
-      store.createConversation();
+    if (!stateAfterCompact.activeConversationId) {
+      stateAfterCompact.createConversation();
     }
 
     // Build user message content
@@ -264,18 +151,18 @@ Output ONLY the title string.`;
     let selectedTextAttachment: SelectedText | null = null;
 
     // Attach page context if available
-    if (store.pageContext) {
-      userContent = `[Page Context]\nTitle: ${store.pageContext.pageTitle}\nURL: ${store.pageContext.pageUrl}\n${store.pageContext.metaDescription ? `Description: ${store.pageContext.metaDescription}\n` : ''}\nContent:\n${store.pageContext.content}\n\n[User Message]\n${text || ''}`;
+    if (stateAfterCompact.pageContext) {
+      userContent = `[Page Context]\nTitle: ${stateAfterCompact.pageContext.pageTitle}\nURL: ${stateAfterCompact.pageContext.pageUrl}\n${stateAfterCompact.pageContext.metaDescription ? `Description: ${stateAfterCompact.pageContext.metaDescription}\n` : ''}\nContent:\n${stateAfterCompact.pageContext.content}\n\n[User Message]\n${text || ''}`;
       displayContent = text;
-      pageContextAttachment = store.pageContext;
+      pageContextAttachment = stateAfterCompact.pageContext;
     }
 
     // Attach selected text if available
-    if (store.selectedText) {
-      const selPrefix = store.pageContext ? '' : `[From: ${store.selectedText.pageTitle}]\n`;
-      userContent = `${selPrefix}[Selected Text]\n"${store.selectedText.selectedText}"\n\n[User Message]\n${text || ''}`;
+    if (stateAfterCompact.selectedText) {
+      const selPrefix = stateAfterCompact.pageContext ? '' : `[From: ${stateAfterCompact.selectedText.pageTitle}]\n`;
+      userContent = `${selPrefix}[Selected Text]\n"${stateAfterCompact.selectedText.selectedText}"\n\n[User Message]\n${text || ''}`;
       displayContent = text;
-      selectedTextAttachment = store.selectedText;
+      selectedTextAttachment = stateAfterCompact.selectedText;
     }
 
     // Add file attachments to message
@@ -308,19 +195,19 @@ Output ONLY the title string.`;
     if (messageAttachments && messageAttachments.some((a) => a.type === 'image' || a.type === 'text')) {
       messageData.attachments = messageAttachments.filter((a) => a.type === 'image' || a.type === 'text');
     }
-    store.addMessage(messageData);
-    store.updateConversationTimestamp();
+    stateAfterCompact.addMessage(messageData);
+    stateAfterCompact.updateConversationTimestamp();
 
     // Clear selection and attachments
-    store.setSelectedText(null);
-    store.setPageContext(null);
-    store.clearAttachments();
+    stateAfterCompact.setSelectedText(null);
+    stateAfterCompact.setPageContext(null);
+    stateAfterCompact.clearAttachments();
 
     // Build messages for API using unified builder with new message
-    const apiMessages = buildAPIMessages([...store.messages, messageData]);
+    const apiMessages = buildAPIMessages([...stateAfterCompact.messages, messageData]);
 
     await dispatchChatRequest(apiMessages, sendOptions);
-  }, [store, buildAPIMessages, compactConversation, estimateTokenCount, getProvider, dispatchChatRequest]);
+  }, [buildAPIMessages, compactConversation, renameConversation, checkAndAutoCompact, dispatchChatRequest]);
 
   const stopStreaming = useCallback(() => {
     if (abortControllerRef.current) {
@@ -374,12 +261,18 @@ Output ONLY the title string.`;
   }, [store]);
 
   const regenerateFrom = useCallback(async (messageIndex: number) => {
-    if (store.isStreaming) return;
-    const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
-    store.setMessages(messagesUpToIndex);
+    const currentState = useStore.getState();
+    if (currentState.isStreaming) return;
+
+    // Auto compact check
+    await checkAndAutoCompact();
+
+    const stateAfterCompact = useStore.getState();
+    const messagesUpToIndex = stateAfterCompact.messages.slice(0, messageIndex + 1);
+    stateAfterCompact.setMessages(messagesUpToIndex);
     const apiMessages = buildAPIMessages(messagesUpToIndex);
     await dispatchChatRequest(apiMessages);
-  }, [store, buildAPIMessages, dispatchChatRequest]);
+  }, [buildAPIMessages, dispatchChatRequest, checkAndAutoCompact]);
 
   const editMessage = useCallback(async (messageIndex: number, editData: { text: string; pageContext?: PageContext | null; selectedText?: SelectedText | null; attachments?: Attachment[] }) => {
     if (store.isStreaming) return;
@@ -397,7 +290,6 @@ Output ONLY the title string.`;
       const selPrefix = newPageContext ? '' : `[From: ${newSelectedText.pageTitle}]\n`;
       newContent = `${selPrefix}[Selected Text]\n"${newSelectedText.selectedText}"\n\n[User Message]\n${newText}`;
     }
-    const messagesUpToIndex = store.messages.slice(0, messageIndex + 1);
     const updatedMessage: Message = {
       ...messageToEdit,
       content: newContent,
@@ -411,11 +303,18 @@ Output ONLY the title string.`;
     if (!updatedMessage.selectedText) delete updatedMessage.selectedText;
     if (!updatedMessage.attachments) delete updatedMessage.attachments;
 
-    messagesUpToIndex[messageIndex] = updatedMessage;
-    store.setMessages(messagesUpToIndex);
-    const apiMessages = buildAPIMessages(messagesUpToIndex);
+    // Auto compact check
+    await checkAndAutoCompact();
+
+    const stateAfterCompact = useStore.getState();
+    const freshMessages = stateAfterCompact.messages;
+    const updatedMessagesUpToIndex = freshMessages.slice(0, messageIndex + 1);
+
+    updatedMessagesUpToIndex[messageIndex] = updatedMessage;
+    stateAfterCompact.setMessages(updatedMessagesUpToIndex);
+    const apiMessages = buildAPIMessages(updatedMessagesUpToIndex);
     await dispatchChatRequest(apiMessages);
-  }, [store, buildAPIMessages, dispatchChatRequest]);
+  }, [buildAPIMessages, dispatchChatRequest, checkAndAutoCompact]);
 
   return {
     sendMessage,
@@ -430,5 +329,6 @@ Output ONLY the title string.`;
     compactConversation,
     renameConversation,
     estimateTokenCount,
+    checkAndAutoCompact,
   };
 }

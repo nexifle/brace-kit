@@ -5,7 +5,7 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
-import type { ChatOptions, RequestConfig, StreamChunk } from '../types.ts';
+import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { supportsReasoning } from '../presets.ts';
 
 // ==================== Request Formatting ====================
@@ -274,6 +274,22 @@ export async function* parseAnthropicStream(
               };
             }
             // Note: thinking blocks start with type: "thinking" but content comes in deltas
+          }
+
+          // Message delta - contains usage information
+          if (json.type === 'message_delta' && json.usage) {
+            const usage: TokenUsage = {
+              promptTokenCount: json.usage.input_tokens ?? 0,
+              candidatesTokenCount: json.usage.output_tokens ?? 0,
+              totalTokenCount: (json.usage.input_tokens ?? 0) + (json.usage.output_tokens ?? 0),
+            };
+
+            // Add cached tokens if available (Anthropic prompt caching)
+            if (json.usage.cache_read_input_tokens !== undefined) {
+              usage.cachedContentTokenCount = json.usage.cache_read_input_tokens;
+            }
+
+            yield { type: 'usage', usage };
           }
 
           // Message complete

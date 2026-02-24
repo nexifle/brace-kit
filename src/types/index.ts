@@ -52,6 +52,8 @@ export interface Message {
   generatedImages?: GeneratedImage[];
   isCompacted?: boolean;
   summary?: string;
+  condenseId?: string;
+  condenseParent?: string;
   isCachedResult?: boolean;
   // Reasoning/thinking content
   reasoningContent?: string;
@@ -145,8 +147,10 @@ export interface ProviderConfig {
 }
 
 export interface CompactConfig {
+  enabled: boolean; // Auto-compact toggle (default true)
   threshold: number; // 0.0 to 1.0 (default 0.9)
   defaultContextWindow: number; // default 128000
+  prompt: string; // Custom compact prompt (empty = use default)
 }
 
 export interface ProviderKeys {
@@ -282,6 +286,9 @@ export interface AppState {
   compactConfig: CompactConfig;
   isCompacting: boolean;
 
+  // Token Usage (for auto-compact)
+  tokenUsage: TokenUsageType | null;
+
   // UI State
   view: 'chat' | 'settings' | 'gallery';
   theme: 'light' | 'dark';
@@ -366,6 +373,9 @@ export interface AppState {
   setCompactConfig: (config: Partial<CompactConfig>) => void;
   setIsCompacting: (isCompacting: boolean) => void;
   compactConversation: (id: string) => Promise<void>;
+
+  // Token Usage Actions
+  setTokenUsage: (usage: TokenUsageType | null) => void;
 }
 
 // ==================== Constants ====================
@@ -396,3 +406,14 @@ export const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
   'text/csv': 'text',
   'application/pdf': 'pdf',
 };
+
+// ==================== Token Usage Types ====================
+
+// Import for use in AppState
+import type { TokenUsage as TokenUsageType } from '../providers/types.ts';
+
+/**
+ * Token usage metadata from API responses
+ * Re-exported from providers for convenience
+ */
+export type { TokenUsage } from '../providers/types.ts';

@@ -234,6 +234,15 @@
     text-wrap: balance;
 }
 
+/* Hide scrollbar while maintaining scroll functionality */
+@utility scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}
+
 /* ===== PREMIUM MARKDOWN TABLE STYLES ===== */
 .md-table {
     @apply w-full border-collapse text-xs;

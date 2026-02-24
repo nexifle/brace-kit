@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { formatAnthropic, parseAnthropicStream } from '../../../src/providers/formats/anthropic.ts';
 import type { Message, MCPTool } from '../../../src/types/index.ts';
-import { createMockStreamResponse } from '../../helpers/stream-mock';
+import { createMockStreamResponse, createAnthropicUsageChunks } from '../../helpers/stream-mock';
 
 describe('Anthropic Format', () => {
   describe('formatAnthropic', () => {
@@ -333,6 +333,173 @@ describe('Anthropic Format', () => {
       }
 
       expect(results).toHaveLength(0);
+    });
+
+    // Token Usage Tests
+    describe('token usage parsing', () => {
+      it('should parse basic usage metadata from message_delta', async () => {
+        const chunks = createAnthropicUsageChunks({
+          content: 'Hello',
+          inputTokens: 100,
+          outputTokens: 50,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(2);
+        expect(results[0]).toEqual({ type: 'text', content: 'Hello' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage).toEqual({
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          totalTokenCount: 150,
+        });
+      });
+
+      it('should parse usage with cache read tokens', async () => {
+        const chunks = createAnthropicUsageChunks({
+          inputTokens: 5235,
+          outputTokens: 367,
+          cacheReadInputTokens: 11776,
+          stopReason: 'tool_use',
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 5235,
+          candidatesTokenCount: 367,
+          totalTokenCount: 5602,
+          cachedContentTokenCount: 11776,
+        });
+      });
+
+      it('should parse usage from end_turn stop_reason', async () => {
+        const chunks = createAnthropicUsageChunks({
+          content: 'Complete response',
+          inputTokens: 24921,
+          outputTokens: 2182,
+          cacheReadInputTokens: 0,
+          stopReason: 'end_turn',
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(2);
+        expect(results[0]).toEqual({ type: 'text', content: 'Complete response' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage).toEqual({
+          promptTokenCount: 24921,
+          candidatesTokenCount: 2182,
+          totalTokenCount: 27103,
+          cachedContentTokenCount: 0,
+        });
+      });
+
+      it('should calculate totalTokenCount from input + output', async () => {
+        const chunks = createAnthropicUsageChunks({
+          inputTokens: 1000,
+          outputTokens: 500,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage.totalTokenCount).toBe(1500);
+      });
+
+      it('should handle usage without cache_read_input_tokens', async () => {
+        const chunks = [
+          'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":500,"output_tokens":100}}\n\n',
+          'data: {"type":"message_stop"}\n\n',
+        ];
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 500,
+          candidatesTokenCount: 100,
+          totalTokenCount: 600,
+        });
+        expect(results[0].usage.cachedContentTokenCount).toBeUndefined();
+      });
+
+      it('should handle zero token values', async () => {
+        const chunks = createAnthropicUsageChunks({
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadInputTokens: 0,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 0,
+          candidatesTokenCount: 0,
+          totalTokenCount: 0,
+          cachedContentTokenCount: 0,
+        });
+      });
+
+      it('should handle multiple message_delta events (tool use scenario)', async () => {
+        // Simulate multiple tool use calls with usage updates
+        const chunks = [
+          'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":5235,"output_tokens":367,"cache_read_input_tokens":11776}}\n\n',
+          'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":11883,"output_tokens":214,"cache_read_input_tokens":0}}\n\n',
+          'data: {"type":"message_stop"}\n\n',
+        ];
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseAnthropicStream(response)) {
+          results.push(chunk);
+        }
+
+        // Should get 2 usage chunks
+        expect(results).toHaveLength(2);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage.promptTokenCount).toBe(5235);
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage.promptTokenCount).toBe(11883);
+      });
     });
   });
 });

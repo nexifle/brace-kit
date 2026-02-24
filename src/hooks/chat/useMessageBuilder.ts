@@ -102,18 +102,23 @@ export function useMessageBuilder() {
 
       // Use provided messages or store messages
       const sourceMessages = messages ?? store.messages;
+      
+      // Find the last summary message for the "fresh start" model
+      const lastSummaryIndex = [...sourceMessages].reverse().findIndex(m => m.summary && m.condenseId);
+      const startIndex = lastSummaryIndex !== -1 ? sourceMessages.length - 1 - lastSummaryIndex : 0;
+      
       const historyMessages: APIMessage[] = [];
 
-      for (const msg of sourceMessages) {
-        // Skip compacted messages without summary
-        if (msg.isCompacted && !msg.summary) continue;
-
-        // Add summary to system content
-        if (msg.summary) {
-          systemContent += `\n\n[CONVERSATION SUMMARY]\n${msg.summary}\n[END OF SUMMARY]`;
-          continue;
-        }
-
+      for (let i = startIndex; i < sourceMessages.length; i++) {
+        const msg = sourceMessages[i];
+        
+        // Skip if message is condensed (has a parent)
+        if (msg.condenseParent) continue;
+        
+        // If this is the summary message itself, we add it to history if it's the role we expect
+        // or we handle its content differently if needed.
+        // In our case, the summary message should be included in the history as a system or user message.
+        
         const formatted = formatMessageForAPI(msg);
         if (formatted) {
           historyMessages.push(formatted);
@@ -143,16 +148,21 @@ export function useMessageBuilder() {
    */
   const estimateTokenCount = useCallback((messages: Message[]) => {
     let totalChars = 0;
-    for (const msg of messages) {
-      // Only count messages that are NOT compacted, OR are summary messages
-      if (msg.isCompacted && !msg.summary) continue;
+    
+    // Use the same filtering logic as buildAPIMessages
+    const lastSummaryIndex = [...messages].reverse().findIndex(m => m.summary && m.condenseId);
+    const startIndex = lastSummaryIndex !== -1 ? messages.length - 1 - lastSummaryIndex : 0;
+
+    for (let i = startIndex; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.condenseParent) continue;
 
       if (typeof msg.content === 'string') {
         totalChars += msg.content.length;
       }
       if (msg.attachments) {
         for (const att of msg.attachments) {
-          totalChars += att.name.length + (att.data?.length || 0);
+          totalChars += (att.name?.length || 0) + (att.data?.length || 0);
         }
       }
     }

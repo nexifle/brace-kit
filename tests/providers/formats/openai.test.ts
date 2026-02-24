@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { formatOpenAI, parseOpenAIStream } from '../../../src/providers/formats/openai.ts';
 import type { Message, MCPTool } from '../../../src/types/index.ts';
-import { createMockStreamResponse } from '../../helpers/stream-mock';
+import { createMockStreamResponse, createOpenAIUsageChunks } from '../../helpers/stream-mock';
 
 describe('OpenAI Format', () => {
   describe('formatOpenAI', () => {
@@ -287,6 +287,129 @@ describe('OpenAI Format', () => {
       }
 
       expect(results).toHaveLength(0);
+    });
+
+    // Token Usage Tests
+    describe('token usage parsing', () => {
+      it('should parse basic usage metadata', async () => {
+        const chunks = createOpenAIUsageChunks({
+          content: 'Hello',
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseOpenAIStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(2);
+        expect(results[0]).toEqual({ type: 'text', content: 'Hello' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage).toEqual({
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          totalTokenCount: 150,
+        });
+      });
+
+      it('should parse usage with cached tokens (GLM/Zhipu format)', async () => {
+        const chunks = createOpenAIUsageChunks({
+          content: 'Response',
+          promptTokens: 25471,
+          completionTokens: 3479,
+          totalTokens: 28950,
+          cachedTokens: 17344,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseOpenAIStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(2);
+        expect(results[0]).toEqual({ type: 'text', content: 'Response' });
+        expect(results[1].type).toBe('usage');
+        expect(results[1].usage).toEqual({
+          promptTokenCount: 25471,
+          candidatesTokenCount: 3479,
+          totalTokenCount: 28950,
+          cachedContentTokenCount: 17344,
+        });
+      });
+
+      it('should parse usage without content (final chunk only)', async () => {
+        const chunks = createOpenAIUsageChunks({
+          promptTokens: 500,
+          completionTokens: 100,
+          totalTokens: 600,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseOpenAIStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 500,
+          candidatesTokenCount: 100,
+          totalTokenCount: 600,
+        });
+      });
+
+      it('should parse usage with tool_use finish_reason', async () => {
+        const chunks = createOpenAIUsageChunks({
+          promptTokens: 5235,
+          completionTokens: 367,
+          totalTokens: 5602,
+          cachedTokens: 11776,
+          finishReason: 'tool_use',
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseOpenAIStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage.promptTokenCount).toBe(5235);
+        expect(results[0].usage.cachedContentTokenCount).toBe(11776);
+      });
+
+      it('should handle usage with zero values', async () => {
+        const chunks = createOpenAIUsageChunks({
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+        });
+
+        const response = createMockStreamResponse(chunks);
+        const results = [];
+
+        for await (const chunk of parseOpenAIStream(response)) {
+          results.push(chunk);
+        }
+
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toBe('usage');
+        expect(results[0].usage).toEqual({
+          promptTokenCount: 0,
+          candidatesTokenCount: 0,
+          totalTokenCount: 0,
+        });
+      });
     });
   });
 });
