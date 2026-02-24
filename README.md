@@ -11,14 +11,56 @@ An AI-powered Chrome sidebar that reads the current page content and lets you ch
 - ⚙️ **Custom Configuration** — API keys, custom endpoints, system prompts, model selection
 - 🌙 **Dark Theme** — Premium dark UI with glassmorphism effects
 - 📋 **Context Menu** — Right-click selected text → "Send to BraceKit"
+- 💾 **Conversation Memory** — Persistent chat history with search
+- 🖼️ **Image Support** — View and manage images in conversations
+- 🔐 **Security Lock** — PIN protection for sensitive data
+
+## Tech Stack
+
+- **Runtime**: [Bun](https://bun.sh/) - Fast JavaScript runtime
+- **UI Framework**: React 19 + TypeScript
+- **State Management**: Zustand
+- **Styling**: Tailwind CSS 4
+- **Icons**: Lucide React
+- **Build**: Bun bundler
 
 ## Installation
 
-1. Open Chrome and go to `chrome://extensions/`
+### Prerequisites
+
+- [Bun](https://bun.sh/) installed on your system
+- Chrome browser
+
+### Build & Load
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd brace-kit
+
+# Install dependencies
+bun install
+
+# Build the extension
+bun run build
+```
+
+Then in Chrome:
+1. Open `chrome://extensions/`
 2. Enable **Developer mode** (top-right toggle)
 3. Click **Load unpacked**
-4. Select this `ai-sidebar` folder
-5. Click the extension icon in the toolbar to open the sidebar
+4. Select the `dist/` folder (not the project root)
+5. Click the extension icon to open the sidebar
+
+### Development
+
+```bash
+# Start dev server with hot reload
+bun run dev
+
+# Type checking
+bun run typecheck
+```
 
 ## Setup
 
@@ -58,18 +100,49 @@ An AI-powered Chrome sidebar that reads the current page content and lets you ch
 | DeepSeek | OpenAI-compatible | deepseek-chat, deepseek-reasoner |
 | Custom | Configurable | Any |
 
-## File Structure
+## Project Structure
 
 ```
-ai-sidebar/
-├── manifest.json      # Chrome extension manifest (V3)
-├── background.js      # Service worker (API calls, MCP, routing)
-├── content.js         # Content script (page reading, text selection)
-├── sidebar.html       # Sidebar panel HTML
-├── sidebar.css        # Dark theme styles
-├── sidebar.js         # Sidebar application logic
-├── providers.js       # LLM provider abstraction
-├── mcp.js             # MCP client (SSE transport)
-├── markdown.js        # Markdown renderer
-└── icons/             # Extension icons (16/48/128px)
+brace-kit/
+├── src/
+│   ├── background/            # Service worker (Manifest V3)
+│   │   ├── index.ts           # Entry point, message routing
+│   │   ├── handlers/          # Domain-specific handlers (chat, mcp, memory, models)
+│   │   ├── services/          # Business logic (chat.service, streaming.service)
+│   │   ├── tools/             # Built-in tools (google_search, continue_message)
+│   │   └── utils/             # Utilities (errors)
+│   ├── components/            # React UI components
+│   │   ├── message/           # Message display (decomposed)
+│   │   │   ├── sections/      # Content sections (Reasoning, Context, Images, etc.)
+│   │   │   ├── actions/       # Action buttons (Copy, Branch, Edit)
+│   │   │   └── display/       # Display components (Lightbox, Attachments)
+│   │   ├── settings/          # Settings panels (Provider, MCP, Memory, Security)
+│   │   └── ui/                # Reusable primitives (Btn, IconButton, TextInput)
+│   ├── hooks/                 # Custom React hooks
+│   │   ├── useChat.ts         # Main chat logic
+│   │   ├── useStreaming.ts    # Stream processing
+│   │   ├── useMemory.ts       # Conversation persistence
+│   │   ├── useMCP.ts          # MCP server management
+│   │   └── useProvider.ts     # Provider/model selection
+│   ├── providers/             # LLM provider abstraction
+│   │   ├── formats/           # Provider-specific formatters (openai, anthropic, gemini)
+│   │   └── utils/             # Schema utilities
+│   ├── services/              # Shared services (toolRegistry)
+│   ├── store/                 # Zustand state management
+│   ├── types/                 # TypeScript type definitions
+│   ├── utils/                 # Utility functions (markdown, crypto, formatters)
+│   ├── styles/                # Global CSS styles
+│   ├── content.ts             # Content script (page reading, text selection)
+│   ├── index.tsx              # Sidebar entry point
+│   └── onboarding.tsx         # Onboarding page
+├── dist/                      # Built extension (load this in Chrome)
+│   ├── manifest.json
+│   ├── background.js
+│   ├── content.js
+│   ├── index.js
+│   ├── onboarding.js
+│   └── icons/
+├── package.json
+├── build.ts                   # Build script
+└── tsconfig.json
 ```
