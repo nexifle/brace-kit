@@ -8,6 +8,7 @@ import { ProviderPopover } from './ProviderPopover.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon } from 'lucide-react';
+import { cn } from '../utils/cn.ts';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -26,8 +27,8 @@ export function InputArea() {
   const lastCursorPosRef = useRef<number>(0);
   const store = useStore();
   const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
-  const { handleFileSelect, handlePaste } = useFileAttachments();
-  const { selectedText } = usePageContext();
+  const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
+  const { selectedText, pageContext: hasPageContext } = usePageContext();
   const { providerInfo } = useProvider();
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
@@ -203,45 +204,10 @@ export function InputArea() {
   }, [store.pageContext, store]);
 
   return (
-    <div id="input-area" className="flex flex-col gap-1.5 p-3 bg-background border-t border-border">
-      <PageContextPreview />
-      <FilePreview />
-      <SelectionPreview />
-
-      {/* Image Options Row */}
-      {isImageGenerationModel && (
-        <div className="flex items-center gap-2 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">Aspect Ratio</label>
-          <select
-            className="text-xs bg-muted/40 border border-input rounded-md px-2 py-0.5 cursor-pointer outline-none transition-all hover:bg-muted/60 focus:ring-1 focus:ring-ring disabled:opacity-50 text-foreground"
-            value={imageAspectRatio}
-            onChange={(e) => setImageAspectRatio(e.target.value)}
-            disabled={store.isStreaming}
-          >
-            {isXAIImageModel && <option value="auto">auto (Model selects best)</option>}
-            <option value="1:1">1:1 (Square)</option>
-            <option value="16:9">16:9 (Landscape)</option>
-            <option value="9:16">9:16 (Portrait)</option>
-            <option value="4:3">4:3 (Standard)</option>
-            <option value="3:4">3:4 (Portrait)</option>
-            <option value="3:2">3:2 (Photo)</option>
-            <option value="2:3">2:3 (Photo Portrait)</option>
-            {isXAIImageModel && <option value="2:1">2:1 (Banner)</option>}
-            {isXAIImageModel && <option value="1:2">1:2 (Header)</option>}
-            {isGeminiImageModel && <option value="4:5">4:5 (Portrait)</option>}
-            {isGeminiImageModel && <option value="5:4">5:4 (Landscape)</option>}
-            {isGeminiImageModel && <option value="21:9">21:9 (Ultra-wide)</option>}
-            {isXAIImageModel && <option value="19.5:9">19.5:9 (Modern Smartphone)</option>}
-            {isXAIImageModel && <option value="9:19.5">9:19.5 (Smartphone Portrait)</option>}
-            {isXAIImageModel && <option value="20:9">20:9 (Ultra-wide)</option>}
-            {isXAIImageModel && <option value="9:20">9:20 (Ultra-wide Portrait)</option>}
-          </select>
-        </div>
-      )}
-
+    <div id="input-area" className="p-0 bg-background">
       {/* Slash Command Processing Indicator */}
       {isProcessingCommand && (
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-primary/10 border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-primary/10 border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200">
           <svg className="animate-spin shrink-0 text-primary" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           </svg>
@@ -249,75 +215,50 @@ export function InputArea() {
         </div>
       )}
 
-      {/* Input Row */}
-      <div className="group relative flex items-center gap-1 bg-muted/40 border border-input rounded-md py-1 px-2 transition-all duration-200 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
-        {/* Left Action Buttons */}
-        <div className="flex shrink-0 items-center">
-          <button
-            type="button"
-            className={`flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${store.pageContext
-              ? 'text-primary bg-primary/15'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
-              }`}
-            title="Add current page to context"
-            onClick={handleAttachClick}
-          >
-            <GlobeIcon size={16} />
-          </button>
-          <button
-            type="button"
-            className="flex items-center justify-center w-8 h-8 text-muted-foreground rounded-md transition-all duration-200 hover:text-primary hover:bg-primary/10"
-            title="Attach file (image, txt, csv, pdf)"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <PaperclipIcon size={16} />
-          </button>
-          <button
-            type="button"
-            className={`flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${store.showSystemPromptEditor
-              ? 'text-primary bg-primary/15'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
-              }`}
-            title="System Prompt"
-            onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
-          >
-            <SquareTerminal size={16} />
-          </button>
-          <button
-            type="button"
-            className={`flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${enableReasoning
-              ? 'text-primary bg-primary/15'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
-              }`}
-            title="Activate Reasoning - Enable extended thinking for supported models"
-            onClick={() => setEnableReasoning(!enableReasoning)}
-          >
-            <BrainIcon size={16} />
-          </button>
-          <button
-            type="button"
-            className={`flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${preferences.toolMessageDisplay === 'compact'
-              ? 'text-primary bg-primary/15'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
-              }`}
-            title="Display preferences for tool messages"
-            onClick={() => setShowPreferencesPopover(true)}
-          >
-            <SettingsIcon size={16} />
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept="image/*,.txt,.csv,.pdf"
-            multiple
-            onChange={(e) => handleFileSelect(e.target.files)}
-          />
+      {/* Main unified card */}
+      <div className="relative rounded-lg border border-border bg-card/30 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10">
+
+        {/* Previews area */}
+        <div className={cn('flex flex-col gap-1.5 px-4', (attachments.length > 0 || selectedText || hasPageContext) && 'pt-4')}>
+          <PageContextPreview />
+          <FilePreview />
+          <SelectionPreview />
         </div>
+
+        {/* Image Options Row */}
+        {isImageGenerationModel && (
+          <div className="flex items-center gap-2 px-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">Aspect Ratio</label>
+            <select
+              className="text-xs bg-muted/40 border border-input rounded-md px-2 py-0.5 cursor-pointer outline-none transition-all hover:bg-muted/60 focus:ring-1 focus:ring-ring disabled:opacity-50 text-foreground"
+              value={imageAspectRatio}
+              onChange={(e) => setImageAspectRatio(e.target.value)}
+              disabled={store.isStreaming}
+            >
+              {isXAIImageModel && <option value="auto">auto (Model selects best)</option>}
+              <option value="1:1">1:1 (Square)</option>
+              <option value="16:9">16:9 (Landscape)</option>
+              <option value="9:16">9:16 (Portrait)</option>
+              <option value="4:3">4:3 (Standard)</option>
+              <option value="3:4">3:4 (Portrait)</option>
+              <option value="3:2">3:2 (Photo)</option>
+              <option value="2:3">2:3 (Photo Portrait)</option>
+              {isXAIImageModel && <option value="2:1">2:1 (Banner)</option>}
+              {isXAIImageModel && <option value="1:2">1:2 (Header)</option>}
+              {isGeminiImageModel && <option value="4:5">4:5 (Portrait)</option>}
+              {isGeminiImageModel && <option value="5:4">5:4 (Landscape)</option>}
+              {isGeminiImageModel && <option value="21:9">21:9 (Ultra-wide)</option>}
+              {isXAIImageModel && <option value="19.5:9">19.5:9 (Modern Smartphone)</option>}
+              {isXAIImageModel && <option value="9:19.5">9:19.5 (Smartphone Portrait)</option>}
+              {isXAIImageModel && <option value="20:9">20:9 (Ultra-wide)</option>}
+              {isXAIImageModel && <option value="9:20">9:20 (Ultra-wide Portrait)</option>}
+            </select>
+          </div>
+        )}
 
         {/* Slash Commands Popover */}
         {filteredCommands.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 bg-popover border border-border rounded-md shadow-xl mb-2 overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
+          <div className="absolute bottom-full left-0 right-0 bg-popover border border-border rounded-xl shadow-xl mb-2 overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
             {filteredCommands.map(({ cmd, desc }) => (
               <div
                 key={cmd}
@@ -338,105 +279,47 @@ export function InputArea() {
         )}
 
         {/* Textarea with Ghost Overlay */}
-        <div className="relative flex-1 min-w-0">
-          {/* Ghost text overlay for autocomplete */}
-          <div
-            ref={ghostRef}
-            className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[120px]"
-            aria-hidden="true"
-          >
-            <span className="text-transparent">{text}</span>
-            {autocompleteSuggestion && (
-              <span className="text-muted-foreground/40 italic">
-                {autocompleteSuggestion.slice(text.length)}
-              </span>
-            )}
-          </div>
-          <textarea
-            ref={textareaRef}
-            className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/60"
-            placeholder={placeholder}
-            rows={1}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              updateCursorPos();
-            }}
-            onKeyUp={updateCursorPos}
-            onMouseUp={updateCursorPos}
-            onBlur={updateCursorPos}
-            onKeyDown={handleKeyDown}
-            onInput={handleInput}
-            onScroll={handleScroll}
-            onPaste={(e) => handlePaste(e.nativeEvent)}
-            disabled={store.isStreaming || isProcessingCommand}
-          />
-        </div>
-
-        {/* Send/Stop Button */}
-        {store.isStreaming ? (
-          <button
-            type="button"
-            className="flex items-center justify-center w-8 h-8 rounded-md bg-destructive/80 text-destructive-foreground cursor-pointer transition-all duration-200 shrink-0 hover:bg-destructive active:scale-95"
-            onClick={stopStreaming}
-            title="Stop generating"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="flex items-center justify-center w-8 h-8 rounded-md cursor-pointer transition-all duration-200 shrink-0 bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed disabled:scale-100"
-            onClick={handleSend}
-            disabled={(!text.trim() && store.attachments.length === 0) || isProcessingCommand}
-            title="Send message"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M5 12h14" />
-              <path d="m12 5 7 7-7 7" />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {/* Input Footer */}
-      <div className="relative flex justify-between items-center px-1 pt-1.5" ref={footerRef}>
-        <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
-        <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
-
-        {/* Footer Left - Provider Info */}
-        <div className="flex gap-1.5 items-center">
-          <button
-            type="button"
-            className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border transition-all duration-200 ${showProviderPopover
-              ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-              : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
-              }`}
-            onClick={() => setShowProviderPopover(v => !v)}
-          >
-            {providerInfo.isConfigured ? providerInfo.providerName : 'No Provider'}
-          </button>
-          {providerInfo.model && (
-            <button
-              type="button"
-              className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border transition-all duration-200 ${showProviderPopover
-                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
-                }`}
-              onClick={() => setShowProviderPopover(v => !v)}
+        <div className="px-3 pt-1 pb-1">
+          <div className="relative">
+            <div
+              ref={ghostRef}
+              className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[120px]"
+              aria-hidden="true"
             >
-              {providerInfo.model}
-            </button>
-          )}
+              <span className="text-transparent">{text}</span>
+              {autocompleteSuggestion && (
+                <span className="text-muted-foreground/40 italic">
+                  {autocompleteSuggestion.slice(text.length)}
+                </span>
+              )}
+            </div>
+            <textarea
+              ref={textareaRef}
+              className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
+              placeholder={placeholder}
+              rows={3}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                updateCursorPos();
+              }}
+              onKeyUp={updateCursorPos}
+              onMouseUp={updateCursorPos}
+              onBlur={updateCursorPos}
+              onKeyDown={handleKeyDown}
+              onInput={handleInput}
+              onScroll={handleScroll}
+              onPaste={(e) => handlePaste(e.nativeEvent)}
+              disabled={store.isStreaming || isProcessingCommand}
+            />
+          </div>
         </div>
 
-        {/* Footer Right - Context Usage (only when autocompact enabled) */}
+        {/* Context usage indicator - own row above toolbar */}
         {compactEnabled && percentUntilCompact <= 15 && (
-          <div className="flex items-center">
+          <div className="flex justify-end p-2">
             <span
-              className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${percentUntilCompact <= 5
+              className={`inline-flex text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${percentUntilCompact <= 5
                 ? 'text-destructive bg-destructive/10 border-destructive/20 animate-pulse'
                 : percentUntilCompact <= 10
                   ? 'text-warning bg-warning/10 border-warning/20'
@@ -448,6 +331,141 @@ export function InputArea() {
             </span>
           </div>
         )}
+
+        {/* Bottom Toolbar */}
+        <div className="flex items-center gap-1.5 px-3 pb-3 pt-2 border-t border-border/50" ref={footerRef}>
+          <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
+          <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
+
+          {/* Provider + Model selector */}
+          <button
+            type="button"
+            className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-200 min-w-0 max-w-[40%] ${showProviderPopover
+              ? 'bg-primary/15 text-primary'
+              : 'text-foreground hover:bg-muted/50'
+              }`}
+            onClick={() => setShowProviderPopover(v => !v)}
+          >
+            <span className="text-sm font-semibold truncate shrink-0">
+              {providerInfo.isConfigured ? providerInfo.providerName : 'No Provider'}
+            </span>
+            {providerInfo.model && (
+              <span className="text-xs text-muted-foreground font-normal truncate min-w-0">
+                {providerInfo.model}
+              </span>
+            )}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted-foreground/70 shrink-0">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+
+          {/* Vertical divider */}
+          <div className="w-px h-4 bg-border/70 mx-0.5 shrink-0" />
+
+          {/* Page context - pill with label */}
+          <button
+            type="button"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 shrink-0 ${store.pageContext
+              ? 'bg-primary/15 text-primary border-primary/40'
+              : 'bg-transparent text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+              }`}
+            title="Add current page to context"
+            onClick={handleAttachClick}
+          >
+            <GlobeIcon size={12} />
+            <span>Page</span>
+          </button>
+
+          {/* Attach - pill with label */}
+          <button
+            type="button"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-transparent text-muted-foreground transition-all duration-200 shrink-0 hover:bg-muted/40 hover:text-foreground"
+            title="Attach file (image, txt, csv, pdf)"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <PaperclipIcon size={12} />
+            <span>Attach</span>
+          </button>
+
+          {/* System Prompt - icon only */}
+          <button
+            type="button"
+            className={`flex items-center justify-center w-7 h-7 rounded-lg border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
+              ? 'bg-primary/15 text-primary border-primary/40'
+              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+              }`}
+            title="System Prompt"
+            onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
+          >
+            <SquareTerminal size={12} />
+          </button>
+
+          {/* Reasoning - icon only */}
+          <button
+            type="button"
+            className={`flex items-center justify-center w-7 h-7 rounded-lg border transition-all duration-200 shrink-0 ${enableReasoning
+              ? 'bg-primary/15 text-primary border-primary/40'
+              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+              }`}
+            title="Activate Reasoning - Enable extended thinking for supported models"
+            onClick={() => setEnableReasoning(!enableReasoning)}
+          >
+            <BrainIcon size={12} />
+          </button>
+
+          {/* Settings - icon only */}
+          <button
+            type="button"
+            className={`flex items-center justify-center w-7 h-7 rounded-lg border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
+              ? 'bg-primary/15 text-primary border-primary/40'
+              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+              }`}
+            title="Display preferences for tool messages"
+            onClick={() => setShowPreferencesPopover(true)}
+          >
+            <SettingsIcon size={12} />
+          </button>
+
+          {/* Spacer */}
+          <div className="flex-1 min-w-0" />
+
+          {/* Send/Stop button */}
+          {store.isStreaming ? (
+            <button
+              type="button"
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-destructive/80 text-destructive-foreground cursor-pointer transition-all duration-200 shrink-0 hover:bg-destructive active:scale-95"
+              onClick={stopStreaming}
+              title="Stop generating"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center justify-center w-9 h-9 rounded-lg cursor-pointer transition-all duration-200 shrink-0 bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed disabled:scale-100"
+              onClick={handleSend}
+              disabled={(!text.trim() && store.attachments.length === 0) || isProcessingCommand}
+              title="Send message"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M12 19V5" />
+                <path d="m5 12 7-7 7 7" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept="image/*,.txt,.csv,.pdf"
+          multiple
+          onChange={(e) => handleFileSelect(e.target.files)}
+        />
       </div>
     </div>
   );

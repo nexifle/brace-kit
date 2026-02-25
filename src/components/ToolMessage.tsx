@@ -160,6 +160,7 @@ interface ToolBadgeProps {
 function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
   const isCalling = tool.content.trim().includes('Calling...');
   const isError = tool.content.trim().startsWith('Error:');
+  const [isArgsExpanded, setIsArgsExpanded] = useState(false);
   const [isResultExpanded, setIsResultExpanded] = useState(false);
 
   const argsDisplay = tool.toolArguments
@@ -189,9 +190,8 @@ function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
       {/* Badge Button */}
       <button
         onClick={onToggle}
-        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold border transition-all hover:shadow-sm ${
-          isExpanded ? 'bg-primary/15 border-primary/30 text-primary' : 'bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60'
-        }`}
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold border transition-all hover:shadow-sm ${isExpanded ? 'bg-primary/15 border-primary/30 text-primary' : 'bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60'
+          }`}
       >
         <WrenchIcon size={10} />
         <span className="truncate max-w-[100px]">{tool.name}</span>
@@ -211,15 +211,14 @@ function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
           {argsDisplay && (
             <div className="mb-2">
               <button
-                onClick={() => setIsResultExpanded(!isResultExpanded)}
-                className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/30 border border-border/30 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${
-                  isResultExpanded ? 'rounded-b-none border-b-0' : ''
-                }`}
+                onClick={() => setIsArgsExpanded(!isArgsExpanded)}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/30 border border-border/30 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${isArgsExpanded ? 'rounded-b-none border-b-0' : ''
+                  }`}
               >
                 <span>Args</span>
-                <ChevronDownIcon size={10} className={`transition-transform ${isResultExpanded ? 'rotate-180' : ''}`} />
+                <ChevronDownIcon size={10} className={`transition-transform ${isArgsExpanded ? 'rotate-180' : ''}`} />
               </button>
-              {isResultExpanded && (
+              {isArgsExpanded && (
                 <div className="px-2 py-1.5 bg-muted/20 border border-border/30 border-t-0 rounded-b-md text-[10px] font-mono text-foreground/80 break-all">
                   {argsDisplay}
                 </div>
@@ -229,12 +228,20 @@ function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
 
           {/* Result */}
           <div className="mb-1">
-            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Result</div>
-            <pre className={`text-[10px] font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto scrollbar-thin p-2 rounded-md bg-muted/20 border border-border/30 ${
-              isError ? 'text-destructive/90' : 'text-muted-foreground'
-            }`}>
-              {tool.content}
-            </pre>
+            <button
+              onClick={() => setIsResultExpanded(!isResultExpanded)}
+              className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/20 border border-border/30 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${isResultExpanded ? 'rounded-b-none border-b-0' : ''
+                }`}
+            >
+              <span>Result</span>
+              <ChevronDownIcon size={10} className={`transition-transform ${isResultExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {isResultExpanded && (
+              <pre className={`text-[10px] font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto scrollbar-thin p-2 rounded-b-md bg-muted/20 border border-border/30 border-t-0 ${isError ? 'text-destructive/90' : 'text-muted-foreground'
+                }`}>
+                {tool.content}
+              </pre>
+            )}
           </div>
         </div>
       )}
@@ -266,7 +273,7 @@ function ToolMessageCompact({ tools }: { tools: ToolMessageData[] }) {
 
   return (
     <div className="w-full flex flex-col gap-2 mb-4 max-w-full self-start animate-in fade-in slide-in-from-left-2 duration-300">
-      <div className="px-3 py-2 bg-card/40 backdrop-blur-md border border-border/50 rounded-lg">
+      <div className="">
         {/* Badges Row */}
         <div className="flex flex-wrap items-center gap-1.5">
           {visibleTools.map((tool, idx) => (

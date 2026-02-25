@@ -1,31 +1,20 @@
 import { useState } from 'react';
 import { CheckIcon, ChevronRightIcon, RefreshCwIcon, BrainIcon } from 'lucide-react';
 import type { ReasoningSectionProps } from '../MessageBubble.types';
+import { cn } from '../../../utils/cn';
 
 export function ReasoningSection({ content, isStreaming }: ReasoningSectionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="mt-4 w-full flex flex-col gap-1 max-w-full self-start mb-2">
-      <div className="relative group px-3 py-2 dark:bg-muted bg-muted-foreground/5 backdrop-blur-md border rounded-lg transition-all duration-300">
+    <div className="mt-4 w-full flex flex-col gap-1 max-w-full self-start">
+      <div className={cn('relative group transition-all duration-300', isExpanded ? 'px-3 py-2 dark:bg-muted bg-muted-foreground/5 backdrop-blur-md rounded-lg' : '')}>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-between gap-4"
+          className="w-full flex items-center gap-2"
         >
-          <div className="flex items-center gap-2">
-            <div
-              className={`p-1.5 rounded-lg ${
-                isStreaming ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-500/15 text-purple-400'
-              }`}
-            >
-              <BrainIcon size={12} />
-            </div>
-            <div className="flex flex-col gap-0">
-              <span className="text-[10px] font-black uppercase tracking-widest text-foreground/80 leading-none">
-                Reasoning
-              </span>
-            </div>
-          </div>
+          <BrainIcon size={12} />
+          Reasoning
 
           <div className="flex items-center gap-2">
             {isStreaming ? (
@@ -33,14 +22,11 @@ export function ReasoningSection({ content, isStreaming }: ReasoningSectionProps
                 <RefreshCwIcon size={10} className="text-purple-400 animate-spin" />
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20">
-                <CheckIcon size={10} className="text-success" />
-              </div>
+              <ChevronRightIcon
+                size={14}
+                className={`text-muted-foreground transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
+              />
             )}
-            <ChevronRightIcon
-              size={14}
-              className={`text-muted-foreground transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
-            />
           </div>
         </button>
 
