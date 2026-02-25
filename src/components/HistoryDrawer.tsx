@@ -13,9 +13,11 @@ import {
   ChevronRightIcon,
   HistoryIcon,
   GitBranchIcon,
-  ExternalLinkIcon
+  ExternalLinkIcon,
+  DownloadIcon
 } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
+import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
 
 interface ConversationWithMessages {
   id: string;
@@ -135,6 +137,18 @@ export function HistoryDrawer() {
     if (parentId) store.switchConversation(parentId);
     setTimeout(() => setHighlightedIds(new Set()), 2000);
   }, [branchRelations, store]);
+
+  const handleExport = useCallback(async (conv: ConversationWithMessages, e: React.MouseEvent) => {
+    e.stopPropagation();
+    let messages = conv.messages;
+    if (messages.length === 0) {
+      const loaded = await getConversationMessages(conv.id);
+      messages = loaded || [];
+    }
+    const markdown = exportConversationToMarkdown(conv, messages);
+    const filename = `${conv.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.md`;
+    downloadMarkdown(filename, markdown);
+  }, []);
 
   useEffect(() => {
     if (store.historyDrawerOpen) {
@@ -319,6 +333,15 @@ export function HistoryDrawer() {
               <ExternalLinkIcon size={12} />
             </Btn>
           )}
+          <Btn
+            variant="ghost"
+            size="icon-sm"
+            className="h-6 w-6 text-muted-foreground hover:text-primary"
+            title="Export to Markdown"
+            onClick={(e) => handleExport(conv, e)}
+          >
+            <DownloadIcon size={12} />
+          </Btn>
           <Btn
             variant="ghost"
             size="icon-sm"
