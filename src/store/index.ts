@@ -27,6 +27,7 @@ import {
   getAllConversationMetadata,
 } from '../utils/conversationDB.ts';
 import { sha256 } from '../utils/crypto.ts';
+import { selectMemoriesForConversation } from '../utils/memorySampler.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -216,25 +217,47 @@ export const useStore = create<AppState>((set, get) => ({
       ),
     })),
 
-  createConversation: (opts?: { title?: string; branchedFromId?: string }) => {
+  createConversation: (opts?: { title?: string; branchedFromId?: string; parentConvId?: string }) => {
     const id = `conv_${Date.now()}`;
     const now = Date.now();
+
+    // Get current state for memory selection
+    const state = get();
+
+    // Select memories for this conversation (if memory feature is enabled)
+    let selectedMemoryIds: string[] | undefined;
+    if (state.memoryEnabled && state.memories.length > 0) {
+      // If branching, inherit parent's memory selection for consistency
+      if (opts?.parentConvId) {
+        const parentConv = state.conversations.find((c) => c.id === opts.parentConvId);
+        if (parentConv?.selectedMemoryIds) {
+          selectedMemoryIds = parentConv.selectedMemoryIds;
+        }
+      }
+
+      // Otherwise, select new random memories
+      if (!selectedMemoryIds) {
+        selectedMemoryIds = selectMemoriesForConversation(state.memories);
+      }
+    }
+
     const conv: Conversation = {
       id,
       title: opts?.title ?? 'New Chat',
       createdAt: now,
       updatedAt: now,
+      selectedMemoryIds,
       ...(opts?.branchedFromId ? { branchedFromId: opts.branchedFromId } : {}),
     };
-    set((state) => ({
-      conversations: [conv, ...state.conversations],
+    set((s) => ({
+      conversations: [conv, ...s.conversations],
       activeConversationId: id,
       messages: [],
     }));
 
     // Async save metadata to DB
     saveConversationMetadata(conv).catch((e) => console.warn('[Store] Failed to save conversation metadata:', e));
-    
+
     return conv;
   },
 
@@ -378,6 +401,41 @@ export const useStore = create<AppState>((set, get) => ({
   setMemoryEnabled: (memoryEnabled) => set({ memoryEnabled }),
 
   clearMemories: () => set({ memories: [] }),
+
+  refreshConversationMemories: (conversationId: string) => {
+    const state = get();
+    const conversation = state.conversations.find((c) => c.id === conversationId);
+    if (!conversation) return;
+
+    // Get current selected IDs or empty array
+    const currentSelectedIds = conversation.selectedMemoryIds || [];
+
+    // Generate new selection (will be different from current)
+    const { refreshMemorySelection } = require('../utils/memorySampler.ts');
+    const newSelectedIds = refreshMemorySelection(
+      state.memories,
+      currentSelectedIds
+    );
+
+    // Update conversation
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId
+          ? { ...c, selectedMemoryIds: newSelectedIds, updatedAt: Date.now() }
+          : c
+      ),
+    }));
+
+    // Save metadata
+    const updatedConv = state.conversations.find((c) => c.id === conversationId);
+    if (updatedConv) {
+      saveConversationMetadata({
+        ...updatedConv,
+        selectedMemoryIds: newSelectedIds,
+        updatedAt: Date.now(),
+      }).catch((e) => console.warn('[Store] Failed to save refreshed memories:', e));
+    }
+  },
 
   setEnableGoogleSearch: (enableGoogleSearch) => {
     set({ enableGoogleSearch });

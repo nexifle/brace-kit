@@ -8,7 +8,7 @@
 import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
 import type { Message, APIMessage } from '../../types/index.ts';
-import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../../types/index.ts';
+import { buildMemoryBlockFromSelection } from '../../utils/memorySampler.ts';
 
 /**
  * Unified message builder hook
@@ -19,21 +19,18 @@ export function useMessageBuilder() {
 
   /**
    * Build memory block for system prompt
+   * Uses conversation-specific memory selection for consistency throughout the conversation
    */
-  const buildMemoryBlock = useCallback(() => {
+  const buildMemoryBlock = useCallback((selectedMemoryIds?: string[]) => {
     if (!store.memoryEnabled || store.memories.length === 0) return '';
 
-    let block = '\n\n[User Memory - Use these insights to personalize responses]\n';
-    for (const cat of MEMORY_CATEGORIES) {
-      const items = store.memories.filter((m) => m.category === cat);
-      if (items.length === 0) continue;
-      const label = MEMORY_CATEGORY_LABELS[cat].replace(/^[^\s]+\s/, '');
-      block += `\n${label}:\n`;
-      for (const item of items) {
-        block += `- ${item.content}\n`;
-      }
+    // Use selected memories from conversation if available, otherwise build from all (fallback)
+    if (selectedMemoryIds && selectedMemoryIds.length > 0) {
+      return buildMemoryBlockFromSelection(store.memories, selectedMemoryIds);
     }
-    return block;
+
+    // Fallback: include all memories (for backward compatibility or when selection not yet created)
+    return buildMemoryBlockFromSelection(store.memories, store.memories.map(m => m.id));
   }, [store.memoryEnabled, store.memories]);
 
   /**
@@ -110,9 +107,9 @@ export function useMessageBuilder() {
   const buildAPIMessages = useCallback(
     (messages?: Message[]): APIMessage[] => {
       const msgs: APIMessage[] = [];
-      const memoryBlock = buildMemoryBlock();
-      const metadataBlock = buildMetadataBlock();
       const activeConv = store.conversations.find((c) => c.id === store.activeConversationId);
+      const memoryBlock = buildMemoryBlock(activeConv?.selectedMemoryIds);
+      const metadataBlock = buildMetadataBlock();
       const basePrompt = activeConv?.systemPrompt ?? store.providerConfig.systemPrompt ?? '';
       let systemContent = basePrompt + memoryBlock + metadataBlock;
 
@@ -153,6 +150,8 @@ export function useMessageBuilder() {
       store.providerConfig.systemPrompt,
       store.activeConversationId,
       store.conversations,
+      store.memories,
+      store.memoryEnabled,
       buildMemoryBlock,
       buildMetadataBlock,
       formatMessageForAPI,

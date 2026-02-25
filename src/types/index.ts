@@ -207,6 +207,8 @@ export interface Conversation {
   pinned?: boolean;
   systemPrompt?: string;
   markdownImages?: string[];
+  /** IDs of memories selected for this conversation (persisted per-conversation) */
+  selectedMemoryIds?: string[];
 }
 
 // ==================== File Attachment Types ====================
@@ -339,7 +341,7 @@ export interface AppState {
   updateMCPServer: (id: string, updates: Partial<MCPServer>) => void;
   toggleMCPServer: (id: string, enabled: boolean) => void;
 
-  createConversation: (opts?: { title?: string; branchedFromId?: string }) => Conversation;
+  createConversation: (opts?: { title?: string; branchedFromId?: string; parentConvId?: string }) => Conversation;
   switchConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   updateConversationTitle: (id: string, title: string) => void;
@@ -352,6 +354,7 @@ export interface AppState {
   updateMemory: (id: string, updates: Partial<Memory>) => void;
   setMemoryEnabled: (enabled: boolean) => void;
   clearMemories: () => void;
+  refreshConversationMemories: (conversationId: string) => void;
 
   setEnableGoogleSearch: (enabled: boolean) => void;
   setEnableReasoning: (enabled: boolean) => void;

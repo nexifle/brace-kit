@@ -251,7 +251,11 @@ Output ONLY the title string.`;
     const branchTitle = parentConv?.title ?? 'New Chat';
     const branchSystemPrompt = parentConv?.systemPrompt;
     await store.saveActiveConversation();
-    const newConv = store.createConversation({ title: branchTitle, branchedFromId: parentId ?? undefined });
+    const newConv = store.createConversation({
+      title: branchTitle,
+      branchedFromId: parentId ?? undefined,
+      parentConvId: parentId ?? undefined
+    });
 
     if (branchSystemPrompt) {
       store.updateConversationSystemPrompt(newConv.id, branchSystemPrompt);
