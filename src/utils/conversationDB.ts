@@ -116,16 +116,48 @@ export async function clearAllConversationMessages(): Promise<void> {
   }
 }
 
-export async function _getAllConversationData(): Promise<{ id: string; messages: Message[] }[]> {
+export async function _getAllConversationData(): Promise<(Conversation & { messages: Message[] })[]> {
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_MESSAGES, 'readonly');
-      const store = tx.objectStore(STORE_MESSAGES);
-      const request = store.getAll();
-      
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = (e) => reject((e.target as IDBRequest).error);
+      const tx = db.transaction([STORE_MESSAGES, STORE_METADATA], 'readonly');
+      const messagesStore = tx.objectStore(STORE_MESSAGES);
+      const metadataStore = tx.objectStore(STORE_METADATA);
+
+      const messagesRequest = messagesStore.getAll();
+      const metadataRequest = metadataStore.getAll();
+
+      let messagesData: { id: string; messages: Message[] }[] = [];
+      let metadataData: Conversation[] = [];
+      let completed = 0;
+
+      const checkComplete = () => {
+        completed++;
+        if (completed === 2) {
+          // Merge messages with metadata
+          const metadataMap = new Map(metadataData.map(m => [m.id, m]));
+          const merged = messagesData.map(msgData => {
+            const metadata = metadataMap.get(msgData.id);
+            return {
+              ...metadata,
+              ...msgData,
+            } as Conversation & { messages: Message[] };
+          });
+          resolve(merged);
+        }
+      };
+
+      messagesRequest.onsuccess = () => {
+        messagesData = messagesRequest.result || [];
+        checkComplete();
+      };
+      messagesRequest.onerror = (e) => reject((e.target as IDBRequest).error);
+
+      metadataRequest.onsuccess = () => {
+        metadataData = metadataRequest.result || [];
+        checkComplete();
+      };
+      metadataRequest.onerror = (e) => reject((e.target as IDBRequest).error);
     });
   } catch (e) {
     console.warn('[ConversationDB] _getAllConversationData error:', e);

@@ -1,13 +1,13 @@
 import { getAllImages, clearAllImages, importImages } from './imageDB.ts';
-import { clearAllConversationMessages, saveConversationMessages, _getAllConversationData } from './conversationDB.ts';
-import type { StoredImageRecord, Message } from '../types';
+import { clearAllConversationMessages, saveConversationMessages, _getAllConversationData, saveConversationMetadata, clearAllConversationMetadata } from './conversationDB.ts';
+import type { StoredImageRecord, Message, Conversation } from '../types';
 
 export interface BackupData {
   version: number;
   timestamp: number;
   storage: Record<string, any>;
   images: StoredImageRecord[];
-  conversations?: { id: string; messages: Message[] }[];
+  conversations?: (Conversation & { messages: Message[] })[];
 }
 
 export interface BackupPayload {
@@ -116,8 +116,25 @@ export async function importData(file: File, password?: string): Promise<void> {
         // 3. Restore conversations to IndexedDB
         if (backupData.conversations && Array.isArray(backupData.conversations)) {
           await clearAllConversationMessages();
+          await clearAllConversationMetadata();
+
+          // Build metadata lookup from storage data (for legacy backup compatibility)
+          const storageConversations = backupData.storage?.conversations as Conversation[] | undefined;
+          const metadataMap = new Map(storageConversations?.map(c => [c.id, c]) ?? []);
+
           for (const conv of backupData.conversations) {
             await saveConversationMessages(conv.id, conv.messages);
+            // Restore metadata - merge from storage data if available (legacy compatibility)
+            const { messages, ...partialMetadata } = conv;
+            const storageMetadata = metadataMap.get(conv.id);
+            const fullMetadata: Conversation = storageMetadata ?? {
+              ...partialMetadata,
+              id: conv.id,
+              title: (conv as any).title || 'Restored Chat',
+              createdAt: (conv as any).createdAt || Date.now(),
+              updatedAt: (conv as any).updatedAt || Date.now(),
+            } as Conversation;
+            await saveConversationMetadata(fullMetadata);
           }
         }
 
