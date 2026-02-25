@@ -80,6 +80,24 @@ export function formatAnthropic(
     } else if ((msg as Message).role === 'assistant' && (msg as Message).toolCalls && (msg as Message).toolCalls!.length > 0) {
       // Transform assistant messages with tool calls to Anthropic format
       const content: Record<string, unknown>[] = [];
+      // Thinking block must come first (required for history replay when reasoning is enabled).
+      // When shouldEnableReasoning is true, the API mandates a thinking block on ALL previous
+      // assistant+tool_call turns — even if the model produced no thinking text (empty string).
+      // Include BOTH "thinking" and "reasoning_content" fields for compatibility:
+      // - Official Anthropic uses "thinking" field name
+      // - k2.5/Kimi and other compatible models use "reasoning_content" field name
+      if (shouldEnableReasoning || (msg as Message).reasoningContent) {
+        const reasoningText = (msg as Message).reasoningContent || '';
+        const thinkingBlock: Record<string, unknown> = {
+          type: 'thinking',
+          thinking: reasoningText,
+          reasoning_content: reasoningText,
+        };
+        if ((msg as Message).reasoningSignature) {
+          thinkingBlock.signature = (msg as Message).reasoningSignature;
+        }
+        content.push(thinkingBlock);
+      }
       if ((msg as Message).content) {
         content.push({ type: 'text', text: (msg as Message).content });
       }
@@ -97,7 +115,16 @@ export function formatAnthropic(
           input,
         });
       }
-      filtered.push({ role: 'assistant', content });
+      // Build assistant message with tool calls
+      // Some Anthropic-compatible providers (k2.5/Kimi) require reasoning_content as top-level field
+      const assistantMsg: Record<string, unknown> = { role: 'assistant', content };
+      // ALWAYS include reasoning_content when shouldEnableReasoning is true (required by k2.5)
+      if (shouldEnableReasoning) {
+        assistantMsg.reasoning_content = (msg as Message).reasoningContent || '';
+      } else if ((msg as Message).reasoningContent) {
+        assistantMsg.reasoning_content = (msg as Message).reasoningContent;
+      }
+      filtered.push(assistantMsg);
     } else if ((msg as Message).role && Array.isArray((msg as Message).content)) {
       // Handle multimodal content (images)
       const m = msg as Message;
@@ -138,7 +165,28 @@ export function formatAnthropic(
     } else if ((msg as Message).role) {
       // Regular message (user or assistant without tool calls)
       const m = msg as Message;
-      filtered.push({ role: m.role, content: m.content });
+      // Assistant messages need thinking block when reasoning is enabled or content exists.
+      // Use empty string fallback so the block is always present when shouldEnableReasoning.
+      // Include both "thinking" and "reasoning_content" fields for compatibility.
+      if (m.role === 'assistant' && (shouldEnableReasoning || m.reasoningContent)) {
+        const reasoningText = m.reasoningContent || '';
+        const thinkingBlock: Record<string, unknown> = {
+          type: 'thinking',
+          thinking: reasoningText,
+          reasoning_content: reasoningText,
+        };
+        if (m.reasoningSignature) {
+          thinkingBlock.signature = m.reasoningSignature;
+        }
+        // Include reasoning_content as top-level field for compatibility with k2.5/Kimi
+        filtered.push({
+          role: m.role,
+          content: [thinkingBlock, { type: 'text', text: m.content }],
+          reasoning_content: m.reasoningContent || '',
+        });
+      } else {
+        filtered.push({ role: m.role, content: m.content });
+      }
     }
   }
 
@@ -244,8 +292,14 @@ export async function* parseAnthropicStream(
               yield { type: 'text', content: json.delta.text };
             }
             // Thinking/reasoning content
+            // Official Anthropic uses "thinking_delta" with "thinking" field
+            // k2.5/Kimi and other compatible models may use "reasoning_content" field name
             if (json.delta?.type === 'thinking_delta') {
-              yield { type: 'reasoning', content: json.delta.thinking };
+              yield { type: 'reasoning', content: json.delta.thinking ?? json.delta.reasoning_content };
+            }
+            // Thinking block signature (required for conversation history replay)
+            if (json.delta?.type === 'signature_delta') {
+              yield { type: 'reasoning_signature', content: json.delta.signature };
             }
             // Tool call JSON delta
             if (json.delta?.type === 'input_json_delta') {

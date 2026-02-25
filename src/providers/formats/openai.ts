@@ -37,7 +37,7 @@ export function formatOpenAI(
   const processedMessages = messages.map((msg) => {
     // Transform assistant messages with tool calls to OpenAI format
     if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-      return {
+      const result: Record<string, unknown> = {
         role: 'assistant',
         content: msg.content || null,
         tool_calls: msg.toolCalls.map((tc) => ({
@@ -49,6 +49,13 @@ export function formatOpenAI(
           },
         })),
       };
+      console.log(['formatOpenAI - processing tool call message', { msg, result }]);
+      // Required by DeepSeek thinking models (and similar OpenAI-compatible reasoning APIs)
+      // for conversation history replay when the assistant turn included reasoning.
+      if (msg.reasoningContent) {
+        result.reasoning_content = msg.reasoningContent;
+      }
+      return result;
     }
 
     // Transform tool result messages to OpenAI format
@@ -57,6 +64,16 @@ export function formatOpenAI(
         role: 'tool',
         tool_call_id: msg.toolCallId,
         content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+      };
+    }
+
+    // For assistant messages without tool calls, map reasoningContent → reasoning_content
+    // (snake_case required by DeepSeek and OpenAI o1/o3 APIs)
+    if (msg.role === 'assistant' && msg.reasoningContent) {
+      return {
+        role: msg.role,
+        content: msg.content,
+        reasoning_content: msg.reasoningContent,
       };
     }
 

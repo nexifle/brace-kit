@@ -52,6 +52,8 @@ export function useMessageBuilder() {
           name: tc.name,
           arguments: tc.arguments || '{}',
         })),
+        ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
+        ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),
       };
     }
 
@@ -83,7 +85,20 @@ export function useMessageBuilder() {
     }
 
     // Regular message
-    return { role: msg.role, content: msg.content };
+    return {
+      role: msg.role,
+      content: msg.content,
+      ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
+      ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),
+    };
+  }, []);
+
+  /**
+   * Build metadata block for system prompt
+   * Contains current timestamp for AI context awareness
+   */
+  const buildMetadataBlock = useCallback(() => {
+    return `\n\n<metadata>{"currentTime": "${new Date().toISOString()}"}</metadata>`;
   }, []);
 
   /**
@@ -96,9 +111,10 @@ export function useMessageBuilder() {
     (messages?: Message[]): APIMessage[] => {
       const msgs: APIMessage[] = [];
       const memoryBlock = buildMemoryBlock();
+      const metadataBlock = buildMetadataBlock();
       const activeConv = store.conversations.find((c) => c.id === store.activeConversationId);
       const basePrompt = activeConv?.systemPrompt ?? store.providerConfig.systemPrompt ?? '';
-      let systemContent = basePrompt + memoryBlock;
+      let systemContent = basePrompt + memoryBlock + metadataBlock;
 
       // Use provided messages or store messages
       const sourceMessages = messages ?? store.messages;
@@ -138,6 +154,7 @@ export function useMessageBuilder() {
       store.activeConversationId,
       store.conversations,
       buildMemoryBlock,
+      buildMetadataBlock,
       formatMessageForAPI,
     ]
   );
@@ -173,6 +190,7 @@ export function useMessageBuilder() {
     buildAPIMessages,
     formatMessageForAPI,
     buildMemoryBlock,
+    buildMetadataBlock,
     estimateTokenCount,
   };
 }

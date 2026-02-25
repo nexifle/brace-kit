@@ -39,6 +39,7 @@ interface StreamDoneMessage {
   type: 'CHAT_STREAM_DONE';
   fullContent: string;
   reasoningContent?: string;
+  reasoningSignature?: string;
   toolCalls?: ToolCall[];
   groundingMetadata?: unknown;
   images?: Array<{ mimeType: string; data: string }>;
@@ -193,6 +194,7 @@ export function createChatService(): ChatService {
     ): Promise<void> {
       const chunks: string[] = [];
       const reasoningChunks: string[] = [];
+      const reasoningSignatureChunks: string[] = [];
       const toolCalls: ToolCallFragment[] = [];
       const images: Array<{ mimeType: string; data: string }> = [];
       let currentToolCall: ToolCallFragment | null = null;
@@ -224,6 +226,8 @@ export function createChatService(): ChatService {
             content: chunk.content,
             requestId: message.requestId,
           } as StreamChunkMessage);
+        } else if (chunk.type === 'reasoning_signature') {
+          reasoningSignatureChunks.push(chunk.content || '');
         } else if (chunk.type === 'image') {
           images.push({ mimeType: chunk.mimeType || 'image/png', data: chunk.imageData || '' });
         } else if (chunk.type === 'error') {
@@ -269,6 +273,8 @@ export function createChatService(): ChatService {
         fullContent: chunks.join(''),
         reasoningContent:
           reasoningChunks.length > 0 ? reasoningChunks.join('') : undefined,
+        reasoningSignature:
+          reasoningSignatureChunks.length > 0 ? reasoningSignatureChunks.join('') : undefined,
         toolCalls:
           mergedToolCalls.length > 0
             ? (mergedToolCalls as ToolCall[])

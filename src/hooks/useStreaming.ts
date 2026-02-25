@@ -53,28 +53,28 @@ export function useStreaming() {
       }
 
       // Check for cached result (duplicate tool call)
-      const freshMsgs = useStore.getState().messages;
-      const argsKey = JSON.stringify(args);
-      const previousSuccessful = freshMsgs.find(
-        (m) =>
-          m.role === 'tool' &&
-          m.name === tc.name &&
-          JSON.stringify(m.toolArguments ?? {}) === argsKey &&
-          m.content !== '⏳ Calling...' &&
-          !m.content.startsWith('Error:')
-      );
+      // const freshMsgs = useStore.getState().messages;
+      // const argsKey = JSON.stringify(args);
+      // const previousSuccessful = freshMsgs.find(
+      //   (m) =>
+      //     m.role === 'tool' &&
+      //     m.name === tc.name &&
+      //     JSON.stringify(m.toolArguments ?? {}) === argsKey &&
+      //     m.content !== '⏳ Calling...' &&
+      //     (!m.content.includes('Error:') || !m.content.includes('error') || !m.content.includes('Error'))
+      // );
 
-      if (previousSuccessful) {
-        store.addMessage({
-          role: 'tool',
-          toolCallId: tc.id,
-          name: tc.name,
-          content: '[DUPLICATE_CALL_SKIPPED] This exact tool call was already executed with identical arguments. Refer to the previous result already in context.',
-          toolArguments: args as Record<string, unknown>,
-          isCachedResult: true,
-        });
-        continue;
-      }
+      // if (previousSuccessful) {
+      //   store.addMessage({
+      //     role: 'tool',
+      //     toolCallId: tc.id,
+      //     name: tc.name,
+      //     content: '[DUPLICATE_CALL_SKIPPED] This exact tool call was already executed with identical arguments. Refer to the previous result already in context.',
+      //     toolArguments: args as Record<string, unknown>,
+      //     isCachedResult: true,
+      //   });
+      //   continue;
+      // }
 
       // Add "calling" status
       store.addMessage({
@@ -157,7 +157,8 @@ export function useStreaming() {
       toolCalls?: ToolCall[],
       _groundingMetadata?: GroundingMetadata,
       _generatedImages?: GeneratedImage[],
-      reasoningContent?: string
+      reasoningContent?: string,
+      reasoningSignature?: string
     ) => {
       const result = streamProcessor.getFinalResult(fullContent, reasoningContent);
 
@@ -172,6 +173,7 @@ export function useStreaming() {
         groundingMetadata?: GroundingMetadata;
         generatedImages?: GeneratedImage[];
         reasoningContent?: string;
+        reasoningSignature?: string;
       } = {
         role: 'assistant',
         content: result.content || '',
@@ -179,6 +181,7 @@ export function useStreaming() {
         ...(result.groundingMetadata && { groundingMetadata: result.groundingMetadata }),
         ...(result.images && { generatedImages: result.images }),
         ...(result.reasoningContent && { reasoningContent: result.reasoningContent }),
+        ...(reasoningSignature && { reasoningSignature }),
       };
 
       store.addMessage(assistantMsg);
@@ -266,6 +269,7 @@ export function useStreaming() {
       content?: string;
       fullContent?: string;
       reasoningContent?: string;
+      reasoningSignature?: string;
       chunkType?: string;
       toolCalls?: ToolCall[];
       groundingMetadata?: GroundingMetadata;
@@ -317,7 +321,8 @@ export function useStreaming() {
             message.toolCalls || streamProcessor.getToolCalls(),
             message.groundingMetadata || streamProcessor.getGroundingMetadata() || undefined,
             message.images || streamProcessor.getImages(),
-            finalReasoningContent
+            finalReasoningContent,
+            message.reasoningSignature
           );
           break;
 

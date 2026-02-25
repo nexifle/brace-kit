@@ -61,6 +61,7 @@ export type StreamChunkType =
   | 'image'
   | 'error'
   | 'reasoning'
+  | 'reasoning_signature'
   | 'usage';
 
 /**

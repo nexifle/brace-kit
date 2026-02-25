@@ -57,6 +57,7 @@ export interface Message {
   isCachedResult?: boolean;
   // Reasoning/thinking content
   reasoningContent?: string;
+  reasoningSignature?: string; // Anthropic thinking block signature (required for history replay)
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -67,6 +68,8 @@ export interface APIMessage {
   toolCalls?: ToolCall[];
   toolCallId?: string;
   name?: string;
+  reasoningContent?: string;
+  reasoningSignature?: string;
 }
 
 export interface GroundingChunk {

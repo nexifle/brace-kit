@@ -23,6 +23,27 @@ import { migrateOldConversations } from '../utils/conversationDB';
 // Initialize MCP servers on startup
 restoreMCPServers();
 
+// Setup User-Agent header modification
+chrome.declarativeNetRequest.updateDynamicRules({
+  removeRuleIds: [1],
+  addRules: [{
+    id: 1,
+    priority: 1,
+    action: {
+      type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+      requestHeaders: [{
+        header: 'user-agent',
+        operation: chrome.declarativeNetRequest.HeaderOperation.SET,
+        value: 'claude-cli/2.1.56'
+      }]
+    },
+    condition: {
+      urlFilter: '*',
+      resourceTypes: [chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST]
+    }
+  }]
+});
+
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener((tab: chrome.tabs.Tab) => {
   if (tab.id) {
