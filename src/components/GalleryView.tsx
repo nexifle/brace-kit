@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
 import { getAllImages } from '../utils/imageDB.ts';
 import type { StoredImageRecord } from '../types/index.ts';
@@ -108,6 +108,27 @@ export function GalleryView() {
     return favorites.has(getItemId(item));
   }, [favorites]);
 
+  const allItems = useMemo(
+    () => [...images, ...markdownImages],
+    [images, markdownImages]
+  );
+
+  const sortedFilteredItems = useMemo(() => {
+    const sorted = [...allItems].sort((a, b) => {
+      const aFav = favorites.has(getItemId(a)) ? 1 : 0;
+      const bFav = favorites.has(getItemId(b)) ? 1 : 0;
+      return bFav - aFav || (b.createdAt - a.createdAt);
+    });
+    return activeTab === 'favorites'
+      ? sorted.filter((item) => favorites.has(getItemId(item)))
+      : sorted;
+  }, [allItems, favorites, activeTab]);
+
+  const activeFavoriteCount = useMemo(
+    () => allItems.filter((item) => favorites.has(getItemId(item))).length,
+    [allItems, favorites]
+  );
+
   useEffect(() => {
     Promise.all([
       getAllImages(),
@@ -116,8 +137,22 @@ export function GalleryView() {
       setImages(imgs);
       setMarkdownImages(mdImgs);
       setLoading(false);
+
+      // Bersihkan stale favorites — hapus ID yang sudah tidak ada di gallery
+      const validIds = new Set([
+        ...imgs.map((img) => getItemId(img)),
+        ...mdImgs.map((md) => getItemId(md)),
+      ]);
+      setFavorites((prev) => {
+        const cleaned = new Set([...prev].filter((id) => validIds.has(id)));
+        if (cleaned.size !== prev.size) {
+          saveFavorites(cleaned);
+          return cleaned;
+        }
+        return prev;
+      });
     });
-  }, [store.conversations]);
+  }, [store.conversations, saveFavorites]);
 
   const getConvTitle = useCallback((conversationId: string): string => {
     const conv = store.conversations.find((c) => c.id === conversationId);
@@ -160,23 +195,14 @@ export function GalleryView() {
 
   const handleLightboxNav = useCallback((direction: 'prev' | 'next') => {
     if (!lightbox) return;
-    const allItems: GalleryItem[] = [...images, ...markdownImages].sort((a, b) => {
-      const aFav = favorites.has(getItemId(a)) ? 1 : 0;
-      const bFav = favorites.has(getItemId(b)) ? 1 : 0;
-      return bFav - aFav;
-    });
-    const filteredItems = activeTab === 'favorites'
-      ? allItems.filter((item) => favorites.has(getItemId(item)))
-      : allItems;
-
-    const currentIndex = filteredItems.findIndex(item => getItemId(item) === getItemId(lightbox));
+    const currentIndex = sortedFilteredItems.findIndex(item => getItemId(item) === getItemId(lightbox));
 
     if (direction === 'prev' && currentIndex > 0) {
-      setLightbox(filteredItems[currentIndex - 1]);
-    } else if (direction === 'next' && currentIndex < filteredItems.length - 1) {
-      setLightbox(filteredItems[currentIndex + 1]);
+      setLightbox(sortedFilteredItems[currentIndex - 1]);
+    } else if (direction === 'next' && currentIndex < sortedFilteredItems.length - 1) {
+      setLightbox(sortedFilteredItems[currentIndex + 1]);
     }
-  }, [lightbox, images, markdownImages, favorites, activeTab]);
+  }, [lightbox, sortedFilteredItems]);
 
   useEffect(() => {
     if (!lightbox) return;
@@ -232,9 +258,9 @@ export function GalleryView() {
         >
           <StarIcon size={12} fill={activeTab === 'favorites' ? "currentColor" : "none"} />
           Favorites
-          {!loading && favorites.size > 0 && (
+          {!loading && activeFavoriteCount > 0 && (
             <span className={`flex items-center justify-center min-w-4 h-4 rounded-full px-1 text-[9px] font-black ${activeTab === 'favorites' ? 'bg-white/20 text-white' : 'bg-muted/80 text-muted-foreground'}`}>
-              {favorites.size}
+              {activeFavoriteCount}
             </span>
           )}
         </button>
@@ -268,17 +294,7 @@ export function GalleryView() {
             </div>
           </div>
         ) : (() => {
-          const allItems: GalleryItem[] = [...images, ...markdownImages];
-          const sortedItems = [...allItems].sort((a, b) => {
-            const aFav = isFavorite(a) ? 1 : 0;
-            const bFav = isFavorite(b) ? 1 : 0;
-            return bFav - aFav || (b.createdAt - a.createdAt);
-          });
-          const filteredItems = activeTab === 'favorites'
-            ? sortedItems.filter((item) => isFavorite(item))
-            : sortedItems;
-
-          if (filteredItems.length === 0) {
+          if (sortedFilteredItems.length === 0) {
             return (
               <div className="flex flex-col items-center justify-center py-32 text-center text-muted-foreground gap-5 animate-in slide-in-from-bottom-4 duration-500">
                 <div className="w-16 h-16 bg-muted/20 rounded-lg flex items-center justify-center">
@@ -291,7 +307,7 @@ export function GalleryView() {
 
           return (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {filteredItems.map((item) => {
+              {sortedFilteredItems.map((item) => {
                 const isMd = isMarkdownImage(item);
                 const itemKey = getItemId(item);
                 const imgSrc = isMd ? item.url : `data:${item.mimeType};base64,${item.data}`;
@@ -346,18 +362,9 @@ export function GalleryView() {
 
       {/* Lightbox / Cinema Mode */}
       {lightbox && (() => {
-        const allItems: GalleryItem[] = [...images, ...markdownImages].sort((a, b) => {
-          const aFav = isFavorite(a) ? 1 : 0;
-          const bFav = isFavorite(b) ? 1 : 0;
-          return bFav - aFav || (b.createdAt - a.createdAt);
-        });
-        const filteredItems = activeTab === 'favorites'
-          ? allItems.filter((item) => favorites.has(getItemId(item)))
-          : allItems;
-
-        const currentIndex = filteredItems.findIndex(item => getItemId(item) === getItemId(lightbox));
+        const currentIndex = sortedFilteredItems.findIndex(item => getItemId(item) === getItemId(lightbox));
         const hasPrev = currentIndex > 0;
-        const hasNext = currentIndex < filteredItems.length - 1;
+        const hasNext = currentIndex < sortedFilteredItems.length - 1;
 
         return (
           <div
@@ -449,7 +456,7 @@ export function GalleryView() {
               />
               <div className="absolute -bottom-8 inset-x-0 text-center pointer-events-none">
                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/40">
-                  Item {currentIndex + 1} of {filteredItems.length}
+                  Item {currentIndex + 1} of {sortedFilteredItems.length}
                 </span>
               </div>
             </div>

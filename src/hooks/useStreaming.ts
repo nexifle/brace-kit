@@ -162,6 +162,9 @@ export function useStreaming() {
       const result = streamProcessor.getFinalResult(fullContent, reasoningContent);
 
       // Add assistant message
+      // Use toolCalls from parameter (sent by background via CHAT_STREAM_DONE) as primary source,
+      // fall back to result.toolCalls from streamProcessor for client-side processed chunks.
+      const finalToolCalls = (toolCalls && toolCalls.length > 0) ? toolCalls : result.toolCalls;
       const assistantMsg: {
         role: 'assistant';
         content: string;
@@ -172,7 +175,7 @@ export function useStreaming() {
       } = {
         role: 'assistant',
         content: result.content || '',
-        ...(result.toolCalls && { toolCalls: result.toolCalls }),
+        ...(finalToolCalls && finalToolCalls.length > 0 && { toolCalls: finalToolCalls }),
         ...(result.groundingMetadata && { groundingMetadata: result.groundingMetadata }),
         ...(result.images && { generatedImages: result.images }),
         ...(result.reasoningContent && { reasoningContent: result.reasoningContent }),
