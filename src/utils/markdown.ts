@@ -490,11 +490,11 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
       
       // Post-process table HTML to add specific styling classes matching user request
       tableHtml = tableHtml.replace(/<thead>/g, '<thead class="[&_tr]:border-b sticky top-0 z-20 bg-secondary/95 backdrop-blur-md rounded-t-lg">');
-      tableHtml = tableHtml.replace(/<th>/g, '<th class="h-10 px-3 align-middle font-bold text-start text-[10px] uppercase tracking-wider text-muted-foreground py-2 border-b border-border/50">');
+      tableHtml = tableHtml.replace(/<th(?:\s[^>]*)?>/g, '<th class="h-10 px-3 align-middle font-bold text-start text-[10px] uppercase tracking-wider text-muted-foreground py-2 border-b border-border/50">');
       tableHtml = tableHtml.replace(/<tr>/g, '<tr class="border-b border-border/5 last:border-0 transition-colors hover:bg-muted/40 group/row">');
       
       // Target cells with truncation and min-w logic
-      tableHtml = tableHtml.replace(/<td>([\s\S]*?)<\/td>/g, (_, content) => {
+      tableHtml = tableHtml.replace(/<td(?:\s[^>]*)?>([^]*?)<\/td>/g, (_, content) => {
         const styledContent = content.replace(/class="md-inline-code/g, 'class="md-inline-code table-chip px-2 py-0.5 bg-muted/50 border-0 rounded-md text-foreground shadow-sm font-semibold');
         
         // Added expandable-cell class and the requested truncation classes
