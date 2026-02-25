@@ -48,7 +48,7 @@ chrome.runtime.onInstalled.addListener((details: chrome.runtime.InstalledDetails
 
   // Create context menu
   chrome.contextMenus.create({
-    id: 'send-to-ai-sidebar',
+    id: 'send-to-brace-kit',
     title: 'Send to BraceKit',
     contexts: ['selection'],
   });
@@ -57,7 +57,7 @@ chrome.runtime.onInstalled.addListener((details: chrome.runtime.InstalledDetails
 // Context menu handler
 chrome.contextMenus.onClicked.addListener(
   (info: chrome.contextMenus.OnClickData, tab: chrome.tabs.Tab | undefined) => {
-    if (info.menuItemId === 'send-to-ai-sidebar' && tab?.id) {
+    if (info.menuItemId === 'send-to-brace-kit' && tab?.id) {
       // Open sidebar and send selection
       chrome.sidePanel.open({ tabId: tab.id });
 

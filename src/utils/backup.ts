@@ -56,7 +56,7 @@ export async function exportData(password?: string): Promise<void> {
   const a = document.createElement('a');
   a.href = url;
   const date = new Date().toISOString().split('T')[0];
-  a.download = `ai-sidebar-backup-${date}.json`;
+  a.download = `brace-kit-backup-${date}.json`;
   a.click();
   
   URL.revokeObjectURL(url);
