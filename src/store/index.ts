@@ -10,6 +10,7 @@ import type {
   Memory,
   SecuritySettings,
   CompactConfig,
+  Preferences,
 } from '../types/index.ts';
 import {
   saveImagesForConversation,
@@ -43,6 +44,7 @@ interface StorageData {
   security?: SecuritySettings;
   compactConfig?: CompactConfig;
   theme?: 'light' | 'dark';
+  preferences?: Preferences;
   conversations?: Conversation[];
   chatHistory?: Message[];
 }
@@ -131,6 +133,11 @@ export const useStore = create<AppState>((set, get) => ({
     passwordHash: null,
   },
   isAuthenticated: false,
+
+  // Preferences
+  preferences: {
+    toolMessageDisplay: 'detailed',
+  },
 
   // Actions
   setMessages: (messages) => set({ messages }),
@@ -468,6 +475,14 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Preferences Actions
+  setPreferences: (prefs) => {
+    set((state) => ({
+      preferences: { ...state.preferences, ...prefs },
+    }));
+    get().saveToStorage();
+  },
+
   // Persistence
   loadFromStorage: async () => {
     // Run full migration asynchronously in the background
@@ -489,6 +504,7 @@ export const useStore = create<AppState>((set, get) => ({
         'security',
         'compactConfig',
         'theme',
+        'preferences',
       ]) as StorageData;
 
       const updates: Partial<AppState> = {};
@@ -531,6 +547,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.theme) {
         updates.theme = data.theme;
+      }
+      if (data.preferences) {
+        updates.preferences = data.preferences;
       }
 
       // Load session auth state (persists during browser session)
@@ -635,6 +654,7 @@ export const useStore = create<AppState>((set, get) => ({
         security: state.security,
         compactConfig: state.compactConfig,
         theme: state.theme,
+        preferences: state.preferences,
       });
     } catch (e) {
       console.warn('Failed to save settings:', e);

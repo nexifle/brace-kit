@@ -5,8 +5,9 @@ import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
+import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon } from 'lucide-react';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -17,6 +18,7 @@ export function InputArea() {
   const [text, setText] = useState('');
   const [imageAspectRatio, setImageAspectRatio] = useState('auto');
   const [showProviderPopover, setShowProviderPopover] = useState(false);
+  const [showPreferencesPopover, setShowPreferencesPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,25 +65,29 @@ export function InputArea() {
 
   // Close popover on click outside
   useEffect(() => {
-    if (!showProviderPopover) return;
+    if (!showProviderPopover && !showPreferencesPopover) return;
     const handler = (e: MouseEvent) => {
       if (footerRef.current && !footerRef.current.contains(e.target as Node)) {
         setShowProviderPopover(false);
+        setShowPreferencesPopover(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showProviderPopover]);
+  }, [showProviderPopover, showPreferencesPopover]);
 
   // Close popover on Escape
   useEffect(() => {
-    if (!showProviderPopover) return;
+    if (!showProviderPopover && !showPreferencesPopover) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowProviderPopover(false);
+      if (e.key === 'Escape') {
+        setShowProviderPopover(false);
+        setShowPreferencesPopover(false);
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [showProviderPopover]);
+  }, [showProviderPopover, showPreferencesPopover]);
 
   const placeholder = store.pageContext
     ? 'Ask about this page... (type \'/\' for commands)'
@@ -96,6 +102,9 @@ export function InputArea() {
   // Reasoning state from store
   const enableReasoning = useStore((state) => state.enableReasoning);
   const setEnableReasoning = useStore((state) => state.setEnableReasoning);
+
+  // Preferences state from store
+  const preferences = useStore((state) => state.preferences);
 
   // Slash command processing state
   const isCompacting = useStore((state) => state.isCompacting);
@@ -285,6 +294,17 @@ export function InputArea() {
           >
             <BrainIcon size={16} />
           </button>
+          <button
+            type="button"
+            className={`flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200 ${preferences.toolMessageDisplay === 'compact'
+              ? 'text-primary bg-primary/15'
+              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
+              }`}
+            title="Display preferences for tool messages"
+            onClick={() => setShowPreferencesPopover(true)}
+          >
+            <SettingsIcon size={16} />
+          </button>
           <input
             type="file"
             ref={fileInputRef}
@@ -384,6 +404,7 @@ export function InputArea() {
       {/* Input Footer */}
       <div className="relative flex justify-between items-center px-1 pt-1.5" ref={footerRef}>
         <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
+        <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
 
         {/* Footer Left - Provider Info */}
         <div className="flex gap-1.5 items-center">

@@ -233,6 +233,12 @@ export interface SecuritySettings {
   passwordHash: string | null;
 }
 
+// ==================== Preferences ====================
+
+export interface Preferences {
+  toolMessageDisplay: 'detailed' | 'compact';
+}
+
 // ==================== App State ====================
 
 export interface AppState {
@@ -301,6 +307,9 @@ export interface AppState {
   security: SecuritySettings;
   isAuthenticated: boolean;
 
+  // Preferences
+  preferences: Preferences;
+
   // Actions
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
@@ -363,6 +372,9 @@ export interface AppState {
   setIsAuthenticated: (isAuthenticated: boolean) => void;
   authenticate: (password: string) => Promise<boolean>;
   lock: () => void;
+
+  // Preferences Actions
+  setPreferences: (prefs: Partial<Preferences>) => void;
 
   // Persistence
   loadFromStorage: () => Promise<void>;

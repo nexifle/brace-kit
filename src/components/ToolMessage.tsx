@@ -1,7 +1,9 @@
-import { WrenchIcon, ChevronDownIcon, Loader2Icon, AlertCircleIcon, CheckCircle2Icon } from 'lucide-react';
+import { WrenchIcon, ChevronDownIcon, Loader2Icon, AlertCircleIcon, CheckCircle2Icon, ChevronUpIcon } from 'lucide-react';
 import { useState } from 'react';
 
-interface ToolMessageProps {
+// ==================== Types ====================
+
+export interface ToolMessageData {
   name: string;
   content: string;
   toolCallId?: string;
@@ -9,15 +11,29 @@ interface ToolMessageProps {
   isCachedResult?: boolean;
 }
 
-export function ToolMessage({ name, content, toolArguments, isCachedResult }: ToolMessageProps) {
+interface ToolMessageProps {
+  name: string;
+  content: string;
+  toolCallId?: string;
+  toolArguments?: Record<string, unknown>;
+  isCachedResult?: boolean;
+  mode?: 'detailed' | 'compact';
+}
+
+interface ToolMessageGroupProps {
+  tools: ToolMessageData[];
+  mode: 'detailed' | 'compact';
+}
+
+// ==================== Detailed Mode Component ====================
+
+function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: Omit<ToolMessageProps, 'mode'>) {
   const [isArgsExpanded, setIsArgsExpanded] = useState(false);
   const [isResultExpanded, setIsResultExpanded] = useState(false);
 
-  // Check if it's currently in progress - more robust than exact string matching
   const isCalling = content.trim().includes('Calling...');
   const isError = content.trim().startsWith('Error:');
 
-  // Format arguments for display
   const argsDisplay = toolArguments
     ? Object.entries(toolArguments)
       .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
@@ -130,5 +146,202 @@ export function ToolMessage({ name, content, toolArguments, isCachedResult }: To
         )}
       </div>
     </div>
+  );
+}
+
+// ==================== Compact Mode Components ====================
+
+interface ToolBadgeProps {
+  tool: ToolMessageData;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
+  const isCalling = tool.content.trim().includes('Calling...');
+  const isError = tool.content.trim().startsWith('Error:');
+  const [isResultExpanded, setIsResultExpanded] = useState(false);
+
+  const argsDisplay = tool.toolArguments
+    ? Object.entries(tool.toolArguments)
+      .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+      .join(', ')
+    : '';
+
+  const getStatusIcon = () => {
+    if (isCalling) {
+      return <Loader2Icon size={10} className="text-primary animate-spin" />;
+    }
+    if (isError) {
+      return <AlertCircleIcon size={10} className="text-destructive" />;
+    }
+    return <CheckCircle2Icon size={10} className="text-success" />;
+  };
+
+  const getStatusClass = () => {
+    if (isCalling) return 'bg-primary/10 border-primary/20 text-primary';
+    if (isError) return 'bg-destructive/10 border-destructive/20 text-destructive';
+    return 'bg-success/10 border-success/20 text-success';
+  };
+
+  return (
+    <div className="flex flex-col">
+      {/* Badge Button */}
+      <button
+        onClick={onToggle}
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold border transition-all hover:shadow-sm ${
+          isExpanded ? 'bg-primary/15 border-primary/30 text-primary' : 'bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60'
+        }`}
+      >
+        <WrenchIcon size={10} />
+        <span className="truncate max-w-[100px]">{tool.name}</span>
+        <div className={`flex items-center justify-center w-3.5 h-3.5 rounded-full ${getStatusClass()}`}>
+          {getStatusIcon()}
+        </div>
+        {tool.isCachedResult && (
+          <span className="text-[8px] uppercase tracking-wider opacity-60">cached</span>
+        )}
+        {isExpanded ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />}
+      </button>
+
+      {/* Expanded Detail Panel */}
+      {isExpanded && !isCalling && (
+        <div className="mt-2 ml-1 pl-2 border-l-2 border-primary/30 animate-in slide-in-from-top-1 duration-200">
+          {/* Arguments */}
+          {argsDisplay && (
+            <div className="mb-2">
+              <button
+                onClick={() => setIsResultExpanded(!isResultExpanded)}
+                className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/30 border border-border/30 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${
+                  isResultExpanded ? 'rounded-b-none border-b-0' : ''
+                }`}
+              >
+                <span>Args</span>
+                <ChevronDownIcon size={10} className={`transition-transform ${isResultExpanded ? 'rotate-180' : ''}`} />
+              </button>
+              {isResultExpanded && (
+                <div className="px-2 py-1.5 bg-muted/20 border border-border/30 border-t-0 rounded-b-md text-[10px] font-mono text-foreground/80 break-all">
+                  {argsDisplay}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Result */}
+          <div className="mb-1">
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Result</div>
+            <pre className={`text-[10px] font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto scrollbar-thin p-2 rounded-md bg-muted/20 border border-border/30 ${
+              isError ? 'text-destructive/90' : 'text-muted-foreground'
+            }`}>
+              {tool.content}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolMessageCompact({ tools }: { tools: ToolMessageData[] }) {
+  const [expandedBadges, setExpandedBadges] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
+
+  const MAX_VISIBLE = 3;
+  const visibleTools = showAll ? tools : tools.slice(0, MAX_VISIBLE);
+  const hiddenCount = tools.length - MAX_VISIBLE;
+
+  const toggleBadge = (toolCallId: string) => {
+    setExpandedBadges(prev => {
+      const next = new Set(prev);
+      if (next.has(toolCallId)) {
+        next.delete(toolCallId);
+      } else {
+        next.add(toolCallId);
+      }
+      return next;
+    });
+  };
+
+  if (tools.length === 0) return null;
+
+  return (
+    <div className="w-full flex flex-col gap-2 mb-4 max-w-full self-start animate-in fade-in slide-in-from-left-2 duration-300">
+      <div className="px-3 py-2 bg-card/40 backdrop-blur-md border border-border/50 rounded-lg">
+        {/* Badges Row */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {visibleTools.map((tool, idx) => (
+            <ToolBadge
+              key={tool.toolCallId || `tool-${idx}`}
+              tool={tool}
+              isExpanded={expandedBadges.has(tool.toolCallId || `tool-${idx}`)}
+              onToggle={() => toggleBadge(tool.toolCallId || `tool-${idx}`)}
+            />
+          ))}
+
+          {/* Show More Badge */}
+          {!showAll && hiddenCount > 0 && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-muted/40 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
+            >
+              +{hiddenCount} more
+            </button>
+          )}
+
+          {/* Show Less Badge */}
+          {showAll && tools.length > MAX_VISIBLE && (
+            <button
+              onClick={() => setShowAll(false)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-muted/40 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
+            >
+              show less
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== Main Export Components ====================
+
+export function ToolMessage({ name, content, toolArguments, isCachedResult, mode = 'detailed' }: ToolMessageProps) {
+  if (mode === 'compact') {
+    // For single tool in compact mode, wrap in array
+    return (
+      <ToolMessageCompact
+        tools={[{ name, content, toolArguments, isCachedResult, toolCallId: name }]}
+      />
+    );
+  }
+
+  return (
+    <ToolMessageDetailed
+      name={name}
+      content={content}
+      toolArguments={toolArguments}
+      isCachedResult={isCachedResult}
+    />
+  );
+}
+
+export function ToolMessageGroup({ tools, mode }: ToolMessageGroupProps) {
+  if (mode === 'compact') {
+    return <ToolMessageCompact tools={tools} />;
+  }
+
+  // Detailed mode: render each tool individually
+  return (
+    <>
+      {tools.map((tool, idx) => (
+        <ToolMessageDetailed
+          key={tool.toolCallId || `tool-${idx}`}
+          name={tool.name}
+          content={tool.content}
+          toolArguments={tool.toolArguments}
+          isCachedResult={tool.isCachedResult}
+        />
+      ))}
+    </>
   );
 }
