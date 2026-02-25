@@ -35,3 +35,4 @@ export { useMCP } from './useMCP.ts';
 export { useProvider } from './useProvider.ts';
 export { usePageContext } from './usePageContext.ts';
 export { useFileAttachments } from './useFileAttachments.ts';
+export { useMermaidHydration } from './useMermaidHydration.tsx';

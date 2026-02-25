@@ -363,3 +363,144 @@
 .animate-pulse-subtle {
     animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* ===== MERMAID DIAGRAM STYLES ===== */
+.mermaid-diagram-content {
+    /* Ensure SVG scales properly */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-diagram-content svg {
+    max-width: 100%;
+    height: auto;
+    /* Ensure the SVG is crisp */
+    shape-rendering: geometricPrecision;
+}
+
+/* Light theme mermaid overrides */
+[data-theme="light"] .mermaid-diagram-content svg {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+[data-theme="light"] .mermaid-diagram-content .node rect,
+[data-theme="light"] .mermaid-diagram-content .node circle,
+[data-theme="light"] .mermaid-diagram-content .node ellipse,
+[data-theme="light"] .mermaid-diagram-content .node polygon {
+    stroke-width: 1.5px;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.05));
+}
+
+/* Dark theme mermaid overrides */
+[data-theme="dark"] .mermaid-diagram-content .node rect,
+[data-theme="dark"] .mermaid-diagram-content .node circle,
+[data-theme="dark"] .mermaid-diagram-content .node ellipse,
+[data-theme="dark"] .mermaid-diagram-content .node polygon,
+[data-theme="dark"] .mermaid-diagram-content .node path {
+    stroke-width: 2px;
+}
+
+/* Edge labels */
+.mermaid-diagram-content .edgeLabel {
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+[data-theme="dark"] .mermaid-diagram-content .edgeLabel {
+    background-color: rgba(26, 26, 46, 0.95);
+}
+
+[data-theme="light"] .mermaid-diagram-content .edgeLabel {
+    background-color: rgba(255, 255, 255, 0.95);
+}
+
+/* Ensure text is readable - force text color based on theme */
+.mermaid-diagram-content .node .label,
+.mermaid-diagram-content .edgeLabel .label,
+.mermaid-diagram-content text {
+    font-family: inherit;
+    font-size: 14px;
+}
+
+[data-theme="light"] .mermaid-diagram-content .node .label,
+[data-theme="light"] .mermaid-diagram-content text {
+    fill: #1e293b !important;
+    color: #1e293b !important;
+}
+
+[data-theme="dark"] .mermaid-diagram-content .node .label,
+[data-theme="dark"] .mermaid-diagram-content text {
+    fill: #f1f5f9 !important;
+    color: #f1f5f9 !important;
+}
+
+/* Specific selector for node labels */
+[data-theme="light"] .mermaid-diagram-content .nodeLabel,
+[data-theme="light"] .mermaid-diagram-content .nodeLabel * {
+    fill: #1e293b !important;
+    color: #1e293b !important;
+}
+
+[data-theme="dark"] .mermaid-diagram-content .nodeLabel,
+[data-theme="dark"] .mermaid-diagram-content .nodeLabel * {
+    fill: #f1f5f9 !important;
+    color: #f1f5f9 !important;
+}
+
+/* Edge label text */
+[data-theme="light"] .mermaid-diagram-content .edgeLabel text,
+[data-theme="light"] .mermaid-diagram-content .edgeLabel .label {
+    fill: #1e293b !important;
+}
+
+[data-theme="dark"] .mermaid-diagram-content .edgeLabel text,
+[data-theme="dark"] .mermaid-diagram-content .edgeLabel .label {
+    fill: #f1f5f9 !important;
+}
+
+/* Flowchart specific text elements */
+[data-theme="light"] .mermaid-diagram-content .flowchart-label,
+[data-theme="light"] .mermaid-diagram-content .label-container {
+    color: #1e293b !important;
+}
+
+[data-theme="dark"] .mermaid-diagram-content .flowchart-label,
+[data-theme="dark"] .mermaid-diagram-content .label-container {
+    color: #f1f5f9 !important;
+}
+
+/* Ensure all SVG text inherits proper colors */
+.mermaid-diagram-content svg text {
+    font-family: inherit;
+}
+
+/* Zoom/Pan container styles */
+.react-transform-wrapper {
+    cursor: grab;
+}
+
+.react-transform-wrapper:active {
+    cursor: grabbing;
+}
+
+.react-transform-component {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Fullscreen mode for mermaid diagrams - same approach as table */
+.mermaid-diagram-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Smooth transitions for theme switching */
+.mermaid-diagram-content svg,
+.mermaid-diagram-content .node,
+.mermaid-diagram-content .edgeLabel {
+    transition: all 0.3s ease;
+}

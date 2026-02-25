@@ -14,7 +14,7 @@ export function ReasoningSection({ content, isStreaming }: ReasoningSectionProps
           className="w-full flex items-center gap-2"
         >
           <BrainIcon size={12} />
-          Reasoning
+          <span className="font-semibold">Reasoning</span>
 
           <div className="flex items-center gap-2">
             {isStreaming ? (

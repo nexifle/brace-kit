@@ -34,7 +34,7 @@ export const XAI_IMAGE_MODELS = ['grok-2-image-1212', 'grok-imagine-image', 'gro
  * For other providers, we check specific model patterns
  */
 export const REASONING_MODELS = {
-  anthropic: ['claude', 'claude-sonnet', 'claude-opus', 'claude-haiku', 'glm'], // All Claude models + GLM models
+  anthropic: ['claude', 'claude-sonnet', 'claude-opus', 'claude-haiku', 'glm', 'k2.5'], // All Claude models + GLM models
   openai: ['o1', 'o3'], // o1-preview, o1-mini, o3-mini, o3
   gemini: ['thinking', 'gemini-2.5-pro'], // Thinking models
   deepseek: ['reasoner', 'r1'], // deepseek-reasoner, deepseek-r1

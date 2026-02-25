@@ -10,6 +10,9 @@ declare global {
   }
 }
 
+// Store for mermaid placeholders
+const mermaidPlaceholders = new Map<string, string>();
+
 // Configure marked with hljs integration
 marked.setOptions({
   breaks: true,
@@ -74,6 +77,65 @@ marked.use({ renderer });
 
 // Store for blockquote placeholders (regular + callouts)
 const blockquotePlaceholders = new Map<string, { type: 'blockquote' | CalloutType; content: string; config?: CalloutConfig }>();
+
+/**
+ * Extract mermaid code blocks and replace them with placeholders.
+ * This allows React components to hydrate them with interactive diagrams.
+ */
+function extractMermaidBlocks(markdown: string): string {
+  // Clear previous placeholders
+  mermaidPlaceholders.clear();
+
+  // Match mermaid code blocks: ```mermaid ... ```
+  const mermaidPattern = /```mermaid\n([\s\S]*?)```/g;
+
+  let result = markdown.replace(mermaidPattern, (match, code) => {
+    const trimmedCode = code.trim();
+    if (!trimmedCode) return match;
+
+    const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const placeholder = `[[MERMAID-${id}-END]]`;
+
+    mermaidPlaceholders.set(placeholder, trimmedCode);
+
+    return placeholder;
+  });
+
+  return result;
+}
+
+/**
+ * Replace mermaid placeholders with HTML placeholder divs for React hydration.
+ */
+function replaceMermaidPlaceholders(html: string): string {
+  mermaidPlaceholders.forEach((code, placeholder) => {
+    const id = placeholder.replace('[[MERMAID-', '').replace('-END]]', '');
+    const encodedCode = encodeForAttribute(code);
+
+    // Create a placeholder div that will be hydrated by React
+    const placeholderHtml = `
+      <div
+        data-mermaid-placeholder="true"
+        data-mermaid-code="${encodedCode}"
+        data-mermaid-id="${id}"
+        class="mermaid-placeholder my-4"
+      >
+        <div class="rounded-lg border border-border bg-muted/30 p-8 flex items-center justify-center min-h-[200px]">
+          <div class="flex items-center gap-2 text-muted-foreground">
+            <div class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+            <span class="text-sm">Loading diagram...</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const escapedPlaceholder = placeholder.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    html = html.replace(new RegExp(`<p>${escapedPlaceholder}</p>`, 'g'), placeholderHtml);
+    html = html.replace(new RegExp(escapedPlaceholder, 'g'), placeholderHtml);
+  });
+
+  return html;
+}
 
 // Pre-process markdown to convert GitHub-style callouts AND regular blockquotes to custom HTML
 // This must be done BEFORE marked parses the markdown
@@ -204,9 +266,11 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
   const idToNum = new Map<string, number>();
   let nextNum = 1;
 
+  // 0. Extract mermaid code blocks FIRST (before any other processing)
+  let processedText = extractMermaidBlocks(text);
+
   // 1. Extract footnote definitions first (Gfm style: [^id]: content)
   // We do this by line to handle multi-line indented content properly
-  let processedText = text;
   const lines = processedText.split('\n');
   const nonDefLines: string[] = [];
   
@@ -293,6 +357,9 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
 
   // Replace blockquote placeholders with actual HTML
   html = replaceBlockquotePlaceholders(html, isStreaming);
+
+  // Replace mermaid placeholders with HTML placeholder divs
+  html = replaceMermaidPlaceholders(html);
 
   // 3. Post-process footnote references in the generated HTML
   footnoteRefs.forEach(({ id, num }) => {

@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import TurndownService from 'turndown';
 import { renderMarkdown } from '../../utils/markdown';
 import { useStore } from '../../store';
+import { useMermaidHydration } from '../../hooks/useMermaidHydration';
 import { TextFileViewer } from '../TextFileViewer';
 import { GEMINI_NO_TOOLS_MODELS, GEMINI_SEARCH_ONLY_MODELS, XAI_IMAGE_MODELS } from '../../providers';
 import { RefreshCwIcon, QuoteIcon } from 'lucide-react';
@@ -488,6 +489,9 @@ export function MessageBubble({
     el.addEventListener('click', handleClick);
     return () => el.removeEventListener('click', handleClick);
   }, [activeConversationId, toggleFavorite]);
+
+  // Hydrate mermaid diagrams after content renders
+  useMermaidHydration(bubbleRef);
 
   // Sync markdown image favorite indicators
   useEffect(() => {
