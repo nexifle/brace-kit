@@ -14,16 +14,26 @@ export function MessageList() {
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
   const rafRef = useRef<number | undefined>(undefined);
+  const isProgrammaticScrollRef = useRef(false);
 
   const isNearBottom = useCallback(() => {
     if (!containerRef.current) return true;
     const container = containerRef.current;
-    return container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 100;
   }, []);
 
   const handleScroll = useCallback(() => {
+    // Abaikan scroll event yang dipicu oleh kode kita sendiri
+    if (isProgrammaticScrollRef.current) return;
     if (!containerRef.current) return;
-    isUserScrollingRef.current = !isNearBottom();
+
+    if (isNearBottom()) {
+      // User scroll balik ke bawah → aktifkan kembali autoscroll
+      isUserScrollingRef.current = false;
+    } else {
+      // User scroll ke atas → jeda autoscroll
+      isUserScrollingRef.current = true;
+    }
   }, [isNearBottom]);
 
   const scrollToBottom = useCallback(() => {
@@ -32,7 +42,12 @@ export function MessageList() {
     }
     rafRef.current = requestAnimationFrame(() => {
       if (containerRef.current) {
+        isProgrammaticScrollRef.current = true;
         containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        // Double-rAF: reset flag setelah browser selesai memproses scroll event
+        requestAnimationFrame(() => {
+          isProgrammaticScrollRef.current = false;
+        });
       }
     });
   }, []);
@@ -44,9 +59,10 @@ export function MessageList() {
   }, [streamingContent, isStreaming, scrollToBottom]);
 
   useEffect(() => {
-    if (!isUserScrollingRef.current) {
-      scrollToBottom();
-    }
+    // Pesan baru masuk (user kirim pesan / AI selesai) → selalu reset dan scroll ke bawah,
+    // mengabaikan apakah user sedang scroll ke atas atau tidak
+    isUserScrollingRef.current = false;
+    scrollToBottom();
   }, [messages.length, scrollToBottom]);
 
   useEffect(() => {
@@ -59,7 +75,7 @@ export function MessageList() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-5 scrollbar-thin scroll-smooth"
+      className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-2 scrollbar-thin"
       ref={containerRef}
       onScroll={handleScroll}
     >

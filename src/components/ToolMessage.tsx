@@ -25,7 +25,7 @@ export function ToolMessage({ name, content, toolArguments, isCachedResult }: To
     : '';
 
   return (
-    <div className="w-full flex flex-col gap-1 max-w-full self-start animate-in fade-in slide-in-from-left-2 duration-300">
+    <div className="w-full flex flex-col gap-1 mb-5 max-w-full self-start animate-in fade-in slide-in-from-left-2 duration-300">
       <div className="relative group px-4 py-3 bg-card/40 backdrop-blur-md border border-border/50 rounded-lg shadow-sm hover:shadow-md transition-all duration-300">
 
         {/* Header */}
