@@ -67,6 +67,57 @@ export function ChatSettings() {
         )}
 
         {/* ---------------------------------------------------------------------------
+            Text Selection UI Options
+            --------------------------------------------------------------------------- */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40 border border-border/50 hover:bg-secondary/60 transition-colors">
+            <div className="flex flex-col gap-0.5 pr-2">
+              <span className="text-sm font-medium text-foreground">Text Selection AI</span>
+              <span className="text-xs text-muted-foreground leading-tight">Show AI toolbar when selecting text on webpages</span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={store.textSelectionEnabled}
+                onChange={(e) => {
+                  store.setTextSelectionEnabled(e.target.checked);
+                }}
+              />
+              <div className="w-8 h-4.5 bg-muted rounded-full peer peer-checked:bg-primary transition-all duration-200 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:after:translate-x-3.5"></div>
+            </label>
+          </div>
+
+          {store.textSelectionEnabled && (
+            <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              <label htmlFor="min-selection-length" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+                Minimum Selection Length
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  id="min-selection-length"
+                  type="range"
+                  min="5"
+                  max="100"
+                  step="5"
+                  value={store.textSelectionMinLength}
+                  onChange={(e) => {
+                    store.setTextSelectionMinLength(parseInt(e.target.value, 10));
+                  }}
+                  className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                />
+                <span className="text-sm font-medium text-foreground w-12 text-right">
+                  {store.textSelectionMinLength}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Minimum characters to select before showing AI toolbar
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ---------------------------------------------------------------------------
             Streaming Options
             --------------------------------------------------------------------------- */}
         <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40 border border-border/50 hover:bg-secondary/60 transition-colors">

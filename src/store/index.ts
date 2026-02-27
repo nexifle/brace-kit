@@ -49,6 +49,8 @@ interface StorageData {
   compactConfig?: CompactConfig;
   theme?: 'light' | 'dark';
   preferences?: Preferences;
+  textSelectionEnabled?: boolean;
+  textSelectionMinLength?: number;
   conversations?: Conversation[];
   chatHistory?: Message[];
 }
@@ -146,6 +148,10 @@ export const useStore = create<AppState>((set, get) => ({
   preferences: {
     toolMessageDisplay: 'detailed',
   },
+
+  // Text Selection UI Settings
+  textSelectionEnabled: true,
+  textSelectionMinLength: 10,
 
   // Actions
   setMessages: (messages) => set({ messages }),
@@ -618,6 +624,20 @@ export const useStore = create<AppState>((set, get) => ({
     get().saveToStorage();
   },
 
+  // Text Selection UI Actions
+  setTextSelectionEnabled: (textSelectionEnabled) => {
+    set({ textSelectionEnabled });
+    get().saveToStorage();
+    // Notify content scripts about the change
+    chrome.storage.local.set({ textSelectionEnabled });
+  },
+  setTextSelectionMinLength: (textSelectionMinLength) => {
+    set({ textSelectionMinLength });
+    get().saveToStorage();
+    // Notify content scripts about the change
+    chrome.storage.local.set({ textSelectionMinLength });
+  },
+
   // Persistence
   loadFromStorage: async () => {
     // Run full migration asynchronously in the background
@@ -641,6 +661,8 @@ export const useStore = create<AppState>((set, get) => ({
         'compactConfig',
         'theme',
         'preferences',
+        'textSelectionEnabled',
+        'textSelectionMinLength',
       ]) as StorageData;
 
       const updates: Partial<AppState> = {};
@@ -689,6 +711,12 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.preferences) {
         updates.preferences = data.preferences;
+      }
+      if (data.textSelectionEnabled !== undefined) {
+        updates.textSelectionEnabled = data.textSelectionEnabled;
+      }
+      if (data.textSelectionMinLength !== undefined) {
+        updates.textSelectionMinLength = data.textSelectionMinLength;
       }
 
       // Load session auth state (persists during browser session)
@@ -795,6 +823,8 @@ export const useStore = create<AppState>((set, get) => ({
         compactConfig: state.compactConfig,
         theme: state.theme,
         preferences: state.preferences,
+        textSelectionEnabled: state.textSelectionEnabled,
+        textSelectionMinLength: state.textSelectionMinLength,
       });
     } catch (e) {
       console.warn('Failed to save settings:', e);

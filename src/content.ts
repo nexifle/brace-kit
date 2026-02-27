@@ -1,8 +1,10 @@
 /// <reference types="chrome" />
 import TurndownService from 'turndown';
+import { initSelectionUI } from './content/selection-ui/index.ts';
 
 // Content script — smart page reader with HTML-to-Markdown conversion
 // Uses Turndown to convert page HTML to clean markdown, stripping scripts, styles, etc.
+// Also provides text selection UI for quick AI actions
 
 // Listen for messages from the service worker / sidebar
 chrome.runtime.onMessage.addListener((message: any, _sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
@@ -193,3 +195,8 @@ function cleanText(text: string) {
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
+
+// Initialize text selection UI
+initSelectionUI().catch(() => {
+  // Silent fail - selection UI is optional
+});
