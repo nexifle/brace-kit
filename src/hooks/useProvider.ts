@@ -46,6 +46,9 @@ export function useProvider() {
       format: provider.format as ProviderFormat,
       apiKey: saved.apiKey || (isCustomProvider(newId) ? (provider as CustomProvider).apiKey : '') || '',
       model: saved.model || provider.defaultModel || '',
+      // Clear model parameters when switching providers so settings from
+      // one provider do not unexpectedly carry over to another.
+      modelParameters: undefined,
     });
 
     store.saveToStorage();

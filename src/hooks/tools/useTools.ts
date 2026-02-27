@@ -164,6 +164,7 @@ export function useTools() {
         enableReasoning?: boolean;
         aspectRatio?: string;
         stream?: boolean;
+        modelParameters?: typeof store.providerConfig.modelParameters;
       } = {
         enableGoogleSearch:
           store.enableGoogleSearch &&
@@ -171,6 +172,7 @@ export function useTools() {
           !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
         enableReasoning: options?.enableReasoning ?? store.enableReasoning,
         stream: store.enableStreaming,
+        modelParameters: store.providerConfig.modelParameters,
       };
 
       // Add aspect ratio for image models

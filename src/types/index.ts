@@ -139,6 +139,39 @@ export interface CustomProvider {
   contextWindow?: number;
 }
 
+// ==================== Model Parameters ====================
+
+/**
+ * Provider-agnostic model generation parameters.
+ * All fields are optional — only sent to the API if explicitly set by the user.
+ * Each formatter applies only the parameters supported by its provider.
+ */
+export interface ModelParameters {
+  /** Sampling temperature 0.0–2.0. Supported: OpenAI, Anthropic, Gemini. */
+  temperature?: number;
+  /** Max output tokens. Supported: all providers. */
+  maxTokens?: number;
+  /** Nucleus sampling 0.0–1.0. Supported: all providers. */
+  topP?: number;
+  /** Top-K sampling. Supported: Anthropic, Gemini only. */
+  topK?: number;
+  /**
+   * Thinking budget in tokens. Only applied when reasoning is enabled.
+   * Anthropic default: 4096. Gemini default: 24576.
+   */
+  thinkingBudget?: number;
+}
+
+/**
+ * Which ModelParameters are supported by each provider format.
+ * Used by UI to conditionally render controls.
+ */
+export const SUPPORTED_PARAMETERS: Record<ProviderFormat, (keyof ModelParameters)[]> = {
+  openai:    ['temperature', 'maxTokens', 'topP'],
+  anthropic: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
+  gemini:    ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
+};
+
 export interface ProviderConfig {
   providerId: string;
   apiKey: string;
@@ -147,6 +180,8 @@ export interface ProviderConfig {
   format: ProviderFormat;
   systemPrompt: string;
   contextWindow?: number; // Custom context window limit
+  /** User-configured model generation parameters (not sent to API if unset) */
+  modelParameters?: ModelParameters;
 }
 
 export interface CompactConfig {
@@ -342,6 +377,8 @@ export interface AppState {
   setSelectedText: (text: SelectedText | null) => void;
 
   setProviderConfig: (config: Partial<ProviderConfig>) => void;
+  setModelParameters: (params: Partial<ModelParameters>) => void;
+  clearModelParameters: () => void;
   setProviderKeys: (keys: ProviderKeys) => void;
   addCustomProvider: (provider: CustomProvider) => void;
   removeCustomProvider: (id: string) => void;

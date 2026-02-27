@@ -85,6 +85,12 @@ export function formatOpenAI(
     stream: _options.stream !== false,
   };
 
+  // Apply optional generation parameters (only if set by user)
+  const p = _options.modelParameters;
+  if (p?.temperature !== undefined) body.temperature = p.temperature;
+  if (p?.maxTokens !== undefined) body.max_tokens = p.maxTokens;
+  if (p?.topP !== undefined) body.top_p = p.topP;
+
   // Add tools if available
   if (tools.length > 0) {
     body.tools = tools.map((t) => ({

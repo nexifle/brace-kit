@@ -4,7 +4,7 @@
  * Type definitions for provider abstraction layer.
  */
 
-import type { ProviderPreset, MCPTool, Message } from '../types/index.ts';
+import type { ProviderPreset, MCPTool, Message, ModelParameters } from '../types/index.ts';
 
 // ==================== Chat Options ====================
 
@@ -20,6 +20,8 @@ export interface ChatOptions {
   stream?: boolean;
   /** Enable reasoning/thinking mode */
   enableReasoning?: boolean;
+  /** Model generation parameters forwarded from ProviderConfig */
+  modelParameters?: ModelParameters;
 }
 
 // ==================== Stream Chunk ====================
@@ -203,4 +205,4 @@ export interface AnthropicContentBlock {
 
 // ==================== Re-export from main types ====================
 
-export type { ProviderPreset, MCPTool, Message } from '../types/index.ts';
+export type { ProviderPreset, MCPTool, Message, ModelParameters } from '../types/index.ts';

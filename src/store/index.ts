@@ -3,6 +3,7 @@ import type {
   AppState,
   Message,
   ProviderConfig,
+  ModelParameters,
   Conversation,
   ProviderKeys,
   CustomProvider,
@@ -182,6 +183,26 @@ export const useStore = create<AppState>((set, get) => ({
   setProviderConfig: (config) =>
     set((state) => ({
       providerConfig: { ...state.providerConfig, ...config },
+    })),
+
+  setModelParameters: (params: Partial<ModelParameters>) =>
+    set((state) => {
+      const merged = { ...state.providerConfig.modelParameters, ...params };
+      // Remove keys explicitly set to undefined to keep the object clean
+      for (const key of Object.keys(merged) as (keyof ModelParameters)[]) {
+        if (merged[key] === undefined) delete merged[key];
+      }
+      return {
+        providerConfig: {
+          ...state.providerConfig,
+          modelParameters: Object.keys(merged).length > 0 ? merged : undefined,
+        },
+      };
+    }),
+
+  clearModelParameters: () =>
+    set((state) => ({
+      providerConfig: { ...state.providerConfig, modelParameters: undefined },
     })),
 
   setProviderKeys: (providerKeys) => set({ providerKeys }),

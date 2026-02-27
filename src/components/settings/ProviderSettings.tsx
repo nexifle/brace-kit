@@ -4,6 +4,7 @@ import { PROVIDER_PRESETS } from '../../providers';
 import type { ProviderFormat, ProviderPreset } from '../../types/index.ts';
 import { PlusIcon, XIcon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
+import { ModelParameterSettings } from './ModelParameterSettings.tsx';
 
 export function ProviderSettings() {
   const {
@@ -306,6 +307,8 @@ export function ProviderSettings() {
                 />
               </div>
             </div>
+
+            <ModelParameterSettings />
           </div>
         </div>
       </div>

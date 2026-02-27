@@ -146,14 +146,21 @@ export function formatGemini(
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
+  // Build generationConfig incrementally
+  const genConfig: Record<string, unknown> = {};
+  const p = options.modelParameters;
+
+  // Apply optional generation parameters (only if set by user)
+  if (p?.temperature !== undefined) genConfig.temperature = p.temperature;
+  if (p?.maxTokens !== undefined) genConfig.maxOutputTokens = p.maxTokens;
+  if (p?.topP !== undefined) genConfig.topP = p.topP;
+  if (p?.topK !== undefined) genConfig.topK = p.topK;
+
   // Add thinking config for Gemini thinking models when reasoning is enabled
   if (shouldEnableReasoning) {
-    body.generationConfig = {
-      ...((body.generationConfig as Record<string, unknown>) || {}),
-      thinkingConfig: {
-        thinkingBudget: 24576, // Allow up to 24k tokens for thinking
-        includeThoughts: true, // Include thinking process in response
-      },
+    genConfig.thinkingConfig = {
+      thinkingBudget: p?.thinkingBudget ?? 24576,
+      includeThoughts: true,
     };
   }
 
@@ -161,16 +168,13 @@ export function formatGemini(
   if (options.aspectRatio && GEMINI_IMAGE_MODELS.includes(model)) {
     const geminiAspectRatio = GEMINI_ASPECT_RATIO_MAP[options.aspectRatio];
     if (geminiAspectRatio) {
-      const existingConfig = (body.generationConfig as Record<string, unknown>) || {};
-      body.generationConfig = {
-        ...existingConfig,
-        responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: {
-          ...((existingConfig.imageConfig as Record<string, unknown>) || {}),
-          aspectRatio: geminiAspectRatio,
-        },
-      };
+      genConfig.responseModalities = ['TEXT', 'IMAGE'];
+      genConfig.imageConfig = { aspectRatio: geminiAspectRatio };
     }
+  }
+
+  if (Object.keys(genConfig).length > 0) {
+    body.generationConfig = genConfig;
   }
 
   // Determine tool support

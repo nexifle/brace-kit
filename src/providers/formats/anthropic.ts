@@ -190,18 +190,29 @@ export function formatAnthropic(
     }
   }
 
+  const p = _options.modelParameters;
+
   const body: Record<string, unknown> = {
     model,
-    max_tokens: 8192,
+    max_tokens: p?.maxTokens ?? 8192,
     stream: _options.stream !== false,
     messages: filtered,
   };
+
+  // Apply optional generation parameters (only if set by user).
+  // Anthropic rejects temperature and top_p when thinking is enabled.
+  if (!shouldEnableReasoning) {
+    if (p?.temperature !== undefined) body.temperature = p.temperature;
+    if (p?.topP !== undefined) body.top_p = p.topP;
+  }
+  if (p?.topK !== undefined) body.top_k = p.topK;
 
   // Add thinking parameter for Anthropic models when reasoning is enabled
   if (shouldEnableReasoning) {
     body.thinking = {
       type: 'enabled',
-      budget_tokens: 4096, // Minimum recommended for meaningful thinking
+      // Anthropic requires a minimum of 1024 tokens for thinking budget
+      budget_tokens: Math.max(1024, p?.thinkingBudget ?? 4096),
     };
   }
 
