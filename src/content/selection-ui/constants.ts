@@ -92,9 +92,13 @@ TEXT TO REPHRASE:
 
 export const DEFAULT_MIN_SELECTION_LENGTH = 10;
 export const TOOLBAR_HEIGHT = 48;
+export const TOOLBAR_WIDTH = 200;
 export const POPOVER_WIDTH = 360;
 export const POPOVER_MAX_HEIGHT = 400;
 export const GAP = 8;
+
+// Rate limiting for AI requests
+export const RATE_LIMIT_MS = 1000; // 1 second between requests
 
 // Target languages for translation
 export const TRANSLATION_TARGETS = [

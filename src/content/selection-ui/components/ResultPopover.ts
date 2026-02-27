@@ -1,6 +1,13 @@
+/**
+ * Result Popover component for selection-ui
+ * Creates and manages the result popover using lit-html
+ */
+
 import { render } from 'lit-html';
-import type { QuickAction, SelectionPosition } from './types.ts';
-import { popoverTemplate, overlayTemplate, type PopoverState } from './templates.ts';
+import type { QuickAction, SelectionPosition } from '../types.ts';
+import { popoverTemplate, overlayTemplate, type PopoverState, type PopoverCallbacks } from '../templates/index.ts';
+
+// === Types ===
 
 export interface ResultPopoverConfig {
   position: SelectionPosition;
@@ -20,6 +27,8 @@ export interface ResultPopoverAPI {
   setError: (error: string) => void;
   destroy: () => void;
 }
+
+// === Factory Function ===
 
 /**
  * Create and render the result popover using lit-html
@@ -62,7 +71,7 @@ export function createResultPopover(
   }
 
   // Callbacks
-  const callbacks = {
+  const callbacks: PopoverCallbacks = {
     onClose: () => {
       destroy();
       onClose();
@@ -141,10 +150,9 @@ export function createResultPopover(
           ...state,
           viewState: { type: 'loading' },
         };
-      } else {
-        // When setting loading to false without content, keep previous state
-        // This is handled by setContent or setError
       }
+      // When setting loading to false without content, keep previous state
+      // This is handled by setContent or setError
       renderPopover();
     },
     setError: (error: string) => {

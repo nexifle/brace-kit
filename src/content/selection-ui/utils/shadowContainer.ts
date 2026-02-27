@@ -1,20 +1,27 @@
-import { detectPageTheme, generateThemeVariables } from './ThemeDetector.ts';
-import type { ThemeDetectionResult } from './types.ts';
+/**
+ * Shadow DOM container management for selection-ui
+ * Provides complete style isolation from the host page
+ */
+
+import { detectPageTheme, generateThemeVariables } from './themeDetector.ts';
+import type { ThemeDetectionResult } from '../types.ts';
 
 // Import CSS as string using Bun's text loader
-import stylesCss from './styles.css' with { type: 'text' };
+import stylesCss from '../styles/styles.css' with { type: 'text' };
 
 const CONTAINER_ID = 'bracekit-selection-ui';
+
+export interface ShadowContainer {
+  container: HTMLDivElement;
+  shadow: ShadowRoot;
+  styleElement: HTMLStyleElement;
+}
 
 /**
  * Creates and manages the Shadow DOM container for selection UI
  * Provides complete style isolation from the host page
  */
-export function createShadowContainer(): {
-  container: HTMLDivElement;
-  shadow: ShadowRoot;
-  styleElement: HTMLStyleElement;
-} | null {
+export function createShadowContainer(): ShadowContainer | null {
   // Remove existing container if any
   removeShadowContainer();
 
@@ -23,13 +30,20 @@ export function createShadowContainer(): {
     const container = document.createElement('div');
     container.id = CONTAINER_ID;
 
+    // Use the full scrollable document dimensions for coverage.
+    // We compute the max of various measurements to handle all edge cases.
+    const docEl = document.documentElement;
+    const body = document.body;
+    const fullWidth = Math.max(docEl.scrollWidth, body.scrollWidth, docEl.clientWidth);
+    const fullHeight = Math.max(docEl.scrollHeight, body.scrollHeight, docEl.clientHeight);
+
     // Position absolute to document (sticky to scroll position)
     container.style.cssText = `
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      min-height: 100%;
+      width: ${fullWidth}px;
+      height: ${fullHeight}px;
       pointer-events: none;
       z-index: 2147483647;
     `;
@@ -41,8 +55,9 @@ export function createShadowContainer(): {
     const styleElement = document.createElement('style');
     shadow.appendChild(styleElement);
 
-    // Append container to documentElement (html) for full document coverage
-    document.documentElement.appendChild(container);
+    // Append container to body for better compatibility.
+    // document.documentElement can have transforms/filters that break positioning.
+    document.body.appendChild(container);
 
     return { container, shadow, styleElement };
   } catch (error) {

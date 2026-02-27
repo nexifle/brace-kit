@@ -1,65 +1,47 @@
-import type { SelectionPosition } from './types.ts';
-import { TOOLBAR_HEIGHT, POPOVER_WIDTH, POPOVER_MAX_HEIGHT, GAP } from './constants.ts';
+/**
+ * Positioning utilities for selection-ui
+ * Handles position calculations for toolbar and popover
+ *
+ * All positioning functions compute coordinates RELATIVE to the container element.
+ * This makes positioning robust against ancestor elements that establish
+ * unexpected CSS containing blocks (via transforms, filters, will-change, etc.).
+ */
+
+import type { SelectionPosition } from '../types.ts';
+import { TOOLBAR_HEIGHT, TOOLBAR_WIDTH, POPOVER_WIDTH, POPOVER_MAX_HEIGHT, GAP } from '../constants.ts';
+
+/**
+ * Get the container's offset from the viewport origin.
+ * When the container has position:absolute on a parent with transforms/filters,
+ * its origin may not be at (0,0). This function detects that offset.
+ */
+export function getContainerOffset(containerElement?: HTMLElement): { offsetX: number; offsetY: number } {
+  if (!containerElement) {
+    return { offsetX: 0, offsetY: 0 };
+  }
+
+  const containerRect = containerElement.getBoundingClientRect();
+  // The container is position:absolute at top:0, left:0
+  // If the parent establishes a containing block with an offset,
+  // the container's viewport position won't be at (scrollX, scrollY)
+  // We compute the delta between where the container IS vs where it SHOULD be
+  const offsetX = containerRect.left + window.scrollX;
+  const offsetY = containerRect.top + window.scrollY;
+
+  return { offsetX, offsetY };
+}
 
 /**
  * Calculate optimal position for floating toolbar
  * Returns position above selection if space available, otherwise below
- * Coordinates include scroll offset since container is absolute positioned
+ * Coordinates are relative to the container element for robust positioning
+ *
+ * @param selection - The current text selection
+ * @param containerElement - The container element (used to compute relative offsets)
  */
-export function calculateToolbarPosition(selection: Selection): SelectionPosition | null {
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
-
-  if (rect.width === 0 && rect.height === 0) {
-    return null;
-  }
-
-  const viewport = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-    scrollX: window.scrollX,
-    scrollY: window.scrollY,
-  };
-
-  // Calculate space above and below (viewport-relative for visibility check)
-  const spaceAbove = rect.top;
-  const spaceBelow = viewport.height - rect.bottom;
-
-  let top: number;
-  let placement: 'top' | 'bottom';
-
-  // Prefer above, fallback to below
-  if (spaceAbove >= TOOLBAR_HEIGHT + GAP) {
-    top = rect.top + viewport.scrollY - TOOLBAR_HEIGHT - GAP;
-    placement = 'top';
-  } else if (spaceBelow >= TOOLBAR_HEIGHT + GAP) {
-    top = rect.bottom + viewport.scrollY + GAP;
-    placement = 'bottom';
-  } else {
-    // Not enough space, position at top of viewport (plus scroll)
-    top = viewport.scrollY + GAP;
-    placement = 'top';
-  }
-
-  // Center horizontally on selection, but keep within viewport
-  const toolbarWidth = 200; // approximate
-  let left = rect.left + viewport.scrollX + rect.width / 2 - toolbarWidth / 2;
-
-  // Ensure within viewport bounds (plus scroll)
-  const minLeft = viewport.scrollX + GAP;
-  const maxLeft = viewport.scrollX + viewport.width - toolbarWidth - GAP;
-  left = Math.max(minLeft, Math.min(left, maxLeft));
-
-  return { top, left, placement };
-}
-
-/**
- * Calculate optimal position for result popover
- * Coordinates include scroll offset since container is absolute positioned
- */
-export function calculatePopoverPosition(
+export function calculateToolbarPosition(
   selection: Selection,
-  triggerRect?: DOMRect
+  containerElement?: HTMLElement
 ): SelectionPosition | null {
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
@@ -75,46 +57,167 @@ export function calculatePopoverPosition(
     scrollY: window.scrollY,
   };
 
-  // Use trigger rect if provided (e.g., button position), otherwise use selection
-  const referenceRect = triggerRect || rect;
+  const { offsetX, offsetY } = getContainerOffset(containerElement);
+
+  // Calculate space above and below (viewport-relative for visibility check)
+  const spaceAbove = rect.top;
+  const spaceBelow = viewport.height - rect.bottom;
+
+  let top: number;
+  let placement: 'top' | 'bottom';
+
+  // Prefer above, fallback to below
+  if (spaceAbove >= TOOLBAR_HEIGHT + GAP) {
+    top = rect.top + viewport.scrollY - TOOLBAR_HEIGHT - GAP - offsetY;
+    placement = 'top';
+  } else if (spaceBelow >= TOOLBAR_HEIGHT + GAP) {
+    top = rect.bottom + viewport.scrollY + GAP - offsetY;
+    placement = 'bottom';
+  } else {
+    // Not enough space, position at top of viewport (plus scroll)
+    top = viewport.scrollY + GAP - offsetY;
+    placement = 'top';
+  }
+
+  // Center horizontally on selection, but keep within viewport
+  let left = rect.left + viewport.scrollX + rect.width / 2 - TOOLBAR_WIDTH / 2 - offsetX;
+
+  // Ensure within viewport bounds (relative to container)
+  const minLeft = viewport.scrollX + GAP - offsetX;
+  const maxLeft = viewport.scrollX + viewport.width - TOOLBAR_WIDTH - GAP - offsetX;
+  left = Math.max(minLeft, Math.min(left, maxLeft));
+
+  return { top, left, placement };
+}
+
+/**
+ * Calculate position for toolbar from an editable element (input/textarea)
+ * Used as fallback when selection range is not available
+ *
+ * @param element - The editable element
+ * @param containerElement - The container element (used to compute relative offsets)
+ */
+export function calculateToolbarPositionFromElement(
+  element: Element,
+  containerElement?: HTMLElement
+): SelectionPosition {
+  const rect = element.getBoundingClientRect();
+  const viewport = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+  };
+
+  const { offsetX, offsetY } = getContainerOffset(containerElement);
+
+  // Position above or below the element
+  const spaceAbove = rect.top;
+  let top: number;
+  let placement: 'top' | 'bottom';
+
+  if (spaceAbove >= TOOLBAR_HEIGHT + GAP) {
+    top = rect.top + viewport.scrollY - TOOLBAR_HEIGHT - GAP - offsetY;
+    placement = 'top';
+  } else {
+    top = rect.bottom + viewport.scrollY + GAP - offsetY;
+    placement = 'bottom';
+  }
+
+  // Center horizontally
+  let left = rect.left + viewport.scrollX + rect.width / 2 - TOOLBAR_WIDTH / 2 - offsetX;
+  const minLeft = viewport.scrollX + GAP - offsetX;
+  const maxLeft = viewport.scrollX + viewport.width - TOOLBAR_WIDTH - GAP - offsetX;
+  left = Math.max(minLeft, Math.min(left, maxLeft));
+
+  return { top, left, placement };
+}
+
+/**
+ * Calculate optimal position for result popover from a bounding rect.
+ * This is the core positioning logic, independent of a live Selection object.
+ * Coordinates are relative to the container element for robust positioning.
+ *
+ * @param rect - The bounding rect of the target (e.g., saved selection rect)
+ * @param containerElement - The container element (used to compute relative offsets)
+ * @param referenceRect - Optional rect for vertical positioning (defaults to `rect`)
+ */
+export function calculatePopoverPositionFromRect(
+  rect: DOMRect,
+  containerElement?: HTMLElement,
+  referenceRect?: DOMRect
+): SelectionPosition | null {
+  if (rect.width === 0 && rect.height === 0) {
+    return null;
+  }
+
+  const viewport = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+  };
+
+  const { offsetX, offsetY } = getContainerOffset(containerElement);
+
+  // Use reference rect for vertical, fall back to rect
+  const vertRef = referenceRect || rect;
 
   // Calculate space (viewport-relative for visibility check)
-  const spaceAbove = referenceRect.top;
-  const spaceBelow = viewport.height - referenceRect.bottom;
+  const spaceAbove = vertRef.top;
+  const spaceBelow = viewport.height - vertRef.bottom;
 
   let top: number;
   let placement: 'top' | 'bottom';
 
   // Check if popover fits above
   if (spaceAbove >= POPOVER_MAX_HEIGHT + GAP) {
-    top = referenceRect.top + viewport.scrollY - POPOVER_MAX_HEIGHT - GAP;
+    top = vertRef.top + viewport.scrollY - POPOVER_MAX_HEIGHT - GAP - offsetY;
     placement = 'top';
   } else if (spaceBelow >= POPOVER_MAX_HEIGHT + GAP) {
     // Position below
-    top = referenceRect.bottom + viewport.scrollY + GAP;
+    top = vertRef.bottom + viewport.scrollY + GAP - offsetY;
     placement = 'bottom';
   } else if (spaceAbove > spaceBelow) {
     // Not enough space either way, use the larger one
-    top = viewport.scrollY + GAP;
+    top = viewport.scrollY + GAP - offsetY;
     placement = 'top';
   } else {
-    top = referenceRect.bottom + viewport.scrollY + GAP;
+    top = vertRef.bottom + viewport.scrollY + GAP - offsetY;
     placement = 'bottom';
   }
 
-  // Position horizontally - align left with selection, but keep in viewport
-  let left = rect.left + viewport.scrollX;
+  // Position horizontally - align left with rect, but keep in viewport
+  let left = rect.left + viewport.scrollX - offsetX;
 
   // Ensure popover doesn't overflow right edge
-  const maxLeft = viewport.scrollX + viewport.width - POPOVER_WIDTH - GAP;
+  const maxLeft = viewport.scrollX + viewport.width - POPOVER_WIDTH - GAP - offsetX;
   if (left > maxLeft) {
     left = maxLeft;
   }
 
   // Ensure doesn't overflow left edge
-  left = Math.max(viewport.scrollX + GAP, left);
+  left = Math.max(viewport.scrollX + GAP - offsetX, left);
 
   return { top, left, placement };
+}
+
+/**
+ * Calculate optimal position for result popover from a live Selection.
+ * Delegates to calculatePopoverPositionFromRect after extracting the rect.
+ *
+ * @param selection - The current text selection
+ * @param containerElement - The container element (used to compute relative offsets)
+ * @param triggerRect - Optional rect to use for vertical positioning
+ */
+export function calculatePopoverPosition(
+  selection: Selection,
+  containerElement?: HTMLElement,
+  triggerRect?: DOMRect
+): SelectionPosition | null {
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  return calculatePopoverPositionFromRect(rect, containerElement, triggerRect);
 }
 
 /**

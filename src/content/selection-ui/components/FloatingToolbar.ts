@@ -1,6 +1,13 @@
+/**
+ * Floating Toolbar component for selection-ui
+ * Creates and manages the floating toolbar using lit-html
+ */
+
 import { render } from 'lit-html';
-import type { QuickAction, SelectionPosition } from './types.ts';
-import { toolbarTemplate, type ToolbarState, type ToolbarCallbacks } from './templates.ts';
+import type { QuickAction, SelectionPosition } from '../types.ts';
+import { toolbarTemplate, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
+
+// === Types ===
 
 export interface FloatingToolbarConfig {
   position: SelectionPosition;
@@ -12,6 +19,8 @@ export interface FloatingToolbarAPI {
   element: HTMLElement;
   destroy: () => void;
 }
+
+// === Factory Function ===
 
 /**
  * Create and render the floating toolbar using lit-html
@@ -36,11 +45,14 @@ export function createFloatingToolbar(
     position,
   };
 
+  // Track initial click target to avoid race condition with setTimeout
+  let initialClickTarget: EventTarget | null = null;
 
   // Callbacks
   const callbacks: ToolbarCallbacks = {
     onIconClick: (e: Event) => {
       e.stopPropagation();
+      initialClickTarget = e.target;
       state = { ...state, isExpanded: true };
       // Re-attach document click listener to catch clicks outside
       attachDocumentListeners();
@@ -82,6 +94,12 @@ export function createFloatingToolbar(
 
   // Document click handler
   const handleDocumentClick = (e: MouseEvent) => {
+    // Ignore the initial click that expanded the toolbar (avoids race condition)
+    if (e.target === initialClickTarget) {
+      initialClickTarget = null;
+      return;
+    }
+
     // Don't dismiss if clicking inside the toolbar
     if (container.contains(e.target as Node)) return;
 

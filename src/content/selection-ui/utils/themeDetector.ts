@@ -1,8 +1,17 @@
-import type { ThemeDetectionResult } from './types.ts';
+/**
+ * Theme detection utilities for selection-ui
+ * Detects the theme (dark/light) of the host webpage
+ */
 
+import type { ThemeDetectionResult } from '../types.ts';
+
+// Regex patterns for color parsing
 const RGB_REGEX = /rgba?\((\d+),\s*(\d+),\s*(\d+)/;
 const HEX_REGEX = /#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i;
-const SHORT_HEX_REGEX = /#([0-9a-f])(([0-9a-f])([0-9a-f]))/i;
+const SHORT_HEX_REGEX = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i;
+
+// Luminance threshold for determining dark colors
+const LUMINANCE_DARK_THRESHOLD = 0.5;
 
 /**
  * Detects the theme (dark/light) of the host webpage
@@ -54,91 +63,6 @@ export function detectPageTheme(): ThemeDetectionResult {
 
   // Default to light
   return { isDark: false, themeSource: 'default' };
-}
-
-function isDarkThemeValue(value: string): boolean {
-  const dark = ['dark', 'night', 'dim', 'black', 'midnight'];
-  const light = ['light', 'day', 'bright', 'white'];
-  const lower = value.toLowerCase();
-
-  if (dark.some((d) => lower.includes(d))) return true;
-  if (light.some((l) => lower.includes(l))) return false;
-  return false;
-}
-
-function hasDarkClass(classes: string): boolean {
-  const darkPatterns = [
-    'dark',
-    'theme-dark',
-    'dark-theme',
-    'darkmode',
-    'dark-mode',
-    'night',
-    'nightmode',
-    'night-mode',
-  ];
-  return darkPatterns.some((pattern) => classes.includes(pattern));
-}
-
-function hasLightClass(classes: string): boolean {
-  const lightPatterns = [
-    'light',
-    'theme-light',
-    'light-theme',
-    'lightmode',
-    'light-mode',
-    'day',
-    'daymode',
-    'day-mode',
-  ];
-  return lightPatterns.some((pattern) => classes.includes(pattern));
-}
-
-/**
- * Determine if a color is dark based on its RGB values
- * Uses relative luminance formula
- */
-function isDarkColor(color: string): boolean {
-  const rgb = parseColor(color);
-  if (!rgb) return false;
-
-  // Calculate relative luminance
-  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
-  return luminance < 0.5;
-}
-
-function parseColor(color: string): { r: number; g: number; b: number } | null {
-  // Try rgb/rgba
-  const rgbMatch = color.match(RGB_REGEX);
-  if (rgbMatch) {
-    return {
-      r: parseInt(rgbMatch[1], 10),
-      g: parseInt(rgbMatch[2], 10),
-      b: parseInt(rgbMatch[3], 10),
-    };
-  }
-
-  // Try hex
-  const hexMatch = color.match(HEX_REGEX);
-  if (hexMatch) {
-    return {
-      r: parseInt(hexMatch[1], 16),
-      g: parseInt(hexMatch[2], 16),
-      b: parseInt(hexMatch[3], 16),
-    };
-  }
-
-  // Try short hex
-  const shortHexMatch = color.match(SHORT_HEX_REGEX);
-  if (shortHexMatch) {
-    return {
-      r: parseInt(shortHexMatch[1] + shortHexMatch[1], 16),
-      g: parseInt(shortHexMatch[2] + shortHexMatch[2], 16),
-      b: parseInt(shortHexMatch[3] + shortHexMatch[3], 16),
-    };
-  }
-
-  return null;
 }
 
 /**
@@ -196,4 +120,91 @@ export function generateThemeVariables(isDark: boolean): string {
     --bk-success-foreground: oklch(0.985 0 0);
     --bk-radius: 0.5rem;
   `;
+}
+
+// === Private Helper Functions ===
+
+function isDarkThemeValue(value: string): boolean {
+  const dark = ['dark', 'night', 'dim', 'black', 'midnight'];
+  const light = ['light', 'day', 'bright', 'white'];
+  const lower = value.toLowerCase();
+
+  if (dark.some((d) => lower.includes(d))) return true;
+  if (light.some((l) => lower.includes(l))) return false;
+  return false;
+}
+
+function hasDarkClass(classes: string): boolean {
+  const darkPatterns = [
+    'dark',
+    'theme-dark',
+    'dark-theme',
+    'darkmode',
+    'dark-mode',
+    'night',
+    'nightmode',
+    'night-mode',
+  ];
+  return darkPatterns.some((pattern) => classes.includes(pattern));
+}
+
+function hasLightClass(classes: string): boolean {
+  const lightPatterns = [
+    'light',
+    'theme-light',
+    'light-theme',
+    'lightmode',
+    'light-mode',
+    'day',
+    'daymode',
+    'day-mode',
+  ];
+  return lightPatterns.some((pattern) => classes.includes(pattern));
+}
+
+/**
+ * Determine if a color is dark based on its RGB values
+ * Uses relative luminance formula
+ */
+function isDarkColor(color: string): boolean {
+  const rgb = parseColor(color);
+  if (!rgb) return false;
+
+  // Calculate relative luminance
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  return luminance < LUMINANCE_DARK_THRESHOLD;
+}
+
+function parseColor(color: string): { r: number; g: number; b: number } | null {
+  // Try rgb/rgba
+  const rgbMatch = color.match(RGB_REGEX);
+  if (rgbMatch) {
+    return {
+      r: parseInt(rgbMatch[1], 10),
+      g: parseInt(rgbMatch[2], 10),
+      b: parseInt(rgbMatch[3], 10),
+    };
+  }
+
+  // Try hex (6-digit)
+  const hexMatch = color.match(HEX_REGEX);
+  if (hexMatch) {
+    return {
+      r: parseInt(hexMatch[1], 16),
+      g: parseInt(hexMatch[2], 16),
+      b: parseInt(hexMatch[3], 16),
+    };
+  }
+
+  // Try short hex (3-digit) - FIXED: correct regex pattern
+  const shortHexMatch = color.match(SHORT_HEX_REGEX);
+  if (shortHexMatch) {
+    return {
+      r: parseInt(shortHexMatch[1] + shortHexMatch[1], 16),
+      g: parseInt(shortHexMatch[2] + shortHexMatch[2], 16),
+      b: parseInt(shortHexMatch[3] + shortHexMatch[3], 16),
+    };
+  }
+
+  return null;
 }
