@@ -363,6 +363,10 @@ export interface AppState {
   // Preferences
   preferences: Preferences;
 
+  // Text Selection UI Settings
+  textSelectionEnabled: boolean;
+  textSelectionMinLength: number;
+
   // Actions
   setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
@@ -433,6 +437,10 @@ export interface AppState {
 
   // Preferences Actions
   setPreferences: (prefs: Partial<Preferences>) => void;
+
+  // Text Selection UI Actions
+  setTextSelectionEnabled: (enabled: boolean) => void;
+  setTextSelectionMinLength: (length: number) => void;
 
   // Persistence
   loadFromStorage: () => Promise<void>;
