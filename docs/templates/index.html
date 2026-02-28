@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title | default(value="BraceKit") }} — AI-Powered Chrome Sidebar{% endblock title %}
+
+{% block head %}
+<meta property="og:title" content="{{ section.title | default(value=" BraceKit") }} — AI-Powered Chrome Sidebar">
+<meta property="og:description" content="{{ section.description | default(value=" An AI-powered Chrome sidebar with MCP
+    support, multi-provider LLM chat, and page context reading.") }}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{ config.base_url }}">
+<meta name="twitter:card" content="summary_large_image">
+{% endblock head %}
+
+{% block content %}
+<!-- Navigation -->
+<nav class="nav">
+    <div class="nav__inner">
+        <a href="/" class="nav__logo">
+            <svg width="20" height="20" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <g clipPath="url(#clip0_206_44)">
+                    <path
+                        d="M116 393.837V360.635H96.096C85.6702 360.635 79.0355 358.608 76.1921 354.556C73.3487 350.814 71.927 342.865 71.927 330.706V259.157C71.927 239.828 68.6096 225.954 61.975 217.537C55.3403 209.119 46.1782 203.351 34.4886 200.234V199.766C45.8623 196.649 55.0244 191.037 61.975 182.931C68.6096 174.514 71.927 160.484 71.927 140.843V69.2942C71.927 57.4473 73.3487 49.4974 76.1921 45.4445C79.0355 41.3916 85.6702 39.3652 96.096 39.3652H116V6.1626H95.6221C77.9298 6.1626 64.5025 8.18905 55.3403 12.2419C46.1782 15.9831 40.0175 22.5301 36.8581 31.8829C33.6987 40.9239 32.1191 53.5503 32.1191 69.7619V139.908C32.1191 153.314 30.2235 164.07 26.4322 172.175C22.641 180.281 13.4789 184.334 -1.05418 184.334V215.666C13.4789 215.666 22.641 219.719 26.4322 227.825C30.2235 235.93 32.1191 246.686 32.1191 260.092V330.238C32.1191 346.138 33.6987 358.764 36.8581 368.117C40.0175 377.47 46.1782 384.017 55.3403 387.758C64.5025 391.811 77.9298 393.837 95.6221 393.837H116Z"
+                        fill="oklch(0.508 0.182 265.8)" />
+                    <path
+                        d="M164.407 244L138.21 224.45L173.519 175L116 156.6L126.251 124.975L183.769 143.95V83H216.231V143.95L273.749 124.975L284 156.6L225.912 175L261.79 224.45L235.593 244L199.715 194.55L164.407 244Z"
+                        fill="oklch(0.508 0.182 265.8)" />
+                    <ellipse cx="199.692" cy="298.196" rx="36.7287" ry="36.804" fill="oklch(0.508 0.182 265.8)" />
+                    <path
+                        d="M304.378 393.837C322.07 393.837 335.498 391.811 344.66 387.758C353.822 384.017 359.983 377.47 363.142 368.117C366.301 358.764 367.881 346.138 367.881 330.238V260.092C367.881 246.686 369.777 235.93 373.568 227.825C377.043 219.719 386.205 215.666 401.054 215.666V184.334C386.205 184.334 377.043 180.281 373.568 172.175C369.777 164.07 367.881 153.314 367.881 139.908V69.7619C367.881 53.5503 366.301 40.9239 363.142 31.8829C359.983 22.5301 353.822 15.9831 344.66 12.2419C335.498 8.18905 322.07 6.1626 304.378 6.1626H284V39.3652H303.904C314.33 39.3652 320.965 41.3916 323.808 45.4445C326.651 49.4974 328.073 57.4473 328.073 69.2942V140.843C328.073 160.484 331.548 174.514 338.499 182.931C345.134 191.037 354.138 196.649 365.511 199.766V200.234C353.506 203.351 344.344 209.119 338.025 217.537C331.39 225.954 328.073 239.828 328.073 259.157V330.706C328.073 342.865 326.651 350.814 323.808 354.556C320.965 358.608 314.33 360.635 303.904 360.635H284V393.837H304.378Z"
+                        fill="oklch(0.508 0.182 265.8)" />
+                </g>
+                <defs>
+                    <clipPath id="clip0_206_44">
+                        <rect width="400" height="400" fill="white" />
+                    </clipPath>
+                </defs>
+            </svg>
+            <span>BraceKit</span>
+        </a>
+        <ul class="nav__links">
+            {% if section.extra.nav_links %}
+            {% for link in section.extra.nav_links %}
+            <li>
+                <a href="{{ link.url }}" class="nav__link">{{ link.label }}</a>
+            </li>
+            {% endfor %}
+            {% else %}
+            <li><a href="#features" class="nav__link">Features</a></li>
+            <li><a href="#providers" class="nav__link">Providers</a></li>
+            <li><a href="/guide/" class="nav__link">Documentation</a></li>
+            {% endif %}
+        </ul>
+        <a href="{{ section.extra.cta_url | default(value='/guide/installation/') }}" class="nav__cta">
+            {{ section.extra.cta_label | default(value="Get Started") }}
+        </a>
+    </div>
+</nav>
+
+<!-- Hero Section -->
+<section class="hero">
+    {% if section.extra.badge %}
+    <div class="hero__badge">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        {{ section.extra.badge }}
+    </div>
+    {% endif %}
+
+    <h1 class="hero__title">
+        {% if section.extra.hero_title %}
+        {{ section.extra.hero_title | markdown(inline=true) | safe }}
+        {% else %}
+        Your AI Assistant,<br><span class="brand">Right in Your Browser</span>
+        {% endif %}
+    </h1>
+
+    <p class="hero__subtitle">
+        {% if section.extra.hero_subtitle %}
+        {{ section.extra.hero_subtitle }}
+        {% else %}
+        BraceKit is an AI-powered Chrome sidebar that reads page content and lets you chat with multiple LLM providers.
+        Features MCP support, streaming responses, and a premium dark UI.
+        {% endif %}
+    </p>
+
+    <div class="hero__actions">
+        {% if section.extra.hero_actions %}
+        {% for action in section.extra.hero_actions %}
+        <a href="{{ action.url }}" class="btn btn--{{ action.style | default(value=" primary") }} btn--lg">
+            {% if action.icon %}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                {{ action.icon | safe }}
+            </svg>
+            {% endif %}
+            {{ action.label }}
+        </a>
+        {% endfor %}
+        {% else %}
+        <a href="/guide/installation/" class="btn btn--primary btn--lg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Install Extension
+        </a>
+        <a href="/guide/" class="btn btn--secondary btn--lg">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            Read Docs
+        </a>
+        {% endif %}
+    </div>
+
+    {% if section.extra.hero_image %}
+    <div class="hero__preview">
+        <img src="{{ section.extra.hero_image }}" alt="BraceKit Preview">
+    </div>
+    {% endif %}
+</section>
+
+<!-- Features Section -->
+<section class="features" id="features">
+    <div class="features__header">
+        <h2 class="features__title">
+            {{ section.extra.features_title | default(value="Everything You Need") }}
+        </h2>
+        <p class="features__subtitle">
+            {{ section.extra.features_subtitle | default(value="Powerful features designed for productivity and seamless
+            AI integration.") }}
+        </p>
+    </div>
+
+    <div class="features__grid">
+        {% if section.extra.features %}
+        {% for feature in section.extra.features %}
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                {{ feature.icon | safe }}
+            </div>
+            <h3 class="features__card-title">{{ feature.title }}</h3>
+            <p class="features__card-desc">{{ feature.description }}</p>
+        </div>
+        {% endfor %}
+        {% else %}
+        <!-- Default Features -->
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+            </div>
+            <h3 class="features__card-title">Streaming AI Chat</h3>
+            <p class="features__card-desc">Real-time streaming responses with markdown rendering. Support for reasoning
+                models that show their thought process.</p>
+        </div>
+
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                    <line x1="9" y1="21" x2="9" y2="9"></line>
+                </svg>
+            </div>
+            <h3 class="features__card-title">Page Context</h3>
+            <p class="features__card-desc">Read entire page content or grab highlighted text. The AI has full context of
+                what you're viewing.</p>
+        </div>
+
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+            </div>
+            <h3 class="features__card-title">MCP Support</h3>
+            <p class="features__card-desc">Connect MCP servers for extended tool usage. Enable external tools and
+                capabilities seamlessly.</p>
+        </div>
+
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path
+                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                    </path>
+                </svg>
+            </div>
+            <h3 class="features__card-title">Multi-Provider</h3>
+            <p class="features__card-desc">OpenAI, Claude, Gemini, xAI, DeepSeek, and custom endpoints. Switch providers
+                instantly.</p>
+        </div>
+
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                </svg>
+            </div>
+            <h3 class="features__card-title">Dark Theme</h3>
+            <p class="features__card-desc">Premium dark UI with glassmorphism effects. Easy on the eyes, beautiful to
+                look at.</p>
+        </div>
+
+        <div class="glass-card glass-card-hover features__card">
+            <div class="features__card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+            <h3 class="features__card-title">PIN Protection</h3>
+            <p class="features__card-desc">Secure your API keys and sensitive data with PIN protection. Your data stays
+                private.</p>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Providers Section -->
+<section class="providers" id="providers">
+    <h2 class="providers__title">Supported Providers</h2>
+    <div class="providers__list">
+        {% if section.extra.providers %}
+        {% for provider in section.extra.providers %}
+        <span class="providers__item">
+            {% if provider.icon %}{{ provider.icon | safe }}{% endif %}
+            {{ provider.name | default(value=provider) }}
+        </span>
+        {% endfor %}
+        {% endif %}
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="cta">
+    <div class="glass cta__inner">
+        <h2 class="cta__title">
+            {{ section.extra.cta_title | default(value="Ready to Supercharge Your Browser?") }}
+        </h2>
+        <p class="cta__desc">
+            {{ section.extra.cta_desc | default(value="Install BraceKit and start chatting with AI right from your
+            browser sidebar.") }}
+        </p>
+        <a href="{{ section.extra.cta_button_url | default(value='/guide/installation/') }}"
+            class="btn btn--primary btn--lg">
+            {{ section.extra.cta_button_label | default(value="Get Started Now") }}
+        </a>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+    <div class="footer__inner">
+        <a href="/" class="footer__logo">
+            <svg width="24" height="24" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <g clipPath="url(#clip0_206_44)">
+                    <path
+                        d="M116 393.837V360.635H96.096C85.6702 360.635 79.0355 358.608 76.1921 354.556C73.3487 350.814 71.927 342.865 71.927 330.706V259.157C71.927 239.828 68.6096 225.954 61.975 217.537C55.3403 209.119 46.1782 203.351 34.4886 200.234V199.766C45.8623 196.649 55.0244 191.037 61.975 182.931C68.6096 174.514 71.927 160.484 71.927 140.843V69.2942C71.927 57.4473 73.3487 49.4974 76.1921 45.4445C79.0355 41.3916 85.6702 39.3652 96.096 39.3652H116V6.1626H95.6221C77.9298 6.1626 64.5025 8.18905 55.3403 12.2419C46.1782 15.9831 40.0175 22.5301 36.8581 31.8829C33.6987 40.9239 32.1191 53.5503 32.1191 69.7619V139.908C32.1191 153.314 30.2235 164.07 26.4322 172.175C22.641 180.281 13.4789 184.334 -1.05418 184.334V215.666C13.4789 215.666 22.641 219.719 26.4322 227.825C30.2235 235.93 32.1191 246.686 32.1191 260.092V330.238C32.1191 346.138 33.6987 358.764 36.8581 368.117C40.0175 377.47 46.1782 384.017 55.3403 387.758C64.5025 391.811 77.9298 393.837 95.6221 393.837H116Z"
+                        fill="oklch(0.508 0.182 265.8)" />
+                    <path
+                        d="M164.407 244L138.21 224.45L173.519 175L116 156.6L126.251 124.975L183.769 143.95V83H216.231V143.95L273.749 124.975L284 156.6L225.912 175L261.79 224.45L235.593 244L199.715 194.55L164.407 244Z"
+                        fill="oklch(0.508 0.182 265.8)" />
+                    <ellipse cx="199.692" cy="298.196" rx="36.7287" ry="36.804" fill="oklch(0.508 0.182 265.8)" />
+                    <path
+                        d="M304.378 393.837C322.07 393.837 335.498 391.811 344.66 387.758C353.822 384.017 359.983 377.47 363.142 368.117C366.301 358.764 367.881 346.138 367.881 330.238V260.092C367.881 246.686 369.777 235.93 373.568 227.825C377.043 219.719 386.205 215.666 401.054 215.666V184.334C386.205 184.334 377.043 180.281 373.568 172.175C369.777 164.07 367.881 153.314 367.881 139.908V69.7619C367.881 53.5503 366.301 40.9239 363.142 31.8829C359.983 22.5301 353.822 15.9831 344.66 12.2419C335.498 8.18905 322.07 6.1626 304.378 6.1626H284V39.3652H303.904C314.33 39.3652 320.965 41.3916 323.808 45.4445C326.651 49.4974 328.073 57.4473 328.073 69.2942V140.843C328.073 160.484 331.548 174.514 338.499 182.931C345.134 191.037 354.138 196.649 365.511 199.766V200.234C353.506 203.351 344.344 209.119 338.025 217.537C331.39 225.954 328.073 239.828 328.073 259.157V330.706C328.073 342.865 326.651 350.814 323.808 354.556C320.965 358.608 314.33 360.635 303.904 360.635H284V393.837H304.378Z"
+                        fill="oklch(0.508 0.182 265.8)" />
+                </g>
+                <defs>
+                    <clipPath id="clip0_206_44">
+                        <rect width="400" height="400" fill="white" />
+                    </clipPath>
+                </defs>
+            </svg>
+            BraceKit
+        </a>
+        <ul class="footer__links">
+            {% if section.extra.footer_links %}
+            {% for link in section.extra.footer_links %}
+            <li><a href="{{ link.url }}" class="footer__link">{{ link.label }}</a></li>
+            {% endfor %}
+            {% else %}
+            <li><a href="/guide/" class="footer__link">Documentation</a></li>
+            <li><a href="/guide/installation/" class="footer__link">Installation</a></li>
+            <li><a href="https://github.com" class="footer__link">GitHub</a></li>
+            {% endif %}
+        </ul>
+        <p class="footer__copy">
+            &copy; {{ now() | date(format="%Y") }} BraceKit. All rights reserved.
+        </p>
+    </div>
+</footer>
+{% endblock content %}
