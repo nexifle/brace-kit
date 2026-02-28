@@ -132,6 +132,11 @@ export function ModelParameterSettings() {
     store.setModelParameters({ [key]: value });
   };
 
+  // Update function for string values (like keepAlive)
+  const updateString = (key: keyof ModelParameters, value: string | undefined) => {
+    store.setModelParameters({ [key]: value });
+  };
+
   const save = () => store.saveToStorage();
 
   const hasAnyValue = Object.values(params).some((v) => v !== undefined);
@@ -186,7 +191,7 @@ export function ModelParameterSettings() {
         />
       )}
 
-      {/* Top K — Anthropic & Gemini only */}
+      {/* Top K — Anthropic, Gemini, Ollama */}
       {isSupported('topK') && (
         <NumberRow
           label="Top K"
@@ -196,6 +201,62 @@ export function ModelParameterSettings() {
           description="Top-k picks k most likely words; larger k wider choices."
           onChange={(v) => { update('topK', v); save(); }}
         />
+      )}
+
+      {/* Min P — Ollama only */}
+      {isSupported('minP') && (
+        <div onPointerUp={save}>
+          <SliderRow
+            label="Min P"
+            max={1}
+            step={0.01}
+            value={params.minP}
+            placeholder="default"
+            description="Minimum probability threshold for token selection. Filters out unlikely tokens."
+            onChange={(v) => update('minP', v)}
+          />
+        </div>
+      )}
+
+      {/* Num Ctx (Context Window) — Ollama only */}
+      {isSupported('numCtx') && (
+        <NumberRow
+          label="Context Window (tokens)"
+          placeholder="4096"
+          value={params.numCtx}
+          min={512}
+          description="Sets the context window size. Larger values use more memory."
+          onChange={(v) => { update('numCtx', v); save(); }}
+        />
+      )}
+
+      {/* Keep Alive — Ollama only */}
+      {isSupported('keepAlive') && (
+        <div className="flex flex-col gap-1.5 px-0.5">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+            Keep Alive
+            <Tooltip>
+              <TooltipTrigger>
+                <button>
+                  <HelpCircleIcon
+                    size={16}
+                    className="inline-block ml-1 text-muted-foreground/60 cursor-pointer"
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs text-muted-foreground/80">How long to keep the model loaded in memory. Examples: "5m", "24h", "0" to unload immediately.</p>
+              </TooltipContent>
+            </Tooltip>
+          </label>
+          <input
+            type="text"
+            className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
+            placeholder="5m"
+            value={params.keepAlive ?? ''}
+            onChange={(e) => { updateString('keepAlive', e.target.value || undefined); save(); }}
+          />
+        </div>
       )}
 
       {/* Thinking Budget — only when reasoning is enabled */}

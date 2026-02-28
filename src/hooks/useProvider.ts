@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
 import { PROVIDER_PRESETS, fetchModels } from '../providers';
 import type { ProviderPreset, CustomProvider, ProviderFormat } from '../types/index.ts';
-import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
+import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil, isOllamaLocalhost } from '../utils/providerUtils.ts';
 
 export function useProvider() {
   const store = useStore();
@@ -53,8 +53,11 @@ export function useProvider() {
 
     store.saveToStorage();
 
-    // Fetch models for the new provider if supported and has API key
-    if ((provider as ProviderPreset).supportsModelFetch && store.providerConfig.apiKey) {
+    // Fetch models for the new provider if supported
+    // Ollama localhost doesn't require API key, others do
+    const isLocalhost = isOllamaLocalhost(provider.format, provider.apiUrl);
+    const hasApiKey = saved.apiKey || store.providerConfig.apiKey;
+    if ((provider as ProviderPreset).supportsModelFetch && (hasApiKey || isLocalhost)) {
       fetchAndCacheModels(newId);
     }
   }, [store, getProvider, isCustomProvider]);
@@ -100,12 +103,16 @@ export function useProvider() {
     const apiKey = store.providerKeys[providerId]?.apiKey
       || (providerId === store.providerConfig.providerId ? store.providerConfig.apiKey : '');
 
-    if (!apiKey) return;
+    // Get provider to check if it's Ollama localhost (doesn't require API key)
+    const provider = getProvider(providerId);
+    const isLocalhost = isOllamaLocalhost(provider?.format, provider?.apiUrl);
+
+    // Skip if no API key and not Ollama localhost
+    if (!apiKey && !isLocalhost) return;
 
     store.setFetchingModels(true);
 
     try {
-      const provider = getProvider(providerId);
       const result = await fetchModels({
         ...provider,
         apiKey,
@@ -128,7 +135,7 @@ export function useProvider() {
     const provider = getProvider(providerId) as ProviderPreset;
     const cached = store.fetchedModels[providerId];
 
-    if (cached?.models?.length && cached.models.length > 0) {
+    if (cached?.models && cached.models.length > 0) {
       return cached.models;
     } else if (provider?.staticModels?.length && provider.staticModels.length > 0) {
       return provider.staticModels;

@@ -39,6 +39,7 @@ export const REASONING_MODELS = {
   gemini: ['thinking', 'gemini-2.5-pro'], // Thinking models
   deepseek: ['reasoner', 'r1'], // deepseek-reasoner, deepseek-r1
   xai: ['grok'], // Grok models have reasoning
+  ollama: ['deepseek-r1', 'qwq', 'marco-o1', 'think'], // Ollama thinking models
 } as const;
 
 /**
@@ -174,6 +175,15 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'openai',
     models: [],
     supportsModelFetch: false,
+  },
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama',
+    apiUrl: 'http://localhost:11434',
+    defaultModel: '',
+    format: 'ollama',
+    models: [],
+    supportsModelFetch: true,
   },
 };
 

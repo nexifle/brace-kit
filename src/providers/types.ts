@@ -22,6 +22,10 @@ export interface ChatOptions {
   enableReasoning?: boolean;
   /** Model generation parameters forwarded from ProviderConfig */
   modelParameters?: ModelParameters;
+  /** Context window size (Ollama-specific) */
+  num_ctx?: number;
+  /** Keep model loaded duration, e.g. "5m", "24h" (Ollama-specific) */
+  keep_alive?: string;
 }
 
 // ==================== Stream Chunk ====================
@@ -109,7 +113,7 @@ export interface RequestConfig {
 /**
  * Supported provider format types
  */
-export type ProviderFormatType = 'openai' | 'anthropic' | 'gemini';
+export type ProviderFormatType = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
 /**
  * Extended provider with runtime configuration

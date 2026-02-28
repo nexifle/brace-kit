@@ -53,6 +53,7 @@ interface StorageData {
   textSelectionMinLength?: number;
   conversations?: Conversation[];
   chatHistory?: Message[];
+  fetchedModels?: Record<string, { models?: string[] }>;
 }
 
 const DEFAULT_SYSTEM_PROMPT = 'You are BraceKit, a helpful AI assistant. When the user shares page content or selected text, help them understand and work with it. Be concise and helpful.';
@@ -232,10 +233,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   setShowCustomModel: (showCustomModel) => set({ showCustomModel }),
 
-  setFetchedModels: (providerId, models) =>
+  setFetchedModels: (providerId, models) => {
     set((state) => ({
       fetchedModels: { ...state.fetchedModels, [providerId]: models },
-    })),
+    }));
+    get().saveToStorage();
+  },
 
   setFetchingModels: (fetchingModels) => set({ fetchingModels }),
 
@@ -663,6 +666,7 @@ export const useStore = create<AppState>((set, get) => ({
         'preferences',
         'textSelectionEnabled',
         'textSelectionMinLength',
+        'fetchedModels'
       ]) as StorageData;
 
       const updates: Partial<AppState> = {};
@@ -717,6 +721,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.textSelectionMinLength !== undefined) {
         updates.textSelectionMinLength = data.textSelectionMinLength;
+      }
+      if (data.fetchedModels) {
+        updates.fetchedModels = data.fetchedModels as any;
       }
 
       // Load session auth state (persists during browser session)
@@ -825,6 +832,7 @@ export const useStore = create<AppState>((set, get) => ({
         preferences: state.preferences,
         textSelectionEnabled: state.textSelectionEnabled,
         textSelectionMinLength: state.textSelectionMinLength,
+        fetchedModels: state.fetchedModels,
       });
     } catch (e) {
       console.warn('Failed to save settings:', e);

@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message } from '../types/index.ts';
 import { GEMINI_NO_TOOLS_MODELS, XAI_IMAGE_MODELS } from '../providers/presets.ts';
+import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import { useMemory } from './useMemory.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
@@ -291,7 +292,7 @@ export function useStreaming() {
               const response = await chrome.runtime.sendMessage({
                 type: 'TITLE_GENERATE',
                 messages: [
-                  { role: 'system', content: 'Generate a concise 3-5 word title for this conversation. Return ONLY the title, no quotes, no explanation.' },
+                  { role: 'system', content: TITLE_GENERATION_SYSTEM_PROMPT },
                   ...msgs
                 ],
                 providerConfig: titleProviderConfig,

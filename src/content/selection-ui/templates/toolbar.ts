@@ -16,6 +16,12 @@ export interface ToolbarState {
   selectedLang: string;
   position: SelectionPosition;
   menuState: MenuState;
+  providerState: {
+    isOpen: boolean;
+    currentProvider: string;
+    currentModel: string;
+    providers: { id: string; name: string; models: string[] }[];
+  };
 }
 
 export interface ToolbarCallbacks {
@@ -26,7 +32,10 @@ export interface ToolbarCallbacks {
   onLangChange: (e: Event) => void;
   onGoClick: (e: Event) => void;
   onMenuToggle: (e: Event) => void;
-  onMenuClose: () => void;
+  onMenuClose: (e?: Event) => void;
+  onProviderMenuToggle: (e: Event) => void;
+  onProviderMenuClose: (e?: Event) => void;
+  onModelSelect: (e: Event, providerId: string, model: string) => void;
 }
 
 // === Icon Mapping ===
@@ -104,7 +113,6 @@ export function toolbarTemplate(
       <div class="bk-toolbar-arrow" aria-hidden="true"></div>
       ${actionsContainerTemplate(state, callbacks)}
     </div>
-    ${state.menuState.isOpen ? menuOverlayTemplate(state, callbacks) : ''}
   `;
 }
 
@@ -143,11 +151,55 @@ function actionsContainerTemplate(
 
   return html`
     <div class="bk-actions-container" role="group" aria-label="AI actions">
-      ${primaryActions.map((action) =>
-        actionButtonTemplate(action, callbacks)
-      )}
-      ${showMoreButton ? moreButtonTemplate(state, callbacks) : ''}
+      <div class="bk-toolbar-header" style="position: relative;">
+        ${providerSelectorTemplate(state, callbacks)}
+        ${showMoreButton ? moreButtonTemplate(state, callbacks) : ''}
+        ${state.menuState.isOpen ? menuOverlayTemplate(state, callbacks) : ''}
+        ${state.providerState.isOpen ? providerMenuOverlayTemplate(state, callbacks) : ''}
+      </div>
+      <div class="bk-divider-horizontal" aria-hidden="true"></div>
+      <div class="bk-actions-grid">
+        ${primaryActions.map((action) =>
+    actionButtonTemplate(action, callbacks)
+  )}
+      </div>
     </div>
+  `;
+}
+
+/**
+ * Provider and model selector button
+ */
+function providerSelectorTemplate(
+  state: ToolbarState,
+  callbacks: ToolbarCallbacks
+): TemplateResult {
+  const currentProviderObj = state.providerState.providers.find(p => p.id === state.providerState.currentProvider);
+
+  if (!currentProviderObj && state.providerState.providers.length === 0) {
+    return html`
+    <button class="bk-action-btn bk-model-selector-btn" disabled>
+      <span class="bk-label">Loading...</span>
+    </button>
+    `;
+  }
+
+  const providerName = currentProviderObj?.name || state.providerState.currentProvider;
+  const modelName = state.providerState.currentModel || 'Default';
+  const displayText = `${providerName}: ${modelName}`;
+
+  return html`
+    <button
+      class="bk-action-btn bk-model-selector-btn"
+      aria-label="Select AI Model"
+      aria-expanded=${state.providerState.isOpen}
+      aria-haspopup="menu"
+      title="${displayText}"
+      @click=${callbacks.onProviderMenuToggle}
+    >
+      <span class="bk-label">${displayText}</span>
+      <span class="bk-chevron" aria-hidden="true">${icons.chevronDown}</span>
+    </button>
   `;
 }
 
@@ -245,7 +297,6 @@ function moreButtonTemplate(
   callbacks: ToolbarCallbacks
 ): TemplateResult {
   return html`
-    <div class="bk-divider" aria-hidden="true"></div>
     <button
       class="bk-action-btn bk-more-btn"
       aria-label="More actions"
@@ -264,7 +315,7 @@ function moreButtonTemplate(
  * Menu overlay with dropdown content
  */
 function menuOverlayTemplate(
-  state: ToolbarState,
+  _state: ToolbarState,
   callbacks: ToolbarCallbacks
 ): TemplateResult {
   const secondaryActions = getSecondaryActions();
@@ -276,13 +327,59 @@ function menuOverlayTemplate(
       class="bk-menu"
       role="menu"
       aria-label="More actions"
-      style="top: ${state.position.top + 52}px; left: ${state.position.left}px;"
+      style="top: 36px; right: 0; left: auto;"
       @click=${(e: Event) => e.stopPropagation()}
     >
       <div class="bk-menu-content">
         ${Array.from(groupedActions.entries()).map(([category, actions]) =>
-          menuCategoryTemplate(category, actions, callbacks)
-        )}
+    menuCategoryTemplate(category, actions, callbacks)
+  )}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Provider & Model Menu overlay
+ */
+function providerMenuOverlayTemplate(
+  state: ToolbarState,
+  callbacks: ToolbarCallbacks
+): TemplateResult {
+  return html`
+    <div class="bk-menu-overlay" @click=${callbacks.onProviderMenuClose} aria-hidden="true"></div>
+    <div
+      class="bk-menu bk-provider-menu"
+      role="menu"
+      aria-label="Select Model"
+      style="top: 36px; left: 0;"
+      @click=${(e: Event) => e.stopPropagation()}
+    >
+      <div class="bk-menu-content">
+        ${state.providerState.providers.map(provider =>
+    provider.models.length > 0 ? html`
+            <div class="bk-menu-category">
+              <div class="bk-menu-category-label">${provider.name}</div>
+              ${provider.models.map(model => html`
+                <button
+                  class="bk-menu-item bk-model-item"
+                  role="menuitem"
+                  title="${model}"
+                  aria-label="${model}"
+                  @click=${(e: Event) => {
+        e.stopPropagation();
+        callbacks.onModelSelect(e, provider.id, model);
+      }}
+                >
+                  <span class="bk-menu-item-icon" style="visibility: ${state.providerState.currentProvider === provider.id && state.providerState.currentModel === model ? 'visible' : 'hidden'}">
+                    ${icons.check}
+                  </span>
+                  <span class="bk-menu-item-label">${model}</span>
+                </button>
+              `)}
+            </div>
+          ` : ''
+  )}
       </div>
     </div>
   `;
@@ -319,10 +416,10 @@ function menuItemTemplate(
       role="menuitem"
       aria-label="${action.label} selected text"
       @click=${(e: Event) => {
-        e.stopPropagation();
-        callbacks.onActionClick(e, action.id);
-        callbacks.onMenuClose();
-      }}
+      e.stopPropagation();
+      callbacks.onActionClick(e, action.id);
+      callbacks.onMenuClose();
+    }}
     >
       <span class="bk-menu-item-icon" aria-hidden="true">
         ${getActionIcon(action.icon)}

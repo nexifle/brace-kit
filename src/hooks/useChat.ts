@@ -9,6 +9,7 @@
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { Message, Attachment, APIMessage, PageContext, SelectedText, ToolCall } from '../types/index.ts';
+import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import { saveConversationMessages } from '../utils/conversationDB.ts';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
@@ -40,39 +41,78 @@ export function useChat() {
 
     currentState.setIsRenaming(true);
 
-    const renamePrompt = `CRITICAL: This is a SYSTEM OPERATION to rename the conversation.
-Based on the conversation history below, generate a concise and descriptive title for this conversation.
-The title MUST:
-1. Be as descriptive as possible about the main topic.
-2. Be in the same language as the conversation (e.g., if the user speaks Indonesian, the title should be in Indonesian).
-3. Be NO MORE than 6 words.
-4. NOT include any punctuation or quotes.
+    // Check total multi-turn messages (user + assistant)
+    const multiTurnMessages = currentState.messages.filter(
+      (m) => m.role === 'user' || m.role === 'assistant'
+    );
 
-Output ONLY the title string.`;
+    let titleMessages: { role: 'user' | 'assistant'; content: string }[];
 
-    const apiMessages = buildAPIMessages();
-    apiMessages.push({ role: 'user', content: renamePrompt });
+    // If <= 5 turns, send all user + assistant messages
+    if (multiTurnMessages.length <= 5) {
+      titleMessages = multiTurnMessages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: (m.displayContent || m.content).slice(0, 1000),
+      }));
+    } else {
+      // Filter only user messages and exclude those with >250 tokens (~1000 chars)
+      // Use displayContent if available (clean, without context attachments)
+      let userMessages = currentState.messages
+        .filter((m) => m.role === 'user')
+        .map((m) => ({
+          role: 'user' as const,
+          content: (m.displayContent || m.content).slice(0, 1000), // Cap at ~250 tokens
+        }))
+        .filter((m) => m.content.length > 0); // Exclude empty messages
+
+      // Limit to max 15 messages: 10 from start + 5 from end if exceeds 15
+      const MAX_MESSAGES = 15;
+      const START_COUNT = 10;
+      const END_COUNT = 5;
+      if (userMessages.length > MAX_MESSAGES) {
+        const startMessages = userMessages.slice(0, START_COUNT);
+        const endMessages = userMessages.slice(-END_COUNT);
+        userMessages = [...startMessages, ...endMessages];
+      }
+
+      titleMessages = userMessages;
+    }
+
+    if (titleMessages.length === 0) {
+      useStore.getState().setIsRenaming(false);
+      return;
+    }
+
+    // System prompt for title generation (shared with auto-rename)
 
     try {
+      const currentModel = currentState.providerConfig.model || '';
+      const isGeminiImg = currentModel.startsWith('gemini-2.0-flash-exp-image');
+      const isXAIImg = currentState.providerConfig.providerId === 'xai' && currentModel.startsWith('grok-2-image');
+
+      // Use a text model for title generation if current is an image model
+      const titleProviderConfig = isGeminiImg
+        ? { ...currentState.providerConfig, model: 'gemini-2.5-flash-lite' }
+        : isXAIImg
+          ? { ...currentState.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
+          : currentState.providerConfig;
+
       const response = await chrome.runtime.sendMessage({
-        type: 'CHAT_REQUEST',
-        messages: apiMessages,
-        providerConfig: currentState.providerConfig,
-        tools: [],
-        options: { enableGoogleSearch: false, stream: false },
-        requestId: `rename_${Date.now()}`,
+        type: 'TITLE_GENERATE',
+        messages: [{ role: 'system', content: TITLE_GENERATION_SYSTEM_PROMPT }, ...titleMessages],
+        providerConfig: titleProviderConfig,
       });
 
-      const newTitle = response?.content?.trim();
-      if (newTitle && !response.error && currentState.activeConversationId) {
-        currentState.updateConversationTitle(currentState.activeConversationId, newTitle);
+      if (response?.title && !response.error && currentState.activeConversationId) {
+        const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
+        currentState.updateConversationTitle(currentState.activeConversationId, title);
       }
     } catch (e) {
       console.error('[useChat] Rename failed:', e);
     } finally {
       useStore.getState().setIsRenaming(false);
     }
-  }, [buildAPIMessages]);
+  }, []);
 
 
   const dispatchChatRequest = useCallback(async (

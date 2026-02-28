@@ -10,6 +10,9 @@ import { toolbarTemplate, type ToolbarState, type ToolbarCallbacks } from '../te
 
 // === Types ===
 
+import { PROVIDER_PRESETS } from '../../../providers/index.ts';
+import type { ProviderPreset, CustomProvider } from '../../../types/index.ts';
+
 export interface FloatingToolbarConfig {
   position: SelectionPosition;
   onActionClick: (action: QuickAction['id'], targetLang?: string) => void;
@@ -45,7 +48,172 @@ export function createFloatingToolbar(
     selectedLang: 'English',
     position,
     menuState: { isOpen: false, selectedCategory: null },
+    providerState: {
+      isOpen: false,
+      currentProvider: 'openai',
+      currentModel: '',
+      providers: [],
+    },
   };
+
+  // Load provider state from storage
+  async function loadProviderState() {
+    try {
+      const data = await chrome.storage.local.get([
+        'providerConfig',
+        'customProviders',
+        'fetchedModels'
+      ]) as Record<string, any>;
+
+      const currentProviderId = data.providerConfig?.providerId || 'openai';
+      const currentModel = data.providerConfig?.model || '';
+
+      const customProviders: CustomProvider[] = data.customProviders || [];
+      const fetchedModels: Record<string, { models?: string[] }> = data.fetchedModels || {};
+
+      const providers = [];
+
+      const presets = Object.entries(PROVIDER_PRESETS)
+        .filter(([id]) => id !== 'custom')
+        .map(([id, p]) => ({ ...p, id } as ProviderPreset & { id: string }));
+
+      const allProviders = [...presets, ...customProviders];
+
+      for (const p of allProviders) {
+        let models: string[] = [];
+
+        // Use fetched models and static models
+        // Use fetched models and static models strictly
+        if (fetchedModels[p.id]?.models && fetchedModels[p.id]!.models!.length > 0) {
+          models = [...fetchedModels[p.id].models!];
+        } else if ((p as ProviderPreset).staticModels?.length) {
+          models = [...(p as ProviderPreset).staticModels!];
+        } else if (p.models?.length) {
+          models = [...p.models];
+        }
+
+        // Add defaultModel if it exists and isn't already in the list
+        if (p.defaultModel && !models.includes(p.defaultModel)) {
+          models.unshift(p.defaultModel);
+        }
+
+        // Filter logic:
+        // 1. If it's a custom provider, keep it (it might not need an API key if it's local)
+        // 2. If it's Ollama, ONLY keep it if it actually has fetched models
+        // 3. For any other provider, ONLY keep it if an API key is configured in `providerKeys`
+        const isCustom = p.id.startsWith('custom_') || p.id === 'custom';
+        const isOllama = p.id === 'ollama';
+        const apiKey = data.providerKeys?.[p.id]?.apiKey;
+
+        let shouldKeep = false;
+
+        if (isCustom) {
+          shouldKeep = true;
+        } else if (isOllama) {
+          shouldKeep = !!(fetchedModels[p.id]?.models && fetchedModels[p.id]!.models!.length > 0);
+        } else {
+          shouldKeep = !!apiKey && apiKey.trim() !== '';
+        }
+
+        if (shouldKeep) {
+          providers.push({
+            id: p.id,
+            name: p.name || 'Custom',
+            models,
+          });
+        }
+      }
+
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          currentProvider: currentProviderId,
+          currentModel,
+          providers,
+        },
+      };
+      renderToolbar();
+
+      // Background Fetch: Proactively fetch models for supported providers
+      // Only fetch if we have an API key (or if it's localhost ollama which doesn't need one)
+      const providerKeys = data.providerKeys || {};
+      let hasUpdates = false;
+      const newFetchedModels = { ...fetchedModels };
+
+      // Don't block the UI, run in background
+      setTimeout(async () => {
+        for (const p of allProviders) {
+          if (p.supportsModelFetch || (p as CustomProvider).apiUrl) {
+            const apiKey = providerKeys[p.id]?.apiKey || '';
+            const format = (p as CustomProvider).format || (p as ProviderPreset).format;
+
+            // Simple check to skip if API key is obviously missing for authenticated endpoints
+            if (!apiKey && format !== 'ollama' && p.id !== 'custom') {
+              continue; // Skip fetching if no key
+            }
+
+            try {
+              const result = await chrome.runtime.sendMessage({
+                type: 'FETCH_MODELS',
+                providerId: p.id
+              });
+
+              if (result.models && result.models.length > 0) {
+                // Only update if it's actually different from what we have
+                const currentStr = JSON.stringify(newFetchedModels[p.id]?.models || []);
+                const nextStr = JSON.stringify(result.models);
+
+                if (currentStr !== nextStr) {
+                  newFetchedModels[p.id] = { models: result.models };
+                  hasUpdates = true;
+
+                  // Update local state immediately
+                  const providerIdx = state.providerState.providers.findIndex(prov => prov.id === p.id);
+                  if (providerIdx !== -1) {
+                    // Update state.providerState.providers with new models
+                    const updatedProviders = [...state.providerState.providers];
+
+                    const modelsToSet = [...result.models];
+                    if (p.defaultModel && !modelsToSet.includes(p.defaultModel)) {
+                      modelsToSet.unshift(p.defaultModel);
+                    }
+
+                    updatedProviders[providerIdx] = {
+                      ...updatedProviders[providerIdx],
+                      models: modelsToSet
+                    };
+
+                    state = {
+                      ...state,
+                      providerState: {
+                        ...state.providerState,
+                        providers: updatedProviders
+                      }
+                    };
+                    renderToolbar();
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`Failed to background fetch models for ${p.id}`, err);
+            }
+          }
+        }
+
+        // Save back to storage if anything changed
+        if (hasUpdates) {
+          await chrome.storage.local.set({ fetchedModels: newFetchedModels });
+        }
+      }, 500);
+
+    } catch (e) {
+      console.warn('Failed to load provider state', e);
+    }
+  }
+
+  // Load it immediately
+  loadProviderState();
 
   // Track initial click target to avoid race condition with setTimeout
   let initialClickTarget: EventTarget | null = null;
@@ -63,8 +231,12 @@ export function createFloatingToolbar(
 
     onActionClick: (e: Event, actionId: QuickAction['id']) => {
       e.stopPropagation();
-      // Close menu if open
-      state = { ...state, menuState: { isOpen: false, selectedCategory: null } };
+      // Close menus if open
+      state = {
+        ...state,
+        menuState: { isOpen: false, selectedCategory: null },
+        providerState: { ...state.providerState, isOpen: false }
+      };
       onActionClick(actionId);
     },
 
@@ -98,16 +270,115 @@ export function createFloatingToolbar(
           ...state.menuState,
           isOpen: !state.menuState.isOpen,
         },
+        providerState: { ...state.providerState, isOpen: false },
       };
       renderToolbar();
     },
 
-    onMenuClose: () => {
+    onMenuClose: (e?: Event) => {
+      e?.stopPropagation();
       state = {
         ...state,
         menuState: { isOpen: false, selectedCategory: null },
       };
       renderToolbar();
+    },
+
+    onProviderMenuToggle: (e: Event) => {
+      e.stopPropagation();
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          isOpen: !state.providerState.isOpen,
+        },
+        menuState: { isOpen: false, selectedCategory: null },
+        isTranslateMode: false, // Close translate mode too if open
+      };
+      renderToolbar();
+    },
+
+    onProviderMenuClose: (e?: Event) => {
+      e?.stopPropagation();
+      state = {
+        ...state,
+        providerState: { ...state.providerState, isOpen: false },
+      };
+      renderToolbar();
+    },
+
+    onModelSelect: async (e: Event, providerId: string, model: string) => {
+      e.stopPropagation();
+
+      // Update local state immediately for fast UI feedback
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          isOpen: false,
+          currentProvider: providerId,
+          currentModel: model,
+        },
+      };
+      renderToolbar();
+
+      // Save global provider selection to chrome.storage.local
+      try {
+        const data = await chrome.storage.local.get(['providerConfig', 'providerKeys', 'customProviders']) as Record<string, any>;
+
+        const newConfig = {
+          ...data.providerConfig,
+          providerId,
+          model,
+        };
+
+        const isCustom = data.customProviders?.some((p: CustomProvider) => p.id === providerId);
+        let format: string | undefined, apiUrl: string | undefined, apiKey: string | undefined;
+
+        if (isCustom) {
+          const cp = data.customProviders.find((p: CustomProvider) => p.id === providerId);
+          format = cp.format;
+          apiUrl = cp.apiUrl;
+          apiKey = cp.apiKey;
+        } else {
+          const p = Object.entries(PROVIDER_PRESETS).find(([id]) => id === providerId)?.[1];
+          format = p?.format;
+          apiUrl = p?.apiUrl;
+        }
+
+        const savedKey = data.providerKeys?.[providerId]?.apiKey;
+        if (savedKey !== undefined && savedKey !== '') {
+          apiKey = savedKey;
+        }
+
+        if (format) newConfig.format = format;
+        if (apiUrl) newConfig.apiUrl = apiUrl;
+        if (apiKey !== undefined) newConfig.apiKey = apiKey;
+
+        const updates: any = { providerConfig: newConfig };
+
+        // Sync providerKeys
+        const providerKeys = data.providerKeys || {};
+        updates.providerKeys = {
+          ...providerKeys,
+          [providerId]: {
+            apiKey: apiKey || '',
+            model,
+          }
+        };
+
+        // Sync customProviders if custom
+        if (isCustom) {
+          const customProviders = data.customProviders.map((p: CustomProvider) =>
+            p.id === providerId ? { ...p, model, apiKey: apiKey || p.apiKey } : p
+          );
+          updates.customProviders = customProviders;
+        }
+
+        await chrome.storage.local.set(updates);
+      } catch (err) {
+        console.warn('Failed to save selected model to storage', err);
+      }
     },
   };
 
@@ -132,8 +403,12 @@ export function createFloatingToolbar(
     if (target.tagName === 'SELECT' || target.tagName === 'OPTION') return;
 
     // If menu is open, close it first
-    if (state.menuState.isOpen) {
-      state = { ...state, menuState: { isOpen: false, selectedCategory: null } };
+    if (state.menuState.isOpen || state.providerState.isOpen) {
+      state = {
+        ...state,
+        menuState: { isOpen: false, selectedCategory: null },
+        providerState: { ...state.providerState, isOpen: false }
+      };
       renderToolbar();
       return;
     }
@@ -163,8 +438,12 @@ export function createFloatingToolbar(
   const handleEscape = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       // If menu is open, close it first
-      if (state.menuState.isOpen) {
-        state = { ...state, menuState: { isOpen: false, selectedCategory: null } };
+      if (state.menuState.isOpen || state.providerState.isOpen) {
+        state = {
+          ...state,
+          menuState: { isOpen: false, selectedCategory: null },
+          providerState: { ...state.providerState, isOpen: false }
+        };
         renderToolbar();
         return;
       }
