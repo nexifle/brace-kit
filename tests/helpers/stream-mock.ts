@@ -352,3 +352,114 @@ export async function* createDelayedStream(
 export function combineChunks(...chunkArrays: string[][]): string[] {
   return chunkArrays.flat();
 }
+
+// ============================================
+// Ollama Stream Chunk Generators (NDJSON)
+// ============================================
+
+/**
+ * Creates NDJSON chunks for Ollama text streaming
+ * Ollama uses newline-delimited JSON (not SSE with data: prefix)
+ * Each line is a complete JSON object
+ */
+export function createOllamaStreamChunks(content: string): string[] {
+  if (content.length <= 10) {
+    return [
+      JSON.stringify({ model: 'llama3.2', message: { role: 'assistant', content }, done: false }) + '\n',
+      JSON.stringify({ model: 'llama3.2', done: true, eval_count: 10, prompt_eval_count: 5 }) + '\n',
+    ];
+  }
+
+  return [
+    JSON.stringify({ model: 'llama3.2', message: { role: 'assistant', content: content.slice(0, 10) }, done: false }) + '\n',
+    JSON.stringify({ model: 'llama3.2', message: { role: 'assistant', content: content.slice(10) }, done: false }) + '\n',
+    JSON.stringify({ model: 'llama3.2', done: true, eval_count: 20, prompt_eval_count: 10 }) + '\n',
+  ];
+}
+
+/**
+ * Creates NDJSON chunks for Ollama with thinking/reasoning content
+ * Uses the newer format where thinking is inside message object
+ */
+export function createOllamaThinkingChunks(thinking: string, content: string): string[] {
+  return [
+    JSON.stringify({ model: 'deepseek-r1', message: { role: 'assistant', thinking }, done: false }) + '\n',
+    JSON.stringify({ model: 'deepseek-r1', message: { role: 'assistant', content }, done: false }) + '\n',
+    JSON.stringify({ model: 'deepseek-r1', done: true, eval_count: 50, prompt_eval_count: 20 }) + '\n',
+  ];
+}
+
+/**
+ * Creates NDJSON chunks for Ollama tool call
+ */
+export function createOllamaToolCallChunks(
+  toolCallId = 'call_123',
+  toolName = 'search',
+  args = '{"query": "test"}'
+): string[] {
+  return [
+    JSON.stringify({
+      model: 'llama3.2',
+      message: {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: toolCallId,
+            type: 'function',
+            function: { name: toolName, arguments: args },
+          },
+        ],
+      },
+      done: false,
+    }) + '\n',
+    JSON.stringify({ model: 'llama3.2', done: true, eval_count: 15, prompt_eval_count: 10 }) + '\n',
+  ];
+}
+
+/**
+ * Creates NDJSON chunks for Ollama with usage metadata
+ */
+export function createOllamaUsageChunks(options: {
+  content?: string;
+  promptEvalCount: number;
+  evalCount: number;
+  thinking?: string;
+}): string[] {
+  const chunks: string[] = [];
+
+  if (options.thinking) {
+    chunks.push(
+      JSON.stringify({ model: 'deepseek-r1', thinking: options.thinking, done: false }) + '\n'
+    );
+  }
+
+  if (options.content) {
+    chunks.push(
+      JSON.stringify({
+        model: 'llama3.2',
+        message: { role: 'assistant', content: options.content },
+        done: false,
+      }) + '\n'
+    );
+  }
+
+  // Final chunk with usage
+  chunks.push(
+    JSON.stringify({
+      model: 'llama3.2',
+      done: true,
+      prompt_eval_count: options.promptEvalCount,
+      eval_count: options.evalCount,
+    }) + '\n'
+  );
+
+  return chunks;
+}
+
+/**
+ * Creates NDJSON chunks for Ollama error response
+ */
+export function createOllamaErrorChunks(errorMessage: string): string[] {
+  return [JSON.stringify({ error: errorMessage }) + '\n'];
+}

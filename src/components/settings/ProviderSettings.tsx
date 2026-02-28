@@ -45,11 +45,15 @@ export function ProviderSettings() {
   }, [providerConfig.providerId, getAvailableModels]);
 
   useEffect(() => {
-    // Fetch models if supported and has API key
-    if (currentProvider?.supportsModelFetch && providerConfig.apiKey) {
+    // Fetch models if supported
+    // Ollama localhost doesn't require API key
+    const isOllamaLocalhost = currentProvider?.format === 'ollama' && (
+      providerConfig.apiUrl.includes('localhost') || providerConfig.apiUrl.includes('127.0.0.1')
+    );
+    if (currentProvider?.supportsModelFetch && (providerConfig.apiKey || isOllamaLocalhost)) {
       fetchAndCacheModels(providerConfig.providerId);
     }
-  }, [providerConfig.providerId, providerConfig.apiKey, currentProvider?.supportsModelFetch, fetchAndCacheModels]);
+  }, [providerConfig.providerId, providerConfig.apiKey, providerConfig.apiUrl, currentProvider?.supportsModelFetch, currentProvider?.format, fetchAndCacheModels]);
 
   const handleApiKeyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     updateProviderConfig({ apiKey: e.target.value });

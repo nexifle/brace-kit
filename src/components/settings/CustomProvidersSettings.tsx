@@ -53,6 +53,7 @@ export function CustomProvidersSettings() {
     openai: 'OpenAI',
     anthropic: 'Anthropic',
     gemini: 'Gemini',
+    ollama: 'Ollama',
   };
 
   return (

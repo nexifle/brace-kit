@@ -111,7 +111,7 @@ export interface SelectedText {
 
 // ==================== Provider Types ====================
 
-export type ProviderFormat = 'openai' | 'anthropic' | 'gemini';
+export type ProviderFormat = 'openai' | 'anthropic' | 'gemini' | 'ollama';
 
 export interface ProviderPreset {
   id: string;
@@ -170,6 +170,7 @@ export const SUPPORTED_PARAMETERS: Record<ProviderFormat, (keyof ModelParameters
   openai:    ['temperature', 'maxTokens', 'topP'],
   anthropic: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
   gemini:    ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
+  ollama:    ['temperature', 'maxTokens', 'topP', 'topK'],
 };
 
 export interface ProviderConfig {

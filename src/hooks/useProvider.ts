@@ -53,8 +53,13 @@ export function useProvider() {
 
     store.saveToStorage();
 
-    // Fetch models for the new provider if supported and has API key
-    if ((provider as ProviderPreset).supportsModelFetch && store.providerConfig.apiKey) {
+    // Fetch models for the new provider if supported
+    // Ollama localhost doesn't require API key, others do
+    const isOllamaLocalhost = provider.format === 'ollama' && (
+      provider.apiUrl.includes('localhost') || provider.apiUrl.includes('127.0.0.1')
+    );
+    const hasApiKey = saved.apiKey || store.providerConfig.apiKey;
+    if ((provider as ProviderPreset).supportsModelFetch && (hasApiKey || isOllamaLocalhost)) {
       fetchAndCacheModels(newId);
     }
   }, [store, getProvider, isCustomProvider]);
@@ -100,12 +105,18 @@ export function useProvider() {
     const apiKey = store.providerKeys[providerId]?.apiKey
       || (providerId === store.providerConfig.providerId ? store.providerConfig.apiKey : '');
 
-    if (!apiKey) return;
+    // Get provider to check if it's Ollama localhost (doesn't require API key)
+    const provider = getProvider(providerId);
+    const isOllamaLocalhost = provider?.format === 'ollama' && (
+      provider.apiUrl.includes('localhost') || provider.apiUrl.includes('127.0.0.1')
+    );
+
+    // Skip if no API key and not Ollama localhost
+    if (!apiKey && !isOllamaLocalhost) return;
 
     store.setFetchingModels(true);
 
     try {
-      const provider = getProvider(providerId);
       const result = await fetchModels({
         ...provider,
         apiKey,

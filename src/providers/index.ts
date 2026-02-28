@@ -70,6 +70,9 @@ export { formatGemini, parseGeminiStream, fetchGeminiModels } from './formats/ge
 // xAI image generation format
 export { formatXAIImageRequest, parseXAIImageResponse } from './formats/xai.ts';
 
+// Ollama native format
+export { formatOllama, parseOllamaStream, fetchOllamaModels } from './formats/ollama.ts';
+
 // ==================== Internal Imports for Unified Interfaces ====================
 
 import type { ProviderPreset, MCPTool, Message } from '../types/index.ts';
@@ -79,11 +82,14 @@ import { formatOpenAI } from './formats/openai.ts';
 import { formatAnthropic } from './formats/anthropic.ts';
 import { formatGemini } from './formats/gemini.ts';
 import { formatXAIImageRequest } from './formats/xai.ts';
+import { formatOllama } from './formats/ollama.ts';
 import { parseOpenAIStream } from './formats/openai.ts';
 import { parseAnthropicStream } from './formats/anthropic.ts';
 import { parseGeminiStream } from './formats/gemini.ts';
+import { parseOllamaStream } from './formats/ollama.ts';
 import { fetchOpenAIModels } from './formats/openai.ts';
 import { fetchGeminiModels } from './formats/gemini.ts';
+import { fetchOllamaModels } from './formats/ollama.ts';
 
 // ==================== Unified Interfaces ====================
 
@@ -124,6 +130,8 @@ export function formatRequest(
       return formatAnthropic(provider, messages, tools, options);
     case 'gemini':
       return formatGemini(provider, messages, tools, options);
+    case 'ollama':
+      return formatOllama(provider, messages, tools, options);
     default:
       return formatOpenAI(provider, messages, tools, options);
   }
@@ -157,6 +165,9 @@ export async function* parseStream(
     case 'gemini':
       yield* parseGeminiStream(response, signal);
       break;
+    case 'ollama':
+      yield* parseOllamaStream(response, signal);
+      break;
     default:
       yield* parseOpenAIStream(response, signal);
   }
@@ -178,20 +189,27 @@ export async function fetchModels(
 ): Promise<ModelFetchResult> {
   const { format, apiUrl, apiKey } = provider;
 
-  if (!apiKey) {
+  // Ollama localhost doesn't require API key
+  const isOllamaLocalhost = format === 'ollama' && (
+    apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1')
+  );
+
+  if (!apiKey && !isOllamaLocalhost) {
     return { error: 'API key required' };
   }
 
   try {
     switch (format) {
       case 'openai':
-        return await fetchOpenAIModels(apiUrl, apiKey);
+        return await fetchOpenAIModels(apiUrl, apiKey || '');
       case 'anthropic':
         return { models: PROVIDER_PRESETS.anthropic.staticModels || [] };
       case 'gemini':
-        return await fetchGeminiModels(apiUrl, apiKey);
+        return await fetchGeminiModels(apiUrl, apiKey || '');
+      case 'ollama':
+        return await fetchOllamaModels(apiUrl, apiKey);
       default:
-        return await fetchOpenAIModels(apiUrl, apiKey);
+        return await fetchOpenAIModels(apiUrl, apiKey || '');
     }
   } catch (e) {
     return { error: (e as Error).message };

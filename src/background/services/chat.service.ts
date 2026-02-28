@@ -128,8 +128,15 @@ export function createChatService(): ChatService {
         };
 
         if (!provider.apiKey) {
-          sendResponse({ error: 'API key is required. Configure it in Settings.' });
-          return;
+          // Skip API key validation for Ollama localhost
+          const isOllamaLocalhost = provider.id === 'ollama' && (
+            provider.apiUrl?.includes('localhost') ||
+            provider.apiUrl?.includes('127.0.0.1')
+          );
+          if (!isOllamaLocalhost) {
+            sendResponse({ error: 'API key is required. Configure it in Settings.' });
+            return;
+          }
         }
 
         // Format and send request
