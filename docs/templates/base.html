@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="{{ lang | default(value=" en") }}" data-theme="light">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ page.description | default(value=config.description) }}">
+    <meta name="theme-color" content="#6366f1">
+
+    <title>{% block title %}{{ config.title }}{% endblock title %}</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Atkinson+Hyperlegible+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="/main.css">
+
+    <!-- Syntax Highlighting (Giallo dual-theme) -->
+    <!-- Initial media set by inline script below; swapped on theme toggle -->
+    <link id="giallo-light" rel="stylesheet" type="text/css" href="/giallo-light.css">
+    <link id="giallo-dark" rel="stylesheet" type="text/css" href="/giallo-dark.css">
+
+    <!-- Prevent FOUC: apply saved theme & set correct syntax highlight CSS ASAP -->
+    <script>
+        (function () {
+            var savedTheme = localStorage.getItem('theme');
+            var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var isDark = savedTheme ? savedTheme === 'dark' : systemDark;
+            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            // Disable the non-active theme stylesheet immediately
+            var light = document.getElementById('giallo-light');
+            var dark = document.getElementById('giallo-dark');
+            if (light) light.disabled = isDark;
+            if (dark) dark.disabled = !isDark;
+        })();
+    </script>
+
+    {% block head %}{% endblock head %}
+</head>
+
+<body>
+    {% block theme_toggle %}
+    <!-- Theme Toggle (Fixed Position) -->
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+        <svg class="sun-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
+            <path d="m4.93 4.93 1.41 1.41"></path>
+            <path d="m17.66 17.66 1.41 1.41"></path>
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
+            <path d="m6.34 17.66-1.41 1.41"></path>
+            <path d="m19.07 4.93-1.41 1.41"></path>
+        </svg>
+        <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+        </svg>
+    </button>
+    {% endblock theme_toggle %}
+
+    <!-- Background Canvas -->
+    <div class="bg-canvas" aria-hidden="true">
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+        <div class="noise-overlay"></div>
+    </div>
+
+    <!-- Main Content -->
+    {% block content %}{% endblock content %}
+
+    <!-- Theme Script -->
+    <script>
+        (function () {
+            var toggleBtns = document.querySelectorAll('#theme-toggle, #docs-theme-toggle');
+            var html = document.documentElement;
+            var glLight = document.getElementById('giallo-light');
+            var glDark = document.getElementById('giallo-dark');
+
+            function applySyntaxTheme(isDark) {
+                if (glLight) glLight.disabled = isDark;
+                if (glDark) glDark.disabled = !isDark;
+            }
+
+            // Apply the correct syntax theme on load (theme already set by inline script above)
+            var currentTheme = html.getAttribute('data-theme');
+            applySyntaxTheme(currentTheme === 'dark');
+
+            function onToggle() {
+                var current = html.getAttribute('data-theme');
+                var next = current === 'dark' ? 'light' : 'dark';
+                html.setAttribute('data-theme', next);
+                localStorage.setItem('theme', next);
+                applySyntaxTheme(next === 'dark');
+            }
+
+            toggleBtns.forEach(function (btn) {
+                if (btn) btn.addEventListener('click', onToggle);
+            });
+        })();
+    </script>
+
+    {% block scripts %}{% endblock scripts %}
+</body>
+
+</html>

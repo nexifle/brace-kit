@@ -123,22 +123,24 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     id: 'anthropic',
     name: 'Anthropic (Claude)',
     apiUrl: 'https://api.anthropic.com/v1',
-    defaultModel: 'claude-sonnet-4-20250514',
+    defaultModel: 'claude-sonnet-4-6',
     format: 'anthropic',
     models: [],
     supportsModelFetch: false,
     staticModels: [
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+      'claude-haiku-4-5-20251001',
       'claude-sonnet-4-20250514',
       'claude-3-5-sonnet-20241022',
       'claude-3-5-haiku-20241022',
-      'claude-3-opus-20240229',
     ],
   },
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-2.5-flash',
     format: 'gemini',
     models: [],
     supportsModelFetch: true,
@@ -152,7 +154,17 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     models: [],
     supportsModelFetch: true,
     staticModels: [
+      // Grok 4.1 Series (Latest)
+      'grok-4-1-fast-reasoning',
       'grok-4-1-fast-non-reasoning',
+      // Grok 4 Series
+      'grok-4-0709',
+      'grok-4-fast-reasoning',
+      'grok-4-fast-non-reasoning',
+      // Grok 3 Series
+      'grok-3',
+      'grok-3-mini',
+      // Image Generation
       'grok-2-image-1212',
       'grok-imagine-image',
       'grok-imagine-image-pro',

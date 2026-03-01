@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title | default(value="Guide") }} — {{ config.title }}{% endblock title %}
+
+{# Suppress the floating theme toggle from base — docs header has its own #}
+{% block theme_toggle %}{% endblock theme_toggle %}
+
+{% block head %}
+<meta property="og:title" content="{{ section.title | default(value='Guide') }} — {{ config.title }}">
+<meta property="og:description" content="{{ section.description | default(value=config.description) }}">
+<meta property="og:type" content="website">
+{% endblock head %}
+
+{% block content %}
+<!-- Docs Layout -->
+<div class="docs-root">
+
+    <!-- Docs Header -->
+    {% include "_docs_header.html" %}
+
+    <!-- Main docs layout -->
+    <div class="docs-layout">
+
+        <!-- Sidebar -->
+        {% include "_docs_sidebar.html" %}
+
+        <!-- Center: Section Index Content -->
+        <main class="docs-content" id="main-content" tabindex="-1">
+            <article class="docs-article">
+                <header class="docs-article__header">
+                    <h1 class="docs-article__title">{{ section.title | default(value="Documentation") }}</h1>
+                    {% if section.description %}
+                    <p class="docs-article__description">{{ section.description }}</p>
+                    {% endif %}
+                    <div class="docs-article__divider" aria-hidden="true"></div>
+                </header>
+
+                {% if section.content %}
+                <div class="prose">{{ section.content | safe }}</div>
+                {% endif %}
+
+                <!-- Page cards grid -->
+                {% if section.pages %}
+                <div class="docs-section-cards">
+                    {% for p in section.pages %}
+                    <a href="{{ p.permalink }}" class="docs-section-card glass-card">
+                        {% if p.extra.icon %}
+                        <div class="docs-section-card__icon" aria-hidden="true">{{ p.extra.icon | safe }}</div>
+                        {% endif %}
+                        <div class="docs-section-card__body">
+                            <h2 class="docs-section-card__title">{{ p.title }}</h2>
+                            {% if p.description %}
+                            <p class="docs-section-card__desc">{{ p.description }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="docs-section-card__arrow" aria-hidden="true">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="9 18 15 12 9 6" />
+                            </svg>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </article>
+        </main>
+
+        <!-- Right: empty TOC placeholder for consistent layout -->
+        <aside class="docs-toc" aria-hidden="true"></aside>
+
+    </div><!-- /.docs-layout -->
+</div><!-- /.docs-root -->
+{% endblock content %}
+
+{% block scripts %}
+{% include "_docs_scripts.html" %}
+{% endblock scripts %}

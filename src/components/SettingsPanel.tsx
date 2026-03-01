@@ -71,7 +71,7 @@ export function SettingsPanel() {
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}`}
               >
                 <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
-                <span className={`text-[9px] font-bold uppercase tracking-tight whitespace-nowrap transition-all
+                <span className={`text-xs font-bold uppercase tracking-tight whitespace-nowrap transition-all
                   ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}>
                   {tab.label}
                 </span>
@@ -105,10 +105,10 @@ export function SettingsPanel() {
         </div>
 
         <section className="mt-8 pt-6 border-t border-border/50 text-center opacity-40 flex flex-col gap-1.5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground">
+          <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">
             BraceKit v{chrome.runtime.getManifest().version}
           </p>
-          <p className="text-[9px] font-semibold uppercase tracking-[0.4em] text-muted-foreground/60">
+          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-muted-foreground/60">
             Part of Nexifle Labs
           </p>
         </section>

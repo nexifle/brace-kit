@@ -1,0 +1,73 @@
+<!-- Sidebar overlay (mobile) -->
+<div class="docs-sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+<!-- Left Sidebar -->
+<aside class="docs-sidebar" id="docs-sidebar" aria-label="Documentation navigation">
+    <div class="docs-sidebar__inner">
+        {% set guide = get_section(path="guide/_index.md") %}
+        {% if guide.extra.nav_groups %}
+        {% for group in guide.extra.nav_groups %}
+        <div class="docs-sidebar__group">
+            {% if group.title %}
+            <div class="docs-sidebar__group-title">{{ group.title }}</div>
+            {% endif %}
+            <ul class="docs-sidebar__list" role="list">
+                {% for item in group.items %}
+                {% if item.children %}
+                {% set_global _child_active = false %}
+                {% for child in item.children %}{% if current_path == child.url %}{% set_global _child_active = true %}{% endif %}{% endfor %}
+                <li class="docs-sidebar__item">
+                    <div class="docs-sidebar__dropdown{% if _child_active %} is-open{% endif %}" data-dropdown>
+                        <a href="{{ item.url }}"
+                            class="docs-sidebar__link{% if current_path == item.url %} is-active{% endif %}" {% if current_path==item.url %}aria-current="page" {% endif %}>
+                            {% if item.icon %}<span class="docs-sidebar__link-icon" aria-hidden="true">{{ item.icon | safe }}</span>{% endif %}
+                            <span>{{ item.label }}</span>
+                        </a>
+                        <button class="docs-sidebar__toggle" type="button"
+                            aria-expanded="{% if _child_active %}true{% else %}false{% endif %}"
+                            aria-label="Toggle {{ item.label }} submenu">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" aria-hidden="true">
+                                <polyline points="9 18 15 12 9 6" />
+                            </svg>
+                        </button>
+                    </div>
+                    <ul class="docs-sidebar__sub-list" role="list">
+                        {% for child in item.children %}
+                        <li><a href="{{ child.url }}"
+                                class="docs-sidebar__link docs-sidebar__link--child{% if current_path == child.url %} is-active{% endif %}"
+                                {% if current_path==child.url %}aria-current="page" {% endif %}><span>{{ child.label }}</span></a></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                {% else %}
+                <li class="docs-sidebar__item">
+                    <a href="{{ item.url }}"
+                        class="docs-sidebar__link{% if current_path == item.url %} is-active{% endif %}" {% if current_path==item.url %}aria-current="page" {% endif %}>
+                        {% if item.icon %}<span class="docs-sidebar__link-icon" aria-hidden="true">{{ item.icon | safe }}</span>{% endif %}
+                        <span>{{ item.label }}</span>
+                    </a>
+                </li>
+                {% endif %}
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+        {% else %}
+        <!-- Fallback: auto-list section pages -->
+        <div class="docs-sidebar__group">
+            <div class="docs-sidebar__group-title">Guide</div>
+            <ul class="docs-sidebar__list" role="list">
+                {% for p in guide.pages %}
+                <li class="docs-sidebar__item">
+                    <a href="{{ p.permalink }}"
+                        class="docs-sidebar__link{% if current_path == p.path %} is-active{% endif %}" {% if current_path==p.path %}aria-current="page" {% endif %}>
+                        <span>{{ p.title }}</span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</aside>
