@@ -72,5 +72,5 @@ Solutions to common problems:
 
 ### Support
 
-- **Bug reports**: [GitHub Issues](https://github.com/your-org/brace-kit/issues)
-- **Feature requests**: [GitHub Discussions](https://github.com/your-org/brace-kit/discussions)
+- **Bug reports**: [GitHub Issues](#)
+- **Feature requests**: [GitHub Discussions](#)

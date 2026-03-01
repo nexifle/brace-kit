@@ -1,0 +1,259 @@
+<script src="/elasticlunr.min.js"></script>
+<script src="/search_index.en.js"></script>
+<script>
+    (function () {
+        'use strict';
+
+        // ─── Sidebar Mobile Toggle ───────────────────────────────────────────────
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const sidebar = document.getElementById('docs-sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+
+        function openSidebar() {
+            sidebar.classList.add('is-open');
+            overlay.classList.add('is-visible');
+            sidebarToggle.setAttribute('aria-expanded', 'true');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeSidebar() {
+            sidebar.classList.remove('is-open');
+            overlay.classList.remove('is-visible');
+            sidebarToggle.setAttribute('aria-expanded', 'false');
+            document.body.style.overflow = '';
+        }
+
+        if (sidebarToggle && sidebar && overlay) {
+            sidebarToggle.addEventListener('click', function () {
+                sidebar.classList.contains('is-open') ? closeSidebar() : openSidebar();
+            });
+            overlay.addEventListener('click', closeSidebar);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && sidebar.classList.contains('is-open')) closeSidebar();
+            });
+        }
+
+        // Scroll active link into view
+        const activeLink = sidebar && sidebar.querySelector('.docs-sidebar__link.is-active');
+        if (activeLink) activeLink.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+
+        // ─── Sidebar Dropdown Toggles ────────────────────────────────────────────
+        document.querySelectorAll('.docs-sidebar__toggle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const dropdown = btn.closest('[data-dropdown]');
+                if (!dropdown) return;
+                const isOpen = dropdown.classList.toggle('is-open');
+                btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                if (isOpen) {
+                    const subList = dropdown.nextElementSibling;
+                    if (subList) setTimeout(function () { subList.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 250);
+                }
+            });
+        });
+
+        // ─── TOC Active Heading (page only) ──────────────────────────────────────
+        const tocLinks = document.querySelectorAll('.docs-toc__link[data-toc-id]');
+        if (tocLinks.length > 0) {
+            const headingEls = Array.from(tocLinks)
+                .map(l => document.getElementById(l.dataset.tocId))
+                .filter(Boolean);
+            let activeId = null;
+            const setActive = (id) => {
+                if (id === activeId) return;
+                activeId = id;
+                tocLinks.forEach(link => link.classList.toggle('is-active', link.dataset.tocId === id));
+            };
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+                    if (visible.length > 0) setActive(visible[0].target.id);
+                },
+                { rootMargin: '-60px 0px -70% 0px', threshold: 0 }
+            );
+            headingEls.forEach(el => observer.observe(el));
+        }
+
+        // ─── Code Block Copy Buttons (page only) ─────────────────────────────────
+        document.querySelectorAll('.prose pre').forEach(function (pre) {
+            const codeEl = pre.querySelector('code');
+            if (!codeEl) return;
+            const btn = document.createElement('button');
+            btn.className = 'code-copy-btn';
+            btn.setAttribute('aria-label', 'Copy code');
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
+            pre.style.position = 'relative';
+            pre.appendChild(btn);
+            btn.addEventListener('click', async function () {
+                try {
+                    await navigator.clipboard.writeText(codeEl.textContent || '');
+                    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>';
+                    btn.classList.add('is-copied');
+                    setTimeout(function () {
+                        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
+                        btn.classList.remove('is-copied');
+                    }, 2000);
+                } catch (e) { console.warn('Copy failed', e); }
+            });
+        });
+
+        // ─── Copy Page Actions (page only) ───────────────────────────────────────
+        function getRawMarkdown() {
+            const rawEl = document.getElementById('__page_raw_md__');
+            if (!rawEl) return document.querySelector('.prose')?.innerText || '';
+            try {
+                return JSON.parse(rawEl.textContent).replace(/^\+\+\+[\s\S]*?\+\+\+\s*\n/, '');
+            } catch (e) { return document.querySelector('.prose')?.innerText || ''; }
+        }
+
+        const copyPageBtn = document.getElementById('copy-page-btn');
+        if (copyPageBtn) {
+            copyPageBtn.addEventListener('click', async function () {
+                try {
+                    await navigator.clipboard.writeText(getRawMarkdown());
+                    copyPageBtn.querySelector('span').textContent = 'Copied!';
+                    copyPageBtn.classList.add('is-copied');
+                    setTimeout(function () {
+                        copyPageBtn.querySelector('span').textContent = 'Copy page';
+                        copyPageBtn.classList.remove('is-copied');
+                    }, 2500);
+                } catch (e) { console.warn('Copy failed', e); }
+            });
+        }
+
+        const paToggle = document.getElementById('page-actions-toggle');
+        const paDropdown = document.getElementById('page-actions-dropdown');
+        if (paToggle && paDropdown) {
+            paToggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const isOpen = !paDropdown.hidden;
+                paDropdown.hidden = isOpen;
+                paToggle.setAttribute('aria-expanded', !isOpen);
+                paToggle.classList.toggle('is-open', !isOpen);
+            });
+            document.addEventListener('click', function (e) {
+                if (!document.getElementById('page-actions')?.contains(e.target)) {
+                    paDropdown.hidden = true;
+                    paToggle.setAttribute('aria-expanded', 'false');
+                    paToggle.classList.remove('is-open');
+                }
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !paDropdown.hidden) {
+                    paDropdown.hidden = true;
+                    paToggle.setAttribute('aria-expanded', 'false');
+                    paToggle.classList.remove('is-open');
+                }
+            });
+        }
+
+        const paCopy = document.getElementById('pa-copy');
+        if (paCopy) {
+            paCopy.addEventListener('click', async function () {
+                try {
+                    await navigator.clipboard.writeText(getRawMarkdown());
+                    paCopy.querySelector('.page-actions__item-title').textContent = 'Copied!';
+                    setTimeout(function () { paCopy.querySelector('.page-actions__item-title').textContent = 'Copy page'; }, 2000);
+                } catch (e) { console.warn('Copy failed', e); }
+                paDropdown.hidden = true;
+                paToggle.classList.remove('is-open');
+            });
+        }
+
+        const paViewMd = document.getElementById('pa-view-md');
+        if (paViewMd) {
+            paViewMd.addEventListener('click', function () {
+                const md = getRawMarkdown();
+                const blob = new Blob([md], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+                paDropdown.hidden = true;
+                paToggle.classList.remove('is-open');
+            });
+        }
+
+        // ─── Search ─────────────────────────────────────────────────────────────
+        var searchInput = document.getElementById('search-input');
+        var searchResults = document.getElementById('search-results');
+        var searchResultsInner = document.getElementById('search-results-inner');
+        var searchIndex = null;
+        var currentFocusIdx = -1;
+
+        function initSearch() {
+            if (typeof elasticlunr === 'undefined' || typeof window.searchIndex === 'undefined') return false;
+            searchIndex = elasticlunr.Index.load(window.searchIndex);
+            return true;
+        }
+
+        if (!initSearch()) { window.addEventListener('load', initSearch); }
+
+        function openResults() {
+            searchResults.hidden = false;
+            searchInput.setAttribute('aria-expanded', 'true');
+        }
+
+        function closeResults() {
+            searchResults.hidden = true;
+            searchInput.setAttribute('aria-expanded', 'false');
+            currentFocusIdx = -1;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function renderResults(hits) {
+            if (!hits.length) {
+                searchResultsInner.innerHTML = '<div class="docs-search__no-results">No results found.</div>';
+                return;
+            }
+            searchResultsInner.innerHTML = hits.slice(0, 8).map(function (hit, i) {
+                var doc = hit.doc;
+                var body = doc.body ? doc.body.slice(0, 120) + (doc.body.length > 120 ? '...' : '') : '';
+                return '<a href="' + doc.id + '" class="docs-search__result" role="option" tabindex="-1"><div class="docs-search__result-title">' + escapeHtml(doc.title || 'Untitled') + '</div>' + (body ? '<div class="docs-search__result-body">' + escapeHtml(body) + '</div>' : '') + '</a>';
+            }).join('');
+        }
+
+        function getResultLinks() { return Array.from(searchResultsInner.querySelectorAll('.docs-search__result')); }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                var q = searchInput.value.trim();
+                if (!q) { closeResults(); return; }
+                if (!searchIndex) initSearch();
+                if (!searchIndex) return;
+                renderResults(searchIndex.search(q, { expand: true, fields: { title: { boost: 2 }, body: { boost: 1 } } }));
+                openResults();
+                currentFocusIdx = -1;
+            });
+
+            searchInput.addEventListener('keydown', function (e) {
+                var links = getResultLinks();
+                if (e.key === 'ArrowDown') { e.preventDefault(); currentFocusIdx = Math.min(currentFocusIdx + 1, links.length - 1); links[currentFocusIdx] && links[currentFocusIdx].focus(); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); currentFocusIdx = Math.max(currentFocusIdx - 1, -1); if (currentFocusIdx === -1) searchInput.focus(); else links[currentFocusIdx] && links[currentFocusIdx].focus(); }
+                else if (e.key === 'Escape') { closeResults(); searchInput.blur(); }
+            });
+
+            searchInput.addEventListener('focus', function () {
+                if (searchInput.value.trim() && searchResultsInner.children.length) openResults();
+            });
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === '/' && document.activeElement !== searchInput && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { e.preventDefault(); searchInput && searchInput.focus(); }
+            if (e.key === 'Escape' && !searchResults.hidden) closeResults();
+        });
+
+        document.addEventListener('click', function (e) {
+            var searchEl = document.getElementById('docs-search');
+            if (searchEl && !searchEl.contains(e.target)) closeResults();
+        });
+
+        searchResultsInner && searchResultsInner.addEventListener('keydown', function (e) {
+            var links = getResultLinks(); var idx = links.indexOf(document.activeElement);
+            if (e.key === 'ArrowDown') { e.preventDefault(); var next = Math.min(idx + 1, links.length - 1); links[next] && links[next].focus(); currentFocusIdx = next; }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); if (idx <= 0) { searchInput && searchInput.focus(); currentFocusIdx = -1; } else { links[idx - 1].focus(); currentFocusIdx = idx - 1; } }
+            else if (e.key === 'Escape') { closeResults(); searchInput && searchInput.focus(); }
+        });
+    })();
+</script>

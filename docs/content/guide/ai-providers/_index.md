@@ -17,13 +17,13 @@ BraceKit supports multiple AI providers, letting you switch between models insta
 
 | Provider | Type | Models | Special Features |
 |----------|------|--------|------------------|
-| **[OpenAI](/guide/ai-providers/openai/)** | Cloud | GPT-4o, o1, o3-mini | Reasoning models |
-| **[Anthropic](/guide/ai-providers/anthropic/)** | Cloud | Claude 3.5, Claude 3 | Extended thinking |
-| **[Gemini](/guide/ai-providers/gemini/)** | Cloud | Gemini 2.0, 1.5 Pro | Google Search, Image gen |
-| **[xAI](/guide/ai-providers/xai/)** | Cloud | Grok-2 | Image generation |
-| **[DeepSeek](/guide/ai-providers/deepseek/)** | Cloud | V3, R1 | Reasoning (R1) |
+| **[OpenAI](/guide/ai-providers/openai/)** | Cloud | GPT-5.2, GPT-4.1, o3, o4-mini | Reasoning models |
+| **[Anthropic](/guide/ai-providers/anthropic/)** | Cloud | Claude 4.6 (Opus, Sonnet), Haiku 4.5 | Extended thinking |
+| **[Gemini](/guide/ai-providers/gemini/)** | Cloud | Gemini 3 Pro, Gemini 2.5 Pro/Flash | Google Search, Image gen |
+| **[xAI](/guide/ai-providers/xai/)** | Cloud | Grok 4.1, Grok 4 | Image generation |
+| **[DeepSeek](/guide/ai-providers/deepseek/)** | Cloud | V3.2, R1 | Reasoning (R1) |
 | **[Ollama](/guide/ai-providers/ollama/)** | Local | Any model | Offline, Private |
-| **[Custom](/guide/ai-providers/custom/)** | Any | Any | OpenAI-compatible |
+| **[Custom](/guide/ai-providers/custom/)** | Any | Any | Multi-format (OpenAI, Anthropic, Gemini, Ollama) |
 
 ## Quick Setup
 
@@ -75,9 +75,11 @@ Some models can show their reasoning process:
 
 | Provider | Models | How to Enable |
 |----------|--------|---------------|
-| Anthropic | Claude | Click brain icon (🧠) |
-| OpenAI | o1, o3 | Automatic |
-| DeepSeek | R1 | Automatic |
+| Anthropic | Claude 4.x, Claude 3.5 | Click brain icon (🧠) |
+| OpenAI | o1, o3, o4-mini | Automatic |
+| Gemini | 2.5 Pro, Thinking models | Click brain icon (🧠) |
+| xAI | Grok 4, Grok 4.1 reasoning | Automatic (reasoning models) |
+| DeepSeek | R1, Reasoner | Automatic |
 | Ollama | With think mode | Click brain icon |
 
 ### Function Calling / Tools
@@ -88,7 +90,7 @@ Most models support tool calling for MCP and built-in tools:
 |----------|--------------|
 | OpenAI | ✅ Full |
 | Anthropic | ✅ Full |
-| Gemini | ✅ Full (some models limited) |
+| Gemini | ✅ Full (image models limited) |
 | xAI | ✅ Full |
 | DeepSeek | ✅ Full |
 | Ollama | ⚠️ Limited |
@@ -99,8 +101,8 @@ Generate images directly in chat:
 
 | Provider | Models | Aspect Ratios |
 |----------|--------|---------------|
-| Gemini | gemini-2.0-flash-exp-image | 1:1, 16:9, 9:16, etc. |
-| xAI | grok-2-image | 1:1, 16:9, 9:16, etc. |
+| Gemini | gemini-2.5-flash-image | 1:1, 16:9, 9:16, etc. |
+| xAI | grok-imagine-image, grok-2-image-1212 | 1:1, 16:9, 9:16, etc. |
 
 ### Vision (Image Input)
 
@@ -108,8 +110,8 @@ Send images for analysis:
 
 | Provider | Vision Models |
 |----------|---------------|
-| OpenAI | GPT-4o, GPT-4 Turbo |
-| Anthropic | Claude 3.5, Claude 3 |
+| OpenAI | GPT-5, GPT-4.1, GPT-4o |
+| Anthropic | Claude 4.x, Claude 3.5 |
 | Gemini | All Gemini models |
 | xAI | Grok Vision |
 | Ollama | llava, bakllava |
@@ -138,9 +140,13 @@ Each provider stores its own key independently.
 For self-hosted or proxy services, use the **Custom** provider:
 
 1. Select **Custom** from the provider list
-2. Enter your base URL (e.g., `http://localhost:11434/v1`)
+2. Enter your base URL (e.g., `http://localhost:1234/v1`)
 3. Enter an API key (or any placeholder for local services)
-4. Select the format (OpenAI, Anthropic, Gemini, Ollama)
+4. Select the **Format**:
+   - **OpenAI** — LM Studio, vLLM, OpenRouter, Azure OpenAI
+   - **Anthropic** — Anthropic-compatible proxies
+   - **Gemini** — Gemini-compatible proxies
+   - **Ollama** — Ollama native API
 
 See the [Custom Provider guide](/guide/ai-providers/custom/) for details.
 

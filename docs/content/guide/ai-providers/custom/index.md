@@ -1,6 +1,6 @@
 +++
 title = "Custom Provider"
-description = "Connect to any OpenAI-compatible API endpoint."
+description = "Connect to any AI API endpoint with multiple format support."
 weight = 37
 template = "page.html"
 
@@ -10,7 +10,7 @@ category = "AI Providers"
 
 # Custom Provider
 
-Connect BraceKit to any OpenAI-compatible API endpoint. Perfect for self-hosted models, proxies, or alternative services.
+Connect BraceKit to any AI API endpoint with support for multiple formats: OpenAI, Anthropic, Gemini, and Ollama. Perfect for self-hosted models, proxies, or alternative services.
 
 ## Use Cases
 

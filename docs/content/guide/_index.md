@@ -103,5 +103,5 @@ Configuration options, keyboard shortcuts, and troubleshooting guides.
 
 ## Need Help?
 
-- **Found a bug?** [Open an issue on GitHub](https://github.com/your-org/brace-kit/issues)
+- **Found a bug?** [Open an issue on GitHub](#)
 - **Have a feature request?** We'd love to hear from you!

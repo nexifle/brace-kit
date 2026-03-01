@@ -19,7 +19,7 @@ The BraceKit chat interface is designed for clarity and productivity. Here's eve
 Full markdown rendering with support for:
 
 - **Bold**, *italic*, and `inline code`
-- [Links](https://example.com)
+- `[Links](https://example.com)`
 - Lists (ordered and unordered)
 - Blockquotes
 - Headers
