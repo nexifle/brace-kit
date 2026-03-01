@@ -13,6 +13,7 @@ nav_groups = [
     ]},
     { title = "Core Features", items = [
         { label = "Chat Interface", url = "/guide/core-features/chat/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/></svg>" },
+        { label = "AI Floating Toolbar", url = "/guide/core-features/ai-floating-toolbar/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'/></svg>" },
         { label = "Page Context", url = "/guide/core-features/page-context/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='10'/><line x1='2' y1='12' x2='22' y2='12'/><path d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/></svg>" },
         { label = "Text Selection", url = "/guide/core-features/text-selection/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path d='M4 7V4h16v3'/><path d='M9 20h6'/><path d='M12 4v16'/></svg>" },
         { label = "Branching", url = "/guide/core-features/branching/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><line x1='6' y1='3' x2='6' y2='15'/><circle cx='18' cy='6' r='3'/><circle cx='6' cy='18' r='3'/><path d='M18 9a9 9 0 0 1-5.5 8.28'/></svg>" },
@@ -38,8 +39,15 @@ nav_groups = [
         { label = "Security & PIN", url = "/guide/advanced/security/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='3' y='11' width='18' height='11' rx='2' ry='2'/><path d='M7 11V7a5 5 0 0 1 10 0v4'/></svg>" },
     ]},
     { title = "Reference", items = [
-        { label = "Configuration", url = "/guide/reference/configuration/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>" },
-        { label = "Keyboard Shortcuts", url = "/guide/reference/shortcuts/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><rect x='2' y='4' width='20' height='16' rx='2'/><path d='M6 8h.001'/><path d='M10 8h.001'/><path d='M14 8h.001'/><path d='M18 8h.001'/><path d='M8 12h.001'/><path d='M12 12h.001'/><path d='M16 12h.001'/><rect x='6' y='16' width='12' height='0'/></svg>" },
+        { label = "Configuration", url = "/guide/configuration/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='3'/><path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>", children = [
+            { label = "AI Provider", url = "/guide/configuration/ai-provider/" },
+            { label = "Chat", url = "/guide/configuration/chat/" },
+            { label = "Compact", url = "/guide/configuration/compact/" },
+            { label = "Memory", url = "/guide/configuration/memory/" },
+            { label = "MCP Servers", url = "/guide/configuration/mcp-servers/" },
+            { label = "Data", url = "/guide/configuration/data/" },
+            { label = "Safety", url = "/guide/configuration/safety/" },
+        ]},
         { label = "Troubleshooting", url = "/guide/reference/troubleshooting/", icon = "<svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'/><path d='M12 17h.01'/></svg>" },
     ]},
 ]
@@ -58,6 +66,7 @@ BraceKit is a Chrome Extension (Manifest V3) that brings AI-powered assistance d
 | Feature | Description |
 |---------|-------------|
 | **Streaming Chat** | Real-time responses with markdown rendering |
+| **AI Floating Toolbar** | Instant AI actions when you select text on any page |
 | **Page Context** | AI reads and understands the current webpage |
 | **Text Selection** | Select any text and ask questions about it |
 | **Multi-Provider** | OpenAI, Claude, Gemini, xAI, DeepSeek, Ollama, and custom |

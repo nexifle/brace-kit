@@ -18,6 +18,7 @@ BraceKit is more than a chat widget — it's a fully-featured AI workspace embed
 | Feature | What it does |
 |---------|--------------|
 | **[Chat Interface](/guide/core-features/chat/)** | Full markdown support, streaming, reasoning display |
+| **[AI Floating Toolbar](/guide/core-features/ai-floating-toolbar/)** | Instant AI actions when you select text |
 | **[Page Context](/guide/core-features/page-context/)** | AI reads and understands webpages |
 | **[Text Selection](/guide/core-features/text-selection/)** | Ask questions about highlighted text |
 | **[Branching](/guide/core-features/branching/)** | Fork conversations to explore alternatives |
@@ -45,6 +46,13 @@ BraceKit is more than a chat widget — it's a fully-featured AI workspace embed
 | `Ctrl+Shift+B` | Toggle sidebar (configurable) |
 
 ## Common Workflows
+
+### Quick Text Transformation
+
+1. Select any text on a webpage
+2. Click the BraceKit icon that appears
+3. Choose an action: Summarize, Explain, Translate, or Rephrase
+4. Copy the result or apply it directly (in editable fields)
 
 ### Analyzing a Webpage
 

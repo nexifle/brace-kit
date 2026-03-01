@@ -10,7 +10,7 @@ category = "AI Providers"
 
 # DeepSeek
 
-DeepSeek offers powerful models at competitive prices, including DeepSeek-R1 for advanced reasoning.
+DeepSeek offers powerful models at competitive prices, with V3.2 powering both chat and reasoning modes.
 
 ## Setup
 
@@ -31,16 +31,18 @@ DeepSeek offers powerful models at competitive prices, including DeepSeek-R1 for
 
 ## Available Models
 
-| Model | Best For | Context | Notes |
-|-------|----------|---------|-------|
-| **deepseek-chat** | General use | 64K | Main chat model |
-| **deepseek-reasoner** | Complex reasoning | 64K | R1 reasoning model |
+Both models are powered by **DeepSeek-V3.2** with different modes:
+
+| Model | Mode | Best For | Context | Max Output |
+|-------|------|----------|---------|------------|
+| **deepseek-chat** | Non-thinking | General chat, code, summarization | 128K | 8K tokens |
+| **deepseek-reasoner** | Thinking | Math, logic, complex analysis | 128K | 64K tokens |
 
 ## Features
 
-### Reasoning (DeepSeek-R1)
+### Reasoning (Thinking Mode)
 
-The `deepseek-reasoner` model shows its thinking process:
+The `deepseek-reasoner` model shows its Chain-of-Thought reasoning process:
 
 ```
 ┌─────────────────────────────────────┐
@@ -75,7 +77,7 @@ Configure in **Settings → Chat**:
 | Parameter | Range | Effect |
 |-----------|-------|--------|
 | **Temperature** | 0-2 | Higher = more creative |
-| **Max Tokens** | 1-64K | Maximum response length |
+| **Max Tokens** | 1-8K (chat) / 1-64K (reasoner) | Maximum response length |
 
 ### Recommended Settings
 
@@ -88,14 +90,20 @@ Configure in **Settings → Chat**:
 
 ## Pricing
 
-DeepSeek offers very competitive pricing:
+DeepSeek V3.2 offers **unified pricing** for both models with automatic context caching:
 
-| Model | Input (per 1M) | Output (per 1M) |
-|-------|----------------|-----------------|
-| deepseek-chat | $0.27 | $1.10 |
-| deepseek-reasoner | $0.55 | $2.19 |
+| Type | Price (per 1M tokens) |
+|------|----------------------|
+| **Input (Cache Hit)** | $0.028 |
+| **Input (Cache Miss)** | $0.28 |
+| **Output** | $0.42 |
 
-> **Note:** Check [DeepSeek pricing](https://platform.deepseek.com/api-docs/pricing) for current rates.
+**Cache Benefits:**
+- Automatic context caching (enabled by default)
+- 90% discount on cached input tokens
+- Shared prefix across requests triggers caching
+
+> **Note:** Check [DeepSeek pricing](https://api-docs.deepseek.com/) for current rates.
 
 ## Troubleshooting
 
@@ -106,8 +114,9 @@ DeepSeek offers very competitive pricing:
 
 ### Reasoning not showing
 
-- Ensure you're using `deepseek-reasoner`
-- Some queries may not trigger extended reasoning
+- Ensure you're using `deepseek-reasoner` (not `deepseek-chat`)
+- The thinking mode is optimized for complex queries (math, logic, code)
+- Simple queries may not trigger extended Chain-of-Thought
 
 ### Slow responses
 

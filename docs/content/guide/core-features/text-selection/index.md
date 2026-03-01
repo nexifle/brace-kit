@@ -153,6 +153,7 @@ useEffect(() => {
 
 ## Related
 
+- [AI Floating Toolbar](/guide/core-features/ai-floating-toolbar/) — Instant AI actions when you select text
 - [Page Context](/guide/core-features/page-context/) — Attach full page content
 - [File Attachments](/guide/core-features/attachments/) — Upload files
 - [Chat Interface](/guide/core-features/chat/) — Using the chat
