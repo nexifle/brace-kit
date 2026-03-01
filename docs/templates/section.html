@@ -112,8 +112,9 @@
         <!-- Left Sidebar -->
         <aside class="docs-sidebar" id="docs-sidebar" aria-label="Documentation navigation">
             <div class="docs-sidebar__inner">
-                {% if section.extra.nav_groups %}
-                {% for group in section.extra.nav_groups %}
+                {% set guide = get_section(path="guide/_index.md") %}
+                {% if guide.extra.nav_groups %}
+                {% for group in guide.extra.nav_groups %}
                 <div class="docs-sidebar__group">
                     {% if group.title %}
                     <div class="docs-sidebar__group-title">{{ group.title }}</div>
@@ -170,9 +171,11 @@
                 <div class="docs-sidebar__group">
                     <div class="docs-sidebar__group-title">Guide</div>
                     <ul class="docs-sidebar__list" role="list">
-                        {% for p in section.pages %}
+                        {% for p in guide.pages %}
                         <li class="docs-sidebar__item">
-                            <a href="{{ p.permalink }}" class="docs-sidebar__link">
+                            <a href="{{ p.permalink }}"
+                                class="docs-sidebar__link{% if current_path == p.path %} is-active{% endif %}" {% if
+                                current_path==p.path %}aria-current="page" {% endif %}>
                                 <span>{{ p.title }}</span>
                             </a>
                         </li>
