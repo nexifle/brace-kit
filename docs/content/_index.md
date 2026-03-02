@@ -17,12 +17,12 @@ nav_links = [
 
 # Hero Actions
 hero_actions = [
-    { label = "Install Extension", url = "/guide/installation/", style = "primary", icon = "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><polyline points=\"7 10 12 15 17 10\"></polyline><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"></line>" },
+    { label = "Install Extension", url = "/guide/getting-started/installation/", style = "primary", icon = "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><polyline points=\"7 10 12 15 17 10\"></polyline><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"></line>" },
     { label = "Read Docs", url = "/guide/", style = "secondary", icon = "<path d=\"M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z\"></path><path d=\"M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z\"></path>" }
 ]
 
 # CTA in nav
-cta_url = "/guide/installation/"
+cta_url = "/guide/getting-started/installation/"
 cta_label = "Get Started"
 
 # Features Section
@@ -53,13 +53,13 @@ providers = [
 # CTA Section
 cta_title = "Ready to Supercharge Your Browser?"
 cta_desc = "Install BraceKit and start chatting with AI right from your browser sidebar."
-cta_button_url = "/guide/installation/"
+cta_button_url = "/guide/getting-started/installation/"
 cta_button_label = "Get Started Now"
 
 # Footer Links
 footer_links = [
     { label = "Documentation", url = "/guide/" },
-    { label = "Installation", url = "/guide/installation/" },
+    { label = "Installation", url = "/guide/getting-started/installation/" },
     { label = "GitHub", url = "https://github.com" }
 ]
 +++

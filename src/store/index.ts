@@ -51,6 +51,8 @@ interface StorageData {
   preferences?: Preferences;
   textSelectionEnabled?: boolean;
   textSelectionMinLength?: number;
+  customQuickActions?: unknown[];
+  builtinActionOverrides?: unknown;
   conversations?: Conversation[];
   chatHistory?: Message[];
   fetchedModels?: Record<string, { models?: string[] }>;
@@ -153,6 +155,8 @@ export const useStore = create<AppState>((set, get) => ({
   // Text Selection UI Settings
   textSelectionEnabled: true,
   textSelectionMinLength: 10,
+  customQuickActions: [],
+  builtinActionOverrides: {},
 
   // Actions
   setMessages: (messages) => set({ messages }),
@@ -640,6 +644,50 @@ export const useStore = create<AppState>((set, get) => ({
     // Notify content scripts about the change
     chrome.storage.local.set({ textSelectionMinLength });
   },
+  addCustomQuickAction: (action) => {
+    const newAction = { ...action, id: 'custom_' + Date.now(), createdAt: Date.now() };
+    set((state) => ({ customQuickActions: [...state.customQuickActions, newAction] }));
+    chrome.storage.local.set({ customQuickActions: get().customQuickActions });
+  },
+  updateCustomQuickAction: (id, updates) => {
+    set((state) => ({
+      customQuickActions: state.customQuickActions.map((a) => a.id === id ? { ...a, ...updates } : a),
+    }));
+    chrome.storage.local.set({ customQuickActions: get().customQuickActions });
+  },
+  removeCustomQuickAction: (id) => {
+    set((state) => ({ customQuickActions: state.customQuickActions.filter((a) => a.id !== id) }));
+    chrome.storage.local.set({ customQuickActions: get().customQuickActions });
+  },
+  setBuiltinActionOverride: (id, override) => {
+    set((state) => {
+      const existing = state.builtinActionOverrides[id] ?? {};
+      const merged: Record<string, unknown> = { ...existing };
+      // undefined values mean "remove this override field" (revert to default)
+      for (const [key, val] of Object.entries(override)) {
+        if (val === undefined) {
+          delete merged[key];
+        } else {
+          merged[key] = val;
+        }
+      }
+      merged.id = id;
+      return {
+        builtinActionOverrides: {
+          ...state.builtinActionOverrides,
+          [id]: merged as unknown as import('../types/index.ts').BuiltinActionOverride,
+        },
+      };
+    });
+    chrome.storage.local.set({ builtinActionOverrides: get().builtinActionOverrides });
+  },
+  resetBuiltinActionOverride: (id) => {
+    set((state) => {
+      const { [id]: _removed, ...rest } = state.builtinActionOverrides;
+      return { builtinActionOverrides: rest };
+    });
+    chrome.storage.local.set({ builtinActionOverrides: get().builtinActionOverrides });
+  },
 
   // Persistence
   loadFromStorage: async () => {
@@ -666,6 +714,8 @@ export const useStore = create<AppState>((set, get) => ({
         'preferences',
         'textSelectionEnabled',
         'textSelectionMinLength',
+        'customQuickActions',
+        'builtinActionOverrides',
         'fetchedModels'
       ]) as StorageData;
 
@@ -721,6 +771,12 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.textSelectionMinLength !== undefined) {
         updates.textSelectionMinLength = data.textSelectionMinLength;
+      }
+      if (data.customQuickActions) {
+        updates.customQuickActions = data.customQuickActions as any;
+      }
+      if (data.builtinActionOverrides) {
+        updates.builtinActionOverrides = data.builtinActionOverrides as any;
       }
       if (data.fetchedModels) {
         updates.fetchedModels = data.fetchedModels as any;
@@ -832,6 +888,8 @@ export const useStore = create<AppState>((set, get) => ({
         preferences: state.preferences,
         textSelectionEnabled: state.textSelectionEnabled,
         textSelectionMinLength: state.textSelectionMinLength,
+        customQuickActions: state.customQuickActions,
+        builtinActionOverrides: state.builtinActionOverrides,
         fetchedModels: state.fetchedModels,
       });
     } catch (e) {

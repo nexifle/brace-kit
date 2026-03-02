@@ -255,4 +255,6 @@ export const TRANSLATION_TARGETS = [
 export const STORAGE_KEYS = {
   ENABLED: 'textSelectionEnabled',
   MIN_LENGTH: 'textSelectionMinLength',
+  CUSTOM_ACTIONS: 'customQuickActions',
+  BUILTIN_OVERRIDES: 'builtinActionOverrides',
 } as const;

@@ -2,6 +2,7 @@
 // Imports
 // =============================================================================
 import { useStore } from '../../store/index.ts';
+import { SelectionActionsSettings } from './SelectionActionsSettings.tsx';
 
 // =============================================================================
 // Chat Settings Component
@@ -32,7 +33,7 @@ export function ChatSettings() {
           <textarea
             id="system-prompt"
             rows={3}
-            className="w-full min-h-[70px] max-h-[640px] px-2.5 py-2 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/50 text-foreground max-inline-max field-sizing-content resize-none"
+            className="w-full min-h-[70px] max-h-[200px] px-2.5 py-2 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/50 text-foreground max-inline-max field-sizing-content resize-none"
             placeholder="You are a helpful assistant..."
             value={store.providerConfig.systemPrompt}
             onChange={(e) => {
@@ -89,30 +90,33 @@ export function ChatSettings() {
           </div>
 
           {store.textSelectionEnabled && (
-            <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-              <label htmlFor="min-selection-length" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
-                Minimum Selection Length
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  id="min-selection-length"
-                  type="range"
-                  min="5"
-                  max="100"
-                  step="5"
-                  value={store.textSelectionMinLength}
-                  onChange={(e) => {
-                    store.setTextSelectionMinLength(parseInt(e.target.value, 10));
-                  }}
-                  className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                />
-                <span className="text-sm font-medium text-foreground w-12 text-right">
-                  {store.textSelectionMinLength}
-                </span>
+            <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex flex-col gap-1.5 px-0.5">
+                <label htmlFor="min-selection-length" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+                  Minimum Selection Length
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    id="min-selection-length"
+                    type="range"
+                    min="5"
+                    max="100"
+                    step="5"
+                    value={store.textSelectionMinLength}
+                    onChange={(e) => {
+                      store.setTextSelectionMinLength(parseInt(e.target.value, 10));
+                    }}
+                    className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <span className="text-sm font-medium text-foreground w-12 text-right">
+                    {store.textSelectionMinLength}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Minimum characters to select before showing AI toolbar
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Minimum characters to select before showing AI toolbar
-              </p>
+              <SelectionActionsSettings />
             </div>
           )}
         </div>

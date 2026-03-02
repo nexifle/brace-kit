@@ -61,8 +61,41 @@ When enabled, selecting text on any webpage shows an AI toolbar with quick actio
 Set the minimum characters needed to trigger the toolbar:
 
 - **Range**: 5 - 100 characters
-- **Default**: 5 characters
-- **Recommendation**: 10-20 for more intentional selections
+- **Default**: 10 characters
+- **Recommendation**: 10–20 for more intentional selections
+
+### Built-in Actions
+
+Manage the nine built-in actions (Summarize, Explain, Translate, etc.) that come with the toolbar. For each action you can:
+
+- **Toggle on/off** — disable actions you never use
+- **Rename** — give it a shorter or more meaningful label
+- **Change position** — move between *Toolbar* (always visible) and *More menu* (dropdown)
+- **Change category** — regroup it in the More menu
+- **Reset** — restore the action to its original defaults (↺ icon on hover)
+
+### Custom Actions
+
+Add your own AI actions with a fully custom prompt. Click **+** in the Custom Actions section and fill in:
+
+| Field | Description |
+|-------|-------------|
+| **Label** | Button text shown in the toolbar |
+| **Position** | *Toolbar — always visible* or *More — in dropdown menu* |
+| **Category** | Groups the action in the More menu (optional) |
+| **Prompt Template** | Your full prompt — use `{{text}}` as the placeholder for the selected text |
+
+Example prompt template:
+
+```
+Convert the following text into a bulleted list of key points. Return only the list:
+
+{{text}}
+```
+
+> Changes apply the next time you select text on a page.
+
+See [AI Floating Toolbar](/guide/core-features/ai-floating-toolbar/) for the full guide including example prompt templates.
 
 ---
 

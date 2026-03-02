@@ -7,6 +7,8 @@
 import { render } from 'lit-html';
 import type { QuickAction, SelectionPosition } from '../types.ts';
 import { toolbarTemplate, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
+import { QUICK_ACTIONS } from '../constants.ts';
+import { loadAllActions } from '../utils/actionsLoader.ts';
 
 // === Types ===
 
@@ -54,7 +56,14 @@ export function createFloatingToolbar(
       currentModel: '',
       providers: [],
     },
+    actions: [...QUICK_ACTIONS],
   };
+
+  // Load actions from storage (built-in + custom, with overrides applied)
+  loadAllActions().then((actions) => {
+    state = { ...state, actions };
+    renderToolbar();
+  }).catch(() => {/* keep defaults */});
 
   // Load provider state from storage
   async function loadProviderState() {
