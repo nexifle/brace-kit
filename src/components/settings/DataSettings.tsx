@@ -12,7 +12,7 @@ export function DataSettings() {
     const [importPassword, setImportPassword] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [backupInfo, setBackupInfo] = useState<BackupInspection | null>(null);
-    const [status, setStatus] = useState<{ type: 'success' | 'error' | 'loading' | null; message: string }>({
+    const [status, setStatus] = useState<{ type: 'success' | 'error' | 'loading' | 'info' | null; message: string }>({
         type: null,
         message: ''
     });
@@ -62,12 +62,12 @@ export function DataSettings() {
 
             if (info.hasApiKeys) {
                 setStatus({
-                    type: 'loading',
+                    type: 'info',
                     message: 'This backup contains API keys. Please enter the password and click Import.'
                 });
             } else if (info.encrypted) {
                 setStatus({
-                    type: 'loading',
+                    type: 'info',
                     message: 'This backup is encrypted. Please enter the password and click Import.'
                 });
             } else {
@@ -331,10 +331,12 @@ export function DataSettings() {
                 <div className={`mt-4 p-3 rounded-md flex items-start gap-2 text-xs animate-in fade-in slide-in-from-top-1
             ${status.type === 'success' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
                         status.type === 'error' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                        status.type === 'info' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
                             'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}
                 >
                     {status.type === 'success' && <CheckCircle2Icon size={16} className="shrink-0 mt-0.5" />}
                     {status.type === 'error' && <AlertCircleIcon size={16} className="shrink-0 mt-0.5" />}
+                    {status.type === 'info' && <InfoIcon size={16} className="shrink-0 mt-0.5" />}
                     {status.type === 'loading' && (
                         <Loader2Icon size={16} className="shrink-0 mt-0.5 animate-spin" />
                     )}

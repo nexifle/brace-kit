@@ -169,6 +169,8 @@ export async function restoreApiKeysToStorage(
   // Restore customProviders
   if (bundle.customProviders && bundle.customProviders.length > 0) {
     const existing = (updated.customProviders as Array<Record<string, unknown>>) || [];
+
+    // Start with existing providers and update/add API keys
     const encrypted = await Promise.all(
       existing.map(async (provider) => {
         const backupProvider = bundle.customProviders!.find((p) => p.id === provider.id);
@@ -181,6 +183,17 @@ export async function restoreApiKeysToStorage(
         return provider;
       })
     );
+
+    // Add any providers from bundle that don't exist in storage
+    for (const bundleProvider of bundle.customProviders) {
+      if (bundleProvider.apiKey && !encrypted.find(p => p.id === bundleProvider.id)) {
+        encrypted.push({
+          id: bundleProvider.id,
+          apiKey: await encryptApiKey(bundleProvider.apiKey),
+        });
+      }
+    }
+
     updated.customProviders = encrypted;
   }
 

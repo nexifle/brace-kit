@@ -223,8 +223,14 @@ export async function importData(file: File, optionsOrPassword?: string | Import
         }
 
         // 1. Clear existing storage and set new one
+        // IMPORTANT: Preserve the device encryption key to avoid decryption failures
+        const existingData = await chrome.storage.local.get('_deviceEncryptionKey');
         await chrome.storage.local.clear();
-        await chrome.storage.local.set(finalStorage);
+        await chrome.storage.local.set({
+          ...finalStorage,
+          // Preserve the device encryption key that was used to encrypt the restored API keys
+          _deviceEncryptionKey: existingData._deviceEncryptionKey,
+        });
 
         // 2. Restore images to IndexedDB
         if (backupData.images && Array.isArray(backupData.images)) {
@@ -232,32 +238,34 @@ export async function importData(file: File, optionsOrPassword?: string | Import
           await importImages(backupData.images);
         }
 
-        // 3. Restore conversation messages to IndexedDB
+        // 3. Restore conversation messages to IndexedDB (parallel)
         if (backupData.conversations && Array.isArray(backupData.conversations)) {
           await clearAllConversationMessages();
-          for (const conv of backupData.conversations) {
-            await saveConversationMessages(conv.id, conv.messages);
-          }
+          await Promise.all(
+            backupData.conversations.map(conv => saveConversationMessages(conv.id, conv.messages))
+          );
         }
 
-        // 4. Restore conversation metadata to IndexedDB
+        // 4. Restore conversation metadata to IndexedDB (parallel)
         await clearAllConversationMetadata();
         if (backupData.conversationMetadata && Array.isArray(backupData.conversationMetadata)) {
-          for (const meta of backupData.conversationMetadata) {
-            await saveConversationMetadata(meta);
-          }
+          await Promise.all(
+            backupData.conversationMetadata.map(meta => saveConversationMetadata(meta))
+          );
         } else if (backupData.conversations && Array.isArray(backupData.conversations)) {
-          // Old format fallback
-          for (const conv of backupData.conversations) {
-            const firstUserMsg = conv.messages.find((m) => m.role === 'user');
-            const rawTitle = firstUserMsg
-              ? (firstUserMsg.displayContent || firstUserMsg.content || '')
-              : '';
-            const title = rawTitle.slice(0, 50) || 'Imported Chat';
-            const now = Date.now();
-            const meta: Conversation = { id: conv.id, title, createdAt: now, updatedAt: now };
-            await saveConversationMetadata(meta);
-          }
+          // Old format fallback - reconstruct and save in parallel
+          await Promise.all(
+            backupData.conversations.map(conv => {
+              const firstUserMsg = conv.messages.find((m) => m.role === 'user');
+              const rawTitle = firstUserMsg
+                ? (firstUserMsg.displayContent || firstUserMsg.content || '')
+                : '';
+              const title = rawTitle.slice(0, 50) || 'Imported Chat';
+              const now = Date.now();
+              const meta: Conversation = { id: conv.id, title, createdAt: now, updatedAt: now };
+              return saveConversationMetadata(meta);
+            })
+          );
         }
 
         resolve();
