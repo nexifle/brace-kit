@@ -53,14 +53,26 @@ document.addEventListener('mouseup', () => {
   const selection = window.getSelection();
   const selectedText = selection ? selection.toString().trim() : '';
   if (selectedText.length > 0) {
-    chrome.runtime.sendMessage({
-      type: 'TEXT_SELECTED',
-      data: {
-        selectedText,
-        pageTitle: document.title,
-        pageUrl: window.location.href,
-      },
-    });
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: 'TEXT_SELECTED',
+          data: {
+            selectedText,
+            pageTitle: document.title,
+            pageUrl: window.location.href,
+          },
+        },
+        () => {
+          // Accessing lastError inside the callback silences the
+          // "Unchecked runtime.lastError" warning when the service worker
+          // is sleeping and there is no receiving end for the message.
+          void chrome.runtime.lastError;
+        },
+      );
+    } catch {
+      // Extension context may be invalidated — fail silently
+    }
   }
 });
 

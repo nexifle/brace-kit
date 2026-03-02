@@ -23,7 +23,10 @@ import { migrateOldConversations } from '../utils/conversationDB';
 // Initialize MCP servers on startup
 restoreMCPServers();
 
-// Setup User-Agent header modification
+// Modify User-Agent only for LLM API requests made by this extension.
+// IMPORTANT: Do NOT use urlFilter:'*' here — that would rewrite the UA on
+// ALL XHR requests (including Cloudflare challenge verification), causing
+// bot-detection to flag the browser as a non-human client.
 chrome.declarativeNetRequest.updateDynamicRules({
   removeRuleIds: [1],
   addRules: [{
@@ -38,8 +41,19 @@ chrome.declarativeNetRequest.updateDynamicRules({
       }]
     },
     condition: {
-      urlFilter: '*',
-      resourceTypes: [chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST]
+      requestDomains: [
+        'api.anthropic.com',
+        'api.openai.com',
+        'generativelanguage.googleapis.com',
+        'api.x.ai',
+        'api.deepseek.com',
+        'openrouter.ai',
+        'api.openrouter.ai',
+      ],
+      resourceTypes: [
+        chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
+        chrome.declarativeNetRequest.ResourceType.OTHER,
+      ]
     }
   }]
 });

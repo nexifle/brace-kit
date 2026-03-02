@@ -5,8 +5,6 @@
  * the extension is reloaded while content scripts are still running.
  */
 
-import { logger } from './logger.ts';
-
 /** Error message patterns that indicate extension context is invalid */
 const CONTEXT_INVALIDATED_PATTERNS = [
   'Extension context invalidated',
@@ -41,30 +39,25 @@ export function isChromeRuntimeAvailable(): boolean {
 /**
  * Setup a listener for extension context disconnection
  * Returns a cleanup function
+ *
+ * Uses periodic polling instead of chrome.runtime.connect() because a
+ * persistent port causes visible "Extension context disconnected" logs in the
+ * page console and interferes with Cloudflare Turnstile bot-detection
+ * fingerprinting when the service worker goes idle and the port drops.
  */
 export function onContextInvalidated(callback: () => void): () => void {
   if (!isChromeRuntimeAvailable()) {
-    // Already invalidated
     callback();
     return () => {};
   }
 
-  const handleDisconnect = () => {
-    logger.info('Extension context disconnected');
-    callback();
-  };
-
-  // Listen for port disconnect (happens when extension reloads)
-  const port = chrome.runtime.connect({ name: 'selection-ui-context' });
-  port.onDisconnect.addListener(handleDisconnect);
-
-  // Return cleanup function
-  return () => {
-    try {
-      port.onDisconnect.removeListener(handleDisconnect);
-      port.disconnect();
-    } catch {
-      // Port may already be disconnected
+  const POLL_INTERVAL_MS = 5_000;
+  const timerId = setInterval(() => {
+    if (!isChromeRuntimeAvailable()) {
+      clearInterval(timerId);
+      callback();
     }
-  };
+  }, POLL_INTERVAL_MS);
+
+  return () => clearInterval(timerId);
 }
