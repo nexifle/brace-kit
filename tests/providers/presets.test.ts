@@ -52,7 +52,7 @@ describe('Provider Presets', () => {
       const preset = PROVIDER_PRESETS.gemini;
       expect(preset.id).toBe('gemini');
       expect(preset.format).toBe('gemini');
-      expect(preset.defaultModel).toBe('gemini-2.0-flash');
+      expect(preset.defaultModel).toBe('gemini-2.5-flash');
       expect(preset.supportsModelFetch).toBe(true);
     });
 

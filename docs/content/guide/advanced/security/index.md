@@ -113,9 +113,37 @@ When locked, the following are inaccessible:
 ### Data Storage
 
 All data is stored locally:
-- **chrome.storage.local** — Settings, keys
+- **chrome.storage.local** — Settings, encrypted API keys
 - **IndexedDB** — Conversations, images
-- **Encrypted** — API keys are encrypted
+- **Device-bound encryption** — API keys are encrypted with a unique key stored on your device
+
+## API Key Encryption
+
+### How It Works
+
+BraceKit uses **transparent encryption** for your API keys:
+
+1. **Device Key** — A unique encryption key is generated for your device
+2. **Automatic Encryption** — API keys are encrypted before storage
+3. **Automatic Decryption** — Keys are decrypted only when needed for API calls
+4. **No Plaintext Storage** — Your API keys are never stored in readable form
+
+### What This Means
+
+- **Stolen storage is useless** — If someone copies your browser data, they cannot read your API keys
+- **Device-specific** — Encrypted keys only work on the device where they were entered
+- **No password required** — Encryption is transparent; you don't need to enter a password each time
+
+### Backup & Restore
+
+When exporting data with API keys:
+
+1. **Password required** — You must set a password to encrypt the API key bundle
+2. **Portable encryption** — Keys are re-encrypted with your password (not device key)
+3. **Cross-device restore** — On the new device, enter the password to decrypt and restore keys
+4. **Re-encrypted for new device** — Restored keys are encrypted with the new device's key
+
+> **Important:** If you lose the backup password, the API keys in that backup cannot be recovered.
 
 ## Security Best Practices
 
@@ -164,16 +192,26 @@ To reset:
 
 ### What BraceKit Stores
 
-- **API keys** — Encrypted, local only
-- **Conversations** — Local storage only
+- **API keys** — Encrypted with device-bound key, local only
+- **Conversations** — Local storage only (IndexedDB)
 - **Memories** — Local storage only
+- **Settings** — Local storage only
 - **No cloud sync** — Data never leaves your device
 
 ### What BraceKit Sends
 
-- **API requests** — Only to configured providers
+- **API requests** — Only to configured AI providers
 - **No telemetry** — No usage analytics
 - **No account** — No BraceKit account required
+
+### API Key Security
+
+Your API keys are protected by **transparent encryption**:
+
+- Keys are encrypted before storage using a unique device key
+- Keys are decrypted only when making API calls
+- If someone copies your browser storage, they cannot read your keys
+- Keys are device-specific and cannot be transferred without backup password
 
 ## Troubleshooting
 
@@ -198,6 +236,6 @@ To reset:
 
 ## Related
 
-- [Configuration](/guide/reference/configuration/) — All settings
+- [Configuration](/guide/configuration/) — All settings
 - [Memory System](/guide/advanced/memory/) — What's stored
 - [Troubleshooting](/guide/reference/troubleshooting/) — Common issues

@@ -134,6 +134,29 @@ export function calculateToolbarPositionFromElement(
 }
 
 /**
+ * Calculate optimal position for result popover.
+ * Coordinates are relative to the container element for robust positioning.
+ *
+ * @param selection - The current text selection
+ * @param containerElement - The container element (used to compute relative offsets)
+ * @param referenceRect - Optional rect for vertical positioning (defaults to selection rect)
+ */
+export function calculatePopoverPosition(
+  selection: Selection,
+  containerElement?: HTMLElement,
+  referenceRect?: DOMRect
+): SelectionPosition | null {
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+
+  if (rect.width === 0 && rect.height === 0) {
+    return null;
+  }
+
+  return calculatePopoverPositionFromRect(rect, containerElement, referenceRect);
+}
+
+/**
  * Calculate optimal position for result popover from a bounding rect.
  * This is the core positioning logic, independent of a live Selection object.
  * Coordinates are relative to the container element for robust positioning.

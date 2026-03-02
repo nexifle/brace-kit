@@ -8,6 +8,7 @@ import { logger } from '../utils/logger.ts';
 import { isExtensionContextInvalidated, isChromeRuntimeAvailable } from '../utils/chromeErrorHandler.ts';
 import { createRateLimiter, type RateLimiter } from '../core/RateLimiter.ts';
 import { loadAllActions } from '../utils/actionsLoader.ts';
+import { decryptApiKey } from '../../../utils/keyEncryption.ts';
 
 // === Types ===
 
@@ -66,7 +67,9 @@ async function getProviderConfig(): Promise<AIProviderConfig | null> {
       return null;
     }
 
-    const apiKey = providerKeys[providerConfig.providerId]?.apiKey || '';
+    // Decrypt API key from storage
+    const encryptedKey = providerKeys[providerConfig.providerId]?.apiKey || '';
+    const apiKey = await decryptApiKey(encryptedKey);
 
     return {
       ...providerConfig,

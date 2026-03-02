@@ -5,6 +5,7 @@
 
 import { MCPManager } from '../../services/mcp';
 import { isBuiltinTool, executeTool, type ToolExecutionContext } from '../tools/index';
+import { decryptApiKey } from '../../utils/keyEncryption.ts';
 
 type SendResponse = (response?: unknown) => void;
 
@@ -101,8 +102,10 @@ export async function handleMCPToolCall(
     // Check for built-in tools first
     if (isBuiltinTool(name)) {
       const { googleSearchApiKey } = await chrome.storage.local.get('googleSearchApiKey');
+      // Decrypt API key before use
+      const decryptedKey = await decryptApiKey(googleSearchApiKey as string | undefined);
       const context: ToolExecutionContext = {
-        googleSearchApiKey: googleSearchApiKey as string | undefined,
+        googleSearchApiKey: decryptedKey,
       };
       const result = await executeTool(name, args, context);
       sendResponse(result as ToolCallResponse);

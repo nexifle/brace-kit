@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
-import { useStore } from '../../src/store';
 
+// Must mock modules BEFORE importing store (which depends on them)
 // Mock chrome storage and conversation DB
 global.chrome = {
   storage: {
@@ -35,12 +35,15 @@ mock.module('../../src/utils/imageDB', () => ({
   deleteImagesByConversation: mock(() => Promise.resolve()),
 }));
 
-// Mock memory sampler
-mock.module('../../src/utils/memorySampler', () => ({
-  selectMemoriesForConversation: mock(() => []),
-  buildMemoryBlockFromSelection: mock(() => ''),
-  refreshMemorySelection: mock(() => []),
-}));
+// NOTE: We intentionally do NOT mock memorySampler here because:
+// 1. These tests don't involve memory selection functionality
+// 2. Mocking memorySampler causes test pollution - it affects other test files
+//    that test the actual memorySampler implementation
+// 3. The store will use the real memorySampler, which is fine for these tests
+//    since we're only testing metadataTimestamp behavior
+
+// Import store AFTER mocks are set up
+const { useStore } = await import('../../src/store');
 
 describe('Store - Static Metadata Timestamp', () => {
   beforeEach(() => {
@@ -67,14 +70,14 @@ describe('Store - Static Metadata Timestamp', () => {
 
     const timestamp = conv.metadataTimestamp!;
     const date = new Date(timestamp);
-    
+
     expect(date.toISOString()).toBe(timestamp);
     expect(isNaN(date.getTime())).toBe(false);
   });
 
   test('multiple conversations have different metadataTimestamp', async () => {
     const store = useStore.getState();
-    
+
     const conv1 = store.createConversation({ title: 'Chat 1' });
     await new Promise(resolve => setTimeout(resolve, 10));
     const conv2 = store.createConversation({ title: 'Chat 2' });
@@ -87,7 +90,7 @@ describe('Store - Static Metadata Timestamp', () => {
   test('conversation metadataTimestamp persists in state', () => {
     const store = useStore.getState();
     const conv = store.createConversation({ title: 'Test' });
-    
+
     const timestamp = conv.metadataTimestamp;
     const state = useStore.getState();
     const storedConv = state.conversations.find(c => c.id === conv.id);

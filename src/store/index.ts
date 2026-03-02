@@ -30,6 +30,7 @@ import {
 } from '../utils/conversationDB.ts';
 import { sha256 } from '../utils/crypto.ts';
 import { selectMemoriesForConversation } from '../utils/memorySampler.ts';
+import { encryptApiKey, decryptApiKey, isEncrypted } from '../utils/keyEncryption.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -721,14 +722,82 @@ export const useStore = create<AppState>((set, get) => ({
 
       const updates: Partial<AppState> = {};
 
+      // Load and decrypt providerConfig
       if (data.providerConfig) {
-        updates.providerConfig = { ...initialProviderConfig, ...data.providerConfig };
+        let config = { ...initialProviderConfig, ...data.providerConfig };
+        // Migrate apiKey: encrypt if plaintext, decrypt if encrypted
+        if (config.apiKey) {
+          if (isEncrypted(config.apiKey)) {
+            config.apiKey = await decryptApiKey(config.apiKey);
+          } else {
+            // Migrate plaintext to encrypted
+            const encrypted = await encryptApiKey(config.apiKey);
+            config.apiKey = encrypted;
+            // Persist migration immediately
+            chrome.storage.local.set({ providerConfig: config }).catch(() => {});
+            // Keep decrypted version in memory
+            config.apiKey = data.providerConfig.apiKey;
+          }
+        }
+        updates.providerConfig = config;
       }
+      // Load and decrypt providerKeys
       if (data.providerKeys) {
-        updates.providerKeys = data.providerKeys;
+        let needsMigration = false;
+        const decrypted: ProviderKeys = {};
+        for (const [id, keyData] of Object.entries(data.providerKeys)) {
+          if (keyData.apiKey) {
+            if (isEncrypted(keyData.apiKey)) {
+              decrypted[id] = { apiKey: await decryptApiKey(keyData.apiKey), model: keyData.model };
+            } else {
+              // Migrate plaintext to encrypted - keep plaintext in memory, will encrypt on save
+              decrypted[id] = { apiKey: keyData.apiKey, model: keyData.model };
+              needsMigration = true;
+            }
+          } else {
+            decrypted[id] = keyData;
+          }
+        }
+        updates.providerKeys = decrypted;
+        if (needsMigration) {
+          // Re-encrypt and persist migrated keys
+          const encrypted: ProviderKeys = {};
+          for (const [id, keyData] of Object.entries(data.providerKeys)) {
+            encrypted[id] = {
+              apiKey: keyData.apiKey ? (isEncrypted(keyData.apiKey) ? keyData.apiKey : await encryptApiKey(keyData.apiKey)) : '',
+              model: keyData.model
+            };
+          }
+          chrome.storage.local.set({ providerKeys: encrypted }).catch(() => {});
+        }
       }
+      // Load and decrypt customProviders
       if (data.customProviders) {
-        updates.customProviders = data.customProviders;
+        let needsMigration = false;
+        const decrypted = await Promise.all(
+          data.customProviders.map(async (p) => {
+            if (p.apiKey) {
+              if (isEncrypted(p.apiKey)) {
+                return { ...p, apiKey: await decryptApiKey(p.apiKey) };
+              } else {
+                needsMigration = true;
+                return p; // Keep plaintext in memory
+              }
+            }
+            return p;
+          })
+        );
+        updates.customProviders = decrypted;
+        if (needsMigration) {
+          // Re-encrypt and persist migrated providers
+          const encrypted = await Promise.all(
+            data.customProviders.map(async (p) => ({
+              ...p,
+              apiKey: p.apiKey ? (isEncrypted(p.apiKey) ? p.apiKey : await encryptApiKey(p.apiKey)) : ''
+            }))
+          );
+          chrome.storage.local.set({ customProviders: encrypted }).catch(() => {});
+        }
       }
       if (data.mcpServers) {
         updates.mcpServers = data.mcpServers;
@@ -748,8 +817,18 @@ export const useStore = create<AppState>((set, get) => ({
       if (data.enableGoogleSearchTool !== undefined) {
         updates.enableGoogleSearchTool = data.enableGoogleSearchTool;
       }
+      // Load and decrypt googleSearchApiKey
       if (data.googleSearchApiKey !== undefined) {
-        updates.googleSearchApiKey = data.googleSearchApiKey;
+        if (data.googleSearchApiKey && isEncrypted(data.googleSearchApiKey)) {
+          updates.googleSearchApiKey = await decryptApiKey(data.googleSearchApiKey);
+        } else if (data.googleSearchApiKey) {
+          // Migrate plaintext to encrypted
+          const encrypted = await encryptApiKey(data.googleSearchApiKey);
+          chrome.storage.local.set({ googleSearchApiKey: encrypted }).catch(() => {});
+          updates.googleSearchApiKey = data.googleSearchApiKey; // Keep plaintext in memory
+        } else {
+          updates.googleSearchApiKey = data.googleSearchApiKey;
+        }
       }
       if (data.enableStreaming !== undefined) {
         updates.enableStreaming = data.enableStreaming;
@@ -868,15 +947,41 @@ export const useStore = create<AppState>((set, get) => ({
       // Jangan simpan conversation aktif yang masih kosong (belum pernah kirim pesan)
       const activeIsEmpty = state.messages.length === 0;
 
+      // Encrypt API keys before storing
+      const encryptedProviderConfig = {
+        ...state.providerConfig,
+        apiKey: await encryptApiKey(state.providerConfig.apiKey),
+      };
+
+      // Encrypt all providerKeys
+      const encryptedProviderKeys: ProviderKeys = {};
+      for (const [id, data] of Object.entries(state.providerKeys)) {
+        encryptedProviderKeys[id] = {
+          apiKey: await encryptApiKey(data.apiKey),
+          model: data.model,
+        };
+      }
+
+      // Encrypt customProviders API keys
+      const encryptedCustomProviders = await Promise.all(
+        state.customProviders.map(async (p) => ({
+          ...p,
+          apiKey: await encryptApiKey(p.apiKey),
+        }))
+      );
+
+      // Encrypt googleSearchApiKey
+      const encryptedGoogleSearchApiKey = await encryptApiKey(state.googleSearchApiKey);
+
       await chrome.storage.local.set({
-        providerConfig: state.providerConfig,
-        providerKeys: state.providerKeys,
-        customProviders: state.customProviders,
+        providerConfig: encryptedProviderConfig,
+        providerKeys: encryptedProviderKeys,
+        customProviders: encryptedCustomProviders,
         mcpServers: state.mcpServers,
         enableGoogleSearch: state.enableGoogleSearch,
         enableReasoning: state.enableReasoning,
         enableGoogleSearchTool: state.enableGoogleSearchTool,
-        googleSearchApiKey: state.googleSearchApiKey,
+        googleSearchApiKey: encryptedGoogleSearchApiKey,
         enableStreaming: state.enableStreaming,
         // Jika aktif kosong, simpan null agar saat reload tidak coba load conversation ini
         activeConversationId: activeIsEmpty ? null : state.activeConversationId,
