@@ -305,6 +305,7 @@ export interface SecuritySettings {
 
 export interface Preferences {
   toolMessageDisplay: 'detailed' | 'compact';
+  startOnWelcome: boolean;
 }
 
 // ==================== Streaming State ====================

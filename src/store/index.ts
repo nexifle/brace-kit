@@ -151,6 +151,7 @@ export const useStore = create<AppState>((set, get) => ({
   // Preferences
   preferences: {
     toolMessageDisplay: 'detailed',
+    startOnWelcome: false,
   },
 
   // Text Selection UI Settings
@@ -884,9 +885,10 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // Migrate legacy chatHistory or load active conversation
+      const startOnWelcome = updates.preferences?.startOnWelcome ?? false;
       const legacyData = await chrome.storage.local.get(['chatHistory']) as { chatHistory?: Message[] };
       if (legacyData.chatHistory && legacyData.chatHistory.length > 0 && !updates.conversations) {
-        // Migrate legacy data
+        // Migrate legacy data (always migrate regardless of startOnWelcome)
         const id = `conv_${Date.now()}`;
         const firstUserMsg = legacyData.chatHistory.find((m: Message) => m.role === 'user');
         const title = firstUserMsg
@@ -896,16 +898,18 @@ export const useStore = create<AppState>((set, get) => ({
 
         const conv: Conversation = { id, title, createdAt: now, updatedAt: now };
         updates.conversations = [conv];
-        updates.activeConversationId = id;
-        updates.messages = legacyData.chatHistory;
+        if (!startOnWelcome) {
+          updates.activeConversationId = id;
+          updates.messages = legacyData.chatHistory;
+        }
 
         await saveConversationMessages(id, legacyData.chatHistory);
         await saveConversationMetadata(conv);
-        await chrome.storage.local.set({
-          activeConversationId: id,
-        });
+        if (!startOnWelcome) {
+          await chrome.storage.local.set({ activeConversationId: id });
+        }
         await chrome.storage.local.remove('chatHistory');
-      } else if (data.activeConversationId) {
+      } else if (data.activeConversationId && !startOnWelcome) {
         updates.activeConversationId = data.activeConversationId;
 
         let messagesOrNull = await getConversationMessages(data.activeConversationId);
