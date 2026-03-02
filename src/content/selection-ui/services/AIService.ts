@@ -4,10 +4,10 @@
  */
 
 import type { QuickAction } from '../types.ts';
-import { QUICK_ACTIONS } from '../constants.ts';
 import { logger } from '../utils/logger.ts';
 import { isExtensionContextInvalidated, isChromeRuntimeAvailable } from '../utils/chromeErrorHandler.ts';
 import { createRateLimiter, type RateLimiter } from '../core/RateLimiter.ts';
+import { loadAllActions } from '../utils/actionsLoader.ts';
 
 // === Types ===
 
@@ -113,8 +113,9 @@ export function createAIService(config: AIServiceConfig = {}): AIService {
       return { error: `Please wait ${waitTime} second(s) before making another request.` };
     }
 
-    // Get action config
-    const actionConfig = QUICK_ACTIONS.find((a) => a.id === action);
+    // Get action config (built-in + custom from storage)
+    const allActions = await loadAllActions();
+    const actionConfig = allActions.find((a) => a.id === action);
     if (!actionConfig) {
       return { error: `Unknown action: ${action}` };
     }

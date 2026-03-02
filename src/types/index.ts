@@ -224,6 +224,25 @@ export interface MCPTool {
   _serverId?: string;
 }
 
+// ==================== Text Selection Custom Actions ====================
+
+export interface CustomQuickAction {
+  id: string;            // 'custom_' + timestamp
+  label: string;
+  promptTemplate: string;  // template with {{text}} placeholder
+  isPrimary?: boolean;
+  category?: string;
+  createdAt: number;
+}
+
+export interface BuiltinActionOverride {
+  id: string;           // id of the built-in action
+  label?: string;       // custom display label
+  disabled?: boolean;   // hide from toolbar
+  isPrimary?: boolean;  // override primary/secondary placement
+  category?: string;    // override category grouping
+}
+
 // ==================== Memory Types ====================
 
 export type MemoryCategory = 'style' | 'interests' | 'expertise' | 'preferences' | 'personal' | 'goals' | 'context' | 'habits' | 'dislikes';
@@ -373,6 +392,8 @@ export interface AppState {
   // Text Selection UI Settings
   textSelectionEnabled: boolean;
   textSelectionMinLength: number;
+  customQuickActions: CustomQuickAction[];
+  builtinActionOverrides: Record<string, BuiltinActionOverride>;
 
   // Actions
   setMessages: (messages: Message[]) => void;
@@ -448,6 +469,11 @@ export interface AppState {
   // Text Selection UI Actions
   setTextSelectionEnabled: (enabled: boolean) => void;
   setTextSelectionMinLength: (length: number) => void;
+  addCustomQuickAction: (action: Omit<CustomQuickAction, 'id' | 'createdAt'>) => void;
+  updateCustomQuickAction: (id: string, updates: Partial<Omit<CustomQuickAction, 'id' | 'createdAt'>>) => void;
+  removeCustomQuickAction: (id: string) => void;
+  setBuiltinActionOverride: (id: string, override: Partial<Omit<BuiltinActionOverride, 'id'>>) => void;
+  resetBuiltinActionOverride: (id: string) => void;
 
   // Persistence
   loadFromStorage: () => Promise<void>;

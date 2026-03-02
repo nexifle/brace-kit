@@ -5,7 +5,7 @@
 
 import { html, type TemplateResult } from 'lit-html';
 import type { QuickAction, SelectionPosition, MenuState } from '../types.ts';
-import { QUICK_ACTIONS, TRANSLATION_TARGETS, MAX_PRIMARY_ACTIONS, ACTION_CATEGORIES } from '../constants.ts';
+import { TRANSLATION_TARGETS, ACTION_CATEGORIES } from '../constants.ts';
 import { logoSvgTemplate, icons } from './shared.ts';
 
 // === Types ===
@@ -22,6 +22,7 @@ export interface ToolbarState {
     currentModel: string;
     providers: { id: string; name: string; models: string[] }[];
   };
+  actions: QuickAction[];
 }
 
 export interface ToolbarCallbacks {
@@ -47,16 +48,16 @@ function getActionIcon(iconName: string): TemplateResult {
 
 // === Derived Data ===
 
-function getPrimaryActions(): QuickAction[] {
-  return QUICK_ACTIONS.filter(a => a.isPrimary !== false).slice(0, MAX_PRIMARY_ACTIONS);
+function getPrimaryActions(actions: QuickAction[]): QuickAction[] {
+  return actions.filter(a => a.isPrimary !== false);
 }
 
-function getSecondaryActions(): QuickAction[] {
-  return QUICK_ACTIONS.filter(a => a.isPrimary === false);
+function getSecondaryActions(actions: QuickAction[]): QuickAction[] {
+  return actions.filter(a => a.isPrimary === false);
 }
 
-function hasSecondaryActions(): boolean {
-  return getSecondaryActions().length > 0;
+function hasSecondaryActions(actions: QuickAction[]): boolean {
+  return getSecondaryActions(actions).length > 0;
 }
 
 function groupActionsByCategory(actions: QuickAction[]): Map<string, QuickAction[]> {
@@ -146,8 +147,8 @@ function actionsContainerTemplate(
     return translateModeTemplate(state, callbacks);
   }
 
-  const primaryActions = getPrimaryActions();
-  const showMoreButton = hasSecondaryActions();
+  const primaryActions = getPrimaryActions(state.actions);
+  const showMoreButton = hasSecondaryActions(state.actions);
 
   return html`
     <div class="bk-actions-container" role="group" aria-label="AI actions">
@@ -315,10 +316,10 @@ function moreButtonTemplate(
  * Menu overlay with dropdown content
  */
 function menuOverlayTemplate(
-  _state: ToolbarState,
+  state: ToolbarState,
   callbacks: ToolbarCallbacks
 ): TemplateResult {
-  const secondaryActions = getSecondaryActions();
+  const secondaryActions = getSecondaryActions(state.actions);
   const groupedActions = groupActionsByCategory(secondaryActions);
 
   return html`
