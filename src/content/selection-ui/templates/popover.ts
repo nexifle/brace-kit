@@ -25,6 +25,7 @@ export interface PopoverState {
 }
 
 export interface PopoverCallbacks {
+  onBack: () => void;
   onClose: () => void;
   onRegenerate: () => void;
   onCopy: () => void;
@@ -70,6 +71,13 @@ export function popoverTemplate(
     >
       <!-- Header -->
       <div class="bk-popover-header">
+        <button
+          class="bk-popover-close"
+          aria-label="Back to toolbar"
+          @click=${callbacks.onBack}
+        >
+          ${icons.back}
+        </button>
         <div class="bk-popover-title">
           <span class="bk-icon" aria-hidden="true">
             ${getActionIcon(state.action)}

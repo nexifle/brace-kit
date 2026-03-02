@@ -49,6 +49,32 @@
             <li><a href="#providers" class="nav__link">Providers</a></li>
             <li><a href="/guide/" class="nav__link">Documentation</a></li>
             {% endif %}
+            <li class="nav__support-wrap" id="nav-support-wrap">
+                <button class="nav__link nav__support-toggle" id="nav-support-toggle" type="button"
+                    aria-expanded="false" aria-haspopup="true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path
+                            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                    </svg>
+                    Support
+                </button>
+                <div class="nav__support-dropdown" id="nav-support-dropdown" hidden>
+                    <a href="{{ config.extra.saweria_url }}" class="nav__support-item" id="nav-donate-saweria"
+                        target="_blank" rel="noopener noreferrer">
+                        <span class="nav__support-item-flag" aria-hidden="true">🇮🇩</span>
+                        <span class="nav__support-item-body">
+                            <span class="nav__support-item-name">Saweria</span>
+                        </span>
+                    </a>
+                    <a href="{{ config.extra.kofi_url }}" class="nav__support-item" id="nav-donate-kofi" target="_blank"
+                        rel="noopener noreferrer">
+                        <span class="nav__support-item-flag" aria-hidden="true">☕</span>
+                        <span class="nav__support-item-body">
+                            <span class="nav__support-item-name">Ko-fi</span>
+                        </span>
+                    </a>
+                </div>
+            </li>
         </ul>
         <a href="{{ section.extra.cta_url | default(value='/guide/installation/') }}" class="nav__cta">
             {{ section.extra.cta_label | default(value="Get Started") }}
@@ -300,9 +326,71 @@
             <li><a href="https://github.com" class="footer__link">GitHub</a></li>
             {% endif %}
         </ul>
+        <div class="footer__donate">
+            <span class="footer__donate-label">Support BraceKit</span>
+            <a href="{{ config.extra.saweria_url }}" class="footer__donate-btn" id="hp-donate-saweria" target="_blank"
+                rel="noopener noreferrer" aria-label="Donasi via Saweria (Indonesia)">
+                <span aria-hidden="true">🇮🇩</span> Saweria
+            </a>
+            <a href="{{ config.extra.kofi_url }}" class="footer__donate-btn" id="hp-donate-kofi" target="_blank"
+                rel="noopener noreferrer" aria-label="Support via Ko-fi">
+                <span aria-hidden="true">☕</span> Ko-fi
+            </a>
+        </div>
         <p class="footer__copy">
             &copy; {{ now() | date(format="%Y") }} BraceKit. All rights reserved.
         </p>
     </div>
 </footer>
+<script>
+    (function () {
+        var lang = (navigator.language || '').toLowerCase();
+        var isID = lang === 'id' || lang.startsWith('id-');
+        var ids = isID
+            ? ['hp-donate-saweria', 'nav-donate-saweria']
+            : ['hp-donate-kofi', 'nav-donate-kofi'];
+        ids.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.classList.add('is-suggested');
+        });
+
+        // ── Nav support dropdown toggle (portal to body) ─────────────────────
+        var wrap     = document.getElementById('nav-support-wrap');
+        var toggle   = document.getElementById('nav-support-toggle');
+        var dropdown = document.getElementById('nav-support-dropdown');
+        if (toggle && dropdown) {
+            // Portal: move out of backdrop-filter stacking context
+            document.body.appendChild(dropdown);
+
+            function openNavDropdown() {
+                var r = toggle.getBoundingClientRect();
+                dropdown.style.top       = (r.bottom + 8) + 'px';
+                dropdown.style.left      = (r.left + r.width / 2) + 'px';
+                dropdown.style.transform = 'translateX(-50%)';
+                dropdown.hidden = false;
+                toggle.setAttribute('aria-expanded', 'true');
+            }
+            function closeNavDropdown() {
+                dropdown.hidden = true;
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+
+            toggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                dropdown.hidden ? openNavDropdown() : closeNavDropdown();
+            });
+            document.addEventListener('click', function (e) {
+                if (!wrap.contains(e.target) && !dropdown.contains(e.target)) {
+                    closeNavDropdown();
+                }
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !dropdown.hidden) {
+                    closeNavDropdown();
+                    toggle.focus();
+                }
+            });
+        }
+    })();
+</script>
 {% endblock content %}

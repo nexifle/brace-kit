@@ -19,6 +19,7 @@ export interface FloatingToolbarConfig {
   position: SelectionPosition;
   onActionClick: (action: QuickAction['id'], targetLang?: string) => void;
   onDismiss: () => void;
+  initiallyExpanded?: boolean;
 }
 
 export interface FloatingToolbarAPI {
@@ -36,7 +37,7 @@ export function createFloatingToolbar(
   shadow: ShadowRoot,
   config: FloatingToolbarConfig
 ): FloatingToolbarAPI {
-  const { position, onActionClick, onDismiss } = config;
+  const { position, onActionClick, onDismiss, initiallyExpanded = false } = config;
 
   // Create container for toolbar
   const container = document.createElement('div');
@@ -45,7 +46,7 @@ export function createFloatingToolbar(
 
   // State
   let state: ToolbarState = {
-    isExpanded: false,
+    isExpanded: initiallyExpanded,
     isTranslateMode: false,
     selectedLang: 'English',
     position,

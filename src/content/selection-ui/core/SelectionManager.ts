@@ -242,6 +242,21 @@ export function createSelectionManager(): SelectionManager {
         position,
         action,
         isEditable,
+        onBack: () => {
+          // Cancel any in-flight AI request by invalidating the request ID
+          state.currentRequestId = null;
+          state.isActionInProgress = false;
+          // Re-create toolbar in expanded state at the same position
+          createFloatingToolbar(localShadow.shadow, {
+            position: toolbarPosition,
+            onActionClick: (nextAction, nextTargetLang) => {
+              state.isActionInProgress = true;
+              handleActionClick(nextAction, nextTargetLang, localShadow, localSelection, localEditable, _savedSelectionRect, toolbarPosition);
+            },
+            onDismiss: cleanup,
+            initiallyExpanded: true,
+          });
+        },
         onRegenerate: () => {
           executeQuickAction(action, targetLang, localSelection, popover);
         },

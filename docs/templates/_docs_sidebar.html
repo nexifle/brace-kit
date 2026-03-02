@@ -15,12 +15,15 @@
                 {% for item in group.items %}
                 {% if item.children %}
                 {% set_global _child_active = false %}
-                {% for child in item.children %}{% if current_path == child.url %}{% set_global _child_active = true %}{% endif %}{% endfor %}
+                {% for child in item.children %}{% if current_path == child.url %}{% set_global _child_active = true
+                %}{% endif %}{% endfor %}
                 <li class="docs-sidebar__item">
                     <div class="docs-sidebar__dropdown{% if _child_active %} is-open{% endif %}" data-dropdown>
                         <a href="{{ item.url }}"
-                            class="docs-sidebar__link{% if current_path == item.url %} is-active{% endif %}" {% if current_path==item.url %}aria-current="page" {% endif %}>
-                            {% if item.icon %}<span class="docs-sidebar__link-icon" aria-hidden="true">{{ item.icon | safe }}</span>{% endif %}
+                            class="docs-sidebar__link{% if current_path == item.url %} is-active{% endif %}" {% if
+                            current_path==item.url %}aria-current="page" {% endif %}>
+                            {% if item.icon %}<span class="docs-sidebar__link-icon" aria-hidden="true">{{ item.icon |
+                                safe }}</span>{% endif %}
                             <span>{{ item.label }}</span>
                         </a>
                         <button class="docs-sidebar__toggle" type="button"
@@ -36,15 +39,18 @@
                         {% for child in item.children %}
                         <li><a href="{{ child.url }}"
                                 class="docs-sidebar__link docs-sidebar__link--child{% if current_path == child.url %} is-active{% endif %}"
-                                {% if current_path==child.url %}aria-current="page" {% endif %}><span>{{ child.label }}</span></a></li>
+                                {% if current_path==child.url %}aria-current="page" {% endif %}><span>{{ child.label
+                                    }}</span></a></li>
                         {% endfor %}
                     </ul>
                 </li>
                 {% else %}
                 <li class="docs-sidebar__item">
                     <a href="{{ item.url }}"
-                        class="docs-sidebar__link{% if current_path == item.url %} is-active{% endif %}" {% if current_path==item.url %}aria-current="page" {% endif %}>
-                        {% if item.icon %}<span class="docs-sidebar__link-icon" aria-hidden="true">{{ item.icon | safe }}</span>{% endif %}
+                        class="docs-sidebar__link{% if current_path == item.url %} is-active{% endif %}" {% if
+                        current_path==item.url %}aria-current="page" {% endif %}>
+                        {% if item.icon %}<span class="docs-sidebar__link-icon" aria-hidden="true">{{ item.icon | safe
+                            }}</span>{% endif %}
                         <span>{{ item.label }}</span>
                     </a>
                 </li>
@@ -61,7 +67,8 @@
                 {% for p in guide.pages %}
                 <li class="docs-sidebar__item">
                     <a href="{{ p.permalink }}"
-                        class="docs-sidebar__link{% if current_path == p.path %} is-active{% endif %}" {% if current_path==p.path %}aria-current="page" {% endif %}>
+                        class="docs-sidebar__link{% if current_path == p.path %} is-active{% endif %}" {% if
+                        current_path==p.path %}aria-current="page" {% endif %}>
                         <span>{{ p.title }}</span>
                     </a>
                 </li>
@@ -69,5 +76,33 @@
             </ul>
         </div>
         {% endif %}
+
+        <!-- Support widget -->
+        <div class="docs-sidebar__support">
+            <div class="docs-sidebar__support-label">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+                Support BraceKit
+            </div>
+            <div class="docs-sidebar__support-buttons">
+                <a href="{{ config.extra.saweria_url }}"
+                    class="docs-sidebar__support-btn docs-sidebar__support-btn--saweria" id="donate-saweria"
+                    target="_blank" rel="noopener noreferrer" aria-label="Donasi via Saweria (Indonesia)">
+                    <span class="docs-sidebar__support-btn-flag" aria-hidden="true">🇮🇩</span>
+                    <span class="docs-sidebar__support-btn-body">
+                        <span class="docs-sidebar__support-btn-name">Saweria</span>
+                    </span>
+                </a>
+                <a href="{{ config.extra.kofi_url }}" class="docs-sidebar__support-btn docs-sidebar__support-btn--kofi"
+                    id="donate-kofi" target="_blank" rel="noopener noreferrer" aria-label="Support via Ko-fi">
+                    <span class="docs-sidebar__support-btn-flag" aria-hidden="true">☕</span>
+                    <span class="docs-sidebar__support-btn-body">
+                        <span class="docs-sidebar__support-btn-name">Ko-fi</span>
+                    </span>
+                </a>
+            </div>
+        </div>
     </div>
 </aside>

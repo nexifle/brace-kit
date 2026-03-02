@@ -13,6 +13,7 @@ export interface ResultPopoverConfig {
   position: SelectionPosition;
   action: QuickAction['id'];
   isEditable: boolean;
+  onBack: () => void;
   onRegenerate: () => void;
   onCopy: () => void;
   onApply: () => void;
@@ -37,7 +38,7 @@ export function createResultPopover(
   shadow: ShadowRoot,
   config: ResultPopoverConfig
 ): ResultPopoverAPI {
-  const { position, action, isEditable, onRegenerate, onCopy, onApply, onClose } = config;
+  const { position, action, isEditable, onBack, onRegenerate, onCopy, onApply, onClose } = config;
 
   // Create containers
   const overlayContainer = document.createElement('div');
@@ -259,6 +260,11 @@ export function createResultPopover(
 
   // Callbacks
   const callbacks: PopoverCallbacks = {
+    onBack: () => {
+      destroy();
+      onBack();
+    },
+
     onClose: () => {
       destroy();
       onClose();
