@@ -49,6 +49,7 @@ chrome.declarativeNetRequest.updateDynamicRules({
         'api.deepseek.com',
         'openrouter.ai',
         'api.openrouter.ai',
+        'api.kimi.com',
       ],
       resourceTypes: [
         chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
@@ -130,7 +131,7 @@ type SendResponse = (response?: unknown) => void;
 
 // Main message handler
 chrome.runtime.onMessage.addListener(
-  (message: { type: string; [key: string]: unknown }, _sender: chrome.runtime.MessageSender, sendResponse: SendResponse) => {
+  (message: { type: string;[key: string]: unknown }, _sender: chrome.runtime.MessageSender, sendResponse: SendResponse) => {
     switch (message.type) {
       case 'CHAT_REQUEST':
         handleChatRequest(message as unknown as ChatRequestMessage, sendResponse);
