@@ -10,6 +10,7 @@ import {
   type ChatServiceResponse,
 } from '../services/chat.service';
 import { executeTool, type ToolExecutionContext } from '../tools/index';
+import { decryptApiKey } from '../../utils/keyEncryption.ts';
 
 type SendResponse = (response?: unknown) => void;
 
@@ -67,8 +68,10 @@ export async function handleGoogleSearchToolDirect(
   try {
     const { arguments: args } = message;
     const { googleSearchApiKey } = await chrome.storage.local.get('googleSearchApiKey');
+    // Decrypt API key before use
+    const decryptedKey = await decryptApiKey(googleSearchApiKey as string | undefined);
     const context: ToolExecutionContext = {
-      googleSearchApiKey: googleSearchApiKey as string | undefined,
+      googleSearchApiKey: decryptedKey,
     };
     const result = await executeTool('google_search', args, context);
     sendResponse(result);

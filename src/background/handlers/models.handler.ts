@@ -5,6 +5,7 @@
 
 import { fetchModels, type ProviderWithConfig, PROVIDER_PRESETS } from '../../providers';
 import type { ProviderConfig, CustomProvider, ProviderPreset } from '../../types';
+import { decryptApiKey } from '../../utils/keyEncryption.ts';
 
 type SendResponse = (response?: unknown) => void;
 
@@ -30,8 +31,23 @@ export async function handleFetchModels(
 ): Promise<void> {
   try {
     const data = await chrome.storage.local.get(['providerKeys', 'customProviders']);
-    const providerKeys = (data.providerKeys || {}) as Record<string, { apiKey: string }>;
-    const customProviders = (data.customProviders || []) as CustomProvider[];
+    const rawProviderKeys = (data.providerKeys || {}) as Record<string, { apiKey: string }>;
+    const rawCustomProviders = (data.customProviders || []) as CustomProvider[];
+
+    // Decrypt API keys from storage
+    const providerKeys: Record<string, { apiKey: string }> = {};
+    for (const [id, keyData] of Object.entries(rawProviderKeys)) {
+      providerKeys[id] = {
+        apiKey: await decryptApiKey(keyData.apiKey),
+      };
+    }
+
+    const customProviders = await Promise.all(
+      rawCustomProviders.map(async (p) => ({
+        ...p,
+        apiKey: await decryptApiKey(p.apiKey),
+      }))
+    );
 
     let activeConfig: ProviderConfig;
 
