@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { renderMarkdown } from '../../utils/markdown';
 import { useStore } from '../../store';
-import { useMermaidHydration, useImageGenerationCheck, useQuoteSelection } from '../../hooks';
+import { useMermaidHydration, useImageGenerationCheck, useMarkdownInteractions, useQuoteSelection } from '../../hooks';
 import { TextFileViewer } from '../TextFileViewer';
 import { QuoteIcon } from 'lucide-react';
 
@@ -30,14 +30,6 @@ import type {
 } from './MessageBubble.types';
 
 // Import utilities
-import {
-  copyTableAsCsv,
-  copyTableAsMarkdown,
-  copyTableAsPlain,
-  showButtonFeedback,
-  downloadTableAsCsv,
-  downloadTableAsMarkdown,
-} from './utils/tableConverters';
 import { copyImageToClipboard } from './utils/imageProcessing';
 
 const FAVORITES_STORAGE_KEY = 'gallery_favorites';
@@ -66,6 +58,9 @@ export function MessageBubble({
   // Use extracted hooks
   const isImageGenerationModel = useImageGenerationCheck();
   const { quotePopup, handleMouseUp, handleQuoteClick } = useQuoteSelection(bubbleRef);
+
+  // Pasang event listener untuk copy code, table actions, image actions, link click
+  useMarkdownInteractions(bubbleRef);
 
   const hasAfterMessages = messageIndex !== undefined && messageIndex < messages.length - 1;
 
@@ -112,258 +107,56 @@ export function MessageBubble({
     setIsEditing(false);
   }, []);
 
-  // Event handlers
-  const handleImageActions = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
+  // Attachment image actions dan lightbox (md-image-* ditangani oleh useMarkdownInteractions)
+  useEffect(() => {
+    const ref = bubbleRef.current;
+    if (!ref) return;
 
-    const copyBtn = target.closest('.att-image-copy-btn');
-    if (copyBtn) {
-      e.stopPropagation();
-      e.preventDefault();
-      const src = copyBtn.getAttribute('data-src');
-      if (!src) return;
-      import('../../utils/formatters').then(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      const copyBtn = target.closest('.att-image-copy-btn');
+      if (copyBtn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const src = copyBtn.getAttribute('data-src');
+        if (!src) return;
         copyImageToClipboard(src).then((ok) => {
           if (ok) {
             copyBtn.setAttribute('data-state', 'success');
             setTimeout(() => copyBtn.removeAttribute('data-state'), 1500);
           }
         });
-      });
-      return;
-    }
-
-    const downloadBtn = target.closest('.att-image-download-btn');
-    if (downloadBtn) {
-      e.stopPropagation();
-      e.preventDefault();
-      const src = downloadBtn.getAttribute('data-src');
-      const name = downloadBtn.getAttribute('data-name');
-      if (!src) return;
-
-      const link = document.createElement('a');
-      link.href = src;
-      link.download = name || `image-${Date.now()}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      downloadBtn.setAttribute('data-state', 'success');
-      setTimeout(() => downloadBtn.removeAttribute('data-state'), 1500);
-      return;
-    }
-
-    const img = target.closest('.md-image-wrapper img, .group\\/att img') as HTMLImageElement | null;
-    if (img && !target.closest('.att-image-btn, .md-image-btn')) {
-      setLightboxSrc(img.src);
-      return;
-    }
-  }, []);
-
-  const handleCopyCode = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const btn = target.closest('.copy-code-btn');
-    if (!btn) return;
-
-    e.stopPropagation();
-    e.preventDefault();
-
-    const code = btn.getAttribute('data-code');
-    if (!code) return;
-
-    const decodedCode = code
-      .replace(/&#10;/g, '\n')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&amp;/g, '&');
-
-    import('../../utils/formatters').then(({ copyToClipboard }) => {
-      copyToClipboard(decodedCode).then(() => {
-        btn.setAttribute('data-state', 'success');
-        setTimeout(() => btn.removeAttribute('data-state'), 1500);
-      });
-    });
-  }, []);
-
-  const handleTableActions = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-
-    const downloadBtn = target.closest('.table-download-btn');
-    if (downloadBtn) {
-      const dropdown = downloadBtn.closest('.table-dropdown');
-      if (dropdown) {
-        document.querySelectorAll('.table-dropdown.open').forEach((el) => {
-          if (el !== dropdown) el.classList.remove('open');
-        });
-        dropdown.classList.toggle('open');
-        e.stopPropagation();
+        return;
       }
-      return;
-    }
 
-    const handleCloseDropdown = () => {
-      document.querySelectorAll('.table-dropdown.open').forEach((el) => {
-        el.classList.remove('open');
-      });
+      const downloadBtn = target.closest('.att-image-download-btn');
+      if (downloadBtn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const src = downloadBtn.getAttribute('data-src');
+        const name = downloadBtn.getAttribute('data-name');
+        if (!src) return;
+        const link = document.createElement('a');
+        link.href = src;
+        link.download = name || `image-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        downloadBtn.setAttribute('data-state', 'success');
+        setTimeout(() => downloadBtn.removeAttribute('data-state'), 1500);
+        return;
+      }
+
+      const img = target.closest('.md-image-wrapper img, .group\\/att img') as HTMLImageElement | null;
+      if (img && !target.closest('.att-image-btn, .md-image-btn')) {
+        setLightboxSrc(img.src);
+      }
     };
 
-    const copyBtn = target.closest('.table-copy-btn');
-    if (copyBtn) {
-      const dropdown = copyBtn.closest('.table-dropdown');
-      if (dropdown) {
-        document.querySelectorAll('.table-dropdown.open').forEach((el) => {
-          if (el !== dropdown) el.classList.remove('open');
-        });
-        dropdown.classList.toggle('open');
-        e.stopPropagation();
-      }
-      return;
-    }
-
-    const dropdownItem = target.closest('.table-dropdown-menu button[data-action]');
-    if (dropdownItem) {
-      const action = dropdownItem.getAttribute('data-action');
-      const tableHtml = decodeURIComponent(dropdownItem.getAttribute('data-table') || '');
-
-      if (tableHtml) {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = tableHtml;
-        const table = tempDiv.querySelector('table');
-
-        if (table) {
-          const dropdown = dropdownItem.closest('.table-dropdown');
-          const copyBtnEl = dropdown?.querySelector('.table-copy-btn') as HTMLElement | null;
-
-          switch (action) {
-            case 'copy-csv':
-              copyTableAsCsv(table).then(() => {
-                if (copyBtnEl) showButtonFeedback(copyBtnEl);
-              });
-              break;
-            case 'copy-markdown':
-              copyTableAsMarkdown(table).then(() => {
-                if (copyBtnEl) showButtonFeedback(copyBtnEl);
-              });
-              break;
-            case 'copy-plain':
-              copyTableAsPlain(table).then(() => {
-                if (copyBtnEl) showButtonFeedback(copyBtnEl);
-              });
-              break;
-            case 'download-csv':
-              downloadTableAsCsv(table);
-              break;
-            case 'download-markdown':
-              downloadTableAsMarkdown(table);
-              break;
-          }
-        }
-      }
-
-      handleCloseDropdown();
-      return;
-    }
-
-    const fullscreenBtn = target.closest('.table-fullscreen-btn');
-    if (fullscreenBtn) {
-      const wrapper = fullscreenBtn.closest('.table-wrapper');
-      if (wrapper) {
-        wrapper.classList.toggle('fullscreen');
-        const btn = fullscreenBtn as HTMLElement;
-        const isFullscreen = wrapper.classList.contains('fullscreen');
-        btn.setAttribute('title', isFullscreen ? 'Exit fullscreen' : 'Fullscreen');
-      }
-      return;
-    }
-
-    const expandAllBtn = target.closest('.table-expand-all-btn');
-    if (expandAllBtn) {
-      const wrapper = expandAllBtn.closest('.table-wrapper');
-      if (wrapper) {
-        const cells = wrapper.querySelectorAll('.md-expandable-cell');
-        const btn = expandAllBtn as HTMLElement;
-
-        // Check if all cells are currently expanded
-        const isExpanded = wrapper.classList.contains('all-expanded');
-
-        // Toggle all cells
-        cells.forEach(cell => cell.classList.toggle('expanded', !isExpanded));
-        wrapper.classList.toggle('all-expanded', !isExpanded);
-        btn.setAttribute('title', isExpanded ? 'Expand all cells' : 'Collapse all cells');
-
-        // Toggle icons
-        btn.querySelector('.expand-icon')?.classList.toggle('hidden', !isExpanded);
-        btn.querySelector('.collapse-icon')?.classList.toggle('hidden', isExpanded);
-      }
-      return;
-    }
-
-    if (!target.closest('.table-dropdown')) {
-      handleCloseDropdown();
-    }
+    ref.addEventListener('click', handleClick);
+    return () => ref.removeEventListener('click', handleClick);
   }, []);
-
-  const handleTableExpand = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const cell = target.closest('.md-expandable-cell');
-    if (cell) {
-      cell.classList.toggle('expanded');
-    }
-  }, []);
-
-  const handleLinkClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const link = target.closest('a');
-    if (!link) return;
-
-    const href = link.getAttribute('href');
-    if (!href) return;
-
-    if (href.startsWith('http://') || href.startsWith('https://')) {
-      return;
-    }
-
-    if (href.startsWith('#')) {
-      e.preventDefault();
-      const targetId = href.substring(1);
-      const host = bubbleRef.current;
-      if (host) {
-        const targetElement = host.querySelector(`[id="${targetId}"]`);
-        if (targetElement) {
-          targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          targetElement.classList.add('footnote-active');
-          setTimeout(() => {
-            targetElement.classList.remove('footnote-active');
-          }, 2500);
-        }
-      }
-      return;
-    }
-
-    e.preventDefault();
-  }, []);
-
-  // Event listeners
-  useEffect(() => {
-    const ref = bubbleRef.current;
-    if (!ref) return;
-
-    ref.addEventListener('click', handleCopyCode as unknown as EventListener);
-    ref.addEventListener('click', handleTableActions as unknown as EventListener);
-    ref.addEventListener('click', handleTableExpand as unknown as EventListener);
-    ref.addEventListener('click', handleLinkClick as unknown as EventListener);
-    ref.addEventListener('click', handleImageActions as unknown as EventListener);
-
-    return () => {
-      ref.removeEventListener('click', handleCopyCode as unknown as EventListener);
-      ref.removeEventListener('click', handleTableActions as unknown as EventListener);
-      ref.removeEventListener('click', handleTableExpand as unknown as EventListener);
-      ref.removeEventListener('click', handleLinkClick as unknown as EventListener);
-      ref.removeEventListener('click', handleImageActions as unknown as EventListener);
-    };
-  }, [handleCopyCode, handleTableActions, handleTableExpand, handleLinkClick, handleImageActions]);
 
   // Close lightbox on Escape
   useEffect(() => {
