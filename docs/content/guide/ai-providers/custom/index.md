@@ -24,26 +24,25 @@ Connect BraceKit to any AI API endpoint with support for multiple formats: OpenA
 ### 1. Open Settings
 
 1. Click **Settings** (⚙️)
-2. Go to **AI Provider**
-3. Scroll to **Custom** section
+2. Go to **AI Provider** tab
 
 ### 2. Add Custom Provider
 
-Click **Add Custom Provider** and fill in:
+Click the **+ Add** button in the provider grid and fill in:
 
 | Field | Description | Example |
 |-------|-------------|---------|
 | **Name** | Display name | "LM Studio" |
-| **Base URL** | API endpoint | `http://localhost:1234/v1` |
-| **API Key** | Auth key (if needed) | `your-key` or `none` |
 | **Format** | API format | OpenAI, Anthropic, Gemini, Ollama |
-| **Default Model** | Model identifier | `llama-3.2` |
+| **Base URL** | API endpoint | `http://localhost:1234/v1` |
 
-### 3. Save and Use
+Click **Save Provider** to create it.
 
-1. Click **Save**
-2. The custom provider appears in the provider list
-3. Select it from the provider dropdown
+### 3. Configure and Use
+
+1. The new provider appears in the provider grid — click to select it
+2. Enter your **API Key** in the Configuration section (or leave empty for local servers)
+3. Add or select a **Model** in the Configuration section
 
 ## API Formats
 

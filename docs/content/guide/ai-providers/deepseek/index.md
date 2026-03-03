@@ -24,10 +24,11 @@ DeepSeek offers powerful models at competitive prices, with V3.2 powering both c
 ### 2. Configure in BraceKit
 
 1. Open **Settings → AI Provider**
-2. Select **DeepSeek**
+2. Click **DeepSeek** in the provider grid
 3. Paste your API key
 4. Select a model
-5. Click **Save**
+
+Settings are saved automatically as you type.
 
 ## Available Models
 
@@ -72,7 +73,7 @@ DeepSeek offers very competitive pricing while maintaining high quality.
 
 ## Model Parameters
 
-Configure in **Settings → Chat**:
+Configure in **Settings → AI Provider** under the **Advanced** section:
 
 | Parameter | Range | Effect |
 |-----------|-------|--------|
