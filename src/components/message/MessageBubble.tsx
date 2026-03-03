@@ -278,6 +278,37 @@ export function MessageBubble({
       return;
     }
 
+    const expandAllBtn = target.closest('.table-expand-all-btn');
+    if (expandAllBtn) {
+      const wrapper = expandAllBtn.closest('.table-wrapper');
+      if (wrapper) {
+        const cells = wrapper.querySelectorAll('.md-expandable-cell');
+        const btn = expandAllBtn as HTMLElement;
+        const expandIcon = btn.querySelector('.expand-icon');
+        const collapseIcon = btn.querySelector('.collapse-icon');
+
+        // Check if any cell is expanded to determine current state
+        const isExpanded = wrapper.classList.contains('all-expanded');
+
+        if (isExpanded) {
+          // Collapse all
+          cells.forEach(cell => cell.classList.remove('expanded'));
+          wrapper.classList.remove('all-expanded');
+          btn.setAttribute('title', 'Expand all cells');
+          expandIcon?.classList.remove('hidden');
+          collapseIcon?.classList.add('hidden');
+        } else {
+          // Expand all
+          cells.forEach(cell => cell.classList.add('expanded'));
+          wrapper.classList.add('all-expanded');
+          btn.setAttribute('title', 'Collapse all cells');
+          expandIcon?.classList.add('hidden');
+          collapseIcon?.classList.remove('hidden');
+        }
+      }
+      return;
+    }
+
     if (!target.closest('.table-dropdown')) {
       handleCloseDropdown();
     }
@@ -534,7 +565,7 @@ export function MessageBubble({
       <div
         className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
       >
-        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
+        <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
           {roleLabel}
         </div>
         <div
@@ -590,7 +621,7 @@ export function MessageBubble({
     <div
       className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
     >
-      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
+      <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
         {!message.summary && roleLabel}
         {message.isCompacted && !message.summary && (
           <span className="ml-1 opacity-50 font-medium">· Compacted</span>

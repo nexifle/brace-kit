@@ -349,7 +349,7 @@ export function MermaidDiagram({ code, diagramId, isStreaming }: MermaidDiagramP
       `}
       >
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground">
             Mermaid Diagram
           </span>
         </div>
@@ -464,8 +464,7 @@ export function MermaidDiagram({ code, diagramId, isStreaming }: MermaidDiagramP
       >
         <div
           className={`
-          text-muted-foreground/60 flex items-center justify-center gap-4 flex-wrap
-          ${isFullscreen ? 'text-xs' : 'text-[10px]'}
+          text-muted-foreground/60 flex items-center justify-center gap-4 flex-wrap text-xs
         `}
         >
           <span className="flex items-center gap-1">

@@ -30,7 +30,7 @@ export function FilePreview() {
                   <span className="text-lg">⚠️</span>
                 </div>
                 <div className="px-1 pb-1">
-                  <span className="block truncate text-[9px] text-destructive font-medium leading-tight">
+                  <span className="block truncate text-2xs text-destructive font-medium leading-tight">
                     {escapeHtml(att.name)}
                   </span>
                 </div>
@@ -43,7 +43,7 @@ export function FilePreview() {
                   className="w-full flex-1 object-cover min-h-0"
                 />
                 <div className="px-1 pb-1 bg-background/60 backdrop-blur-sm">
-                  <span className="block truncate text-[9px] text-muted-foreground font-medium leading-tight">
+                  <span className="block truncate text-2xs text-muted-foreground font-medium leading-tight">
                     {escapeHtml(att.name)}
                   </span>
                 </div>
@@ -54,7 +54,7 @@ export function FilePreview() {
                   <span className="text-2xl">{att.type === 'pdf' ? '📄' : '📃'}</span>
                 </div>
                 <div className="px-1 pb-1">
-                  <span className="block truncate text-[9px] text-muted-foreground font-medium leading-tight">
+                  <span className="block truncate text-2xs text-muted-foreground font-medium leading-tight">
                     {escapeHtml(att.name)}
                   </span>
                 </div>

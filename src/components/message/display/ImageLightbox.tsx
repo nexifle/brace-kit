@@ -66,7 +66,7 @@ export function ImageLightbox({ src, favId, isFavorited, onToggleFavorite, onClo
       {/* Controls Overlay Header */}
       <div className="absolute inset-x-0 top-0 p-5 flex items-center justify-between z-10 bg-linear-to-b from-background to-transparent pointer-events-none">
         <div className="flex flex-col gap-0.5 pointer-events-auto">
-          <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">
+          <span className="text-2xs font-black uppercase tracking-widest text-primary leading-none">
             Attachment Detail
           </span>
           <span className="text-sm font-bold text-foreground">Image Viewer</span>

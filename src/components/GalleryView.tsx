@@ -231,7 +231,7 @@ export function GalleryView() {
         <div className="flex items-center gap-3 flex-1">
           <span className="text-base font-bold text-foreground">Gallery</span>
           {!loading && (
-            <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black uppercase tracking-widest text-primary">
+            <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-2xs font-black uppercase tracking-widest text-primary">
               {images.length + markdownImages.length} items
             </div>
           )}
@@ -259,7 +259,7 @@ export function GalleryView() {
           <StarIcon size={12} fill={activeTab === 'favorites' ? "currentColor" : "none"} />
           Favorites
           {!loading && activeFavoriteCount > 0 && (
-            <span className={`flex items-center justify-center min-w-4 h-4 rounded-full px-1 text-[9px] font-black ${activeTab === 'favorites' ? 'bg-white/20 text-white' : 'bg-muted/80 text-muted-foreground'}`}>
+            <span className={`flex items-center justify-center min-w-4 h-4 rounded-full px-1 text-2xs font-black ${activeTab === 'favorites' ? 'bg-white/20 text-white' : 'bg-muted/80 text-muted-foreground'}`}>
               {activeFavoriteCount}
             </span>
           )}
@@ -277,8 +277,8 @@ export function GalleryView() {
               </div>
             </div>
             <div className="flex flex-col items-center gap-1">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary animate-pulse">Syncing Library</span>
-              <span className="text-[9px] text-muted-foreground/50 font-medium">Fetching captured assets...</span>
+              <span className="text-2xs font-black uppercase tracking-[0.3em] text-primary animate-pulse">Syncing Library</span>
+              <span className="text-2xs text-muted-foreground/50 font-medium">Fetching captured assets...</span>
             </div>
           </div>
         ) : images.length === 0 && markdownImages.length === 0 ? (
@@ -338,7 +338,7 @@ export function GalleryView() {
 
                       <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 flex items-end p-3 gap-1.5">
                         <div className="flex-1 min-w-0 mb-0.5">
-                          <div className="text-[10px] text-white/60 font-medium truncate leading-tight">
+                          <div className="text-2xs text-white/60 font-medium truncate leading-tight">
                             {getConvTitle(item.conversationId)}
                           </div>
                         </div>
@@ -374,7 +374,7 @@ export function GalleryView() {
             {/* Controls Overlay */}
             <div className="absolute inset-x-0 top-0 p-5 flex items-center justify-between z-10 bg-linear-to-b from-background to-transparent pointer-events-none">
               <div className="flex flex-col gap-0.5 pointer-events-auto">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none">
+                <span className="text-2xs font-black uppercase tracking-widest text-primary leading-none">
                   Captured Content
                 </span>
                 <span className="text-sm font-bold text-foreground">
@@ -455,7 +455,7 @@ export function GalleryView() {
                 className="w-full h-full object-contain rounded-lg shadow-[0_0_100px_rgba(var(--primary-rgb),0.1)] grayscale-0 transition-all duration-700"
               />
               <div className="absolute -bottom-8 inset-x-0 text-center pointer-events-none">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/40">
+                <span className="text-2xs font-black uppercase tracking-[0.3em] text-muted-foreground/40">
                   Item {currentIndex + 1} of {sortedFilteredItems.length}
                 </span>
               </div>

@@ -17,7 +17,7 @@ export function PageContextPreview() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-bold text-foreground truncate leading-tight tracking-tight uppercase">{pageContext.pageTitle}</div>
-          <div className="text-[10px] text-muted-foreground truncate opacity-70 mt-0.5">{pageContext.pageUrl}</div>
+          <div className="text-2xs text-muted-foreground truncate opacity-70 mt-0.5">{pageContext.pageUrl}</div>
         </div>
         <button
           className="flex items-center justify-center w-6 h-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md shrink-0 transition-all"

@@ -51,7 +51,7 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
               <WrenchIcon size={12} />
             </div>
             <div className="flex flex-col gap-0">
-              <span className="text-[10px] font-black uppercase tracking-widest text-foreground/80 leading-none">
+              <span className="text-2xs font-black uppercase tracking-widest text-foreground/80 leading-none">
                 Tool Execution
               </span>
               <span className="text-xs font-bold text-foreground">
@@ -59,7 +59,7 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
               </span>
             </div>
             {isCachedResult && (
-              <span className="px-1.5 py-0.5 rounded-md bg-muted/50 border border-border/50 text-[9px] font-bold uppercase tracking-widest text-muted-foreground ml-1">
+              <span className="px-1.5 py-0.5 rounded-md bg-muted/50 border border-border/50 text-2xs font-bold uppercase tracking-widest text-muted-foreground ml-1">
                 cached
               </span>
             )}
@@ -69,17 +69,17 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
             {isCalling ? (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/20">
                 <Loader2Icon size={10} className="text-primary animate-spin" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-primary">Running</span>
+                <span className="text-2xs font-black uppercase tracking-widest text-primary">Running</span>
               </div>
             ) : isError ? (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-destructive/10 border border-destructive/20">
                 <AlertCircleIcon size={10} className="text-destructive" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-destructive">Error</span>
+                <span className="text-2xs font-black uppercase tracking-widest text-destructive">Error</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20">
                 <CheckCircle2Icon size={10} className="text-success" />
-                <span className="text-[9px] font-black uppercase tracking-widest text-success">Completed</span>
+                <span className="text-2xs font-black uppercase tracking-widest text-success">Completed</span>
               </div>
             )}
           </div>
@@ -94,8 +94,8 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
                 ${isArgsExpanded ? 'rounded-b-none border-b-0' : ''}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary/70">Args</span>
-                <span className={`text-[10px] font-mono text-foreground/70 truncate transition-opacity duration-300 ${isArgsExpanded ? 'opacity-0' : 'opacity-100'}`}>
+                <span className="text-2xs font-black uppercase tracking-widest text-primary/70">Args</span>
+                <span className={`text-2xs font-mono text-foreground/70 truncate transition-opacity duration-300 ${isArgsExpanded ? 'opacity-0' : 'opacity-100'}`}>
                   {argsDisplay.length > 40 ? argsDisplay.slice(0, 40) + '...' : argsDisplay}
                 </span>
               </div>
@@ -106,7 +106,7 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
             </button>
             {isArgsExpanded && (
               <div className="px-2.5 py-2 bg-muted/20 border border-border/30 border-t-0 rounded-b-lg animate-in slide-in-from-top-1 duration-200">
-                <div className="text-[10px] font-mono text-foreground/90 break-all leading-relaxed font-medium">
+                <div className="text-2xs font-mono text-foreground/90 break-all leading-relaxed font-medium">
                   {argsDisplay}
                 </div>
               </div>
@@ -123,8 +123,8 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
                 ${isResultExpanded ? 'rounded-b-none border-b-0' : ''}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Result</span>
-                <span className={`text-[10px] font-mono text-foreground/70 truncate transition-opacity duration-300 ${isResultExpanded ? 'opacity-0' : 'opacity-100'}`}>
+                <span className="text-2xs font-black uppercase tracking-widest text-muted-foreground">Result</span>
+                <span className={`text-2xs font-mono text-foreground/70 truncate transition-opacity duration-300 ${isResultExpanded ? 'opacity-0' : 'opacity-100'}`}>
                   {content.length > 50 ? content.slice(0, 50) + '...' : content}
                 </span>
               </div>
@@ -136,7 +136,7 @@ function ToolMessageDetailed({ name, content, toolArguments, isCachedResult }: O
 
             {isResultExpanded && (
               <div className="px-2.5 py-2.5 bg-muted/30 border border-border/30 border-t-0 rounded-b-lg animate-in slide-in-from-top-1 duration-200">
-                <pre className={`text-[11px] font-mono whitespace-pre-wrap wrap-break-word max-h-60 overflow-y-auto scrollbar-thin
+                <pre className={`text-2xs font-mono whitespace-pre-wrap wrap-break-word max-h-60 overflow-y-auto scrollbar-thin
                   ${isError ? 'text-destructive/90' : 'text-muted-foreground'}`}>
                   {content}
                 </pre>
@@ -190,7 +190,7 @@ function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
       {/* Badge Button */}
       <button
         onClick={onToggle}
-        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold border transition-all hover:shadow-sm ${isExpanded ? 'bg-primary/15 border-primary/30 text-primary' : 'bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60'
+        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-2xs font-bold border transition-all hover:shadow-sm ${isExpanded ? 'bg-primary/15 border-primary/30 text-primary' : 'bg-muted/40 border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60'
           }`}
       >
         <WrenchIcon size={10} />
@@ -212,14 +212,14 @@ function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
             <div className="mb-2">
               <button
                 onClick={() => setIsArgsExpanded(!isArgsExpanded)}
-                className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/30 border border-border/30 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${isArgsExpanded ? 'rounded-b-none border-b-0' : ''
+                className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/30 border border-border/30 text-2xs font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${isArgsExpanded ? 'rounded-b-none border-b-0' : ''
                   }`}
               >
                 <span>Args</span>
                 <ChevronDownIcon size={10} className={`transition-transform ${isArgsExpanded ? 'rotate-180' : ''}`} />
               </button>
               {isArgsExpanded && (
-                <div className="px-2 py-1.5 bg-muted/20 border border-border/30 border-t-0 rounded-b-md text-[10px] font-mono text-foreground/80 break-all">
+                <div className="px-2 py-1.5 bg-muted/20 border border-border/30 border-t-0 rounded-b-md text-2xs font-mono text-foreground/80 break-all">
                   {argsDisplay}
                 </div>
               )}
@@ -230,14 +230,14 @@ function ToolBadge({ tool, isExpanded, onToggle }: ToolBadgeProps) {
           <div className="mb-1">
             <button
               onClick={() => setIsResultExpanded(!isResultExpanded)}
-              className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/20 border border-border/30 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${isResultExpanded ? 'rounded-b-none border-b-0' : ''
+              className={`w-full flex items-center justify-between px-2 py-1 rounded-md bg-muted/20 border border-border/30 text-2xs font-bold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 transition-all ${isResultExpanded ? 'rounded-b-none border-b-0' : ''
                 }`}
             >
               <span>Result</span>
               <ChevronDownIcon size={10} className={`transition-transform ${isResultExpanded ? 'rotate-180' : ''}`} />
             </button>
             {isResultExpanded && (
-              <pre className={`text-[10px] font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto scrollbar-thin p-2 rounded-b-md bg-muted/20 border border-border/30 border-t-0 ${isError ? 'text-destructive/90' : 'text-muted-foreground'
+              <pre className={`text-2xs font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto scrollbar-thin p-2 rounded-b-md bg-muted/20 border border-border/30 border-t-0 ${isError ? 'text-destructive/90' : 'text-muted-foreground'
                 }`}>
                 {tool.content}
               </pre>
@@ -289,7 +289,7 @@ function ToolMessageCompact({ tools }: { tools: ToolMessageData[] }) {
           {!showAll && hiddenCount > 0 && (
             <button
               onClick={() => setShowAll(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-muted/40 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-bold bg-muted/40 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
             >
               +{hiddenCount} more
             </button>
@@ -299,7 +299,7 @@ function ToolMessageCompact({ tools }: { tools: ToolMessageData[] }) {
           {showAll && tools.length > MAX_VISIBLE && (
             <button
               onClick={() => setShowAll(false)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-muted/40 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-2xs font-bold bg-muted/40 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
             >
               show less
             </button>

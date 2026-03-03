@@ -76,7 +76,7 @@ export function CompactSettings() {
               }}
               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
             />
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-2xs text-muted-foreground/70">
               Compact when context reaches {Math.round(compactConfig.threshold * 100)}% of window
             </p>
           </div>
@@ -96,7 +96,7 @@ export function CompactSettings() {
                     store.setCompactConfig({ prompt: '' });
                     store.saveToStorage();
                   }}
-                  className="text-[10px] text-primary hover:text-primary/80 transition-colors"
+                  className="text-2xs text-primary hover:text-primary/80 transition-colors"
                   title="Reset to default"
                 >
                   Reset
@@ -113,7 +113,7 @@ export function CompactSettings() {
                 store.saveToStorage();
               }}
             />
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-2xs text-muted-foreground/70">
               {isUsingCustomPrompt ? 'Using custom prompt' : 'Using default prompt (edit to customize)'}
             </p>
           </div>

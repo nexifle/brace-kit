@@ -130,7 +130,7 @@ export function MemorySettings() {
 
         {store.memories.length > 0 && (
           <button
-            className="mt-2 w-full h-8 flex items-center justify-center gap-2 bg-destructive/5 text-destructive hover:bg-destructive/10 text-[10px] font-bold uppercase tracking-wider rounded border border-destructive/20 transition-all"
+            className="mt-2 w-full h-8 flex items-center justify-center gap-2 bg-destructive/5 text-destructive hover:bg-destructive/10 text-2xs font-bold uppercase tracking-wider rounded border border-destructive/20 transition-all"
             onClick={handleClearMemories}
           >
             <Trash2Icon size={12} />
@@ -151,7 +151,7 @@ export function MemorySettings() {
 
             return (
               <div key={cat} className="flex flex-col gap-1.5">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-0.5">{MEMORY_CATEGORY_LABELS[cat as MemoryCategory]}</div>
+                <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-0.5">{MEMORY_CATEGORY_LABELS[cat as MemoryCategory]}</div>
                 <div className="flex flex-col gap-1">
                   {items.map((item) => (
                     <div key={item.id} className="group relative flex items-start gap-2 p-2 rounded-md bg-secondary/30 hover:bg-secondary/40 border border-border/50 transition-all">
@@ -164,8 +164,8 @@ export function MemorySettings() {
                             autoFocus
                           />
                           <div className="flex gap-2 justify-end">
-                            <button className="px-2 h-6 bg-primary text-primary-foreground text-[10px] font-bold uppercase rounded hover:bg-primary/90 transition-colors" onClick={handleSaveEdit}>Save</button>
-                            <button className="px-2 h-6 bg-muted text-muted-foreground text-[10px] font-bold uppercase rounded hover:bg-muted/80 transition-colors" onClick={handleCancelEdit}>Cancel</button>
+                            <button className="px-2 h-6 bg-primary text-primary-foreground text-2xs font-bold uppercase rounded hover:bg-primary/90 transition-colors" onClick={handleSaveEdit}>Save</button>
+                            <button className="px-2 h-6 bg-muted text-muted-foreground text-2xs font-bold uppercase rounded hover:bg-muted/80 transition-colors" onClick={handleCancelEdit}>Cancel</button>
                           </div>
                         </div>
                       ) : (

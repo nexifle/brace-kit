@@ -67,13 +67,13 @@ function BuiltinRow({ action, override, onOverride, onReset }: BuiltinRowProps) 
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-sm font-medium text-foreground">{effectiveLabel}</span>
               {hasOverride && (
-                <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 font-bold uppercase tracking-wider">Modified</span>
+                <span className="text-2xs px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 font-bold uppercase tracking-wider">Modified</span>
               )}
-              <span className="text-[9px] px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-medium uppercase tracking-wider">
+              <span className="text-2xs px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-medium uppercase tracking-wider">
                 {effectivePrimary !== false ? 'Toolbar' : 'More'}
               </span>
               {effectiveCategory && (
-                <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium">{categoryLabel(effectiveCategory)}</span>
+                <span className="text-2xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium">{categoryLabel(effectiveCategory)}</span>
               )}
             </div>
           </div>
@@ -172,12 +172,12 @@ function CustomRow({ action, onEdit, onRemove }: CustomRowProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm font-medium text-foreground">{action.label}</span>
-            <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary font-bold uppercase tracking-wider">Custom</span>
-            <span className="text-[9px] px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-medium uppercase tracking-wider">
+            <span className="text-2xs px-1 py-0.5 rounded bg-primary/10 text-primary font-bold uppercase tracking-wider">Custom</span>
+            <span className="text-2xs px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-medium uppercase tracking-wider">
               {action.isPrimary !== false ? 'Toolbar' : 'More'}
             </span>
             {action.category && (
-              <span className="text-[9px] px-1 py-0.5 rounded bg-secondary/80 text-muted-foreground font-medium">{categoryLabel(action.category)}</span>
+              <span className="text-2xs px-1 py-0.5 rounded bg-secondary/80 text-muted-foreground font-medium">{categoryLabel(action.category)}</span>
             )}
           </div>
         </div>
@@ -208,7 +208,7 @@ function CustomRow({ action, onEdit, onRemove }: CustomRowProps) {
       {expanded && (
         <div className="px-2.5 pb-2.5 animate-in fade-in duration-150">
           <div className="p-2 rounded bg-muted/30 border border-border/30">
-            <p className="text-[11px] text-muted-foreground font-mono whitespace-pre-wrap break-words leading-relaxed">{action.promptTemplate}</p>
+            <p className="text-2xs text-muted-foreground font-mono whitespace-pre-wrap break-words leading-relaxed">{action.promptTemplate}</p>
           </div>
         </div>
       )}
@@ -244,7 +244,7 @@ function ActionForm({ initial, onSave, onCancel }: ActionFormProps) {
     <div className="flex flex-col gap-3 p-3 rounded-lg bg-secondary/30 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-200">
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Label <span className="text-destructive">*</span></label>
+          <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/80">Label <span className="text-destructive">*</span></label>
           <input
             type="text"
             className="h-8 px-2.5 text-xs bg-muted/40 border border-input rounded outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground placeholder:text-muted-foreground/40"
@@ -255,7 +255,7 @@ function ActionForm({ initial, onSave, onCancel }: ActionFormProps) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Position</label>
+          <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/80">Position</label>
           <select
             className="h-8 px-2 text-xs bg-muted/40 border border-input rounded outline-none text-foreground cursor-pointer"
             value={isPrimary ? 'toolbar' : 'more'}
@@ -267,7 +267,7 @@ function ActionForm({ initial, onSave, onCancel }: ActionFormProps) {
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Category</label>
+        <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/80">Category</label>
         <select
           className="h-8 px-2 text-xs bg-muted/40 border border-input rounded outline-none text-foreground cursor-pointer"
           value={category}
@@ -279,7 +279,7 @@ function ActionForm({ initial, onSave, onCancel }: ActionFormProps) {
         </select>
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+        <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/80">
           Prompt Template <span className="text-destructive">*</span>
         </label>
         <textarea
@@ -288,7 +288,7 @@ function ActionForm({ initial, onSave, onCancel }: ActionFormProps) {
           value={promptTemplate}
           onChange={(e) => setPromptTemplate(e.target.value)}
         />
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-2xs text-muted-foreground">
           Use <code className="px-1 py-0.5 rounded bg-muted/60 font-mono">{"{{text}}"}</code> as placeholder for the selected text.
         </p>
       </div>
@@ -345,7 +345,7 @@ export function SelectionActionsSettings() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between px-0.5">
           <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/70">Built-in Actions</h4>
-          <span className="text-[10px] text-muted-foreground/50">Toggle, rename, or move to More</span>
+          <span className="text-2xs text-muted-foreground/50">Toggle, rename, or move to More</span>
         </div>
         <div className="flex flex-col gap-1.5">
           {QUICK_ACTIONS.map((a) => (

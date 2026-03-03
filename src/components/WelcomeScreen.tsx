@@ -40,7 +40,7 @@ export function WelcomeScreen() {
             </div>
             <div className="flex flex-col items-start gap-0">
               <span className="text-xs font-bold uppercase tracking-widest">Read Page</span>
-              <span className="text-[10px] opacity-60 font-medium">Analyze current context</span>
+              <span className="text-2xs opacity-60 font-medium">Analyze current context</span>
             </div>
           </Btn>
 
@@ -55,7 +55,7 @@ export function WelcomeScreen() {
             </div>
             <div className="flex flex-col items-start gap-0">
               <span className="text-xs font-bold uppercase tracking-widest">Grab Selection</span>
-              <span className="text-[10px] opacity-60 font-medium">Focus on highlighted text</span>
+              <span className="text-2xs opacity-60 font-medium">Focus on highlighted text</span>
             </div>
           </Btn>
         </div>
@@ -67,8 +67,8 @@ export function WelcomeScreen() {
           rel="noopener noreferrer"
           className="animate-in slide-in-from-bottom-4 duration-700 delay-300 group relative overflow-hidden"
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 rounded-lg blur-sm group-hover:blur-md transition-all" />
-          <div className="relative flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-orange-500/10 border border-rose-500/20 group-hover:border-rose-500/40 group-hover:from-rose-500/20 group-hover:via-pink-500/20 group-hover:to-orange-500/20 transition-all">
+          <div className="absolute inset-0 bg-linear-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 rounded-lg blur-sm group-hover:blur-md transition-all" />
+          <div className="relative flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-linear-to-r from-rose-500/10 via-pink-500/10 to-orange-500/10 border border-rose-500/20 group-hover:border-rose-500/40 group-hover:from-rose-500/20 group-hover:via-pink-500/20 group-hover:to-orange-500/20 transition-all">
             <HeartIcon size={14} className="text-rose-400 group-hover:text-rose-300 group-hover:scale-110 transition-all" />
             <span className="text-xs font-bold uppercase tracking-widest text-rose-300 group-hover:text-rose-200">
               Support Development
@@ -77,7 +77,7 @@ export function WelcomeScreen() {
         </a>
 
         <div className="pt-2 animate-in fade-in duration-1000 delay-500">
-          <div className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-[0.3em]">
+          <div className="text-2xs text-muted-foreground/40 font-bold uppercase tracking-[0.3em]">
             Powered by Advanced Intelligence
           </div>
         </div>

@@ -65,7 +65,7 @@ function ConversationTitleBar() {
       ) : (
         <>
           <span
-            className="text-xs font-medium text-muted-foreground truncate hover:text-foreground transition-colors cursor-pointer"
+            className="text-sm font-medium text-muted-foreground truncate hover:text-foreground transition-colors cursor-pointer"
             title="Double-click to rename"
             onDoubleClick={startEdit}
           >
@@ -75,20 +75,20 @@ function ConversationTitleBar() {
             <Btn
               size="icon-sm"
               variant="ghost"
-              className="h-6 w-6 opacity-40 hover:opacity-100"
+              className="h-6 w-6 opacity-60 hover:opacity-100"
               title="Export to Markdown"
               onClick={handleExport}
             >
-              <DownloadIcon size={12} />
+              <DownloadIcon size={14} />
             </Btn>
             <Btn
               size="icon-sm"
               variant="ghost"
-              className="h-6 w-6 opacity-40 hover:opacity-100"
+              className="h-6 w-6 opacity-60 hover:opacity-100"
               title="Rename conversation"
               onClick={startEdit}
             >
-              <SquarePenIcon size={12} />
+              <SquarePenIcon size={14} />
             </Btn>
           </div>
         </>

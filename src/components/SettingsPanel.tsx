@@ -50,7 +50,7 @@ export function SettingsPanel() {
       {/* Tab Navigation */}
       <div className="relative px-3 pt-3 border-b border-border/40 bg-background/50 backdrop-blur-sm sticky top-14 z-10">
         {/* Left fade gradient - starts after padding */}
-        <div className="absolute left-3 top-3 bottom-0 w-6 bg-gradient-to-r from-[var(--background)] to-transparent pointer-events-none z-20" />
+        <div className="absolute left-3 top-3 bottom-0 w-6 bg-linear-to-r from-[var(--background)] to-transparent pointer-events-none z-20" />
 
         {/* Right fade gradient */}
         <div className="absolute right-0 top-3 bottom-0 w-10 bg-gradient-to-l from-[var(--background)] from-50% to-transparent pointer-events-none z-20" />

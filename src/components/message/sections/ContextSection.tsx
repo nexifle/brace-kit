@@ -11,7 +11,7 @@ export function ContextSection({ context }: ContextSectionProps) {
         <div className="text-xs font-bold text-foreground truncate uppercase tracking-tight">
           {context.pageTitle}
         </div>
-        <div className="text-[10px] text-muted-foreground truncate opacity-70 mt-0.5">{context.pageUrl}</div>
+        <div className="text-2xs text-muted-foreground truncate opacity-70 mt-0.5">{context.pageUrl}</div>
       </div>
     </div>
   );

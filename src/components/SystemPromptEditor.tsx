@@ -36,7 +36,7 @@ export function SystemPromptEditor({ onClose }: SystemPromptEditorProps) {
                         </div>
                         <div className="flex flex-col">
                             <span className="text-sm">System Instructions</span>
-                            <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold opacity-60">Custom Persona</span>
+                            <span className="text-2xs uppercase tracking-widest text-muted-foreground font-bold opacity-60">Custom Persona</span>
                         </div>
                     </div>
                     <Btn variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-destructive/10 hover:text-destructive">
@@ -59,7 +59,7 @@ export function SystemPromptEditor({ onClose }: SystemPromptEditorProps) {
                     <div className="flex items-center justify-between pt-2">
                         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-muted/40 border border-border/40 rounded-full">
                             <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${currentPrompt ? 'bg-primary shadow-[0_0_8px_var(--primary)]' : 'bg-muted-foreground/30'}`} />
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/80">
+                            <span className="text-2xs font-bold uppercase tracking-wide text-muted-foreground/80">
                                 {currentPrompt ? 'Custom Mode' : 'Global Default'}
                             </span>
                         </div>

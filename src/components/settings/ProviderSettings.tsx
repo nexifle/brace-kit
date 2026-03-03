@@ -106,7 +106,7 @@ export function ProviderSettings() {
             return (
               <div key={p.id} className="group relative">
                 <button
-                  className={`w-full h-10 px-2 flex items-center justify-center text-[10px] font-bold uppercase tracking-tight rounded-md border transition-all truncate
+                  className={`w-full h-10 px-2 flex items-center justify-center text-2xs font-bold uppercase tracking-tight rounded-md border transition-all truncate
                     ${isActive
                       ? 'bg-primary border-primary text-primary-foreground shadow-md'
                       : 'bg-muted/30 border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
@@ -132,7 +132,7 @@ export function ProviderSettings() {
           })}
 
           <button
-            className={`h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-[10px] font-bold uppercase tracking-tight
+            className={`h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-2xs font-bold uppercase tracking-tight
               ${showAddProvider
                 ? 'bg-primary/10 border-primary/40 text-primary'
                 : 'bg-transparent border-border/60 text-muted-foreground hover:bg-muted/20 hover:text-foreground'}`}
@@ -146,7 +146,7 @@ export function ProviderSettings() {
         {/* Inline Add Provider Form */}
         {showAddProvider && (
           <div className="flex flex-col gap-3 p-3 bg-secondary/30 border border-border/40 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">New Custom Provider</div>
+            <div className="text-2xs font-bold uppercase tracking-[0.2em] text-primary">New Custom Provider</div>
             <div className="grid grid-cols-2 gap-2">
               <input
                 className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded outline-none focus:border-primary/40 transition-all text-foreground"
@@ -185,7 +185,7 @@ export function ProviderSettings() {
         <div className="flex flex-col gap-3 pt-2 animate-in fade-in duration-500">
           <div className="flex items-center gap-2 px-0.5">
             <div className="h-px bg-border/40 flex-1" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Configuration</span>
+            <span className="text-2xs font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Configuration</span>
             <div className="h-px bg-border/40 flex-1" />
           </div>
 
@@ -257,12 +257,12 @@ export function ProviderSettings() {
               {/* Custom Model Management (only for custom providers) */}
               {isCustom && (
                 <div className="flex flex-col gap-2 mt-2 p-3 rounded-lg bg-secondary/20 border border-border/40">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Manage Model List</span>
+                  <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60">Manage Model List</span>
 
                   {availableModels.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {availableModels.map(m => (
-                        <div key={m} className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${m === providerConfig.model ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-muted/30 border-border/40 text-muted-foreground'}`}>
+                        <div key={m} className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs font-medium border transition-all ${m === providerConfig.model ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-muted/30 border-border/40 text-muted-foreground'}`}>
                           <span className="cursor-pointer truncate max-w-[100px]" onClick={() => updateProviderConfig({ model: m })}>{m}</span>
                           <button onClick={(e) => { e.stopPropagation(); handleRemoveModel(m); }} className="hover:text-destructive transition-colors"><XIcon size={10} /></button>
                         </div>
@@ -272,7 +272,7 @@ export function ProviderSettings() {
 
                   <div className="flex gap-2 pt-2 mt-1 border-t border-border/20">
                     <input
-                      className="flex-1 h-7 px-2 text-[11px] bg-muted/30 border-none outline-none rounded text-foreground"
+                      className="flex-1 h-7 px-2 text-2xs bg-muted/30 border-none outline-none rounded text-foreground"
                       placeholder="Add model..."
                       value={newModelInput}
                       onChange={e => setNewModelInput(e.target.value)}

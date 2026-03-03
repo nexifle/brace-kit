@@ -92,7 +92,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
       <div className="bg-card/95 backdrop-blur-md border border-border rounded-md shadow-2xl overflow-hidden flex flex-col max-h-[420px]">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">AI Provider & Model</span>
+          <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground">AI Provider & Model</span>
           <button className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-all rounded-sm" onClick={onClose} title="Close">
             <XIcon size={12} />
           </button>
@@ -101,7 +101,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
         <div className="overflow-y-auto overflow-x-hidden p-3 flex flex-col gap-4">
           {/* Providers Section */}
           <div className="flex flex-col gap-2">
-            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-0.5">Providers</div>
+            <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-0.5">Providers</div>
             <div className="grid grid-cols-3 gap-1.5">
               {displayProviders.map(provider => {
                 const isActive = provider.id === providerConfig.providerId;
@@ -109,7 +109,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                 return (
                   <button
                     key={provider.id}
-                    className={`px-2 py-1.5 text-[10px] font-bold uppercase tracking-tight text-center transition-all border rounded-sm ${isSelected
+                    className={`px-2 py-1.5 text-2xs font-bold uppercase tracking-tight text-center transition-all border rounded-sm ${isSelected
                       ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                       : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted/60 hover:text-foreground'
                       } ${isActive && !isSelected ? 'ring-1 ring-primary/30 ring-inset' : ''}`}
@@ -121,7 +121,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                 );
               })}
               <button
-                className={`flex items-center justify-center px-2 py-1.5 text-[10px] font-bold uppercase border border-dashed rounded-sm transition-all ${showNewProviderForm
+                className={`flex items-center justify-center px-2 py-1.5 text-2xs font-bold uppercase border border-dashed rounded-sm transition-all ${showNewProviderForm
                   ? 'bg-primary/20 text-primary border-primary/40'
                   : 'bg-transparent text-muted-foreground border-border/60 hover:bg-muted/30 hover:text-foreground'
                   }`}
@@ -136,7 +136,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
           {/* New Provider Form */}
           {showNewProviderForm && (
             <div className="flex flex-col gap-2 p-3 bg-secondary/30 border border-border/50 animate-in fade-in slide-in-from-top-2 rounded-md">
-              <div className="text-[9px] font-bold uppercase tracking-widest text-primary px-0.5 mb-1">Add New Provider</div>
+              <div className="text-2xs font-bold uppercase tracking-widest text-primary px-0.5 mb-1">Add New Provider</div>
               <input
                 className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded-sm focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
                 type="text"
@@ -162,7 +162,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                   <option value="gemini">Gemini format</option>
                 </select>
                 <button
-                  className="px-3 h-8 text-[10px] font-bold uppercase bg-primary text-primary-foreground rounded-sm shadow-sm hover:brightness-110 active:scale-95 disabled:opacity-30 transition-all"
+                  className="px-3 h-8 text-2xs font-bold uppercase bg-primary text-primary-foreground rounded-sm shadow-sm hover:brightness-110 active:scale-95 disabled:opacity-30 transition-all"
                   onClick={handleAddProvider}
                   disabled={!newProviderName.trim() || !newProviderUrl.trim()}
                 >
@@ -176,7 +176,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
           {localProvider && (
             <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
               <div className="flex items-center justify-between px-0.5">
-                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60">
                   Available Models
                   {localSelectedProvider !== providerConfig.providerId && (
                     <span className="text-primary ml-1 lowpan opacity-80">(browsing)</span>
@@ -199,7 +199,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                         >
                           <div className={`w-1.5 h-1.5 rounded-full ${isActiveModel ? 'bg-primary animate-pulse' : 'bg-muted-foreground/40'}`} />
                           <span className="truncate flex-1">{model}</span>
-                          {isActiveModel && <span className="text-[9px] font-bold uppercase tracking-tighter opacity-70">active</span>}
+                          {isActiveModel && <span className="text-2xs font-bold uppercase tracking-tighter opacity-70">active</span>}
                         </button>
                         {isCustomProvider(localSelectedProvider) && (
                           <button
@@ -219,7 +219,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                 </div>
               ) : (
                 <div className="py-8 px-2 text-center rounded-md border border-dashed border-border/40 bg-muted/10">
-                  <p className="text-[10px] text-muted-foreground italic">No models found for this provider.</p>
+                  <p className="text-2xs text-muted-foreground italic">No models found for this provider.</p>
                 </div>
               )}
 
@@ -236,7 +236,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                     onKeyDown={handleNewModelKeyDown}
                   />
                   <button
-                    className="px-2 h-7 text-[9px] font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 rounded-sm transition-all disabled:opacity-30"
+                    className="px-2 h-7 text-2xs font-bold uppercase bg-primary/20 text-primary hover:bg-primary/30 rounded-sm transition-all disabled:opacity-30"
                     onClick={handleAddModel}
                     disabled={!newModelInput.trim()}
                   >

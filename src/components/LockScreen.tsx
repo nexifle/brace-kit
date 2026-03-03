@@ -49,7 +49,7 @@ export function LockScreen() {
         </div>
 
         <div className="flex flex-col items-center gap-1 text-center">
-          <div className="px-2 py-0.5 rounded-full bg-muted/50 border border-border/50 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+          <div className="px-2 py-0.5 rounded-full bg-muted/50 border border-border/50 text-2xs font-black uppercase tracking-widest text-muted-foreground">
             Identity Vault
           </div>
           <h2 className="text-lg font-bold text-foreground">Locked</h2>
@@ -74,7 +74,7 @@ export function LockScreen() {
               autoFocus
             />
             {error && (
-              <div className="flex items-center justify-center gap-1 text-[10px] font-bold text-destructive animate-in slide-in-from-top-1">
+              <div className="flex items-center justify-center gap-1 text-2xs font-bold text-destructive animate-in slide-in-from-top-1">
                 <ShieldAlertIcon size={10} />
                 {error}
               </div>

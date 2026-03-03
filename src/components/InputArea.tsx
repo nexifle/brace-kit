@@ -211,7 +211,7 @@ export function InputArea() {
           <svg className="animate-spin shrink-0 text-primary" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           </svg>
-          <span className="text-[11px] font-semibold text-primary tracking-wide">{processingCommandLabel}</span>
+          <span className="text-2xs font-semibold text-primary tracking-wide">{processingCommandLabel}</span>
         </div>
       )}
 
@@ -228,7 +228,7 @@ export function InputArea() {
         {/* Image Options Row */}
         {isImageGenerationModel && (
           <div className="flex items-center gap-2 px-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">Aspect Ratio</label>
+            <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">Aspect Ratio</label>
             <select
               className="text-xs bg-muted/40 border border-input rounded-md px-2 py-0.5 cursor-pointer outline-none transition-all hover:bg-muted/60 focus:ring-1 focus:ring-ring disabled:opacity-50 text-foreground"
               value={imageAspectRatio}
@@ -272,7 +272,7 @@ export function InputArea() {
                 }}
               >
                 <div className="font-bold text-xs text-primary font-mono">{cmd}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight tracking-tight">{desc}</div>
+                <div className="text-2xs text-muted-foreground leading-tight tracking-tight">{desc}</div>
               </div>
             ))}
           </div>
@@ -319,7 +319,7 @@ export function InputArea() {
         {compactEnabled && percentUntilCompact <= 15 && (
           <div className="flex justify-end p-2">
             <span
-              className={`inline-flex text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${percentUntilCompact <= 5
+              className={`inline-flex text-2xs font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${percentUntilCompact <= 5
                 ? 'text-destructive bg-destructive/10 border-destructive/20 animate-pulse'
                 : percentUntilCompact <= 10
                   ? 'text-warning bg-warning/10 border-warning/20'

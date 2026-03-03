@@ -98,11 +98,11 @@ export function CustomProvidersSettings() {
               <div className="flex-1 flex flex-col gap-0.5 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-medium text-foreground truncate">{cp.name}</span>
-                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-bold uppercase tracking-wider">
+                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-2xs font-bold uppercase tracking-wider">
                     {formatLabel[cp.format]}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground truncate opacity-70">
+                <div className="flex items-center gap-1 text-2xs text-muted-foreground truncate opacity-70">
                   {cp.apiUrl ? <span>{new URL(cp.apiUrl).hostname}</span> : null}
                   {cp.contextWindow ? <span> · {cp.contextWindow.toLocaleString()} ctx</span> : null}
                 </div>

@@ -154,7 +154,7 @@ const Onboarding = () => {
                         </div>
                         <button
                             onClick={() => window.close()}
-                            className="text-[10px] uppercase tracking-[0.2em] text-white/40 hover:text-white transition-colors cursor-pointer"
+                            className="text-2xs uppercase tracking-[0.2em] text-white/40 hover:text-white transition-colors cursor-pointer"
                         >
                             Skip
                         </button>
@@ -171,7 +171,7 @@ const Onboarding = () => {
                             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                             className="flex flex-col items-center text-center"
                         >
-                            <div className={`mb-12 p-8 rounded-3xl bg-gradient-to-br ${steps[currentStep].color} border border-white/10 relative group`}>
+                            <div className={`mb-12 p-8 rounded-3xl bg-linear-to-br ${steps[currentStep].color} border border-white/10 relative group`}>
                                 <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl blur-xl" />
                                 <motion.div
                                     initial={{ scale: 0.8, rotate: -10 }}
@@ -232,7 +232,7 @@ const Onboarding = () => {
                         </span>
                         <ArrowRight className="w-5 h-5 group-hover:translate-x-1.5 transition-transform relative z-10" />
                         <motion.div
-                            className="absolute inset-0 bg-gradient-to-r from-blue-400/0 via-blue-400/20 to-blue-400/0 -translate-x-full"
+                            className="absolute inset-0 bg-linear-to-r from-blue-400/0 via-blue-400/20 to-blue-400/0 -translate-x-full"
                             animate={{ x: ['100%', '-100%'] }}
                             transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                         />
@@ -249,21 +249,21 @@ const Onboarding = () => {
                     transition={{ delay: 0.5 }}
                     className="mt-12 group relative overflow-hidden"
                 >
-                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500/30 via-pink-500/30 to-orange-500/30 rounded-full blur-lg opacity-50 group-hover:opacity-80 transition-opacity" />
-                    <div className="relative flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 border border-rose-500/30 group-hover:border-rose-400/50 group-hover:from-rose-500/30 group-hover:via-pink-500/30 group-hover:to-orange-500/30 transition-all backdrop-blur-sm overflow-hidden">
+                    <div className="absolute inset-0 bg-linear-to-r from-rose-500/30 via-pink-500/30 to-orange-500/30 rounded-full blur-lg opacity-50 group-hover:opacity-80 transition-opacity" />
+                    <div className="relative flex items-center gap-3 px-8 py-4 rounded-full bg-linear-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 border border-rose-500/30 group-hover:border-rose-400/50 group-hover:from-rose-500/30 group-hover:via-pink-500/30 group-hover:to-orange-500/30 transition-all backdrop-blur-sm overflow-hidden">
                         <Heart size={18} className="text-rose-400 group-hover:text-rose-300 group-hover:scale-110 transition-all" />
                         <span className="text-sm font-semibold tracking-wide text-rose-200 group-hover:text-rose-100">
                             Support Development
                         </span>
                         <motion.div
-                            className="absolute inset-0 rounded-full bg-gradient-to-r from-rose-400/0 via-rose-400/10 to-rose-400/0 -translate-x-full"
+                            className="absolute inset-0 rounded-full bg-linear-to-r from-rose-400/0 via-rose-400/10 to-rose-400/0 -translate-x-full"
                             animate={{ x: ['100%', '-100%'] }}
                             transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
                         />
                     </div>
                 </motion.a>
 
-                <div className="mt-8 text-[10px] text-white/20 uppercase tracking-[0.4em] font-medium text-center">
+                <div className="mt-8 text-2xs text-white/20 uppercase tracking-[0.4em] font-medium text-center">
                     BraceKit // v{chrome.runtime.getManifest().version} // Part of Nexifle Labs
                 </div>
             </main>

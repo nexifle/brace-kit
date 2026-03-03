@@ -10,7 +10,7 @@ export function CitationsSection({ groundingMetadata }: CitationsSectionProps) {
 
   return (
     <div className="mt-4 pt-3 border-t border-border pb-4">
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-2">
+      <div className="flex items-center gap-1.5 text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 mb-2">
         <GlobeIcon size={10} />
         Sources
       </div>

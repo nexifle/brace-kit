@@ -40,7 +40,7 @@ function StreamingBubbleInternal() {
 
   return (
     <div className="group flex flex-col gap-1 max-w-[92%] self-start" data-streaming-bubble="true">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
+      <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
         AI
       </div>
       <div

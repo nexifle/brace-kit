@@ -408,7 +408,7 @@ export function HistoryDrawer() {
               grouped.map(({ group, convs }) => (
                 <div key={group} className="flex flex-col gap-2">
                   <div
-                    className={`flex items-center justify-between px-2 text-[10px] font-bold uppercase tracking-[0.2em] mb-1 transition-all
+                    className={`flex items-center justify-between px-2 text-2xs font-bold uppercase tracking-[0.2em] mb-1 transition-all
                       ${group === 'pinned' ? 'text-primary' : 'text-muted-foreground/60'}`}
                   >
                     <div className="flex items-center gap-2">

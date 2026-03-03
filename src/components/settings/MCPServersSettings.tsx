@@ -187,7 +187,7 @@ export function MCPServersSettings() {
 
       {showForm && (
         <div className="flex flex-col gap-3 p-3 mb-2 rounded-lg bg-secondary/30 border border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+          <div className="text-2xs font-bold uppercase tracking-[0.2em] text-primary">
             {editingServerId ? 'Edit MCP Server' : 'New MCP Server'}
           </div>
           <div className="flex flex-col gap-1 px-0.5">
@@ -316,11 +316,11 @@ export function MCPServersSettings() {
               {isExpanded && (
                 <div className="px-2.5 pb-3 pt-1 border-t border-border/20 bg-background/40 animate-in slide-in-from-top-1 duration-300">
                   <div className="flex items-center justify-between mt-2 mb-1 px-1">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Available Tools</span>
+                    <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/50">Available Tools</span>
                     <button
                       onClick={(e) => handleRefresh(e, server.id)}
                       disabled={loadingServers[server.id]}
-                      className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 text-2xs font-bold uppercase tracking-widest text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
                     >
                       <svg
                         width="10"
@@ -342,7 +342,7 @@ export function MCPServersSettings() {
                     {loadingServers[server.id] ? (
                       <div className="py-6 flex flex-col items-center justify-center gap-2 opacity-50">
                         <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest animate-pulse">Synchronizing...</span>
+                        <span className="text-2xs font-bold uppercase tracking-widest animate-pulse">Synchronizing...</span>
                       </div>
                     ) : serverErrors[server.id] ? (
                       <div className="py-6 flex flex-col items-center justify-center gap-2 border border-destructive/20 rounded bg-destructive/5 px-4 text-center">
@@ -352,14 +352,14 @@ export function MCPServersSettings() {
                             <line x1="12" y1="8" x2="12" y2="12" />
                             <line x1="12" y1="16" x2="12.01" y2="16" />
                           </svg>
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Connection Error</span>
+                          <span className="text-2xs font-bold uppercase tracking-widest">Connection Error</span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground leading-tight">
+                        <p className="text-2xs text-muted-foreground leading-tight">
                           {serverErrors[server.id]}
                         </p>
                         <button
                           onClick={(e) => handleRefresh(e, server.id)}
-                          className="mt-1 text-[9px] font-bold text-primary underline underline-offset-2 opacity-80 hover:opacity-100"
+                          className="mt-1 text-2xs font-bold text-primary underline underline-offset-2 opacity-80 hover:opacity-100"
                         >
                           Try reconnecting
                         </button>
@@ -370,10 +370,10 @@ export function MCPServersSettings() {
                       ))
                     ) : (
                       <div className="py-6 flex flex-col items-center justify-center gap-2 border border-dashed border-border/40 rounded bg-muted/10">
-                        <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">No tools discovered</span>
+                        <span className="text-2xs font-bold text-muted-foreground/40 uppercase tracking-widest">No tools discovered</span>
                         <button
                           onClick={(e) => handleRefresh(e, server.id)}
-                          className="text-[9px] font-bold text-primary underline underline-offset-2 opacity-60 hover:opacity-100"
+                          className="text-2xs font-bold text-primary underline underline-offset-2 opacity-60 hover:opacity-100"
                         >
                           Try manual refresh
                         </button>

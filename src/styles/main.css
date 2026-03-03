@@ -77,6 +77,9 @@
     /* --radius: 0.5rem; */
     --radius: 0rem;
 
+    /* Font size */
+    --text-2xs: 0.75rem;
+
     /* Sidebar */
     --sidebar: oklch(0.985 0.011 265.8);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -161,6 +164,9 @@
     /* Fonts */
     --font-sans: var(--font-sans);
     --font-mono: var(--font-mono);
+
+    /* Font Size */
+    --text-2xs: var(--text-2xs);
 
     /* Colors */
     --color-background: var(--background);
@@ -290,52 +296,109 @@
     @apply bg-primary text-primary-foreground scale-[1.03] shadow-md;
 }
 
+/* Premium Table Wrapper */
 .table-wrapper {
-    @apply backdrop-blur-md;
+    @apply backdrop-blur-sm;
 }
 
+.table-wrapper:hover .table-header-bar {
+    @apply bg-muted/40;
+}
+
+/* Refined Table Header Bar */
+.table-header-bar {
+    @apply transition-colors duration-300;
+}
+
+/* Table Action Buttons */
+.table-btn {
+    @apply relative;
+}
+
+.table-btn::after {
+    content: '';
+    @apply absolute inset-0 rounded-md opacity-0 transition-opacity duration-200;
+    background: radial-gradient(circle at center, currentColor 0%, transparent 70%);
+    opacity: 0;
+}
+
+.table-btn:hover::after {
+    opacity: 0.05;
+}
+
+.table-btn:active {
+    @apply scale-95;
+}
+
+/* Dropdown Interactions */
+.table-dropdown {
+    @apply relative;
+}
+
+.table-dropdown-menu {
+    @apply translate-y-1;
+}
+
+.table-dropdown.open .table-dropdown-menu {
+    @apply !flex visible opacity-100 translate-y-0;
+}
+
+/* Refined Scrollbar */
 .table-container::-webkit-scrollbar {
-    @apply h-1.5;
+    @apply h-2;
 }
 
 .table-container::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    @apply bg-muted/30 rounded-full;
 }
 
 .table-container::-webkit-scrollbar-thumb {
-    @apply bg-border rounded-full;
+    @apply bg-border/60 rounded-full transition-colors;
 }
 
 .table-container::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground;
+    @apply bg-border;
 }
 
-/* Interactivity for Table Dropdowns */
-.table-dropdown.open .table-dropdown-menu {
-    @apply !flex visible opacity-100;
-}
-
-/* Fullscreen Table Mode */
+/* Fullscreen Table Mode - Enhanced */
 .table-wrapper.fullscreen {
-    @apply fixed inset-4 z-200 m-0 bg-background/95 backdrop-blur-xl border border-border shadow-2xl animate-in zoom-in-95 duration-300;
+    @apply fixed inset-4 z-200 m-0 bg-background/98 backdrop-blur-xl border border-border/50 shadow-2xl animate-in zoom-in-95 duration-300 rounded-2xl;
+}
+
+.table-wrapper.fullscreen .table-header-bar {
+    @apply bg-muted/50 border-b-border/60;
 }
 
 .table-wrapper.fullscreen .table-container {
     @apply max-h-none flex-1;
 }
 
-.table-wrapper.fullscreen .md-table {
+.table-wrapper.fullscreen table {
     @apply text-sm;
-    /* Slightly larger text in fullscreen */
 }
 
-/* Table Cell Expansion Logic */
+/* Table Cell Hover Tooltip */
+.table-wrapper td[title]:hover {
+    @apply cursor-help;
+}
+
+/* Table Cell Expansion - Click to Expand */
+.table-wrapper td {
+    @apply transition-colors duration-200;
+}
+
 .md-expandable-cell {
-    @apply transition-all duration-200;
+    @apply transition-all duration-200 cursor-pointer;
+}
+
+.md-expandable-cell:hover {
+    @apply bg-muted/30;
 }
 
 .md-expandable-cell.expanded {
-    @apply !max-w-none !whitespace-normal !bg-muted/20 !shadow-inner;
+    @apply whitespace-normal break-words !text-clip bg-muted/20 shadow-inner;
+    text-overflow: clip;
+    word-break: break-word;
 }
 
 /* Footnote Styling */

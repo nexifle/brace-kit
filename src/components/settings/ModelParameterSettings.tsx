@@ -145,7 +145,7 @@ export function ModelParameterSettings() {
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 px-0.5 py-4">
         <div className="h-px bg-border/40 flex-1" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Model Parameters</span>
+        <span className="text-2xs font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Model Parameters</span>
         <div className="h-px bg-border/40 flex-1" />
       </div>
 
@@ -276,7 +276,7 @@ export function ModelParameterSettings() {
       {/* Reset button */}
       {hasAnyValue && (
         <button
-          className="self-start text-[10px] text-primary hover:text-primary/80 transition-colors px-0.5"
+          className="self-start text-2xs text-primary hover:text-primary/80 transition-colors px-0.5"
           onClick={() => {
             store.clearModelParameters();
             store.saveToStorage();
