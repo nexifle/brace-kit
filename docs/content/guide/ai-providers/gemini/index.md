@@ -23,11 +23,12 @@ Google's Gemini models offer strong performance with unique features like Google
 
 ### 2. Configure in BraceKit
 
-1. Open **Settings → Providers**
-2. Select **Gemini** from the provider dropdown
+1. Open **Settings → AI Provider**
+2. Click **Gemini** in the provider grid
 3. Paste your API key
 4. Select a model from the dropdown (models are fetched automatically)
-5. Settings are saved automatically
+
+Settings are saved automatically as you type.
 
 ## Available Models
 
@@ -110,7 +111,7 @@ Gemini models support large context windows (up to 1M tokens):
 
 ## Model Parameters
 
-Configure in **Settings → Providers** under Model Parameters:
+Configure in **Settings → AI Provider** under the **Advanced** section:
 
 | Parameter | Range | Effect |
 |-----------|-------|--------|

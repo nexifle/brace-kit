@@ -28,7 +28,7 @@ Select from available AI providers:
 | **Ollama** | Local models via Ollama |
 | **Custom** | Your own OpenAI-compatible endpoints |
 
-Click on a provider card to select it. The active provider is highlighted.
+Click a provider button in the grid to select it. The active provider is highlighted.
 
 ---
 
@@ -40,10 +40,7 @@ Enter your API key for the selected provider:
 - Never sent to BraceKit servers
 - Unique per provider
 
-To enter your key:
-1. Click the API Key field
-2. Paste your key
-3. Click the eye icon to show/hide the key
+Paste your key into the **API Key** field. Click the eye icon to show/hide the value.
 
 > **Note**: Ollama running on localhost doesn't require an API key.
 
@@ -65,13 +62,13 @@ Choose a model for the selected provider:
 - **Dropdown**: If the provider supports model fetching, select from the list
 - **Manual Input**: Type the model name if not in the list
 
-### Managing Model List (Custom Providers)
+### Managing Models (Custom Providers)
 
-For custom providers, you can manage the model list:
+For custom providers, models are shown as chips directly in the Model field:
 
-1. **Add Model**: Type a model name and click the + button
-2. **Select Model**: Click on a model chip to select it
-3. **Remove Model**: Click the X on a model chip to remove it
+- **Select Model**: Click a chip to make it the active model (highlighted in blue)
+- **Add Model**: Type a name in the input at the bottom of the chip list and press Enter or click **+**
+- **Remove Model**: Click the **×** on any chip
 
 ---
 
@@ -90,7 +87,7 @@ Add your own API endpoints that are compatible with OpenAI, Anthropic, Gemini, o
 
 ### Removing a Custom Provider
 
-Hover over a custom provider card and click the X button that appears.
+Hover over a custom provider button in the grid and click the **×** that appears in the top-right corner.
 
 ---
 

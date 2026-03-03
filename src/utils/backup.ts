@@ -277,3 +277,17 @@ export async function importData(file: File, optionsOrPassword?: string | Import
     reader.readAsText(file);
   });
 }
+
+/**
+ * Reset all extension data to factory defaults.
+ * Clears chrome.storage.local, chrome.storage.session, and all IndexedDB stores.
+ */
+export async function resetAllData(): Promise<void> {
+  await chrome.storage.local.clear();
+  await chrome.storage.session.clear();
+  await Promise.all([
+    clearAllImages(),
+    clearAllConversationMessages(),
+    clearAllConversationMetadata(),
+  ]);
+}

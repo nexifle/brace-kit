@@ -24,10 +24,12 @@ Anthropic's Claude models are known for nuanced understanding, careful reasoning
 ### 2. Configure in BraceKit
 
 1. Open **Settings**
-2. Select the **AI** tab
-3. Choose **Anthropic** from the provider dropdown
+2. Select the **AI Provider** tab
+3. Click **Anthropic** in the provider grid
 4. Paste your API key
 5. Select a model
+
+Settings are saved automatically as you type.
 
 ## Available Models
 
@@ -102,7 +104,7 @@ Extended thinking uses additional tokens for reasoning:
 
 ## Model Parameters
 
-Configure in **Settings → Chat** (Model Parameters section):
+Configure in **Settings → AI Provider** under the **Advanced** section:
 
 | Parameter | Range | Effect |
 |-----------|-------|--------|

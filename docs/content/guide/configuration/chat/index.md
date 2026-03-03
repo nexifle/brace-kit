@@ -66,13 +66,36 @@ Set the minimum characters needed to trigger the toolbar:
 
 ### Built-in Actions
 
-Manage the nine built-in actions (Summarize, Explain, Translate, etc.) that come with the toolbar. For each action you can:
+Nine built-in actions come with the toolbar, split into two default positions:
+
+**Toolbar** (always visible):
+
+| Action | Category |
+|--------|----------|
+| Summarize | Analyze |
+| Explain | Analyze |
+| Translate | Transform |
+| Rephrase | Transform |
+
+**More menu** (dropdown):
+
+| Action | Category |
+|--------|----------|
+| Simplify | Transform |
+| Expand | Transform |
+| Make Formal | Change Tone |
+| Make Casual | Change Tone |
+| Fix Grammar | Fix & Improve |
+
+For each built-in action you can:
 
 - **Toggle on/off** — disable actions you never use
 - **Rename** — give it a shorter or more meaningful label
 - **Change position** — move between *Toolbar* (always visible) and *More menu* (dropdown)
 - **Change category** — regroup it in the More menu
 - **Reset** — restore the action to its original defaults (↺ icon on hover)
+
+> **Translate** requires selecting a target language from the popup before the request is sent. Supported languages: English, Spanish, French, German, Chinese, Japanese, Korean, Indonesian, Portuguese, Russian, Arabic, Hindi.
 
 ### Custom Actions
 

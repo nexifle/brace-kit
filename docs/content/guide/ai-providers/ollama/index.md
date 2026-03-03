@@ -55,11 +55,12 @@ ollama pull phi3
 ### 4. Configure in BraceKit
 
 1. Open **Settings → AI Provider**
-2. Select **Ollama**
-3. The API URL should be `http://localhost:11434/v1`
-4. Enter any placeholder for API key (e.g., `ollama`)
+2. Click **Ollama** in the provider grid
+3. The Base URL should be `http://localhost:11434` (default)
+4. API key is not required for localhost
 5. Select your model from the dropdown
-6. Click **Save**
+
+Settings are saved automatically as you type.
 
 > **Note:** BraceKit automatically fetches available models from Ollama.
 
@@ -122,9 +123,11 @@ BraceKit automatically fetches your Ollama models:
 
 ### Configuring in BraceKit
 
-1. Open **Settings → Chat**
-2. Set temperature and other parameters
-3. Changes apply to Ollama requests
+1. Open **Settings → AI Provider**
+2. Expand the **Advanced** section
+3. Set temperature and other parameters
+
+Changes apply to Ollama requests automatically.
 
 ## Hardware Requirements
 
@@ -165,7 +168,7 @@ All installed models appear in BraceKit's model selector.
 ### "Connection refused"
 
 - Ensure Ollama is running: `ollama serve`
-- Check the URL in settings: `http://localhost:11434/v1`
+- Check the Base URL in settings: `http://localhost:11434`
 - Verify no firewall is blocking localhost
 
 ### "Model not found"

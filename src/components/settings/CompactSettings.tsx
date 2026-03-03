@@ -25,7 +25,7 @@ export function CompactSettings() {
       {/* Header */}
       <div className="flex flex-col gap-0.5 px-0.5">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">Auto Compact</h3>
-        <p className="text-xs text-muted-foreground leading-none">Configure conversation compaction settings</p>
+        <p className="text-sm text-muted-foreground leading-none">Configure conversation compaction settings</p>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -33,7 +33,7 @@ export function CompactSettings() {
         <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40 border border-border/50 hover:bg-secondary/60 transition-colors">
           <div className="flex flex-col gap-0.5 pr-2">
             <span className="text-sm font-medium text-foreground">Enable Auto Compact</span>
-            <span className="text-xs text-muted-foreground leading-tight">
+            <span className="text-sm text-muted-foreground leading-tight">
               {compactConfig.enabled
                 ? 'Automatically compact when threshold reached'
                 : 'Manual compact only via /compact command'}
@@ -57,10 +57,10 @@ export function CompactSettings() {
         {compactConfig.enabled && (
           <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
                 Compact Threshold
               </label>
-              <span className="text-xs text-muted-foreground tabular-nums">
+              <span className="text-sm text-muted-foreground tabular-nums">
                 {Math.round(compactConfig.threshold * 100)}%
               </span>
             </div>
@@ -76,7 +76,7 @@ export function CompactSettings() {
               }}
               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
             />
-            <p className="text-2xs text-muted-foreground/70">
+            <p className="text-sm text-muted-foreground/70">
               Compact when context reaches {Math.round(compactConfig.threshold * 100)}% of window
             </p>
           </div>
@@ -86,7 +86,7 @@ export function CompactSettings() {
         {compactConfig.enabled && (
           <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
             <div className="flex items-center justify-between">
-              <label htmlFor="compact-prompt" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+              <label htmlFor="compact-prompt" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
                 Compact Prompt
               </label>
               {isUsingCustomPrompt && (
@@ -96,7 +96,7 @@ export function CompactSettings() {
                     store.setCompactConfig({ prompt: '' });
                     store.saveToStorage();
                   }}
-                  className="text-2xs text-primary hover:text-primary/80 transition-colors"
+                  className="text-sm text-primary hover:text-primary/80 transition-colors"
                   title="Reset to default"
                 >
                   Reset
@@ -106,14 +106,14 @@ export function CompactSettings() {
             <textarea
               id="compact-prompt"
               rows={8}
-              className="w-full min-h-[180px] max-h-[400px] px-2.5 py-2 text-xs bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground max-inline-max field-sizing-content resize-none font-mono"
+              className="w-full min-h-[180px] max-h-[400px] px-2.5 py-2 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground max-inline-max field-sizing-content resize-none font-mono"
               value={displayPrompt}
               onChange={(e) => {
                 store.setCompactConfig({ prompt: e.target.value });
                 store.saveToStorage();
               }}
             />
-            <p className="text-2xs text-muted-foreground/70">
+            <p className="text-sm text-muted-foreground/70">
               {isUsingCustomPrompt ? 'Using custom prompt' : 'Using default prompt (edit to customize)'}
             </p>
           </div>

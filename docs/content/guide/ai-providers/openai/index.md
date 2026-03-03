@@ -24,10 +24,12 @@ OpenAI provides GPT models for general tasks and o-series models for complex rea
 ### 2. Configure in BraceKit
 
 1. Open **Settings**
-2. Select **AI** tab
-3. Select **OpenAI** from the provider dropdown
+2. Select **AI Provider** tab
+3. Click **OpenAI** in the provider grid
 4. Paste your API key in the API Key field
 5. Select a model from the dropdown
+
+Settings are saved automatically as you type.
 
 Settings are saved automatically when you make changes.
 
@@ -123,7 +125,7 @@ All OpenAI models support streaming responses for real-time output.
 
 ## Model Parameters
 
-Configure in **Settings → AI** (under the provider configuration):
+Configure in **Settings → AI Provider** under the **Advanced** section:
 
 | Parameter | Range | Effect |
 |-----------|-------|--------|

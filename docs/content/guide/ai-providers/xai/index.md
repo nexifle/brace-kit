@@ -23,11 +23,12 @@ xAI's Grok models offer frontier-level reasoning with exceptional cost efficienc
 
 ### 2. Configure in BraceKit
 
-1. Open **Settings → Providers**
-2. Select **xAI (Grok)**
+1. Open **Settings → AI Provider**
+2. Click **xAI** in the provider grid
 3. Paste your API key
 4. Select a model
-5. Click **Connect**
+
+Settings are saved automatically as you type.
 
 ## Available Models
 
@@ -104,7 +105,7 @@ Grok Vision models can analyze images:
 
 ## Model Parameters
 
-Configure in **Settings → Chat**:
+Configure in **Settings → AI Provider** under the **Advanced** section:
 
 | Parameter | Range | Effect |
 |-----------|-------|--------|

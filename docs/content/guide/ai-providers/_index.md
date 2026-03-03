@@ -34,7 +34,7 @@ BraceKit supports multiple AI providers, letting you switch between models insta
 
 ### Step 2: Select Provider
 
-Click on any provider card to select it. The card expands to show configuration options.
+Click any provider button in the grid to select it. The configuration fields below update to reflect the selected provider.
 
 ### Step 3: Enter API Key
 
@@ -52,9 +52,9 @@ Each provider requires an API key (except Ollama):
 
 Choose a model from the dropdown or type a custom model name.
 
-### Step 5: Save
+### Step 5: Done
 
-Click **Save** to store your configuration. The provider is now active.
+Settings are saved automatically as you type. The provider is now active.
 
 ## Switching Providers
 
@@ -120,7 +120,6 @@ Send images for analysis:
 
 Your API keys are:
 - **Stored locally** in Chrome's extension storage
-- **Encrypted** before storage
 - **Never sent** to BraceKit servers
 - **Only used** to authenticate with the AI provider
 
@@ -137,16 +136,15 @@ Each provider stores its own key independently.
 
 ## Custom Endpoints
 
-For self-hosted or proxy services, use the **Custom** provider:
+For self-hosted or proxy services, add a custom provider:
 
-1. Select **Custom** from the provider list
-2. Enter your base URL (e.g., `http://localhost:1234/v1`)
-3. Enter an API key (or any placeholder for local services)
-4. Select the **Format**:
-   - **OpenAI** — LM Studio, vLLM, OpenRouter, Azure OpenAI
-   - **Anthropic** — Anthropic-compatible proxies
-   - **Gemini** — Gemini-compatible proxies
-   - **Ollama** — Ollama native API
+1. Click the **+ Add** button in the provider grid
+2. Fill in the **Name**, **Format**, and **Base URL**:
+   - **OpenAI** format — LM Studio, vLLM, OpenRouter, Azure OpenAI
+   - **Anthropic** format — Anthropic-compatible proxies
+   - **Gemini** format — Gemini-compatible proxies
+   - **Ollama** format — Ollama native API
+3. Click **Save Provider**, then enter your API key in the Configuration section
 
 See the [Custom Provider guide](/guide/ai-providers/custom/) for details.
 

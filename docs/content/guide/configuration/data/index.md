@@ -10,7 +10,7 @@ category = "Configuration"
 
 # Data Settings
 
-Manage your BraceKit data with export and import functionality.
+Manage your BraceKit data with export, restore, and reset functionality.
 
 ---
 
@@ -40,7 +40,10 @@ You can choose to include API keys in your backup:
 2. (Optional) Enter an **Encryption Password** to secure your backup
    - **Required** if including API keys
    - **Optional** for general backup encryption
-3. Click **Export Data** or **Export with API Keys**
+3. Click the **Export** button (label changes based on your selections):
+   - **Export** — plain backup, no password
+   - **Export Encrypted** — password set, no API keys
+   - **Export with Keys** — API keys included (password required)
 4. A JSON file will be downloaded to your computer
 
 > **Note**: The export process may temporarily freeze the interface. Please wait until the download completes.
@@ -54,7 +57,7 @@ If you set an encryption password:
 
 ---
 
-## Import Backup
+## Restore Backup
 
 Restore your data from a previously exported backup file.
 
@@ -66,17 +69,17 @@ When you select a backup file, BraceKit inspects it first:
 - **Prompts for password** — If backup contains API keys or is encrypted
 - **Auto-imports** — If backup is unencrypted and has no API keys
 
-### Importing Data
+### Restoring Data
 
-1. Click **Select file & Import Data**
+1. Click **Select & Restore Backup**
 2. Choose your backup JSON file
 3. BraceKit will inspect the backup and show relevant info
 4. If prompted, enter the **Decryption Password**
-5. Click **Import** to confirm
+5. Click **Restore** (or **Restore with Keys** if backup includes API keys) to confirm
 6. Wait for the import to complete
 7. The page will reload with your restored data
 
-> **Warning**: Importing will **completely overwrite** your current data. Make sure to export your current data first if you want to preserve it.
+> **Warning**: Restoring will **completely overwrite** your current data. Make sure to export your current data first if you want to preserve it.
 
 ### API Key Restoration
 
@@ -89,13 +92,36 @@ When restoring a backup with API keys:
 
 > **Note**: If you see "API keys have been re-encrypted for this device" — that's normal! It means the keys were successfully restored and secured for your current device.
 
-### Import Errors
+### Restore Errors
 
-If import fails:
+If restore fails:
 - Check that the file is a valid BraceKit backup
 - Verify the decryption password is correct
 - Ensure the file wasn't corrupted during download
 - For API key errors: password is required when backup contains API keys
+
+---
+
+## Reset All Data
+
+The **Danger Zone** section allows you to permanently delete all BraceKit data and return to factory defaults.
+
+### What Gets Deleted
+
+- All conversations and chat history
+- All AI provider configurations and API keys
+- All memories and personalization data
+- All MCP server configurations
+- All settings and preferences
+
+### Resetting
+
+1. Click **Reset All** in the Danger Zone
+2. A confirmation dialog will appear — read it carefully
+3. Click **Reset All Data** to confirm
+4. The extension reloads with factory default settings
+
+> **Warning**: This action **cannot be undone**. Export your data first if you want to preserve anything.
 
 ---
 

@@ -31,7 +31,7 @@ function SliderRow({
   return (
     <div className="flex flex-col gap-1.5 px-0.5">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
           {label}
           {description && (
             <Tooltip>
@@ -39,17 +39,17 @@ function SliderRow({
                 <button>
                   <HelpCircleIcon
                     size={16}
-                    className="inline-block ml-1 text-muted-foreground/60 cursor-pointer"
+                    className="inline-block ml-1 text-muted-foreground/70 cursor-pointer"
                   />
                 </button>
               </TooltipTrigger>
               <TooltipContent>
-                <p className="text-xs text-muted-foreground/80">{description}</p>
+                <p className="text-xs text-muted-foreground">{description}</p>
               </TooltipContent>
             </Tooltip>
           )}
         </label>
-        <span className={`text-xs tabular-nums ${value !== undefined ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
+        <span className={`text-xs tabular-nums ${value !== undefined ? 'text-muted-foreground' : 'text-muted-foreground/60'}`}>
           {displayValue}
         </span>
       </div>
@@ -86,19 +86,19 @@ function NumberRow({
 }) {
   return (
     <div className="flex flex-col gap-1.5 px-0.5">
-      <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+      <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
         {label} {description && (
           <Tooltip>
             <TooltipTrigger>
               <button>
                 <HelpCircleIcon
                   size={16}
-                  className="inline-block ml-1 text-muted-foreground/60 cursor-pointer"
+                  className="inline-block ml-1 text-muted-foreground/70 cursor-pointer"
                 />
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              <p className="text-xs text-muted-foreground/80">{description}</p>
+              <p className="text-xs text-muted-foreground">{description}</p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -106,7 +106,7 @@ function NumberRow({
       <input
         type="number"
         min={min}
-        className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
+        className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/60"
         placeholder={placeholder}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)}
@@ -233,25 +233,25 @@ export function ModelParameterSettings() {
       {/* Keep Alive — Ollama only */}
       {isSupported('keepAlive') && (
         <div className="flex flex-col gap-1.5 px-0.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
             Keep Alive
             <Tooltip>
               <TooltipTrigger>
                 <button>
                   <HelpCircleIcon
                     size={16}
-                    className="inline-block ml-1 text-muted-foreground/60 cursor-pointer"
+                    className="inline-block ml-1 text-muted-foreground/70 cursor-pointer"
                   />
                 </button>
               </TooltipTrigger>
               <TooltipContent>
-                <p className="text-xs text-muted-foreground/80">How long to keep the model loaded in memory. Examples: "5m", "24h", "0" to unload immediately.</p>
+                <p className="text-xs text-muted-foreground">How long to keep the model loaded in memory. Examples: "5m", "24h", "0" to unload immediately.</p>
               </TooltipContent>
             </Tooltip>
           </label>
           <input
             type="text"
-            className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
+            className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/60"
             placeholder="5m"
             value={params.keepAlive ?? ''}
             onChange={(e) => { updateString('keepAlive', e.target.value || undefined); save(); }}

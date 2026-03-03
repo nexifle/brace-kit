@@ -3,9 +3,34 @@ import { useProvider } from '../../hooks/useProvider.ts';
 import { PROVIDER_PRESETS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import type { ProviderFormat, ProviderPreset } from '../../types/index.ts';
-import { PlusIcon, XIcon } from 'lucide-react';
+import { PlusIcon, XIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
 import { ModelParameterSettings } from './ModelParameterSettings.tsx';
+
+// =============================================================================
+// Shared sub-components (mirrors ChatSettings.tsx pattern)
+// =============================================================================
+
+function SectionCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-lg border border-border/60 overflow-hidden ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-secondary/30 border-b border-border/50">
+      <span className="text-muted-foreground shrink-0">{icon}</span>
+      <span className="text-sm font-semibold text-foreground">{title}</span>
+    </div>
+  );
+}
+
+// =============================================================================
+// ProviderSettings Component
+// =============================================================================
 
 export function ProviderSettings() {
   const {
@@ -38,6 +63,7 @@ export function ProviderSettings() {
 
   const currentProvider = getProvider(providerConfig.providerId) as ProviderPreset;
   const isCustom = isCustomProvider(providerConfig.providerId);
+  const isOllama = currentProvider?.format === 'ollama';
 
   useEffect(() => {
     const models = getAvailableModels(providerConfig.providerId);
@@ -45,8 +71,6 @@ export function ProviderSettings() {
   }, [providerConfig.providerId, getAvailableModels]);
 
   useEffect(() => {
-    // Fetch models if supported
-    // Ollama localhost doesn't require API key
     const isLocalhost = isOllamaLocalhost(currentProvider?.format, providerConfig.apiUrl);
     if (currentProvider?.supportsModelFetch && (providerConfig.apiKey || isLocalhost)) {
       fetchAndCacheModels(providerConfig.providerId);
@@ -55,7 +79,6 @@ export function ProviderSettings() {
 
   const handleApiKeyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     updateProviderConfig({ apiKey: e.target.value });
-    // Clear cache to force re-fetch
     if (currentProvider?.supportsModelFetch) {
       fetchAndCacheModels(providerConfig.providerId);
     }
@@ -90,110 +113,111 @@ export function ProviderSettings() {
   }, [providerToDelete, removeCustomProvider]);
 
   return (
-    <section className="flex flex-col gap-4 py-3 border-b border-border last:border-0">
+    <section className="flex flex-col gap-3 py-3 border-b border-border last:border-0">
       <div className="flex flex-col gap-0.5 px-0.5">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">AI Provider</h3>
         <p className="text-xs text-muted-foreground leading-none">Select and configure your AI service</p>
       </div>
 
-      <div className="flex flex-col gap-4">
-        {/* Modern Provider Selection Grid */}
-        <div className="grid grid-cols-3 gap-2 px-0.5">
-          {availableProviders.map((p) => {
-            const isActive = p.id === providerConfig.providerId;
-            const isPreset = !!PROVIDER_PRESETS[p.id];
+      <div className="flex flex-col gap-2">
 
-            return (
-              <div key={p.id} className="group relative">
-                <button
-                  className={`w-full h-10 px-2 flex items-center justify-center text-2xs font-bold uppercase tracking-tight rounded-md border transition-all truncate
-                    ${isActive
-                      ? 'bg-primary border-primary text-primary-foreground shadow-md'
-                      : 'bg-muted/30 border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                  onClick={() => switchProvider(p.id)}
-                  title={p.name}
-                >
-                  {p.name}
-                </button>
-                {!isPreset && (
-                  <button
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110 active:scale-95 z-10"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setProviderToDelete({ id: p.id, name: p.name });
-                    }}
-                    title="Remove Provider"
-                  >
-                    <XIcon size={12} strokeWidth={2.5} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+        {/* ── PROVIDER SELECTION ── */}
+        <SectionCard>
+          <SectionHeader icon={<LayersIcon size={12} />} title="Provider" />
+          <div className="p-3 flex flex-col gap-3">
+            <div className="grid grid-cols-3 gap-2">
+              {availableProviders.map((p) => {
+                const isActive = p.id === providerConfig.providerId;
+                const isPreset = !!PROVIDER_PRESETS[p.id];
+                return (
+                  <div key={p.id} className="group relative">
+                    <button
+                      className={`w-full h-10 px-2 flex items-center justify-center text-2xs font-bold uppercase tracking-tight rounded-md border transition-all truncate
+                        ${isActive
+                          ? 'bg-primary border-primary text-primary-foreground shadow-md'
+                          : 'bg-muted/30 border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+                      onClick={() => switchProvider(p.id)}
+                      title={p.name}
+                    >
+                      {p.name}
+                    </button>
+                    {!isPreset && (
+                      <button
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110 active:scale-95 z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setProviderToDelete({ id: p.id, name: p.name });
+                        }}
+                        title="Remove Provider"
+                      >
+                        <XIcon size={12} strokeWidth={2.5} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
 
-          <button
-            className={`h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-2xs font-bold uppercase tracking-tight
-              ${showAddProvider
-                ? 'bg-primary/10 border-primary/40 text-primary'
-                : 'bg-transparent border-border/60 text-muted-foreground hover:bg-muted/20 hover:text-foreground'}`}
-            onClick={() => setShowAddProvider(!showAddProvider)}
-          >
-            <PlusIcon size={14} />
-            {showAddProvider ? 'Cancel' : 'Add'}
-          </button>
-        </div>
-
-        {/* Inline Add Provider Form */}
-        {showAddProvider && (
-          <div className="flex flex-col gap-3 p-3 bg-secondary/30 border border-border/40 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="text-2xs font-bold uppercase tracking-[0.2em] text-primary">New Custom Provider</div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded outline-none focus:border-primary/40 transition-all text-foreground"
-                placeholder="Name"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-              />
-              <select
-                className="w-full h-8 px-2 text-xs bg-muted/40 border border-input rounded outline-none cursor-pointer text-foreground"
-                value={newFormat}
-                onChange={e => setNewFormat(e.target.value as ProviderFormat)}
+              <button
+                className={`h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-2xs font-bold uppercase tracking-tight
+                  ${showAddProvider
+                    ? 'bg-primary/10 border-primary/40 text-primary'
+                    : 'bg-transparent border-border/60 text-muted-foreground hover:bg-muted/20 hover:text-foreground'}`}
+                onClick={() => setShowAddProvider(!showAddProvider)}
               >
-                <option value="openai">OpenAI Format</option>
-                <option value="anthropic">Anthropic Format</option>
-                <option value="gemini">Gemini Format</option>
-                <option value="ollama">Ollama Format</option>
-              </select>
+                <PlusIcon size={14} />
+                {showAddProvider ? 'Cancel' : 'Add'}
+              </button>
             </div>
-            <input
-              className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded outline-none focus:border-primary/40 transition-all text-foreground"
-              placeholder="API Base URL (https://...)"
-              value={newUrl}
-              onChange={e => setNewUrl(e.target.value)}
-            />
-            <button
-              className="w-full h-8 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider rounded shadow-sm hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
-              onClick={handleAddProvider}
-              disabled={!newName.trim() || !newUrl.trim()}
-            >
-              Save Provider
-            </button>
-          </div>
-        )}
 
-        {/* Configuration Section (Active Provider) */}
-        <div className="flex flex-col gap-3 pt-2 animate-in fade-in duration-500">
-          <div className="flex items-center gap-2 px-0.5">
-            <div className="h-px bg-border/40 flex-1" />
-            <span className="text-2xs font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Configuration</span>
-            <div className="h-px bg-border/40 flex-1" />
+            {/* Inline Add Provider Form */}
+            {showAddProvider && (
+              <div className="flex flex-col gap-2.5 p-3 bg-secondary/30 border border-border/40 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
+                <p className="text-xs text-muted-foreground">Enter a name, API format, and base URL for your custom provider.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
+                    placeholder="Provider name"
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                  />
+                  <select
+                    className="w-full h-8 px-2 text-xs bg-muted/40 border border-input rounded-md outline-none cursor-pointer text-foreground"
+                    value={newFormat}
+                    onChange={e => setNewFormat(e.target.value as ProviderFormat)}
+                  >
+                    <option value="openai">OpenAI format</option>
+                    <option value="anthropic">Anthropic format</option>
+                    <option value="gemini">Gemini format</option>
+                    <option value="ollama">Ollama format</option>
+                  </select>
+                </div>
+                <input
+                  className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
+                  placeholder="Base URL  (e.g. https://api.example.com/v1)"
+                  value={newUrl}
+                  onChange={e => setNewUrl(e.target.value)}
+                />
+                <button
+                  className="w-full h-8 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider rounded-md shadow-sm hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
+                  onClick={handleAddProvider}
+                  disabled={!newName.trim() || !newUrl.trim()}
+                >
+                  Save Provider
+                </button>
+              </div>
+            )}
           </div>
+        </SectionCard>
 
-          <div className="flex flex-col gap-3">
+        {/* ── CONFIGURATION (API Key + Base URL + Model) ── */}
+        <SectionCard>
+          <SectionHeader icon={<Settings2Icon size={12} />} title="Configuration" />
+          <div className="p-3 flex flex-col gap-3">
+
             {/* API Key */}
-            <div className="flex flex-col gap-1.5 px-0.5">
-              <label htmlFor="api-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">API Key</label>
-              <div className="relative flex items-center group">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="api-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">API Key</label>
+              <div className="relative flex items-center">
                 <input
                   type={showKey ? 'text' : 'password'}
                   id="api-key"
@@ -218,10 +242,10 @@ export function ProviderSettings() {
               </div>
             </div>
 
-            {/* Base URL - for custom providers and Ollama (can point to remote server) */}
-            {(isCustom || currentProvider?.format === 'ollama') && (
-              <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1">
-                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Base URL</label>
+            {/* Base URL — custom providers and Ollama only */}
+            {(isCustom || isOllama) && (
+              <div className="flex flex-col gap-1.5 animate-in fade-in duration-200">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Base URL</label>
                 <input
                   className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground"
                   value={providerConfig.apiUrl}
@@ -230,64 +254,95 @@ export function ProviderSettings() {
               </div>
             )}
 
-            {/* Model Selection */}
-            <div className="flex flex-col gap-1.5 px-0.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Model</label>
-              <div className="relative flex items-center group">
-                {availableModels.length === 0 ? (
-                  <input
-                    className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground"
-                    placeholder="Type model name..."
-                    value={providerConfig.model}
-                    onChange={(e) => updateProviderConfig({ model: e.target.value })}
-                  />
-                ) : (
-                  <select
-                    className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
-                    value={providerConfig.model}
-                    onChange={(e) => updateProviderConfig({ model: e.target.value })}
-                  >
-                    {availableModels.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Custom Model Management (only for custom providers) */}
-              {isCustom && (
-                <div className="flex flex-col gap-2 mt-2 p-3 rounded-lg bg-secondary/20 border border-border/40">
-                  <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60">Manage Model List</span>
-
-                  {availableModels.length > 0 && (
+            {/* Model */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Model</label>
+              {isCustom ? (
+                // Custom providers: chip-based selector + add model
+                // Clicking a chip selects it; the active chip is highlighted
+                <div className="flex flex-col gap-2">
+                  {availableModels.length === 0 ? (
+                    <p className="text-xs text-muted-foreground/60 py-1">
+                      No models added yet. Type a model name below to add one.
+                    </p>
+                  ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {availableModels.map(m => (
-                        <div key={m} className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs font-medium border transition-all ${m === providerConfig.model ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-muted/30 border-border/40 text-muted-foreground'}`}>
-                          <span className="cursor-pointer truncate max-w-[100px]" onClick={() => updateProviderConfig({ model: m })}>{m}</span>
-                          <button onClick={(e) => { e.stopPropagation(); handleRemoveModel(m); }} className="hover:text-destructive transition-colors"><XIcon size={10} /></button>
+                        <div
+                          key={m}
+                          className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium border cursor-pointer transition-all select-none
+                            ${m === providerConfig.model
+                              ? 'bg-primary/15 border-primary/40 text-primary'
+                              : 'bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50 hover:text-foreground hover:border-border'}`}
+                          onClick={() => updateProviderConfig({ model: m })}
+                        >
+                          {m === providerConfig.model && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                          )}
+                          <span className="truncate max-w-30">{m}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveModel(m); }}
+                            className="text-muted-foreground/40 hover:text-destructive transition-colors shrink-0 ml-0.5"
+                            title="Remove model"
+                          >
+                            <XIcon size={10} />
+                          </button>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  <div className="flex gap-2 pt-2 mt-1 border-t border-border/20">
+                  <div className="flex gap-2">
                     <input
-                      className="flex-1 h-7 px-2 text-2xs bg-muted/30 border-none outline-none rounded text-foreground"
-                      placeholder="Add model..."
+                      className="flex-1 h-8 px-2.5 text-xs bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
+                      placeholder="Add model name…"
                       value={newModelInput}
                       onChange={e => setNewModelInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && handleAddModel()}
                     />
-                    <button onClick={handleAddModel} className="w-7 h-7 bg-primary/10 text-primary rounded flex items-center justify-center hover:bg-primary/20 transition-all"><PlusIcon size={12} /></button>
+                    <button
+                      onClick={handleAddModel}
+                      disabled={!newModelInput.trim()}
+                      className="h-8 w-8 bg-primary/10 text-primary rounded-md flex items-center justify-center hover:bg-primary/20 transition-all disabled:opacity-40 shrink-0"
+                      title="Add model"
+                    >
+                      <PlusIcon size={14} />
+                    </button>
                   </div>
                 </div>
+              ) : availableModels.length === 0 ? (
+                // No known models: free-text input
+                <input
+                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground placeholder:text-muted-foreground/40"
+                  placeholder="Type model name…"
+                  value={providerConfig.model}
+                  onChange={(e) => updateProviderConfig({ model: e.target.value })}
+                />
+              ) : (
+                // Preset provider with fetched model list: dropdown
+                <select
+                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
+                  value={providerConfig.model}
+                  onChange={(e) => updateProviderConfig({ model: e.target.value })}
+                >
+                  {availableModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+          </div>
+        </SectionCard>
+
+        {/* ── ADVANCED CONFIGURATION ── */}
+        <SectionCard>
+          <SectionHeader icon={<SlidersHorizontalIcon size={12} />} title="Advanced" />
+          <div className="p-3 flex flex-col gap-3">
+            <div className={isCustom ? 'grid grid-cols-2 gap-3' : ''}>
               {isCustom && (
-                <div className="flex flex-col gap-1.5 px-0.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Format</label>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">API Format</label>
                   <select
                     className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground cursor-pointer"
                     value={providerConfig.format}
@@ -300,11 +355,11 @@ export function ProviderSettings() {
                   </select>
                 </div>
               )}
-              <div className="flex flex-col gap-1.5 px-0.5">
+              <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Context Window</label>
                 <input
                   type="number"
-                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground"
+                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
                   placeholder={String(currentProvider?.contextWindow || 128000)}
                   value={providerConfig.contextWindow || ''}
                   onChange={(e) => updateProviderConfig({ contextWindow: e.target.value ? parseInt(e.target.value, 10) : undefined })}
@@ -314,7 +369,8 @@ export function ProviderSettings() {
 
             <ModelParameterSettings />
           </div>
-        </div>
+        </SectionCard>
+
       </div>
 
       {providerToDelete && (

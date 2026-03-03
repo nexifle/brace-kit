@@ -8,6 +8,7 @@ import { MCPServersSettings } from './settings/MCPServersSettings.tsx';
 import { SecuritySettings } from './settings/SecuritySettings.tsx';
 import { DataSettings } from './settings/DataSettings.tsx';
 import { IconButton } from './ui/IconButton.tsx';
+import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 import {
   SparklesIcon,
   MessageSquareIcon,
@@ -48,39 +49,37 @@ export function SettingsPanel() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="relative px-3 pt-3 border-b border-border/40 bg-background/50 backdrop-blur-sm sticky top-14 z-10">
-        {/* Left fade gradient - starts after padding */}
-        <div className="absolute left-3 top-3 bottom-0 w-6 bg-linear-to-r from-[var(--background)] to-transparent pointer-events-none z-20" />
-
-        {/* Right fade gradient */}
-        <div className="absolute right-0 top-3 bottom-0 w-10 bg-gradient-to-l from-[var(--background)] from-50% to-transparent pointer-events-none z-20" />
-
-        {/* Scrollable tabs container */}
-        <div className="relative z-0 flex gap-1 overflow-x-auto scrollbar-hide scroll-smooth">
+      <div className="px-3 pt-3 border-b border-border/40 bg-background/50 backdrop-blur-sm sticky top-14 z-10">
+        <div className="flex gap-1 w-full">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
 
             return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`shrink-0 flex items-center justify-center gap-2 py-2 px-3 rounded-md transition-all relative group mb-1
-                  ${isActive
-                    ? 'text-primary bg-primary/5'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}`}
-              >
-                <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
-                <span className={`text-xs font-bold uppercase tracking-tight whitespace-nowrap transition-all
-                  ${isActive ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}`}>
-                  {tab.label}
-                </span>
+              <Tooltip key={tab.id}>
+                <TooltipTrigger className={isActive ? 'inline-flex flex-1' : 'inline-flex shrink-0 w-8'}>
+                  <button
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`relative flex items-center justify-center w-full py-2 rounded-md transition-all duration-200 overflow-hidden mb-1
+                      ${isActive
+                        ? 'text-primary bg-primary/10 px-2'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/30'}`}
+                  >
+                    <Icon size={14} strokeWidth={isActive ? 2.5 : 2} className="shrink-0" />
+                    <span className={`text-xs font-bold uppercase tracking-tight whitespace-nowrap overflow-hidden transition-all duration-200
+                      ${isActive ? 'opacity-100 max-w-20 ml-1.5' : 'opacity-0 max-w-0'}`}>
+                      {tab.label}
+                    </span>
 
-                {/* Active Indicator (Small dot instead of bar for compact look) */}
-                {isActive && (
-                  <div className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-primary rounded-full animate-in fade-in zoom-in-50 duration-300" />
+                    {isActive && (
+                      <div className="absolute bottom-0 left-1.5 right-1.5 h-0.5 bg-primary rounded-full animate-in fade-in zoom-in-50 duration-300" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                {!isActive && (
+                  <TooltipContent side="bottom">{tab.label}</TooltipContent>
                 )}
-              </button>
+              </Tooltip>
             );
           })}
         </div>
