@@ -19,9 +19,22 @@ import { registerTitleHandlers } from './handlers/title.handler';
 import { registerModelsHandlers } from './handlers/models.handler';
 import { registerContentHandlers } from './handlers/content.handler';
 import { migrateOldConversations } from '../utils/conversationDB';
+import { initOmniboxHandler } from './handlers/omnibox.handler';
 
 // Initialize MCP servers on startup
 restoreMCPServers();
+
+// Track the active tab ID so the omnibox handler can call chrome.sidePanel.open()
+// synchronously (without an async tabs.query() first, which would break the user
+// gesture context that sidePanel.open() requires).
+let lastActiveTabId: number | undefined;
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  lastActiveTabId = tabId;
+});
+
+// Initialize omnibox quick search (keyword: "bk")
+initOmniboxHandler(() => lastActiveTabId);
 
 // Modify User-Agent only for LLM API requests made by this extension.
 // IMPORTANT: Do NOT use urlFilter:'*' here — that would rewrite the UA on

@@ -30,6 +30,7 @@ export {
 } from './compact/index.ts';
 
 // Other hooks
+export { useOmnibox } from './useOmnibox.ts';
 export { useMemory } from './useMemory.ts';
 export { useMCP } from './useMCP.ts';
 export { useProvider } from './useProvider.ts';

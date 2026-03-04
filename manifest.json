@@ -38,6 +38,9 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "omnibox": {
+    "keyword": "bk"
+  },
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",

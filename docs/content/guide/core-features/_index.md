@@ -23,6 +23,7 @@ BraceKit is more than a chat widget — it's a fully-featured AI workspace embed
 | **[Text Selection](/guide/core-features/text-selection/)** | Ask questions about highlighted text |
 | **[Branching](/guide/core-features/branching/)** | Fork conversations to explore alternatives |
 | **[File Attachments](/guide/core-features/attachments/)** | Add images and files to your messages |
+| **[Omnibox Quick Search](/guide/core-features/omnibox-quick-search/)** | Ask AI or find conversations from the address bar |
 
 ## Quick Tips
 
