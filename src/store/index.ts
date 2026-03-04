@@ -46,6 +46,7 @@ interface StorageData {
   enableGoogleSearchTool?: boolean;
   googleSearchApiKey?: string;
   enableStreaming?: boolean;
+  enableBookmarkSearch?: boolean;
   security?: SecuritySettings;
   compactConfig?: CompactConfig;
   theme?: 'light' | 'dark';
@@ -112,6 +113,9 @@ export const useStore = create<AppState>((set, get) => ({
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: false,
   googleSearchApiKey: '',
+
+  // Smart Bookmark Search Tool
+  enableBookmarkSearch: false,
 
   // Streaming options (default: true for backward compatibility)
   enableStreaming: true,
@@ -558,6 +562,10 @@ export const useStore = create<AppState>((set, get) => ({
     set({ googleSearchApiKey });
     get().saveToStorage();
   },
+  setEnableBookmarkSearch: (enableBookmarkSearch) => {
+    set({ enableBookmarkSearch });
+    get().saveToStorage();
+  },
   setEnableStreaming: (enableStreaming) => {
     set({ enableStreaming });
     get().saveToStorage();
@@ -727,6 +735,7 @@ export const useStore = create<AppState>((set, get) => ({
         'enableGoogleSearchTool',
         'googleSearchApiKey',
         'enableStreaming',
+        'enableBookmarkSearch',
         'security',
         'compactConfig',
         'theme',
@@ -850,6 +859,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.enableStreaming !== undefined) {
         updates.enableStreaming = data.enableStreaming;
+      }
+      if (data.enableBookmarkSearch !== undefined) {
+        updates.enableBookmarkSearch = data.enableBookmarkSearch;
       }
       if (data.security) {
         updates.security = data.security;
@@ -1004,6 +1016,7 @@ export const useStore = create<AppState>((set, get) => ({
         enableGoogleSearchTool: state.enableGoogleSearchTool,
         googleSearchApiKey: encryptedGoogleSearchApiKey,
         enableStreaming: state.enableStreaming,
+        enableBookmarkSearch: state.enableBookmarkSearch,
         // Jika aktif kosong, simpan null agar saat reload tidak coba load conversation ini
         activeConversationId: activeIsEmpty ? null : state.activeConversationId,
         memories: state.memories,

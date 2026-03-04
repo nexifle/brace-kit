@@ -39,6 +39,21 @@ export const BUILTIN_TOOLS = {
       required: ['reason'],
     },
   },
+  SEARCH_BOOKMARKS: {
+    name: 'search_bookmarks',
+    description:
+      "Search through the user's Chrome bookmarks to find previously saved websites. Use this when the user asks about websites they've visited or bookmarked, wants to find a URL they've saved, or asks about content from their bookmarks.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Keywords or topic to search for in the bookmarks (title and URL)',
+        },
+      },
+      required: ['query'],
+    },
+  },
 } as const;
 
 /**
@@ -50,6 +65,7 @@ export interface GetAllToolsOptions {
   googleSearchApiKey: string | null;
   supportsFunctionCalling: boolean;
   isGemini: boolean;
+  enableBookmarkSearch?: boolean;
 }
 
 /**
@@ -70,6 +86,11 @@ export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
     tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
   }
 
+  // Inject search_bookmarks tool for function-capable models when enabled
+  if (options.supportsFunctionCalling && options.enableBookmarkSearch) {
+    tools.push(BUILTIN_TOOLS.SEARCH_BOOKMARKS as MCPTool);
+  }
+
   return tools;
 }
 
@@ -81,6 +102,7 @@ export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
 export function getBuiltinTools(options: {
   includeGoogleSearch: boolean;
   includeContinueMessage: boolean;
+  includeSearchBookmarks?: boolean;
 }): MCPTool[] {
   const tools: MCPTool[] = [];
 
@@ -89,6 +111,9 @@ export function getBuiltinTools(options: {
   }
   if (options.includeContinueMessage) {
     tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
+  }
+  if (options.includeSearchBookmarks) {
+    tools.push(BUILTIN_TOOLS.SEARCH_BOOKMARKS as MCPTool);
   }
 
   return tools;
@@ -100,5 +125,5 @@ export function getBuiltinTools(options: {
  * @returns True if the tool is a built-in tool
  */
 export function isBuiltinTool(name: string): boolean {
-  return name === 'google_search' || name === 'continue_message';
+  return Object.values(BUILTIN_TOOLS).some((t) => t.name === name);
 }

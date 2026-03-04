@@ -86,7 +86,8 @@ describe('Tool Registry', () => {
       const names = getBuiltinToolNames();
       expect(names).toContain('google_search');
       expect(names).toContain('continue_message');
-      expect(names).toHaveLength(2);
+      expect(names).toContain('search_bookmarks');
+      expect(names).toHaveLength(3);
     });
   });
 

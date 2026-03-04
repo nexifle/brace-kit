@@ -6,8 +6,10 @@
 import type { MCPTool } from '../../types';
 import { GOOGLE_SEARCH_TOOL } from './definitions/google-search.tool';
 import { CONTINUE_MESSAGE_TOOL } from './definitions/continue-message.tool';
+import { SEARCH_BOOKMARKS_TOOL } from './definitions/search-bookmarks.tool';
 import { handleGoogleSearch } from './handlers/google-search.handler';
 import { handleContinueMessage } from './handlers/continue-message.handler';
+import { handleSearchBookmarks } from './handlers/search-bookmarks.handler';
 
 export interface ToolExecutionContext {
   googleSearchApiKey?: string;
@@ -26,17 +28,20 @@ export type ToolHandler = (
 const TOOL_DEFINITIONS: Record<string, MCPTool> = {
   google_search: GOOGLE_SEARCH_TOOL,
   continue_message: CONTINUE_MESSAGE_TOOL,
+  search_bookmarks: SEARCH_BOOKMARKS_TOOL,
 };
 
 // Tool handlers map
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   google_search: handleGoogleSearch as ToolHandler,
   continue_message: handleContinueMessage as ToolHandler,
+  search_bookmarks: handleSearchBookmarks as ToolHandler,
 };
 
 export interface ToolDefinitionOptions {
   includeGoogleSearch?: boolean;
   includeContinueMessage?: boolean;
+  includeSearchBookmarks?: boolean;
 }
 
 /**
@@ -52,6 +57,9 @@ export function getToolDefinitions(options: ToolDefinitionOptions = {}): MCPTool
   }
   if (options.includeContinueMessage) {
     tools.push(CONTINUE_MESSAGE_TOOL);
+  }
+  if (options.includeSearchBookmarks) {
+    tools.push(SEARCH_BOOKMARKS_TOOL);
   }
 
   return tools;
@@ -104,4 +112,4 @@ export function getToolDefinition(name: string): MCPTool | undefined {
 }
 
 // Re-export tool definitions for direct access
-export { GOOGLE_SEARCH_TOOL, CONTINUE_MESSAGE_TOOL };
+export { GOOGLE_SEARCH_TOOL, CONTINUE_MESSAGE_TOOL, SEARCH_BOOKMARKS_TOOL };

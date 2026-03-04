@@ -370,6 +370,9 @@ export interface AppState {
   enableGoogleSearchTool: boolean;
   googleSearchApiKey: string;
 
+  // Smart Bookmark Search Tool
+  enableBookmarkSearch: boolean;
+
   // Streaming options
   enableStreaming: boolean;
 
@@ -458,6 +461,7 @@ export interface AppState {
   setEnableReasoning: (enabled: boolean) => void;
   setEnableGoogleSearchTool: (enabled: boolean) => void;
   setGoogleSearchApiKey: (key: string) => void;
+  setEnableBookmarkSearch: (enabled: boolean) => void;
   setEnableStreaming: (enabled: boolean) => void;
 
   addAttachment: (attachment: FileAttachment) => void;
@@ -547,6 +551,21 @@ The title MUST:
 4. NOT include any punctuation or quotes.
 
 Output ONLY the title string.`;
+
+// ==================== Smart Bookmark Types ====================
+
+export interface SmartBookmark {
+  id: string;
+  title: string;
+  url: string;
+  dateAdded?: number;
+  folderPath?: string; // e.g. "Programming > React"
+}
+
+export interface BookmarkSearchResult {
+  bookmark: SmartBookmark;
+  relevance: string; // AI explanation of why this is relevant
+}
 
 // ==================== Token Usage Types ====================
 

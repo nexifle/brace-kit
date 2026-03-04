@@ -9,7 +9,8 @@
     "storage",
     "scripting",
     "contextMenus",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "bookmarks"
   ],
   "host_permissions": [
     "https://*/*",

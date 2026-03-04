@@ -7,6 +7,7 @@ import { MemorySettings } from './settings/MemorySettings.tsx';
 import { MCPServersSettings } from './settings/MCPServersSettings.tsx';
 import { SecuritySettings } from './settings/SecuritySettings.tsx';
 import { DataSettings } from './settings/DataSettings.tsx';
+import { BookmarksSettings } from './settings/BookmarksSettings.tsx';
 import { IconButton } from './ui/IconButton.tsx';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 import {
@@ -17,10 +18,11 @@ import {
   ChevronLeftIcon,
   ServerIcon,
   HardDriveIcon,
-  MinimizeIcon
+  MinimizeIcon,
+  BookmarkIcon,
 } from 'lucide-react';
 
-type SettingsTab = 'ai' | 'chat' | 'compact' | 'context' | 'mcp' | 'security' | 'data';
+type SettingsTab = 'ai' | 'chat' | 'compact' | 'context' | 'mcp' | 'bookmarks' | 'security' | 'data';
 export function SettingsPanel() {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
@@ -31,6 +33,7 @@ export function SettingsPanel() {
     { id: 'compact' as const, label: 'Compact', icon: MinimizeIcon },
     { id: 'context' as const, label: 'Memory', icon: BrainIcon },
     { id: 'mcp' as const, label: 'MCP', icon: ServerIcon },
+    { id: 'bookmarks' as const, label: 'Bookmarks', icon: BookmarkIcon },
     { id: 'data' as const, label: 'Data', icon: HardDriveIcon },
     { id: 'security' as const, label: 'Safety', icon: ShieldCheckIcon },
   ];
@@ -97,6 +100,8 @@ export function SettingsPanel() {
           {activeTab === 'context' && <MemorySettings />}
 
           {activeTab === 'mcp' && <MCPServersSettings />}
+
+          {activeTab === 'bookmarks' && <BookmarksSettings />}
 
           {activeTab === 'data' && <DataSettings />}
 

@@ -18,6 +18,7 @@ import { registerMemoryHandlers } from './handlers/memory.handler';
 import { registerTitleHandlers } from './handlers/title.handler';
 import { registerModelsHandlers } from './handlers/models.handler';
 import { registerContentHandlers } from './handlers/content.handler';
+import { registerBookmarksHandlers } from './handlers/bookmarks.handler';
 import { migrateOldConversations } from '../utils/conversationDB';
 import { initOmniboxHandler } from './handlers/omnibox.handler';
 
@@ -172,3 +173,4 @@ registerMemoryHandlers(chrome.runtime.onMessage);
 registerTitleHandlers(chrome.runtime.onMessage);
 registerModelsHandlers(chrome.runtime.onMessage);
 registerContentHandlers(chrome.runtime.onMessage);
+registerBookmarksHandlers(chrome.runtime.onMessage);

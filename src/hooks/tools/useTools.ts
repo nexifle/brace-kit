@@ -24,6 +24,7 @@ export interface GetAllToolsOptions {
   model?: string;
   enableGoogleSearchTool?: boolean;
   googleSearchApiKey?: string;
+  enableBookmarkSearch?: boolean;
 }
 
 /**
@@ -147,6 +148,8 @@ export function useTools() {
         options?.enableGoogleSearchTool ?? state.enableGoogleSearchTool;
       const googleSearchApiKey =
         options?.googleSearchApiKey ?? state.googleSearchApiKey;
+      const enableBookmarkSearch =
+        options?.enableBookmarkSearch ?? state.enableBookmarkSearch;
 
       // Fetch MCP tools
       const mcpTools = await fetchMCPTools();
@@ -161,6 +164,7 @@ export function useTools() {
         googleSearchApiKey,
         supportsFunctionCalling: canUseFunctionCalling,
         isGemini,
+        enableBookmarkSearch,
       });
     },
     [fetchMCPTools, supportsFunctionCalling]
