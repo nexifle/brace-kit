@@ -1,0 +1,11 @@
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish worker from subdirectory
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          # Specify the subdirectory containing your wrangler.toml file and source code
+          workingDirectory: 'docs'
