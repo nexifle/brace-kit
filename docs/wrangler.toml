@@ -2,7 +2,7 @@ name = "brace-kit"
 compatibility_date = "2026-01-22"
 
 [build]
-command = "./build.sh"
+command = "./docs/build.sh"
 
 [assets]
-directory = "./public"
+directory = "./docs/public"
