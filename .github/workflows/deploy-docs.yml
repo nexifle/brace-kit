@@ -1,11 +1,17 @@
+name: Docs Deploy Worker
+on:
+  push:
+    branches:
+      - main
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - name: Publish worker from subdirectory
+      - name: Build & Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
-          # Specify the subdirectory containing your wrangler.toml file and source code
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
           workingDirectory: 'docs'
