@@ -42,12 +42,21 @@ export function useTools() {
       const state = useStore.getState();
       const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
       if (mcpRes?.tools) {
-        const enabledServerIds = new Set(
-          state.mcpServers.filter((s) => s.enabled !== false).map((s) => s.id)
-        );
-        return mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) =>
-          enabledServerIds.has(tool._serverId || '')
-        );
+        const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
+        const enabledServerIds = new Set(enabledServers.map((s) => s.id));
+
+        const disabledToolsMap = new Map<string, Set<string>>();
+        for (const server of enabledServers) {
+          if (server.disabledTools?.length) {
+            disabledToolsMap.set(server.id, new Set(server.disabledTools));
+          }
+        }
+
+        return mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) => {
+          const serverId = tool._serverId || '';
+          if (!enabledServerIds.has(serverId)) return false;
+          return !disabledToolsMap.get(serverId)?.has(tool.name);
+        });
       }
     } catch (error) {
       console.warn('[useTools] Failed to fetch MCP tools:', error);

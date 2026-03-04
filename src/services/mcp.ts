@@ -352,6 +352,21 @@ export class MCPClient {
     return this.connected;
   }
 
+  /**
+   * Verify the server is still alive by re-listing tools.
+   * Returns false if the connection has dropped; also marks connected = false.
+   */
+  async ping(): Promise<boolean> {
+    if (!this.connected) return false;
+    try {
+      await this.sendRequest<ToolsListResult>('tools/list');
+      return true;
+    } catch {
+      this.connected = false;
+      return false;
+    }
+  }
+
   getTransport(): 'streamable' | 'sse' | null {
     return this.transport;
   }
@@ -406,12 +421,12 @@ export class MCPManager {
     return tools;
   }
 
-  async callTool(name: string): Promise<{ client: MCPClient; tool: MCPTool } | null> {
+  async callTool(name: string): Promise<{ client: MCPClient; tool: MCPTool; serverName: string; serverId: string } | null> {
     // Find which server has this tool
-    for (const [, entry] of this.clients) {
+    for (const [serverId, entry] of this.clients) {
       const tool = entry.tools.find((t) => t.name === name);
       if (tool) {
-        return { client: entry.client, tool };
+        return { client: entry.client, tool, serverName: entry.config.name, serverId };
       }
     }
     return null;
@@ -426,5 +441,16 @@ export class MCPManager {
 
   getClientCount(): number {
     return this.clients.size;
+  }
+
+  async getConnectedServerIds(): Promise<string[]> {
+    const alive: string[] = [];
+    for (const [id, entry] of this.clients) {
+      const ok = await entry.client.ping();
+      if (ok) {
+        alive.push(id);
+      }
+    }
+    return alive;
   }
 }

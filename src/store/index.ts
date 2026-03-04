@@ -93,6 +93,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   // MCP
   mcpServers: [],
+  isMCPReconnecting: false,
 
   // Conversations
   conversations: [],
@@ -248,6 +249,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   setFetchingModels: (fetchingModels) => set({ fetchingModels }),
 
+  setMCPReconnecting: (isMCPReconnecting) => set({ isMCPReconnecting }),
+
   addMCPServer: (server) =>
     set((state) => ({
       mcpServers: [...state.mcpServers, server],
@@ -270,6 +273,20 @@ export const useStore = create<AppState>((set, get) => ({
       mcpServers: state.mcpServers.map((s) =>
         s.id === id ? { ...s, enabled } : s
       ),
+    })),
+
+  toggleMCPTool: (serverId, toolName, enabled) =>
+    set((state) => ({
+      mcpServers: state.mcpServers.map((s) => {
+        if (s.id !== serverId) return s;
+        const disabledTools = s.disabledTools || [];
+        return {
+          ...s,
+          disabledTools: enabled
+            ? disabledTools.filter((t) => t !== toolName)
+            : disabledTools.includes(toolName) ? disabledTools : [...disabledTools, toolName],
+        };
+      }),
     })),
 
   createConversation: (opts?: { title?: string; branchedFromId?: string; parentConvId?: string }) => {

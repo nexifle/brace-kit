@@ -1,9 +1,9 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { renderMarkdown } from '../../utils/markdown';
 import { useStore } from '../../store';
-import { useMermaidHydration, useImageGenerationCheck, useMarkdownInteractions, useQuoteSelection } from '../../hooks';
+import { useMermaidHydration, useImageGenerationCheck, useMarkdownInteractions, useQuoteSelection, useMCP } from '../../hooks';
 import { TextFileViewer } from '../TextFileViewer';
-import { QuoteIcon } from 'lucide-react';
+import { QuoteIcon, RefreshCwIcon } from 'lucide-react';
 
 // Import decomposed components
 import { ReasoningSection } from './sections/ReasoningSection';
@@ -28,11 +28,89 @@ import type {
   EditedMessageData,
   TextFileViewerState,
 } from './MessageBubble.types';
+import { MCP_DISCONNECT_PREFIX } from '../../types/index.ts';
 
 // Import utilities
 import { copyImageToClipboard } from './utils/imageProcessing';
 
 const FAVORITES_STORAGE_KEY = 'gallery_favorites';
+
+function MCPDisconnectPrompt({
+  serverName,
+  onRegenerate,
+}: {
+  serverName: string;
+  onRegenerate?: (index: number) => void;
+}) {
+  const { syncAndReconnect } = useMCP();
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
+  const handleReconnectRetry = useCallback(async () => {
+    // Capture the last user message index synchronously BEFORE any async work.
+    // This prevents race conditions if the user types a new message during reconnection.
+    const messages = useStore.getState().messages;
+    let lastUserMsgIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMsgIndex = i;
+        break;
+      }
+    }
+
+    setIsReconnecting(true);
+    try {
+      await syncAndReconnect();
+    } finally {
+      setIsReconnecting(false);
+    }
+
+    if (lastUserMsgIndex !== -1 && onRegenerate) {
+      onRegenerate(lastUserMsgIndex);
+    }
+  }, [syncAndReconnect, onRegenerate]);
+
+  const handleContinue = useCallback(() => {
+    // Replace the sentinel error with a plain informational message
+    const messages = useStore.getState().messages;
+    const sentinel = `${MCP_DISCONNECT_PREFIX}${serverName}`;
+    const idx = messages.findIndex(m => m.role === 'error' && m.content === sentinel);
+    if (idx !== -1) {
+      const updated = [...messages];
+      updated[idx] = {
+        ...updated[idx],
+        content: `MCP server "${serverName}" disconnected. Continuing without MCP tools.`,
+      };
+      useStore.getState().setMessages(updated);
+    }
+  }, [serverName]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm m-0">
+        MCP server <strong>&quot;{serverName}&quot;</strong> disconnected during a tool call.
+        The request has been stopped.
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={handleReconnectRetry}
+          disabled={isReconnecting}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60 transition-colors"
+        >
+          <RefreshCwIcon size={11} className={isReconnecting ? 'animate-spin' : ''} />
+          {isReconnecting ? 'Reconnecting…' : 'Reconnect & Retry'}
+        </button>
+        <button
+          type="button"
+          onClick={handleContinue}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md bg-muted/50 hover:bg-muted/80 text-current opacity-70 hover:opacity-100 transition-colors"
+        >
+          Continue without MCP
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function MessageBubble({
   message,
@@ -307,6 +385,16 @@ export function MessageBubble({
       // Note: renderMarkdown sanitizes content internally
       return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender, isStreaming) }} />;
     }
+    // MCP disconnect recovery prompt
+    if (message.role === 'error' && message.content.startsWith(MCP_DISCONNECT_PREFIX)) {
+      const serverName = message.content.slice(MCP_DISCONNECT_PREFIX.length);
+      return (
+        <MCPDisconnectPrompt
+          serverName={serverName}
+          onRegenerate={onRegenerate}
+        />
+      );
+    }
     return <>{message.displayContent || message.content}</>;
   }, [
     isEditing,
@@ -322,6 +410,8 @@ export function MessageBubble({
     message.attachments,
     handleEditSubmit,
     handleEditCancel,
+    messageIndex,
+    onRegenerate,
   ]);
 
   // Get lightbox fav data

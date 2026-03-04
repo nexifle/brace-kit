@@ -6,6 +6,7 @@
 import { MCPManager } from '../../services/mcp';
 import { isBuiltinTool, executeTool, type ToolExecutionContext } from '../tools/index';
 import { decryptApiKey } from '../../utils/keyEncryption.ts';
+import { MCP_DISCONNECT_PREFIX } from '../../types/index.ts';
 
 type SendResponse = (response?: unknown) => void;
 
@@ -75,6 +76,19 @@ export function handleMCPDisconnect(
 }
 
 /**
+ * Handle MCP get status — pings each connected server to verify liveness
+ * @param sendResponse - Response callback
+ */
+export async function handleMCPGetStatus(sendResponse: SendResponse): Promise<void> {
+  try {
+    const connectedIds = await mcpManager.getConnectedServerIds();
+    sendResponse({ connectedIds });
+  } catch (e) {
+    sendResponse({ connectedIds: [], error: (e as Error).message });
+  }
+}
+
+/**
  * Handle MCP list tools
  * @param sendResponse - Response callback
  */
@@ -118,6 +132,23 @@ export async function handleMCPToolCall(
       sendResponse({ error: `Tool "${name}" not found` } as ToolCallResponse);
       return;
     }
+
+    // Enforce per-tool disable: check against persisted disabledTools in storage
+    const { mcpServers } = await chrome.storage.local.get('mcpServers');
+    const ownerServer = (mcpServers as { id: string; disabledTools?: string[] }[] | undefined)
+      ?.find((s) => s.id === found.serverId);
+    if (ownerServer?.disabledTools?.includes(name)) {
+      sendResponse({ error: `Tool "${name}" is disabled` } as ToolCallResponse);
+      return;
+    }
+
+    // Verify the server is still alive before executing the tool call
+    const alive = await found.client.ping();
+    if (!alive) {
+      sendResponse({ error: `${MCP_DISCONNECT_PREFIX}${found.serverName}` } as ToolCallResponse);
+      return;
+    }
+
     const result = await found.client.callTool(name, args);
     sendResponse(result as ToolCallResponse);
   } catch (e) {
@@ -146,6 +177,7 @@ export async function restoreMCPServers(): Promise<void> {
 type ChromeMessage =
   | MCPConnectMessage
   | MCPDisconnectMessage
+  | { type: 'MCP_GET_STATUS' }
   | { type: 'MCP_LIST_TOOLS' }
   | MCPToolCallMessage;
 
@@ -165,6 +197,9 @@ export function registerMCPHandlers(
         case 'MCP_DISCONNECT':
           handleMCPDisconnect(message as MCPDisconnectMessage, sendResponse);
           return false;
+        case 'MCP_GET_STATUS':
+          handleMCPGetStatus(sendResponse);
+          return true;
         case 'MCP_LIST_TOOLS':
           handleMCPListTools(sendResponse);
           return false;

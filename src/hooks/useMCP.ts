@@ -1,9 +1,98 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { MCPServer } from '../types/index.ts';
 
+// Module-level singleton: prevents duplicate sync when multiple components mount useMCP
+let syncPromise: Promise<void> | null = null;
+
 export function useMCP() {
   const store = useStore();
+  const hasSyncedRef = useRef(false);
+
+  /**
+   * Sync MCP connection status with the background service worker.
+   * Runs once when the sidebar opens to detect stale `connected: true` state
+   * caused by service worker restarts, then reconnects those servers.
+   */
+  const syncAndReconnect = useCallback(async () => {
+    const state = useStore.getState();
+
+    // Only care about servers the user has enabled
+    const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
+    if (enabledServers.length === 0) return;
+
+    // Ask the background what's actually connected right now
+    let connectedIds: string[] = [];
+    try {
+      const status = await chrome.runtime.sendMessage({ type: 'MCP_GET_STATUS' });
+      connectedIds = status?.connectedIds || [];
+    } catch {
+      // Background not responding — likely a fresh service worker restart
+    }
+
+    const actuallyConnectedSet = new Set(connectedIds);
+
+    // Find any enabled server not currently connected in the background.
+    // This covers both:
+    // - Servers that were connected before but lost due to service worker restart
+    // - Servers stored as connected: false (failed previously) when user clicks Retry
+    const serversToReconnect = enabledServers.filter((s) => !actuallyConnectedSet.has(s.id));
+
+    if (serversToReconnect.length === 0) {
+      // All enabled servers are connected — make sure the store reflects that
+      for (const server of enabledServers) {
+        if (!server.connected) {
+          useStore.getState().updateMCPServer(server.id, { connected: true });
+        }
+      }
+      return;
+    }
+
+    // Mark servers-to-reconnect as disconnected so the UI shows the right state
+    for (const server of serversToReconnect) {
+      useStore.getState().updateMCPServer(server.id, { connected: false });
+    }
+
+    // Reconnect all stale/failed servers in parallel
+    useStore.getState().setMCPReconnecting(true);
+    try {
+      await Promise.all(
+        serversToReconnect.map(async (server) => {
+          try {
+            const result = await chrome.runtime.sendMessage({
+              type: 'MCP_CONNECT',
+              config: server,
+            });
+            useStore.getState().updateMCPServer(server.id, {
+              connected: !!result?.success,
+              toolCount: result?.success ? (result.tools?.length || 0) : 0,
+            });
+          } catch {
+            // Server stays disconnected
+          }
+        })
+      );
+    } finally {
+      useStore.getState().setMCPReconnecting(false);
+      useStore.getState().saveToStorage();
+    }
+  }, []);
+
+  // Run once per sidebar session using a module-level promise to deduplicate
+  // across multiple components that may mount useMCP (e.g. InputArea + MCPServersSettings)
+  useEffect(() => {
+    if (hasSyncedRef.current) return;
+    hasSyncedRef.current = true;
+
+    if (!syncPromise) {
+      syncPromise = syncAndReconnect().then(
+        // Allow re-sync after 60s in case the user keeps the sidebar open
+        () => { setTimeout(() => { syncPromise = null; }, 60_000); },
+        // Reset immediately on failure so the next mount (or Retry) can try again
+        () => { syncPromise = null; }
+      );
+    }
+  }, [syncAndReconnect]);
 
   const addMCPServer = useCallback(async (
     name: string,
@@ -102,6 +191,11 @@ export function useMCP() {
     store.saveToStorage();
   }, [store]);
 
+  const toggleMCPTool = useCallback((serverId: string, toolName: string, enabled: boolean) => {
+    store.toggleMCPTool(serverId, toolName, enabled);
+    store.saveToStorage();
+  }, [store]);
+
   const listTools = useCallback(async () => {
     try {
       const result = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
@@ -129,8 +223,10 @@ export function useMCP() {
     addMCPServer,
     removeMCPServer,
     toggleMCPServer,
+    toggleMCPTool,
     updateMCPServer,
     listTools,
     callTool,
+    syncAndReconnect,
   };
 }

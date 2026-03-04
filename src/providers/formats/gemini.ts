@@ -235,7 +235,7 @@ export function formatGemini(
  * - Thinking/reasoning content
  * - Tool calls
  * - Image generation (inline data)
- * - Image generation errors (IMAGE_SAFETY, IMAGE_OTHER)
+ * - Image generation errors (IMAGE_SAFETY, IMAGE_OTHER, PROHIBITED_CONTENT, etc.)
  * - Grounding metadata
  * - Abort signal for cancellation
  *
@@ -291,7 +291,14 @@ export async function* parseGeminiStream(
             }
 
             const parts = candidate.content?.parts;
-            if (!parts) continue;
+            if (!parts) {
+              // If there's no content but there is a finishMessage (e.g. PROHIBITED_CONTENT,
+              // SAFETY, or any other blocking reason), surface it as an error.
+              if (candidate.finishMessage) {
+                yield { type: 'error', content: candidate.finishMessage };
+              }
+              continue;
+            }
 
             for (const part of parts) {
               // Thinking/reasoning content from Gemini thinking models

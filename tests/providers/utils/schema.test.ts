@@ -146,6 +146,34 @@ describe('Schema Utilities', () => {
       expect(converted.additionalProperties).toBeUndefined();
     });
 
+    it('should remove const field', () => {
+      const schema = {
+        type: 'string',
+        const: 'fixed_value',
+      };
+
+      const converted = convertToGeminiSchema(schema);
+
+      expect(converted.const).toBeUndefined();
+      expect(converted.type).toBe('string');
+    });
+
+    it('should remove const field in nested properties', () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          version: { type: 'string', const: 'v1' },
+          name: { type: 'string' },
+        },
+      };
+
+      const converted = convertToGeminiSchema(schema);
+      const versionProp = (converted.properties as Record<string, unknown>).version as Record<string, unknown>;
+
+      expect(versionProp.const).toBeUndefined();
+      expect(versionProp.type).toBe('string');
+    });
+
     it('should add default type for object with properties', () => {
       const schema = {
         properties: { name: { type: 'string' } },

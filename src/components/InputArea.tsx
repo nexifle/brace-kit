@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat, useFileAttachments, usePageContext, useProvider } from '../hooks';
+import { useChat, useFileAttachments, usePageContext, useProvider, useMCP } from '../hooks';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 
 const SLASH_COMMANDS = [
@@ -30,6 +30,7 @@ export function InputArea() {
   const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText, pageContext: hasPageContext } = usePageContext();
   const { providerInfo } = useProvider();
+  const { syncAndReconnect } = useMCP();
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
@@ -112,6 +113,13 @@ export function InputArea() {
   const isRenaming = useStore((state) => state.isRenaming);
   const isProcessingCommand = isCompacting || isRenaming;
   const processingCommandLabel = isCompacting ? 'Compacting…' : isRenaming ? 'Renaming…' : '';
+
+  // MCP connection status
+  const isMCPReconnecting = useStore((state) => state.isMCPReconnecting);
+  const mcpServers = useStore((state) => state.mcpServers);
+  const hasMCPDisconnected = !isMCPReconnecting && mcpServers.some(
+    (s) => s.enabled !== false && !s.connected
+  );
 
   const updateCursorPos = useCallback(() => {
     if (textareaRef.current) {
@@ -208,10 +216,33 @@ export function InputArea() {
       {/* Slash Command Processing Indicator */}
       {isProcessingCommand && (
         <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-primary/10 border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200">
-          <svg className="animate-spin shrink-0 text-primary" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-          </svg>
+          <Loader2Icon size={12} className="animate-spin shrink-0 text-primary" />
           <span className="text-2xs font-semibold text-primary tracking-wide">{processingCommandLabel}</span>
+        </div>
+      )}
+
+      {/* MCP Reconnecting Indicator */}
+      {isMCPReconnecting && (
+        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-warning/10 border border-warning/20 animate-in fade-in slide-in-from-top-1 duration-200">
+          <RefreshCwIcon size={12} className="animate-spin shrink-0 text-warning" />
+          <span className="text-2xs font-semibold text-warning tracking-wide">Reconnecting MCP servers…</span>
+        </div>
+      )}
+
+      {/* MCP Disconnected Indicator */}
+      {hasMCPDisconnected && (
+        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 animate-in fade-in slide-in-from-top-1 duration-200">
+          <AlertCircleIcon size={12} className="shrink-0 text-destructive" />
+          <span className="text-2xs font-semibold text-destructive tracking-wide flex-1">
+            MCP tools unavailable — message will be sent without them
+          </span>
+          <button
+            type="button"
+            className="text-2xs font-bold text-destructive underline underline-offset-2 opacity-80 hover:opacity-100 shrink-0"
+            onClick={() => syncAndReconnect()}
+          >
+            Retry
+          </button>
         </div>
       )}
 

@@ -82,6 +82,7 @@ export function convertToGeminiSchema(schema: unknown): Record<string, unknown> 
   delete converted.examples;
   delete converted.format;
   delete converted.additionalProperties;
+  delete converted.const; // Gemini does not support JSON Schema "const"
 
   // Remove empty properties object
   if (converted.properties && Object.keys(converted.properties as Record<string, unknown>).length === 0) {

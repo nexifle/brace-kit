@@ -1,3 +1,12 @@
+// ==================== MCP Constants ====================
+
+/**
+ * Sentinel prefix for MCP server disconnect errors.
+ * Used to distinguish "server disconnected" from "tool execution error".
+ * Format: `MCP_DISCONNECT:<serverName>`
+ */
+export const MCP_DISCONNECT_PREFIX = 'MCP_DISCONNECT:';
+
 // ==================== Message Types ====================
 
 export interface ToolCall {
@@ -215,6 +224,7 @@ export interface MCPServer {
   connected?: boolean;
   enabled?: boolean;
   toolCount?: number;
+  disabledTools?: string[];
 }
 
 export interface MCPTool {
@@ -340,6 +350,7 @@ export interface AppState {
 
   // MCP
   mcpServers: MCPServer[];
+  isMCPReconnecting: boolean;
 
   // Conversations
   conversations: Conversation[];
@@ -420,10 +431,13 @@ export interface AppState {
   setFetchedModels: (providerId: string, models: FetchedModelsCache) => void;
   setFetchingModels: (fetching: boolean) => void;
 
+  setMCPReconnecting: (reconnecting: boolean) => void;
+
   addMCPServer: (server: MCPServer) => void;
   removeMCPServer: (id: string) => void;
   updateMCPServer: (id: string, updates: Partial<MCPServer>) => void;
   toggleMCPServer: (id: string, enabled: boolean) => void;
+  toggleMCPTool: (serverId: string, toolName: string, enabled: boolean) => void;
 
   createConversation: (opts?: { title?: string; branchedFromId?: string; parentConvId?: string }) => Conversation;
   switchConversation: (id: string) => Promise<void>;

@@ -7,7 +7,9 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
+import { useToast } from '../components/ui/toast/useToast.ts';
 import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message } from '../types/index.ts';
+import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
 import { GEMINI_NO_TOOLS_MODELS, XAI_IMAGE_MODELS } from '../providers/presets.ts';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import { useMemory } from './useMemory.ts';
@@ -28,6 +30,7 @@ export function useStreaming() {
   const { getAllTools, supportsFunctionCalling, getChatOptions } = useTools();
   const { checkAndAutoCompact } = useAutoCompact();
   const streamProcessor = useStreamProcessor();
+  const { warning } = useToast();
 
   // Track processed request IDs to prevent double processing
   const processedDoneRequestsRef = useRef<Set<string>>(new Set());
@@ -83,6 +86,54 @@ export function useStreaming() {
   const handleBackgroundStreamError = useCallback((convId: string) => {
     useStore.getState().setConversationStreaming(convId, null);
   }, []);
+
+  /**
+   * Handle MCP server disconnect detected during a tool call.
+   * Stops the current request, notifies the user, and initiates auto-reconnect.
+   */
+  const handleMCPDisconnect = useCallback((toolCallId: string, serverName: string) => {
+    // Update the calling tool bubble to show disconnect status
+    updateToolMessage(toolCallId, `Disconnected from MCP server "${serverName}"`);
+
+    // Mark server as disconnected in store so the InputArea banner appears
+    const state = useStore.getState();
+    const server = state.mcpServers.find(s => s.name === serverName);
+    if (server) {
+      state.updateMCPServer(server.id, { connected: false });
+    }
+
+    // Stop the current streaming request
+    const activeConvId = state.activeConversationId;
+    if (activeConvId) state.setConversationStreaming(activeConvId, null);
+    state.setIsStreaming(false);
+    state.setCurrentRequestId(null);
+    state.setStreamingContent('');
+    state.setStreamingReasoningContent('');
+    streamProcessor.reset();
+
+    // Toast warning
+    warning(`MCP server "${serverName}" disconnected`, 'Request stopped. Choose how to continue below.');
+
+    // Inject a recovery prompt into the chat
+    state.addMessage({
+      role: 'error',
+      content: `${MCP_DISCONNECT_PREFIX}${serverName}`,
+    });
+
+    // Auto-reconnect in the background (fire and forget)
+    if (server) {
+      chrome.runtime.sendMessage({ type: 'MCP_CONNECT', config: server })
+        .then((result) => {
+          if (result?.success) {
+            useStore.getState().updateMCPServer(server.id, {
+              connected: true,
+              toolCount: result.tools?.length || 0,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [warning, streamProcessor]);
 
   /**
    * Handle tool calls from stream
@@ -153,6 +204,14 @@ export function useStreaming() {
             name: tc.name,
             arguments: args,
           });
+
+          // Detect MCP server disconnect
+          if (typeof result?.error === 'string' && result.error.startsWith(MCP_DISCONNECT_PREFIX)) {
+            const serverName = result.error.slice(MCP_DISCONNECT_PREFIX.length);
+            handleMCPDisconnect(tc.id, serverName);
+            return; // Stop processing remaining tool calls
+          }
+
           resultText =
             result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
             JSON.stringify(result);
@@ -210,7 +269,7 @@ export function useStreaming() {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
     }
-  }, [store, buildAPIMessages, getAllTools, supportsFunctionCalling, getChatOptions, streamProcessor]);
+  }, [store, buildAPIMessages, getAllTools, supportsFunctionCalling, getChatOptions, streamProcessor, handleMCPDisconnect]);
 
   /**
    * Finish stream and create assistant message
@@ -220,7 +279,7 @@ export function useStreaming() {
       fullContent: string,
       toolCalls?: ToolCall[],
       _groundingMetadata?: GroundingMetadata,
-      _generatedImages?: GeneratedImage[],
+      generatedImages?: GeneratedImage[],
       reasoningContent?: string,
       reasoningSignature?: string
     ) => {
@@ -230,6 +289,9 @@ export function useStreaming() {
       // Use toolCalls from parameter (sent by background via CHAT_STREAM_DONE) as primary source,
       // fall back to result.toolCalls from streamProcessor for client-side processed chunks.
       const finalToolCalls = (toolCalls && toolCalls.length > 0) ? toolCalls : result.toolCalls;
+      // Images are sent via CHAT_STREAM_DONE (too large for individual chunks), so prefer the
+      // parameter value. Fall back to result.images for any client-side path that uses processChunk.
+      const finalImages = (generatedImages && generatedImages.length > 0) ? generatedImages : result.images;
       const assistantMsg: {
         role: 'assistant';
         content: string;
@@ -243,7 +305,7 @@ export function useStreaming() {
         content: result.content || '',
         ...(finalToolCalls && finalToolCalls.length > 0 && { toolCalls: finalToolCalls }),
         ...(result.groundingMetadata && { groundingMetadata: result.groundingMetadata }),
-        ...(result.images && { generatedImages: result.images }),
+        ...(finalImages && finalImages.length > 0 && { generatedImages: finalImages }),
         ...(result.reasoningContent && { reasoningContent: result.reasoningContent }),
         ...(reasoningSignature && { reasoningSignature }),
       };

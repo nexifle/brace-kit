@@ -3,26 +3,54 @@ import { useMCP } from '../../hooks/useMCP.ts';
 import { XIcon, ChevronDownIcon, TerminalIcon, PencilIcon, PlusIcon } from 'lucide-react';
 import type { MCPTool, MCPServer } from '../../types/index.ts';
 
-function ToolItem({ tool }: { tool: MCPTool }) {
+function ToolItem({
+  tool,
+  isEnabled,
+  onToggle,
+}: {
+  tool: MCPTool;
+  isEnabled: boolean;
+  onToggle: (toolName: string, enabled: boolean) => void;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const hasLongDescription = (tool.description?.length || 0) > 60;
 
   return (
     <div
-      className="flex flex-col gap-0.5 p-2 rounded bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer group/tool"
+      className={`flex flex-col gap-0.5 p-2 rounded border transition-colors ${
+        isEnabled
+          ? 'bg-muted/30 border-border/50 hover:bg-muted/50 cursor-pointer'
+          : 'bg-muted/10 border-border/20 opacity-50 cursor-pointer'
+      } group/tool`}
       onClick={() => setIsExpanded(!isExpanded)}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-1.5">
         <div className="flex items-center gap-1.5 min-w-0">
           <TerminalIcon size={10} className="text-primary/70 shrink-0" />
-          <span className="text-xs font-mono font-bold text-foreground truncate">{tool.name}</span>
+          <span className={`text-xs font-mono font-bold truncate ${isEnabled ? 'text-foreground' : 'text-muted-foreground line-through'}`}>
+            {tool.name}
+          </span>
         </div>
-        {hasLongDescription && (
-          <ChevronDownIcon
-            size={10}
-            className={`text-muted-foreground/40 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-          />
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {hasLongDescription && (
+            <ChevronDownIcon
+              size={10}
+              className={`text-muted-foreground/40 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            />
+          )}
+          <label
+            className="relative inline-flex items-center cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={isEnabled}
+              onChange={(e) => onToggle(tool.name, e.target.checked)}
+            />
+            <div className="w-6 h-3.5 bg-muted rounded-full peer peer-checked:bg-primary transition-all duration-200 after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:after:translate-x-2.5"></div>
+          </label>
+        </div>
       </div>
       {tool.description && (
         <p className={`text-xs text-muted-foreground/80 leading-snug pl-4 transition-all duration-200 ${isExpanded ? '' : 'line-clamp-2'}`}>
@@ -34,7 +62,7 @@ function ToolItem({ tool }: { tool: MCPTool }) {
 }
 
 export function MCPServersSettings() {
-  const { mcpServers, addMCPServer, removeMCPServer, toggleMCPServer, updateMCPServer } = useMCP();
+  const { mcpServers, addMCPServer, removeMCPServer, toggleMCPServer, toggleMCPTool, updateMCPServer } = useMCP();
   const [showForm, setShowForm] = useState(false);
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -366,7 +394,12 @@ export function MCPServersSettings() {
                       </div>
                     ) : serverTools.length > 0 ? (
                       serverTools.map(tool => (
-                        <ToolItem key={tool.name} tool={tool} />
+                        <ToolItem
+                          key={tool.name}
+                          tool={tool}
+                          isEnabled={!server.disabledTools?.includes(tool.name)}
+                          onToggle={(toolName, enabled) => toggleMCPTool(server.id, toolName, enabled)}
+                        />
                       ))
                     ) : (
                       <div className="py-6 flex flex-col items-center justify-center gap-2 border border-dashed border-border/40 rounded bg-muted/10">
