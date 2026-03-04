@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat, useFileAttachments, usePageContext, useProvider, useMCP } from '../hooks';
+import { useChat, useFileAttachments, usePageContext, useProvider, useMCP, useOmnibox } from '../hooks';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
@@ -31,6 +31,7 @@ export function InputArea() {
   const { selectedText, pageContext: hasPageContext } = usePageContext();
   const { providerInfo } = useProvider();
   const { syncAndReconnect } = useMCP();
+  useOmnibox(sendMessage);
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
