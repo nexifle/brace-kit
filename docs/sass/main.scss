@@ -2939,3 +2939,100 @@ pre mark {
             0 4px 16px oklch(0 0 0 / 0.3);
     }
 }
+
+// =============================================================================
+// 404 Not Found Page
+// =============================================================================
+.not-found {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 80px);
+    padding: var(--space-2xl) var(--space-lg);
+
+    &__inner {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-xl);
+        max-width: 480px;
+        width: 100%;
+        text-align: center;
+    }
+
+    // Giant ghost "404" behind the card
+    &__code {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: var(--font-sans);
+        font-size: clamp(8rem, 22vw, 16rem);
+        font-weight: 800;
+        line-height: 1;
+        color: var(--color-brand);
+        opacity: 0.06;
+        pointer-events: none;
+        user-select: none;
+        white-space: nowrap;
+        letter-spacing: -0.04em;
+    }
+
+    &__card {
+        position: relative;
+        z-index: 1;
+        padding: var(--space-2xl) var(--space-xl);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-lg);
+        width: 100%;
+    }
+
+    &__icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 80px;
+        height: 80px;
+        border-radius: var(--radius-xl);
+        background: var(--color-brand-bg);
+        color: var(--color-brand);
+        flex-shrink: 0;
+    }
+
+    &__title {
+        font-size: var(--text-3xl);
+        font-weight: 700;
+        color: var(--color-fg);
+        line-height: 1.2;
+        margin: 0;
+    }
+
+    &__desc {
+        font-size: var(--text-base);
+        color: var(--color-fg-muted);
+        line-height: 1.65;
+        margin: 0;
+    }
+
+    &__actions {
+        display: flex;
+        gap: var(--space-sm);
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: var(--space-sm);
+    }
+}
+
+// Dark mode overrides for 404
+[data-theme="dark"] .not-found {
+    &__code {
+        opacity: 0.04;
+    }
+
+    &__icon {
+        background: oklch(0.508 0.182 265.8 / 0.15);
+    }
+}

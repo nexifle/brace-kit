@@ -46,7 +46,7 @@ Your use of BraceKit is also governed by our [Privacy Policy](/privacy-policy/).
 
 ## 6. Intellectual Property
 
-BraceKit and its original content, features, and source code are owned by the BraceKit project. You may not copy, modify, redistribute, sublicense, or create derivative works from BraceKit without explicit permission, except as permitted by the applicable open-source license.
+BraceKit and its original content, features, and source code are owned by the BraceKit project. You may not copy, modify, redistribute, sublicense, or create derivative works from BraceKit without explicit permission.
 
 ## 7. Disclaimer of Warranties
 
