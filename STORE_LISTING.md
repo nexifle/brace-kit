@@ -159,7 +159,8 @@ Chrome requires that extensions only request permissions that tightly align with
 *   `storage`: Required to save the user's encrypted API keys, conversation history, memory data, and extension settings locally on their device.
 *   `contextMenus`: Required to allow users to right-click text on the web and send it directly to the AI sidebar.
 *   `declarativeNetRequest`: Required to manage network requests for MCP (Model Context Protocol) server connections and AI provider API calls.
-*   `host_permissions` (`https://*/*`, `http://*/*`): Required to allow the content script to execute on regular webpages so the AI can extract text, display the floating toolbar on text selection, and enable page context reading features.
+*   `host_permissions` (`https://*/*`): Required to make API calls to any HTTPS LLM provider endpoint the user configures (OpenAI, Anthropic, Gemini, xAI, DeepSeek, or any custom OpenAI-compatible endpoint). Because BraceKit is a Bring Your Own Key (BYOK) extension that supports user-defined custom endpoints, the specific domain cannot be known at build time.
+*   `host_permissions` (`http://localhost/*`, `http://127.0.0.1/*`): Required exclusively for local AI servers such as Ollama (`http://localhost:11434`) and local MCP (Model Context Protocol) servers that run on the user's own machine over HTTP.
 
 ### Data Usage
 In the Chrome Web Store dashboard, you must answer what data you collect. Because BraceKit is completely local and BYOK, **you do not collect, store remotely, or send data to your own servers.** However, data is sent to the LLM providers (OpenAI, Anthropic, etc.) based on the user's explicit actions.
