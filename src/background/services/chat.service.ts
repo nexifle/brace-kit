@@ -179,20 +179,16 @@ export function createChatService(): ChatService {
           provider,
           message as StreamingResponseMessage,
           activeRequest,
-          sendResponse as (response: { started?: boolean }) => void
+          sendResponse as (response: { started?: boolean; error?: string }) => void
         );
       } catch (e) {
         const error = e as Error;
+        // handleStreamingResponse handles its own mid-stream errors internally.
+        // This catch handles errors before streaming begins (network, fetch errors, etc.)
         if (error.name === 'AbortError' || activeRequest.aborted) {
           sendResponse({ error: 'Request cancelled' });
         } else {
           sendResponse({ error: error.message });
-          chrome.runtime.sendMessage({
-            type: 'CHAT_STREAM_ERROR',
-            error: error.message,
-            requestId: message.requestId,
-            conversationId: message.conversationId,
-          } as StreamErrorMessage);
         }
       } finally {
         if (requestId) activeRequests.delete(requestId);
@@ -212,7 +208,7 @@ export function createChatService(): ChatService {
       provider: ProviderWithConfig,
       message: StreamingResponseMessage,
       activeRequest: ActiveRequest,
-      sendResponse: (response: { started?: boolean }) => void
+      sendResponse: (response: { started?: boolean; error?: string }) => void
     ): Promise<void> {
       const chunks: string[] = [];
       const reasoningChunks: string[] = [];
@@ -222,71 +218,99 @@ export function createChatService(): ChatService {
       let currentToolCall: ToolCallFragment | null = null;
       let groundingMetadata: unknown = null;
       let tokenUsage: TokenUsage | undefined;
+      // Track whether any content chunks have been sent to the frontend.
+      // If true, mid-stream errors are routed via CHAT_STREAM_ERROR only
+      // (not sendResponse) to avoid double error messages.
+      let streamingStarted = false;
 
-      for await (const chunk of streamingService.processStream(
-        response,
-        provider,
-        activeRequest.abortController.signal
-      )) {
-        // Check if request was aborted
-        if (activeRequest.aborted) {
-          return;
-        }
-
-        if (chunk.type === 'text') {
-          chunks.push(chunk.content || '');
-          chrome.runtime.sendMessage({
-            type: 'CHAT_STREAM_CHUNK',
-            content: chunk.content,
-            requestId: message.requestId,
-            conversationId: message.conversationId,
-          } as StreamChunkMessage);
-        } else if (chunk.type === 'reasoning') {
-          reasoningChunks.push(chunk.content || '');
-          chrome.runtime.sendMessage({
-            type: 'CHAT_STREAM_CHUNK',
-            chunkType: 'reasoning',
-            content: chunk.content,
-            requestId: message.requestId,
-            conversationId: message.conversationId,
-          } as StreamChunkMessage);
-        } else if (chunk.type === 'reasoning_signature') {
-          reasoningSignatureChunks.push(chunk.content || '');
-        } else if (chunk.type === 'image') {
-          images.push({ mimeType: chunk.mimeType || 'image/png', data: chunk.imageData || '' });
-        } else if (chunk.type === 'error') {
-          const errorContent = `\n\n⚠️ ${chunk.content}`;
-          chunks.push(errorContent);
-          chrome.runtime.sendMessage({
-            type: 'CHAT_STREAM_CHUNK',
-            content: errorContent,
-            requestId: message.requestId,
-            conversationId: message.conversationId,
-          } as StreamChunkMessage);
-        } else if (chunk.type === 'tool_call' || chunk.type === 'tool_call_start') {
-          if (chunk.type === 'tool_call_start') {
-            currentToolCall = {
-              id: chunk.id,
-              name: chunk.name,
-              arguments: '',
-            };
-            toolCalls.push(currentToolCall);
-          } else if (chunk.name) {
-            currentToolCall = {
-              id: chunk.id || `tc_${Date.now()}`,
-              name: chunk.name,
-              arguments: chunk.arguments || '',
-            };
-            toolCalls.push(currentToolCall);
+      try {
+        for await (const chunk of streamingService.processStream(
+          response,
+          provider,
+          activeRequest.abortController.signal
+        )) {
+          // Check if request was aborted
+          if (activeRequest.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
           }
-        } else if (chunk.type === 'tool_call_delta' && currentToolCall) {
-          currentToolCall.arguments += chunk.content || '';
-        } else if (chunk.type === 'grounding_metadata') {
-          groundingMetadata = chunk.groundingMetadata;
-        } else if (chunk.type === 'usage') {
-          // Update token usage - keep the latest (cumulative) count
-          tokenUsage = chunk.usage;
+
+          if (chunk.type === 'text') {
+            chunks.push(chunk.content || '');
+            streamingStarted = true;
+            chrome.runtime.sendMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              content: chunk.content,
+              requestId: message.requestId,
+              conversationId: message.conversationId,
+            } as StreamChunkMessage);
+          } else if (chunk.type === 'reasoning') {
+            reasoningChunks.push(chunk.content || '');
+            streamingStarted = true;
+            chrome.runtime.sendMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              chunkType: 'reasoning',
+              content: chunk.content,
+              requestId: message.requestId,
+              conversationId: message.conversationId,
+            } as StreamChunkMessage);
+          } else if (chunk.type === 'reasoning_signature') {
+            reasoningSignatureChunks.push(chunk.content || '');
+          } else if (chunk.type === 'image') {
+            images.push({ mimeType: chunk.mimeType || 'image/png', data: chunk.imageData || '' });
+          } else if (chunk.type === 'error') {
+            const errorContent = `\n\n⚠️ ${chunk.content}`;
+            chunks.push(errorContent);
+            streamingStarted = true;
+            chrome.runtime.sendMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              content: errorContent,
+              requestId: message.requestId,
+              conversationId: message.conversationId,
+            } as StreamChunkMessage);
+          } else if (chunk.type === 'tool_call' || chunk.type === 'tool_call_start') {
+            if (chunk.type === 'tool_call_start') {
+              currentToolCall = {
+                id: chunk.id,
+                name: chunk.name,
+                arguments: '',
+              };
+              toolCalls.push(currentToolCall);
+            } else if (chunk.name) {
+              currentToolCall = {
+                id: chunk.id || `tc_${Date.now()}`,
+                name: chunk.name,
+                arguments: chunk.arguments || '',
+              };
+              toolCalls.push(currentToolCall);
+            }
+          } else if (chunk.type === 'tool_call_delta' && currentToolCall) {
+            currentToolCall.arguments += chunk.content || '';
+          } else if (chunk.type === 'grounding_metadata') {
+            groundingMetadata = chunk.groundingMetadata;
+          } else if (chunk.type === 'usage') {
+            // Update token usage - keep the latest (cumulative) count
+            tokenUsage = chunk.usage;
+          }
         }
+      } catch (streamError) {
+        const error = streamError as Error;
+        if (error.name === 'AbortError' || activeRequest.aborted) {
+          // Re-throw so the outer catch in dispatchChatRequest calls sendResponse
+          throw error;
+        }
+        if (streamingStarted) {
+          // Partial content already in frontend — route error via broadcast only
+          chrome.runtime.sendMessage({
+            type: 'CHAT_STREAM_ERROR',
+            error: error.message,
+            requestId: message.requestId,
+            conversationId: message.conversationId,
+          } as StreamErrorMessage);
+        } else {
+          // No content sent yet — use sendResponse so dispatchChatRequest shows the error
+          sendResponse({ error: error.message });
+        }
+        return;
       }
 
       // Merge tool calls

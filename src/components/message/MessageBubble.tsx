@@ -533,6 +533,16 @@ export function MessageBubble({
           />
         )}
         {message.groundingMetadata && <CitationsSection groundingMetadata={message.groundingMetadata} />}
+        {message.truncated && (
+          <div className="flex items-center gap-1.5 py-1.5 text-2xs text-muted-foreground/60 border-t border-border/40 mt-1">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="shrink-0">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+            </svg>
+            <span>
+              {message.truncatedReason === 'user_stopped' ? 'Stopped by user' : 'Generation interrupted'}
+            </span>
+          </div>
+        )}
         {quotePopup.visible && (
           <div
             className="absolute z-10 flex items-center bg-popover/95 backdrop-blur-md border border-border rounded-md shadow-xl p-0.5 animate-in fade-in zoom-in-95 duration-200"

@@ -67,6 +67,9 @@ export interface Message {
   // Reasoning/thinking content
   reasoningContent?: string;
   reasoningSignature?: string; // Anthropic thinking block signature (required for history replay)
+  // Indicates generation was interrupted before completion
+  truncated?: boolean;
+  truncatedReason?: 'user_stopped' | 'network_error';
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;

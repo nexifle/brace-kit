@@ -236,6 +236,15 @@ export function useMarkdownInteractions(bubbleRef: RefObject<HTMLElement | null>
     }
   }, []);
 
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    const openTable = document.querySelector('.table-wrapper.fullscreen');
+    if (!openTable) return;
+    const btn = openTable.querySelector('.table-fullscreen-btn') as HTMLElement | null;
+    openTable.classList.remove('fullscreen');
+    if (btn) btn.setAttribute('title', 'Fullscreen');
+  }, []);
+
   useEffect(() => {
     const ref = bubbleRef.current;
     if (!ref) return;
@@ -245,6 +254,7 @@ export function useMarkdownInteractions(bubbleRef: RefObject<HTMLElement | null>
     ref.addEventListener('click', handleTableExpand);
     ref.addEventListener('click', handleLinkClick);
     ref.addEventListener('click', handleMdImageActions);
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       ref.removeEventListener('click', handleCopyCode);
@@ -252,6 +262,7 @@ export function useMarkdownInteractions(bubbleRef: RefObject<HTMLElement | null>
       ref.removeEventListener('click', handleTableExpand);
       ref.removeEventListener('click', handleLinkClick);
       ref.removeEventListener('click', handleMdImageActions);
+      document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleCopyCode, handleTableActions, handleTableExpand, handleLinkClick, handleMdImageActions]);
+  }, [handleCopyCode, handleTableActions, handleTableExpand, handleLinkClick, handleMdImageActions, handleKeyDown]);
 }

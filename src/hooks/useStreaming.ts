@@ -385,12 +385,28 @@ export function useStreaming() {
    * Handle stream error
    */
   const handleStreamError = useCallback((error: string) => {
-    const activeConvId = useStore.getState().activeConversationId;
+    const state = useStore.getState();
+    const activeConvId = state.activeConversationId;
+
+    // Preserve any partially streamed content before clearing state
+    const partialContent = state.streamingContent;
+    const partialReasoning = state.streamingReasoningContent;
+    if (partialContent.trim()) {
+      store.addMessage({
+        role: 'assistant',
+        content: partialContent,
+        ...(partialReasoning ? { reasoningContent: partialReasoning } : {}),
+        truncated: true,
+        truncatedReason: 'network_error',
+      });
+    }
+
     if (activeConvId) store.setConversationStreaming(activeConvId, null);
     store.addMessage({ role: 'error', content: error });
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
     store.setStreamingContent('');
+    store.setStreamingReasoningContent('');
     streamProcessor.reset();
   }, [store, streamProcessor]);
 

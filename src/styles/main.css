@@ -362,15 +362,15 @@
 
 /* Fullscreen Table Mode - Enhanced */
 .table-wrapper.fullscreen {
-    @apply fixed inset-4 z-200 m-0 bg-background/98 backdrop-blur-xl border border-border/50 shadow-2xl animate-in zoom-in-95 duration-300 rounded-2xl;
+    @apply fixed inset-4 z-200 m-0 bg-background/98 backdrop-blur-xl border border-border/50 shadow-2xl animate-in zoom-in-95 duration-300 rounded-2xl flex flex-col;
 }
 
 .table-wrapper.fullscreen .table-header-bar {
-    @apply bg-muted/50 border-b-border/60;
+    @apply bg-muted/50 border-b-border/60 shrink-0;
 }
 
 .table-wrapper.fullscreen .table-container {
-    @apply max-h-none flex-1;
+    @apply flex-1 overflow-y-auto overflow-x-auto max-h-none;
 }
 
 .table-wrapper.fullscreen table {

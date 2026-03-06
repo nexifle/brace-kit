@@ -308,10 +308,26 @@ export function useChat() {
       chrome.runtime.sendMessage({ type: 'STOP_STREAM', requestId });
     }
     const activeConvId = currentState.activeConversationId;
+
+    // Preserve any partially streamed content before clearing state
+    const partialContent = currentState.streamingContent;
+    const partialReasoning = currentState.streamingReasoningContent;
+    if (partialContent.trim()) {
+      currentState.addMessage({
+        role: 'assistant',
+        content: partialContent,
+        ...(partialReasoning ? { reasoningContent: partialReasoning } : {}),
+        truncated: true,
+        truncatedReason: 'user_stopped',
+      });
+      currentState.saveActiveConversation();
+    }
+
     if (activeConvId) currentState.setConversationStreaming(activeConvId, null);
     currentState.setIsStreaming(false);
     currentState.setCurrentRequestId(null);
     currentState.setStreamingContent('');
+    currentState.setStreamingReasoningContent('');
   }, []);
 
   const newChat = useCallback(() => {
