@@ -16,6 +16,94 @@ import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
 import { useAutoCompact } from './compact/index.ts';
 
+/**
+ * Generate a title for the given conversation (or the active one if no ID provided).
+ * Standalone function so it can be shared between useChat (/rename) and useStreaming (auto-title).
+ * @param targetConvId - Conversation to rename. Defaults to the currently active conversation.
+ * @param silent - When true, skips the isRenaming loading indicator (used for auto-title).
+ */
+export async function generateConversationTitle(targetConvId?: string, silent = false): Promise<void> {
+  const currentState = useStore.getState();
+  const convId = targetConvId || currentState.activeConversationId;
+  if (!convId) return;
+
+  // Bail out early if title is already set (relevant for auto-title calls)
+  if (targetConvId) {
+    const conv = currentState.conversations.find((c) => c.id === targetConvId);
+    if (!conv || conv.title !== 'New Chat') return;
+  }
+
+  const messages =
+    convId === currentState.activeConversationId ? currentState.messages : [];
+
+  if (messages.length === 0) return;
+
+  if (!silent) currentState.setIsRenaming(true);
+
+  // Build title messages: filter to user/assistant only
+  const multiTurnMessages = messages.filter(
+    (m) => m.role === 'user' || m.role === 'assistant'
+  );
+
+  let titleMessages: { role: 'user' | 'assistant'; content: string }[];
+
+  if (multiTurnMessages.length <= 5) {
+    titleMessages = multiTurnMessages.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: (m.displayContent || m.content).slice(0, 1000),
+    }));
+  } else {
+    let userMessages = messages
+      .filter((m) => m.role === 'user')
+      .map((m) => ({
+        role: 'user' as const,
+        content: (m.displayContent || m.content).slice(0, 1000),
+      }))
+      .filter((m) => m.content.length > 0);
+
+    const MAX_MESSAGES = 15;
+    const START_COUNT = 10;
+    const END_COUNT = 5;
+    if (userMessages.length > MAX_MESSAGES) {
+      userMessages = [...userMessages.slice(0, START_COUNT), ...userMessages.slice(-END_COUNT)];
+    }
+    titleMessages = userMessages;
+  }
+
+  if (titleMessages.length === 0) {
+    if (!silent) useStore.getState().setIsRenaming(false);
+    return;
+  }
+
+  try {
+    const currentModel = currentState.providerConfig.model || '';
+    const isGeminiImg = currentModel.startsWith('gemini-2.0-flash-exp-image');
+    const isXAIImg =
+      currentState.providerConfig.providerId === 'xai' && currentModel.startsWith('grok-2-image');
+
+    const titleProviderConfig = isGeminiImg
+      ? { ...currentState.providerConfig, model: 'gemini-2.5-flash-lite' }
+      : isXAIImg
+        ? { ...currentState.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
+        : currentState.providerConfig;
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'TITLE_GENERATE',
+      messages: [{ role: 'system', content: TITLE_GENERATION_SYSTEM_PROMPT }, ...titleMessages],
+      providerConfig: titleProviderConfig,
+    });
+
+    if (response?.title && !response.error) {
+      const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
+      useStore.getState().updateConversationTitle(convId, title);
+    }
+  } catch (e) {
+    console.error('[generateConversationTitle] Failed:', e);
+  } finally {
+    if (!silent) useStore.getState().setIsRenaming(false);
+  }
+}
+
 export function useChat() {
   // Use selective selectors to avoid re-rendering on every store change
   // Only subscribe to state that is actually used in the component's render phase
@@ -39,82 +127,7 @@ export function useChat() {
   );
 
   const renameConversation = useCallback(async () => {
-    const currentState = useStore.getState();
-    if (!currentState.activeConversationId || currentState.messages.length === 0) return;
-
-    currentState.setIsRenaming(true);
-
-    // Check total multi-turn messages (user + assistant)
-    const multiTurnMessages = currentState.messages.filter(
-      (m) => m.role === 'user' || m.role === 'assistant'
-    );
-
-    let titleMessages: { role: 'user' | 'assistant'; content: string }[];
-
-    // If <= 5 turns, send all user + assistant messages
-    if (multiTurnMessages.length <= 5) {
-      titleMessages = multiTurnMessages.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: (m.displayContent || m.content).slice(0, 1000),
-      }));
-    } else {
-      // Filter only user messages and exclude those with >250 tokens (~1000 chars)
-      // Use displayContent if available (clean, without context attachments)
-      let userMessages = currentState.messages
-        .filter((m) => m.role === 'user')
-        .map((m) => ({
-          role: 'user' as const,
-          content: (m.displayContent || m.content).slice(0, 1000), // Cap at ~250 tokens
-        }))
-        .filter((m) => m.content.length > 0); // Exclude empty messages
-
-      // Limit to max 15 messages: 10 from start + 5 from end if exceeds 15
-      const MAX_MESSAGES = 15;
-      const START_COUNT = 10;
-      const END_COUNT = 5;
-      if (userMessages.length > MAX_MESSAGES) {
-        const startMessages = userMessages.slice(0, START_COUNT);
-        const endMessages = userMessages.slice(-END_COUNT);
-        userMessages = [...startMessages, ...endMessages];
-      }
-
-      titleMessages = userMessages;
-    }
-
-    if (titleMessages.length === 0) {
-      useStore.getState().setIsRenaming(false);
-      return;
-    }
-
-    // System prompt for title generation (shared with auto-rename)
-
-    try {
-      const currentModel = currentState.providerConfig.model || '';
-      const isGeminiImg = currentModel.startsWith('gemini-2.0-flash-exp-image');
-      const isXAIImg = currentState.providerConfig.providerId === 'xai' && currentModel.startsWith('grok-2-image');
-
-      // Use a text model for title generation if current is an image model
-      const titleProviderConfig = isGeminiImg
-        ? { ...currentState.providerConfig, model: 'gemini-2.5-flash-lite' }
-        : isXAIImg
-          ? { ...currentState.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
-          : currentState.providerConfig;
-
-      const response = await chrome.runtime.sendMessage({
-        type: 'TITLE_GENERATE',
-        messages: [{ role: 'system', content: TITLE_GENERATION_SYSTEM_PROMPT }, ...titleMessages],
-        providerConfig: titleProviderConfig,
-      });
-
-      if (response?.title && !response.error && currentState.activeConversationId) {
-        const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
-        currentState.updateConversationTitle(currentState.activeConversationId, title);
-      }
-    } catch (e) {
-      console.error('[useChat] Rename failed:', e);
-    } finally {
-      useStore.getState().setIsRenaming(false);
-    }
+    await generateConversationTitle();
   }, []);
 
 

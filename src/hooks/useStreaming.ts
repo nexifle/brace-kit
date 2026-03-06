@@ -10,13 +10,12 @@ import { useStore } from '../store/index.ts';
 import { useToast } from '../components/ui/toast/useToast.ts';
 import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message } from '../types/index.ts';
 import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
-import { GEMINI_NO_TOOLS_MODELS, XAI_IMAGE_MODELS } from '../providers/presets.ts';
-import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import { useMemory } from './useMemory.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
 import { useAutoCompact } from './compact/index.ts';
 import { useStreamProcessor } from './streaming/useStreamProcessor.ts';
+import { generateConversationTitle } from './useChat.ts';
 import {
   getConversationMessages,
   saveConversationMessages,
@@ -335,39 +334,9 @@ export function useStreaming() {
       // Auto-generate title
       if (!toolCalls?.length && store.activeConversationId) {
         const conv = store.conversations.find((c) => c.id === store.activeConversationId);
-        if (conv?.title === 'New Chat' && store.messages.length >= 1) {
-          setTimeout(async () => {
-            const msgs = store.messages.slice(0, 4).map((m) => ({
-              role: m.role as 'user' | 'assistant',
-              content: m.displayContent || m.content,
-            }));
-
-            try {
-              const currentModel = store.providerConfig.model || '';
-              const isGeminiImg = GEMINI_NO_TOOLS_MODELS.includes(currentModel);
-              const isXAIImg = store.providerConfig.providerId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
-              const titleProviderConfig = isGeminiImg
-                ? { ...store.providerConfig, model: 'gemini-2.5-flash-lite' }
-                : isXAIImg
-                  ? { ...store.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
-                  : store.providerConfig;
-              const response = await chrome.runtime.sendMessage({
-                type: 'TITLE_GENERATE',
-                messages: [
-                  { role: 'system', content: TITLE_GENERATION_SYSTEM_PROMPT },
-                  ...msgs
-                ],
-                providerConfig: titleProviderConfig,
-              });
-
-              if (response?.title && store.activeConversationId) {
-                const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
-                store.updateConversationTitle(store.activeConversationId, title);
-              }
-            } catch (e) {
-              console.warn('[TitleGen] Failed:', e);
-            }
-          }, 1500);
+        if (conv?.title === 'New Chat') {
+          const capturedConvId = store.activeConversationId;
+          setTimeout(() => generateConversationTitle(capturedConvId, true), 1500);
         }
       }
 
