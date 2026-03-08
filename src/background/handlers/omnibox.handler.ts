@@ -41,8 +41,14 @@ function sendCommand(query: string): void {
  *   cached by the background service worker so that sidePanel.open() can be
  *   called synchronously (without an async tabs.query() first), which is
  *   required to preserve the user gesture context.
+ * @param setLastTabId - Updates the cached tab ID. Used to pre-populate the
+ *   cache during onInputChanged so that onInputEntered always has a valid ID
+ *   even after a service worker restart (where onActivated hasn't fired yet).
  */
-export function initOmniboxHandler(getLastTabId: () => number | undefined): void {
+export function initOmniboxHandler(
+  getLastTabId: () => number | undefined,
+  setLastTabId: (id: number) => void,
+): void {
   // Default suggestion shown when user first activates the keyword
   chrome.omnibox.setDefaultSuggestion({
     description: 'Ask BraceKit AI or search your conversation history',
@@ -54,6 +60,15 @@ export function initOmniboxHandler(getLastTabId: () => number | undefined): void
   // ignores. Use .then() to call suggest() after the async work resolves.
   chrome.omnibox.onInputChanged.addListener(
     (text: string, suggest: (results: chrome.omnibox.SuggestResult[]) => void) => {
+      // Pre-populate the tab ID cache here (async is fine — this runs before
+      // the user finishes typing) so that onInputEntered can call
+      // sidePanel.open() synchronously even after a service worker restart.
+      if (!getLastTabId()) {
+        chrome.tabs.query({ active: true, currentWindow: true })
+          .then(([tab]) => { if (tab?.id) setLastTabId(tab.id); })
+          .catch(() => { /* best-effort */ });
+      }
+
       const query = text.trim();
 
       if (!query) {

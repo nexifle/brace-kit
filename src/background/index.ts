@@ -38,7 +38,10 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 // Initialize omnibox quick search (keyword: "bk")
-initOmniboxHandler(() => lastActiveTabId);
+initOmniboxHandler(
+  () => lastActiveTabId,
+  (id) => { lastActiveTabId = id; },
+);
 
 // Modify User-Agent only for LLM API requests made by this extension.
 // IMPORTANT: Do NOT use urlFilter:'*' here — that would rewrite the UA on
