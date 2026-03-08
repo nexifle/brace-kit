@@ -131,7 +131,8 @@ describe('Ollama Format', () => {
         type: 'function',
         function: {
           name: 'search',
-          arguments: '{"query": "test"}',
+          // Ollama native API expects arguments as an object, not a string
+          arguments: { query: 'test' },
         },
       });
     });
