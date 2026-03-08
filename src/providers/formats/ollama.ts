@@ -46,14 +46,25 @@ export function formatOllama(
       const result: Record<string, unknown> = {
         role: 'assistant',
         content: msg.content || '',
-        tool_calls: msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: tc.arguments || '{}',
-          },
-        })),
+        tool_calls: msg.toolCalls.map((tc) => {
+          // Ollama native API expects arguments as an object, not a string
+          let parsedArgs: unknown;
+          try {
+            parsedArgs = typeof tc.arguments === 'string'
+              ? JSON.parse(tc.arguments || '{}')
+              : (tc.arguments ?? {});
+          } catch {
+            parsedArgs = {};
+          }
+          return {
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: parsedArgs,
+            },
+          };
+        }),
       };
       // Include thinking/reasoning content for conversation history replay
       if (msg.reasoningContent) {
@@ -249,12 +260,19 @@ export async function* parseOllamaStream(
           // Tool calls (streaming)
           if (json.message?.tool_calls) {
             for (const tc of json.message.tool_calls) {
+              const args = tc.function?.arguments;
               yield {
                 type: 'tool_call',
                 id: tc.id,
-                index: tc.index,
+                index: tc.function?.index ?? tc.index,
                 name: tc.function?.name,
-                arguments: tc.function?.arguments,
+                // Ollama returns arguments as an object — serialize to string
+                arguments:
+                  args !== undefined
+                    ? typeof args === 'string'
+                      ? args
+                      : JSON.stringify(args)
+                    : undefined,
               };
             }
           }

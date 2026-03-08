@@ -369,6 +369,9 @@ export interface AppState {
   // Reasoning options
   enableReasoning: boolean;
 
+  // MCP options
+  enableMCP: boolean;
+
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: boolean;
   googleSearchApiKey: string;
@@ -457,6 +460,7 @@ export interface AppState {
   clearMemories: () => void;
   refreshConversationMemories: (conversationId: string) => void;
 
+  setEnableMCP: (enabled: boolean) => void;
   setEnableGoogleSearch: (enabled: boolean) => void;
   setEnableReasoning: (enabled: boolean) => void;
   setEnableGoogleSearchTool: (enabled: boolean) => void;

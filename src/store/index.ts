@@ -41,6 +41,7 @@ interface StorageData {
   activeConversationId?: string;
   memories?: Memory[];
   memoryEnabled?: boolean;
+  enableMCP?: boolean;
   enableGoogleSearch?: boolean;
   enableReasoning?: boolean;
   enableGoogleSearchTool?: boolean;
@@ -108,6 +109,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Reasoning options
   enableReasoning: false,
+
+  // MCP options
+  enableMCP: true,
 
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: false,
@@ -542,6 +546,10 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  setEnableMCP: (enableMCP) => {
+    set({ enableMCP });
+    get().saveToStorage();
+  },
   setEnableGoogleSearch: (enableGoogleSearch) => {
     set({ enableGoogleSearch });
     get().saveToStorage();
@@ -722,6 +730,7 @@ export const useStore = create<AppState>((set, get) => ({
         'activeConversationId',
         'memories',
         'memoryEnabled',
+        'enableMCP',
         'enableGoogleSearch',
         'enableReasoning',
         'enableGoogleSearchTool',
@@ -825,6 +834,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.memoryEnabled !== undefined) {
         updates.memoryEnabled = data.memoryEnabled;
+      }
+      if (data.enableMCP !== undefined) {
+        updates.enableMCP = data.enableMCP;
       }
       if (data.enableGoogleSearch !== undefined) {
         updates.enableGoogleSearch = data.enableGoogleSearch;
@@ -999,6 +1011,7 @@ export const useStore = create<AppState>((set, get) => ({
         providerKeys: encryptedProviderKeys,
         customProviders: encryptedCustomProviders,
         mcpServers: state.mcpServers,
+        enableMCP: state.enableMCP,
         enableGoogleSearch: state.enableGoogleSearch,
         enableReasoning: state.enableReasoning,
         enableGoogleSearchTool: state.enableGoogleSearchTool,

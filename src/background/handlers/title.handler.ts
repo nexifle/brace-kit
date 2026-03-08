@@ -61,7 +61,8 @@ export async function handleTitleGenerate(
       apiUrl: providerConfig.apiUrl || preset.apiUrl,
     };
 
-    if (!provider.apiKey) {
+    // Ollama doesn't require an API key (localhost)
+    if (!provider.apiKey && provider.format !== 'ollama') {
       sendResponse({ error: 'No API key' });
       return;
     }
@@ -77,6 +78,8 @@ export async function handleTitleGenerate(
       body.stream = false;
     } else if (provider.format === 'gemini') {
       url = url.replace(':streamGenerateContent', ':generateContent').replace('alt=sse&', '');
+    } else if (provider.format === 'ollama') {
+      body.stream = false;
     }
 
     options.body = JSON.stringify(body);
@@ -103,6 +106,10 @@ export async function handleTitleGenerate(
       title =
         candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') ||
         '';
+    } else if (provider.format === 'ollama') {
+      // Ollama non-streaming response: { message: { role, content, thinking } }
+      const msg = data.message as { content?: string } | undefined;
+      title = msg?.content || '';
     }
 
     sendResponse({ title: title.trim() } as TitleResponse);

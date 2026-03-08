@@ -7,7 +7,7 @@ import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 
 const SLASH_COMMANDS = [
@@ -106,6 +106,10 @@ export function InputArea() {
   // Reasoning state from store
   const enableReasoning = useStore((state) => state.enableReasoning);
   const setEnableReasoning = useStore((state) => state.setEnableReasoning);
+
+  // MCP toggle state from store
+  const enableMCP = useStore((state) => state.enableMCP);
+  const setEnableMCP = useStore((state) => state.setEnableMCP);
 
   // Preferences state from store
   const preferences = useStore((state) => state.preferences);
@@ -443,6 +447,21 @@ export function InputArea() {
           >
             <BrainIcon size={12} />
           </button>
+
+          {/* MCP toggle - icon only */}
+          {mcpServers.some((s) => s.enabled !== false) && (
+            <button
+              type="button"
+              className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableMCP
+                ? 'bg-primary/15 text-primary border-primary/40'
+                : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                }`}
+              title={enableMCP ? 'MCP tools enabled — click to disable' : 'MCP tools disabled — click to enable'}
+              onClick={() => setEnableMCP(!enableMCP)}
+            >
+              <WrenchIcon size={12} />
+            </button>
+          )}
 
           {/* Settings - icon only */}
           <button

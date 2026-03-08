@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import type { MCPServer } from '../types/index.ts';
+import { ensureMCPConnected } from '../utils/mcpReconnect.ts';
 
 // Module-level singleton: prevents duplicate sync when multiple components mount useMCP
 let syncPromise: Promise<void> | null = null;
 
+// Service workers are killed after ~30s of inactivity in Chrome MV3
+const SW_IDLE_THRESHOLD_MS = 30_000;
+
 export function useMCP() {
   const store = useStore();
   const hasSyncedRef = useRef(false);
+  const hiddenAtRef = useRef<number | null>(null);
 
   /**
    * Sync MCP connection status with the background service worker.
@@ -15,67 +20,7 @@ export function useMCP() {
    * caused by service worker restarts, then reconnects those servers.
    */
   const syncAndReconnect = useCallback(async () => {
-    const state = useStore.getState();
-
-    // Only care about servers the user has enabled
-    const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
-    if (enabledServers.length === 0) return;
-
-    // Ask the background what's actually connected right now
-    let connectedIds: string[] = [];
-    try {
-      const status = await chrome.runtime.sendMessage({ type: 'MCP_GET_STATUS' });
-      connectedIds = status?.connectedIds || [];
-    } catch {
-      // Background not responding — likely a fresh service worker restart
-    }
-
-    const actuallyConnectedSet = new Set(connectedIds);
-
-    // Find any enabled server not currently connected in the background.
-    // This covers both:
-    // - Servers that were connected before but lost due to service worker restart
-    // - Servers stored as connected: false (failed previously) when user clicks Retry
-    const serversToReconnect = enabledServers.filter((s) => !actuallyConnectedSet.has(s.id));
-
-    if (serversToReconnect.length === 0) {
-      // All enabled servers are connected — make sure the store reflects that
-      for (const server of enabledServers) {
-        if (!server.connected) {
-          useStore.getState().updateMCPServer(server.id, { connected: true });
-        }
-      }
-      return;
-    }
-
-    // Mark servers-to-reconnect as disconnected so the UI shows the right state
-    for (const server of serversToReconnect) {
-      useStore.getState().updateMCPServer(server.id, { connected: false });
-    }
-
-    // Reconnect all stale/failed servers in parallel
-    useStore.getState().setMCPReconnecting(true);
-    try {
-      await Promise.all(
-        serversToReconnect.map(async (server) => {
-          try {
-            const result = await chrome.runtime.sendMessage({
-              type: 'MCP_CONNECT',
-              config: server,
-            });
-            useStore.getState().updateMCPServer(server.id, {
-              connected: !!result?.success,
-              toolCount: result?.success ? (result.tools?.length || 0) : 0,
-            });
-          } catch {
-            // Server stays disconnected
-          }
-        })
-      );
-    } finally {
-      useStore.getState().setMCPReconnecting(false);
-      useStore.getState().saveToStorage();
-    }
+    await ensureMCPConnected();
   }, []);
 
   // Run once per sidebar session using a module-level promise to deduplicate
@@ -92,6 +37,37 @@ export function useMCP() {
         () => { syncPromise = null; }
       );
     }
+  }, [syncAndReconnect]);
+
+  // Reconnect MCP servers when the user returns after a long absence.
+  // Chrome MV3 service workers are killed after ~30s of inactivity, so any
+  // previously connected MCP servers are lost when the SW restarts.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+
+      // Document became visible — check if SW could have been killed
+      const hiddenMs = hiddenAtRef.current ? Date.now() - hiddenAtRef.current : 0;
+      hiddenAtRef.current = null;
+
+      if (hiddenMs < SW_IDLE_THRESHOLD_MS) return;
+
+      // Reset guards so the sync runs again
+      syncPromise = null;
+      hasSyncedRef.current = false;
+
+      syncPromise = syncAndReconnect().then(
+        () => { setTimeout(() => { syncPromise = null; }, 60_000); },
+        () => { syncPromise = null; }
+      );
+      hasSyncedRef.current = true;
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [syncAndReconnect]);
 
   const addMCPServer = useCallback(async (

@@ -13,6 +13,7 @@ import type { ChatRequestMessage } from './services/chat.service';
 import {
   restoreMCPServers,
   registerMCPHandlers,
+  setRestorePromise,
 } from './handlers/mcp.handler';
 import { registerMemoryHandlers } from './handlers/memory.handler';
 import { registerTitleHandlers } from './handlers/title.handler';
@@ -21,8 +22,11 @@ import { registerContentHandlers } from './handlers/content.handler';
 import { migrateOldConversations } from '../utils/conversationDB';
 import { initOmniboxHandler } from './handlers/omnibox.handler';
 
-// Initialize MCP servers on startup
-restoreMCPServers();
+// Initialize MCP servers on startup.
+// Register the promise with setRestorePromise so that handleMCPListTools can
+// wait for restore to finish before returning tools — preventing the race
+// condition where MCP_LIST_TOOLS arrives before restoreMCPServers() completes.
+setRestorePromise(restoreMCPServers());
 
 // Track the active tab ID so the omnibox handler can call chrome.sidePanel.open()
 // synchronously (without an async tabs.query() first, which would break the user

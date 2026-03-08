@@ -166,6 +166,32 @@ export function createStreamingService(): StreamingService {
             arguments: fc.functionCall?.args ? JSON.stringify(fc.functionCall.args) : '{}',
           }));
         }
+      } else if (provider.format === 'ollama') {
+        const message = data.message as Record<string, unknown> | undefined;
+        text = (message?.content as string) || '';
+        // Ollama stores thinking in message.thinking (newer) or top-level thinking (older)
+        reasoning = ((message?.thinking ?? data.thinking) as string) || '';
+
+        // Extract tool calls from Ollama format
+        const rawToolCalls = message?.tool_calls as Array<{
+          id?: string;
+          function?: { index?: number; name?: string; arguments?: unknown };
+        }> | undefined;
+
+        if (rawToolCalls && rawToolCalls.length > 0) {
+          toolCalls = rawToolCalls.map((tc, index) => ({
+            id: tc.id,
+            index: tc.function?.index ?? index,
+            name: tc.function?.name,
+            // Ollama returns arguments as an object (not a string) — serialize it
+            arguments:
+              tc.function?.arguments !== undefined
+                ? typeof tc.function.arguments === 'string'
+                  ? tc.function.arguments
+                  : JSON.stringify(tc.function.arguments)
+                : '{}',
+          }));
+        }
       }
 
       return { content: text, reasoning_content: reasoning, tool_calls: toolCalls };

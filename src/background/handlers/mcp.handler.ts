@@ -46,6 +46,23 @@ interface ToolCallResponse {
 const mcpManager = new MCPManager();
 
 /**
+ * Promise that resolves when the initial restoreMCPServers() call completes.
+ * Set by background/index.ts immediately after calling restoreMCPServers() on
+ * startup. Handlers that need all servers to be ready should await this first.
+ */
+let restoreReadyPromise: Promise<void> | null = null;
+
+/**
+ * Called once by background/index.ts to register the in-progress restore promise
+ * so that handleMCPListTools can wait for it before returning tools.
+ */
+export function setRestorePromise(p: Promise<void>): void {
+  restoreReadyPromise = p.finally(() => {
+    restoreReadyPromise = null;
+  });
+}
+
+/**
  * Handle MCP server connect
  * @param message - MCP connect message
  * @param sendResponse - Response callback
@@ -89,11 +106,15 @@ export async function handleMCPGetStatus(sendResponse: SendResponse): Promise<vo
 }
 
 /**
- * Handle MCP list tools
+ * Handle MCP list tools.
+ * Waits for the initial restoreMCPServers() to complete so that callers
+ * arriving immediately after a SW restart get a fully-populated tool list
+ * instead of an empty one caused by the restore/list race condition.
  * @param sendResponse - Response callback
  */
-export function handleMCPListTools(sendResponse: SendResponse): void {
+export async function handleMCPListTools(sendResponse: SendResponse): Promise<void> {
   try {
+    if (restoreReadyPromise) await restoreReadyPromise;
     const allTools = mcpManager.getAllTools();
     sendResponse({ tools: allTools } as MCPResponse);
   } catch (e) {
@@ -202,7 +223,7 @@ export function registerMCPHandlers(
           return true;
         case 'MCP_LIST_TOOLS':
           handleMCPListTools(sendResponse);
-          return false;
+          return true; // async: keep message channel open
         case 'MCP_CALL_TOOL':
           handleMCPToolCall(message as MCPToolCallMessage, sendResponse);
           return true;

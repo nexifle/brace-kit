@@ -15,6 +15,7 @@ import {
   XAI_IMAGE_MODELS,
 } from '../../providers/presets.ts';
 import { getAllTools as getAllToolsFromRegistry } from '../../services/toolRegistry.ts';
+import { ensureMCPConnected } from '../../utils/mcpReconnect.ts';
 
 /**
  * Options for getAllTools function
@@ -35,34 +36,66 @@ export function useTools() {
   // Most operations use useStore.getState() inside callbacks to avoid subscriptions
 
   /**
-   * Fetch MCP tools from enabled servers
+   * Filter raw tool list from background against enabled servers / disabled tools in store.
+   */
+  const filterTools = useCallback(
+    (
+      rawTools: (MCPTool & { _serverId?: string })[],
+      enabledServers: { id: string; disabledTools?: string[] }[]
+    ): MCPTool[] => {
+      const enabledServerIds = new Set(enabledServers.map((s) => s.id));
+      const disabledToolsMap = new Map<string, Set<string>>();
+      for (const server of enabledServers) {
+        if (server.disabledTools?.length) {
+          disabledToolsMap.set(server.id, new Set(server.disabledTools));
+        }
+      }
+      return rawTools.filter((tool) => {
+        const serverId = tool._serverId || '';
+        if (!enabledServerIds.has(serverId)) return false;
+        return !disabledToolsMap.get(serverId)?.has(tool.name);
+      });
+    },
+    []
+  );
+
+  /**
+   * Fetch MCP tools from enabled servers.
+   *
+   * If the background returns no tools despite the store showing connected
+   * servers (SW restart race condition), this triggers a reconnect and retries
+   * once before giving up.
    */
   const fetchMCPTools = useCallback(async (): Promise<MCPTool[]> => {
     try {
       const state = useStore.getState();
+      if (state.enableMCP === false) return [];
+
+      const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
       const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
-      if (mcpRes?.tools) {
-        const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
-        const enabledServerIds = new Set(enabledServers.map((s) => s.id));
 
-        const disabledToolsMap = new Map<string, Set<string>>();
-        for (const server of enabledServers) {
-          if (server.disabledTools?.length) {
-            disabledToolsMap.set(server.id, new Set(server.disabledTools));
-          }
+      if (mcpRes?.tools && mcpRes.tools.length > 0) {
+        return filterTools(mcpRes.tools, enabledServers);
+      }
+
+      // Fallback: if tools are empty but store shows connected servers with tools,
+      // the SW likely restarted and restoreMCPServers() hasn't completed (or failed).
+      // Force reconnect and retry once.
+      const hasConnectedWithTools = enabledServers.some(
+        (s) => s.connected && (s.toolCount ?? 0) > 0
+      );
+      if (hasConnectedWithTools) {
+        await ensureMCPConnected();
+        const retryRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
+        if (retryRes?.tools) {
+          return filterTools(retryRes.tools, enabledServers);
         }
-
-        return mcpRes.tools.filter((tool: MCPTool & { _serverId?: string }) => {
-          const serverId = tool._serverId || '';
-          if (!enabledServerIds.has(serverId)) return false;
-          return !disabledToolsMap.get(serverId)?.has(tool.name);
-        });
       }
     } catch (error) {
       console.warn('[useTools] Failed to fetch MCP tools:', error);
     }
     return [];
-  }, []);
+  }, [filterTools]);
 
   /**
    * Check if current model supports function calling
