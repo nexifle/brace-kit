@@ -63,7 +63,6 @@ export function useMCP() {
         () => { setTimeout(() => { syncPromise = null; }, 60_000); },
         () => { syncPromise = null; }
       );
-      hasSyncedRef.current = true;
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);

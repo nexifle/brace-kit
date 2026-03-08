@@ -28,36 +28,34 @@ export interface GetAllToolsOptions {
 }
 
 /**
+ * Filter raw MCP tool list against enabled servers and disabled tools in store.
+ * Pure function — no closure over hook state, safe to call from anywhere.
+ */
+function filterMCPTools(
+  rawTools: (MCPTool & { _serverId?: string })[],
+  enabledServers: { id: string; disabledTools?: string[] }[]
+): MCPTool[] {
+  const enabledServerIds = new Set(enabledServers.map((s) => s.id));
+  const disabledToolsMap = new Map<string, Set<string>>();
+  for (const server of enabledServers) {
+    if (server.disabledTools?.length) {
+      disabledToolsMap.set(server.id, new Set(server.disabledTools));
+    }
+  }
+  return rawTools.filter((tool) => {
+    const serverId = tool._serverId || '';
+    if (!enabledServerIds.has(serverId)) return false;
+    return !disabledToolsMap.get(serverId)?.has(tool.name);
+  });
+}
+
+/**
  * Tool management hook
  * Unified tool fetching and injection
  */
 export function useTools() {
   // Use selective selectors - only subscribe to state needed for rendering decisions
   // Most operations use useStore.getState() inside callbacks to avoid subscriptions
-
-  /**
-   * Filter raw tool list from background against enabled servers / disabled tools in store.
-   */
-  const filterTools = useCallback(
-    (
-      rawTools: (MCPTool & { _serverId?: string })[],
-      enabledServers: { id: string; disabledTools?: string[] }[]
-    ): MCPTool[] => {
-      const enabledServerIds = new Set(enabledServers.map((s) => s.id));
-      const disabledToolsMap = new Map<string, Set<string>>();
-      for (const server of enabledServers) {
-        if (server.disabledTools?.length) {
-          disabledToolsMap.set(server.id, new Set(server.disabledTools));
-        }
-      }
-      return rawTools.filter((tool) => {
-        const serverId = tool._serverId || '';
-        if (!enabledServerIds.has(serverId)) return false;
-        return !disabledToolsMap.get(serverId)?.has(tool.name);
-      });
-    },
-    []
-  );
 
   /**
    * Fetch MCP tools from enabled servers.
@@ -75,7 +73,7 @@ export function useTools() {
       const mcpRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
 
       if (mcpRes?.tools && mcpRes.tools.length > 0) {
-        return filterTools(mcpRes.tools, enabledServers);
+        return filterMCPTools(mcpRes.tools, enabledServers);
       }
 
       // Fallback: if tools are empty but store shows connected servers with tools,
@@ -88,14 +86,14 @@ export function useTools() {
         await ensureMCPConnected();
         const retryRes = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
         if (retryRes?.tools) {
-          return filterTools(retryRes.tools, enabledServers);
+          return filterMCPTools(retryRes.tools, enabledServers);
         }
       }
     } catch (error) {
       console.warn('[useTools] Failed to fetch MCP tools:', error);
     }
     return [];
-  }, [filterTools]);
+  }, []);
 
   /**
    * Check if current model supports function calling

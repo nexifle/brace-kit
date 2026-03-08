@@ -7,6 +7,10 @@
  * A module-level promise is used to deduplicate concurrent calls — if multiple
  * callers trigger a reconnect at the same time, they all wait on the same
  * in-flight promise rather than launching parallel reconnect races.
+ *
+ * IMPORTANT: `reconnectPromise` is assigned synchronously before any `await`
+ * so concurrent callers that pass the null-check always join the same promise
+ * rather than launching independent reconnect floods.
  */
 
 import { useStore } from '../store/index.ts';
@@ -22,36 +26,39 @@ let reconnectPromise: Promise<void> | null = null;
  *
  * Safe to call concurrently — duplicate calls resolve against the same promise.
  */
-export async function ensureMCPConnected(): Promise<void> {
+export function ensureMCPConnected(): Promise<void> {
   if (reconnectPromise) return reconnectPromise;
 
-  const state = useStore.getState();
-  const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
-  if (enabledServers.length === 0) return;
-
-  // Ask the background what is actually connected right now
-  let connectedIds: string[] = [];
-  try {
-    const status = await chrome.runtime.sendMessage({ type: 'MCP_GET_STATUS' });
-    connectedIds = status?.connectedIds || [];
-  } catch {
-    // SW restarted and not yet responding — treat all as disconnected
-  }
-
-  const connectedSet = new Set(connectedIds);
-  const serversToReconnect = enabledServers.filter((s) => !connectedSet.has(s.id));
-
-  if (serversToReconnect.length === 0) {
-    // Sync any store entries that are still marked as disconnected
-    for (const server of enabledServers) {
-      if (!server.connected) {
-        useStore.getState().updateMCPServer(server.id, { connected: true });
-      }
-    }
-    return;
-  }
-
+  // Assign synchronously before the first await so any concurrent caller that
+  // reaches this point joins the same in-flight promise instead of starting a
+  // duplicate reconnect flood.
   reconnectPromise = (async () => {
+    const state = useStore.getState();
+    const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
+    if (enabledServers.length === 0) return;
+
+    // Ask the background what is actually connected right now
+    let connectedIds: string[] = [];
+    try {
+      const status = await chrome.runtime.sendMessage({ type: 'MCP_GET_STATUS' });
+      connectedIds = status?.connectedIds || [];
+    } catch {
+      // SW restarted and not yet responding — treat all as disconnected
+    }
+
+    const connectedSet = new Set(connectedIds);
+    const serversToReconnect = enabledServers.filter((s) => !connectedSet.has(s.id));
+
+    if (serversToReconnect.length === 0) {
+      // Sync any store entries that are still marked as disconnected
+      for (const server of enabledServers) {
+        if (!server.connected) {
+          useStore.getState().updateMCPServer(server.id, { connected: true });
+        }
+      }
+      return;
+    }
+
     // Mark stale servers as disconnected in UI before reconnecting
     for (const server of serversToReconnect) {
       useStore.getState().updateMCPServer(server.id, { connected: false });
@@ -78,9 +85,10 @@ export async function ensureMCPConnected(): Promise<void> {
     } finally {
       useStore.getState().setMCPReconnecting(false);
       useStore.getState().saveToStorage();
-      reconnectPromise = null;
     }
-  })();
+  })().finally(() => {
+    reconnectPromise = null;
+  });
 
   return reconnectPromise;
 }
