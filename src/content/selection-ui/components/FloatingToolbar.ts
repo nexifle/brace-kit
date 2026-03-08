@@ -14,6 +14,7 @@ import { loadAllActions } from '../utils/actionsLoader.ts';
 
 import { PROVIDER_PRESETS } from '../../../providers/index.ts';
 import type { ProviderPreset, CustomProvider } from '../../../types/index.ts';
+import { isChromeRuntimeAvailable, isExtensionContextInvalidated } from '../utils/chromeErrorHandler.ts';
 
 export interface FloatingToolbarConfig {
   position: SelectionPosition;
@@ -68,9 +69,14 @@ export function createFloatingToolbar(
 
   // Load provider state from storage
   async function loadProviderState() {
+    if (!isChromeRuntimeAvailable()) {
+      return;
+    }
+
     try {
       const data = await chrome.storage.local.get([
         'providerConfig',
+        'providerKeys',
         'customProviders',
         'fetchedModels'
       ]) as Record<string, any>;
@@ -153,6 +159,8 @@ export function createFloatingToolbar(
 
       // Don't block the UI, run in background
       setTimeout(async () => {
+        if (!isChromeRuntimeAvailable()) return;
+
         for (const p of allProviders) {
           if (p.supportsModelFetch || (p as CustomProvider).apiUrl) {
             const apiKey = providerKeys[p.id]?.apiKey || '';
@@ -164,6 +172,8 @@ export function createFloatingToolbar(
             }
 
             try {
+              if (!isChromeRuntimeAvailable()) break;
+
               const result = await chrome.runtime.sendMessage({
                 type: 'FETCH_MODELS',
                 providerId: p.id
@@ -218,6 +228,9 @@ export function createFloatingToolbar(
       }, 500);
 
     } catch (e) {
+      if (isExtensionContextInvalidated(e)) {
+        return;
+      }
       console.warn('Failed to load provider state', e);
     }
   }
@@ -334,6 +347,8 @@ export function createFloatingToolbar(
 
       // Save global provider selection to chrome.storage.local
       try {
+        if (!isChromeRuntimeAvailable()) return;
+
         const data = await chrome.storage.local.get(['providerConfig', 'providerKeys', 'customProviders']) as Record<string, any>;
 
         const newConfig = {
