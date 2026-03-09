@@ -80,12 +80,6 @@ export function formatAnthropic(
     } else if ((msg as Message).role === 'assistant' && (msg as Message).toolCalls && (msg as Message).toolCalls!.length > 0) {
       // Transform assistant messages with tool calls to Anthropic format
       const content: Record<string, unknown>[] = [];
-      // Thinking block must come first (required for history replay when reasoning is enabled).
-      // When shouldEnableReasoning is true, the API mandates a thinking block on ALL previous
-      // assistant+tool_call turns — even if the model produced no thinking text (empty string).
-      // Include BOTH "thinking" and "reasoning_content" fields for compatibility:
-      // - Official Anthropic uses "thinking" field name
-      // - k2.5/Kimi and other compatible models use "reasoning_content" field name
       if (shouldEnableReasoning || (msg as Message).reasoningContent) {
         const reasoningText = (msg as Message).reasoningContent || '';
         const thinkingBlock: Record<string, unknown> = {
@@ -277,7 +271,7 @@ export async function* parseAnthropicStream(
       if (signal?.aborted) {
         try {
           reader.cancel();
-        } catch {}
+        } catch { }
         return;
       }
 
@@ -304,7 +298,7 @@ export async function* parseAnthropicStream(
             }
             // Thinking/reasoning content
             // Official Anthropic uses "thinking_delta" with "thinking" field
-            // k2.5/Kimi and other compatible models may use "reasoning_content" field name
+            // other compatible models may use "reasoning_content" field name
             if (json.delta?.type === 'thinking_delta') {
               yield { type: 'reasoning', content: json.delta.thinking ?? json.delta.reasoning_content };
             }
@@ -356,6 +350,6 @@ export async function* parseAnthropicStream(
   } finally {
     try {
       reader.releaseLock();
-    } catch {}
+    } catch { }
   }
 }

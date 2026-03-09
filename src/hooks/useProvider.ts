@@ -185,10 +185,15 @@ export function useProvider() {
     const cp = store.customProviders.find(p => p.id === providerId);
     if (!cp) return;
     const updatedModels = cp.models.filter(m => m !== modelName);
+    const newActiveModel = cp.model === modelName ? (updatedModels[0] || '') : cp.model;
     store.updateCustomProvider(providerId, {
       models: updatedModels,
-      model: cp.model === modelName ? (updatedModels[0] || '') : cp.model,
+      model: newActiveModel,
     });
+    // Sync providerConfig.model if this is the active provider and the removed model was selected
+    if (providerId === store.providerConfig.providerId && store.providerConfig.model === modelName) {
+      store.setProviderConfig({ model: newActiveModel });
+    }
     store.saveToStorage();
   }, [store]);
 

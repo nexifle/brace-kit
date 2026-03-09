@@ -66,6 +66,17 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
     }
   }, [handleAddModel]);
 
+  // Sync localSelectedProvider with the active provider when popover opens.
+  // Because `if (!isOpen) return null` is placed after all hooks, this component
+  // never unmounts — useState only initialises once and the local selection
+  // would go stale whenever providerConfig.providerId changes externally
+  // (e.g. after adding a new custom provider via Settings).
+  useEffect(() => {
+    if (isOpen) {
+      setLocalSelectedProvider(providerConfig.providerId);
+    }
+  }, [isOpen, providerConfig.providerId]);
+
   // Auto-fetch models when browsing a provider that supports it
   useEffect(() => {
     if (!isOpen) return;
