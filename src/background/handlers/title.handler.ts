@@ -33,7 +33,6 @@ interface GeminiCandidate {
 interface OpenAIChoice {
   message?: {
     content?: string;
-    reasoning_content?: string;
   };
 }
 
@@ -115,23 +114,23 @@ export async function handleTitleGenerate(
     let title = '';
     if (provider.format === 'openai') {
       const choices = data.choices as OpenAIChoice[] | undefined;
-      const msg = choices?.[0]?.message;
-      title = (msg?.content || '') + (msg?.reasoning_content || '');
+      title = choices?.[0]?.message?.content || '';
     } else if (provider.format === 'anthropic') {
       const content = data.content as AnthropicContent[] | undefined;
       title = content?.map((c) => c.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'gemini') {
       const candidates = data.candidates as GeminiCandidate[] | undefined;
       title =
-        candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') ||
-        '';
+        candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'ollama') {
-      // Ollama non-streaming response: { message: { role, content, thinking } }
       const msg = data.message as { content?: string } | undefined;
       title = msg?.content || '';
     }
 
-    sendResponse({ title: title.trim() } as TitleResponse);
+    // Strip any <think>...</think> blocks that some models embed in their response
+    title = title.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+    sendResponse({ title } as TitleResponse);
   } catch (e) {
     sendResponse({ error: (e as Error).message });
   }

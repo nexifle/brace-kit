@@ -28,41 +28,7 @@ export const GEMINI_IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-3-pro-imag
  */
 export const XAI_IMAGE_MODELS = ['grok-2-image-1212', 'grok-imagine-image', 'grok-imagine-image-pro'];
 
-/**
- * Models that support reasoning/thinking capabilities
- * Note: For Anthropic, ALL Claude models support extended thinking
- * For other providers, we check specific model patterns
- */
-export const REASONING_MODELS = {
-  anthropic: ['claude', 'claude-sonnet', 'claude-opus', 'claude-haiku', 'glm', 'k2.5', 'openai/gpt-oss-120b'], // All Claude models + GLM models
-  openai: ['o1', 'o3'], // o1-preview, o1-mini, o3-mini, o3
-  gemini: ['thinking', 'gemini-2.5-pro'], // Thinking models
-  deepseek: ['reasoner', 'r1'], // deepseek-reasoner, deepseek-r1
-  xai: ['grok'], // Grok models have reasoning
-  ollama: ['deepseek-r1', 'qwq', 'marco-o1', 'think'], // Ollama thinking models
-} as const;
-
-/**
- * Provider type for reasoning models lookup
- */
-type ReasoningProvider = keyof typeof REASONING_MODELS;
-
 // ==================== Feature Detection ====================
-
-/**
- * Check if a model supports reasoning/thinking capabilities
- *
- * @param providerId - Provider identifier (anthropic, openai, gemini, etc.)
- * @param model - Model name to check
- * @returns true if the model supports reasoning
- */
-export function supportsReasoning(providerId: string, model: string): boolean {
-  const providerModels = REASONING_MODELS[providerId as ReasoningProvider];
-  if (!providerModels) return false;
-
-  const modelLower = model.toLowerCase();
-  return providerModels.some((m) => modelLower.includes(m.toLowerCase()));
-}
 
 /**
  * Check if a Gemini model supports Google Search grounding

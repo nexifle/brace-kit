@@ -6,7 +6,7 @@
 
 import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
-import { supportsReasoning } from '../presets.ts';
+import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 
 // ==================== Request Formatting ====================
 
@@ -36,8 +36,7 @@ export function formatAnthropic(
   let system = '';
   const filtered: Record<string, unknown>[] = [];
 
-  // Check if reasoning is enabled and model supports it
-  const shouldEnableReasoning = !!_options.enableReasoning && supportsReasoning('anthropic', model);
+  const shouldEnableReasoning = !!_options.enableReasoning;
 
   // First pass: batch consecutive tool results together
   // Anthropic expects all tool results in a single user message
@@ -264,6 +263,7 @@ export async function* parseAnthropicStream(
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const thinkParser = createThinkTagParser();
 
   try {
     while (true) {
@@ -292,9 +292,10 @@ export async function* parseAnthropicStream(
 
           // Content block delta
           if (json.type === 'content_block_delta') {
-            // Text content
+            // Text content — parsed through think-tag state machine for
+            // Anthropic-compatible endpoints that embed <think> blocks in text
             if (json.delta?.type === 'text_delta') {
-              yield { type: 'text', content: json.delta.text };
+              yield* thinkParser.process(json.delta.text);
             }
             // Thinking/reasoning content
             // Official Anthropic uses "thinking_delta" with "thinking" field
@@ -341,12 +342,19 @@ export async function* parseAnthropicStream(
           }
 
           // Message complete
-          if (json.type === 'message_stop') return;
+          if (json.type === 'message_stop') {
+            const trailing = thinkParser.flush();
+            if (trailing) yield trailing;
+            return;
+          }
         } catch {
           // Skip malformed JSON
         }
       }
     }
+
+    const trailing = thinkParser.flush();
+    if (trailing) yield trailing;
   } finally {
     try {
       reader.releaseLock();

@@ -8,6 +8,7 @@
 import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
+import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 
 // ==================== Request Formatting ====================
 
@@ -131,6 +132,10 @@ export function formatOpenAI(
  * - Text content deltas
  * - Tool call deltas (streaming)
  * - Abort signal for cancellation
+ * - Three reasoning formats:
+ *     1. delta.reasoning_content  (DeepSeek, OpenAI o1/o3)
+ *     2. delta.reasoning          (Groq and some OpenAI-compatible endpoints)
+ *     3. <think>...</think> tags  (Qwen3 and models that embed thinking in content)
  *
  * @param response - Fetch response with streaming body
  * @param signal - Optional abort signal for cancellation
@@ -143,14 +148,12 @@ export async function* parseOpenAIStream(
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const thinkParser = createThinkTagParser();
 
   try {
     while (true) {
-      // Check for abort before each read
       if (signal?.aborted) {
-        try {
-          reader.cancel();
-        } catch {}
+        try { reader.cancel(); } catch {}
         return;
       }
 
@@ -171,37 +174,34 @@ export async function* parseOpenAIStream(
           const json = JSON.parse(data);
           const delta = json.choices?.[0]?.delta;
 
-          // Token usage metadata - OpenAI returns this in chunks with usage field
-          // Some providers (GLM/Zhipu) include usage in final chunks
-          // OpenAI native may include it with stream_options: { include_usage: true }
           if (json.usage) {
             const usage: TokenUsage = {
               promptTokenCount: json.usage.prompt_tokens ?? 0,
               candidatesTokenCount: json.usage.completion_tokens ?? 0,
               totalTokenCount: json.usage.total_tokens ?? 0,
             };
-
-            // Add cached tokens if available (some providers like GLM support this)
             if (json.usage.prompt_tokens_details?.cached_tokens !== undefined) {
               usage.cachedContentTokenCount = json.usage.prompt_tokens_details.cached_tokens;
             }
-
             yield { type: 'usage', usage };
           }
 
           if (!delta) continue;
 
-          // Text content
-          if (delta.content) {
-            yield { type: 'text', content: delta.content };
-          }
-
-          // Reasoning content (o1, o3, o4 models)
+          // Dedicated reasoning fields take priority (no need to parse tags)
+          // - delta.reasoning_content: DeepSeek, OpenAI o1/o3
+          // - delta.reasoning: Groq gpt-oss and similar endpoints
           if (delta.reasoning_content) {
             yield { type: 'reasoning', content: delta.reasoning_content };
+          } else if (delta.reasoning) {
+            yield { type: 'reasoning', content: delta.reasoning };
           }
 
-          // Tool calls (streaming)
+          // Text content — parsed through think-tag state machine
+          if (delta.content) {
+            yield* thinkParser.process(delta.content);
+          }
+
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               yield {
@@ -218,10 +218,12 @@ export async function* parseOpenAIStream(
         }
       }
     }
+
+    // Flush any content held back for partial tag detection
+    const trailing = thinkParser.flush();
+    if (trailing) yield trailing;
   } finally {
-    try {
-      reader.releaseLock();
-    } catch {}
+    try { reader.releaseLock(); } catch {}
   }
 }
 

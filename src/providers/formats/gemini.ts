@@ -11,8 +11,8 @@ import {
   GEMINI_NO_TOOLS_MODELS,
   GEMINI_SEARCH_ONLY_MODELS,
   GEMINI_ASPECT_RATIO_MAP,
-  supportsReasoning,
 } from '../presets.ts';
+import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 import { cleanSchema, convertToGeminiSchema } from '../utils/schema.ts';
 
 // ==================== Request Formatting ====================
@@ -45,7 +45,7 @@ export function formatGemini(
   const contents: GeminiContent[] = [];
 
   const model = provider.model || provider.defaultModel;
-  const shouldEnableReasoning = options.enableReasoning && supportsReasoning('gemini', model);
+  const shouldEnableReasoning = !!options.enableReasoning;
 
   // Transform messages to Gemini format
   for (const msg of messages) {
@@ -250,6 +250,7 @@ export async function* parseGeminiStream(
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const thinkParser = createThinkTagParser();
 
   try {
     while (true) {
@@ -316,9 +317,10 @@ export async function* parseGeminiStream(
                 }
               }
 
-              // Regular text content (final response, not thinking)
+              // Regular text content — parsed through think-tag state machine for
+              // Gemini-compatible endpoints that embed <think> blocks in text
               if (part.text) {
-                yield { type: 'text', content: part.text };
+                yield* thinkParser.process(part.text);
               }
 
               // Tool calls
@@ -374,6 +376,9 @@ export async function* parseGeminiStream(
         }
       }
     }
+
+    const trailing = thinkParser.flush();
+    if (trailing) yield trailing;
   } finally {
     try {
       reader.releaseLock();

@@ -9,6 +9,7 @@ import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
+import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -38,6 +39,7 @@ export function InputArea() {
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
   const isGeminiImageModel = currentProviderId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
   const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
+
 
   // Autocomplete suggestion logic
   const autocompleteSuggestion = useMemo(() => {
@@ -400,79 +402,105 @@ export function InputArea() {
           <div className="w-px h-4 bg-border/70 mx-0.5 shrink-0" />
 
           {/* Page context - pill with label */}
-          <button
-            type="button"
-            className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
-              ? 'bg-primary/15 text-primary border-primary/40'
-              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-              }`}
-            title="Add current page to context"
-            onClick={handleAttachClick}
-          >
-            <GlobeIcon size={12} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
+                  ? 'bg-primary/15 text-primary border-primary/40'
+                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                onClick={handleAttachClick}
+              >
+                <GlobeIcon size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Add current page to context</TooltipContent>
+          </Tooltip>
 
           {/* Attach - pill with label */}
-          <button
-            type="button"
-            className="flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground"
-            title="Attach file (image, txt, csv, pdf)"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <PaperclipIcon size={12} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                className="flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <PaperclipIcon size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Attach file (image, txt, csv, pdf)</TooltipContent>
+          </Tooltip>
 
           {/* System Prompt - icon only */}
-          <button
-            type="button"
-            className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
-              ? 'bg-primary/15 text-primary border-primary/40'
-              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-              }`}
-            title="System Prompt"
-            onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
-          >
-            <SquareTerminal size={12} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
+                  ? 'bg-primary/15 text-primary border-primary/40'
+                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
+              >
+                <SquareTerminal size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">System Prompt</TooltipContent>
+          </Tooltip>
 
-          {/* Reasoning - icon only */}
-          <button
-            type="button"
-            className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableReasoning
-              ? 'bg-primary/15 text-primary border-primary/40'
-              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-              }`}
-            title="Activate Reasoning - Enable extended thinking for supported models"
-            onClick={() => setEnableReasoning(!enableReasoning)}
-          >
-            <BrainIcon size={12} />
-          </button>
+          {/* Reasoning toggle */}
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableReasoning
+                  ? 'bg-primary/15 text-primary border-primary/40'
+                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                onClick={() => setEnableReasoning(!enableReasoning)}
+              >
+                <BrainIcon size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Enable extended thinking</TooltipContent>
+          </Tooltip>
 
           {/* Function calling toggle */}
-          <button
-            type="button"
-            className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableTools
-              ? 'bg-primary/15 text-primary border-primary/40'
-              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-              }`}
-            title={enableTools ? 'Function Calling enabled — click to disable' : 'Function Calling disabled — click to enable'}
-            onClick={() => setEnableTools(!enableTools)}
-          >
-            <WrenchIcon size={12} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableTools
+                  ? 'bg-primary/15 text-primary border-primary/40'
+                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                onClick={() => setEnableTools(!enableTools)}
+              >
+                <WrenchIcon size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {enableTools ? 'Function Calling enabled — click to disable' : 'Function Calling disabled — click to enable'}
+            </TooltipContent>
+          </Tooltip>
 
           {/* Settings - icon only */}
-          <button
-            type="button"
-            className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
-              ? 'bg-primary/15 text-primary border-primary/40'
-              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-              }`}
-            title="Display preferences for tool messages"
-            onClick={() => setShowPreferencesPopover(true)}
-          >
-            <SettingsIcon size={12} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger>
+              <button
+                type="button"
+                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
+                  ? 'bg-primary/15 text-primary border-primary/40'
+                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                onClick={() => setShowPreferencesPopover(true)}
+              >
+                <SettingsIcon size={12} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Display preferences for tool messages</TooltipContent>
+          </Tooltip>
 
           {/* Spacer */}
           <div className="flex-1 min-w-0" />
