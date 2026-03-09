@@ -40,35 +40,18 @@ export async function generateConversationTitle(targetConvId?: string, silent = 
 
   if (!silent) currentState.setIsRenaming(true);
 
-  // Build title messages: filter to user/assistant only
-  const multiTurnMessages = messages.filter(
-    (m) => m.role === 'user' || m.role === 'assistant'
-  );
+  // Build title messages: only user messages, first 2 + last 1 (deduplicated), 300 chars each
+  // User messages are sufficient for title generation — assistant responses add tokens without value
+  const allUserMessages = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => (m.displayContent || m.content).slice(0, 300))
+    .filter((c) => c.length > 0);
 
-  let titleMessages: { role: 'user' | 'assistant'; content: string }[];
+  const firstTwo = allUserMessages.slice(0, 2);
+  const lastOne = allUserMessages.length > 2 ? [allUserMessages[allUserMessages.length - 1]] : [];
+  const dedupedContents = [...firstTwo, ...lastOne.filter((c) => !firstTwo.includes(c))];
 
-  if (multiTurnMessages.length <= 5) {
-    titleMessages = multiTurnMessages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: (m.displayContent || m.content).slice(0, 1000),
-    }));
-  } else {
-    let userMessages = messages
-      .filter((m) => m.role === 'user')
-      .map((m) => ({
-        role: 'user' as const,
-        content: (m.displayContent || m.content).slice(0, 1000),
-      }))
-      .filter((m) => m.content.length > 0);
-
-    const MAX_MESSAGES = 15;
-    const START_COUNT = 10;
-    const END_COUNT = 5;
-    if (userMessages.length > MAX_MESSAGES) {
-      userMessages = [...userMessages.slice(0, START_COUNT), ...userMessages.slice(-END_COUNT)];
-    }
-    titleMessages = userMessages;
-  }
+  const titleMessages = dedupedContents.map((content) => ({ role: 'user' as const, content }));
 
   if (titleMessages.length === 0) {
     if (!silent) useStore.getState().setIsRenaming(false);

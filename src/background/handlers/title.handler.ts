@@ -67,7 +67,26 @@ export async function handleTitleGenerate(
       return;
     }
 
-    const { url: streamUrl, options } = formatRequest(provider, messages, []);
+    // Separate system prompt from conversation messages
+    const systemMsgs = messages.filter((m) => m.role === 'system');
+    const conversationMsgs = messages.filter((m) => m.role !== 'system');
+
+    // Serialize conversation into a single user message so the model responds
+    // to a user turn (not continues a dangling assistant message)
+    const conversationText = conversationMsgs
+      .map((m) => {
+        const roleLabel = m.role === 'user' ? 'User' : 'Assistant';
+        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+        return `${roleLabel}: ${content}`;
+      })
+      .join('\n\n');
+
+    const titleMessages: Message[] = [
+      ...systemMsgs,
+      { role: 'user', content: conversationText },
+    ];
+
+    const { url: streamUrl, options } = formatRequest(provider, titleMessages, []);
     const body = JSON.parse(options.body as string) as Record<string, unknown>;
 
     // Non-streaming request

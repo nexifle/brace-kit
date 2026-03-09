@@ -545,15 +545,7 @@ export const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
 // ==================== Title Generation Constants ====================
 
 /** System prompt for conversation title generation (used by auto-rename and /rename command) */
-export const TITLE_GENERATION_SYSTEM_PROMPT = `CRITICAL: This is a SYSTEM OPERATION to rename the conversation.
-Based on the conversation history below, generate a concise and descriptive title for this conversation.
-The title MUST:
-1. Be as descriptive as possible about the main topic.
-2. Be in the same language as the conversation (e.g., if the user speaks Indonesian, the title should be in Indonesian).
-3. Be NO MORE than 6 words.
-4. NOT include any punctuation or quotes.
-
-Output ONLY the title string.`;
+export const TITLE_GENERATION_SYSTEM_PROMPT = `Generate a short title (max 6 words, no punctuation) for the conversation based on the user messages provided. Match the language of the messages. Output ONLY the title.`;
 
 // ==================== Token Usage Types ====================
 
