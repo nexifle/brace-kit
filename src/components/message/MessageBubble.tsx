@@ -35,6 +35,66 @@ import { copyImageToClipboard } from './utils/imageProcessing';
 
 const FAVORITES_STORAGE_KEY = 'gallery_favorites';
 
+const TOOL_CALL_ERROR_PATTERN = /tool[_\s]call|function.call|does not support.*tool|tool.*not.*support|not support.*function/i;
+
+function isToolCallError(content: string): boolean {
+  return TOOL_CALL_ERROR_PATTERN.test(content);
+}
+
+function ToolCallErrorPrompt({
+  errorContent,
+  onRegenerate,
+}: {
+  errorContent: string;
+  onRegenerate?: (index: number) => void;
+}) {
+  const setEnableTools = useStore((state) => state.setEnableTools);
+  const [isDisabling, setIsDisabling] = useState(false);
+
+  const handleDisable = () => {
+    setIsDisabling(true);
+    const state = useStore.getState();
+    const messages = state.messages;
+
+    // Capture last user message index before modifying the array
+    let lastUserMsgIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMsgIdx = i;
+        break;
+      }
+    }
+
+    setEnableTools(false);
+
+    // Remove this error message from the conversation
+    const errorIdx = messages.findIndex(m => m.role === 'error' && isToolCallError(m.content));
+    if (errorIdx !== -1) {
+      const updated = [...messages];
+      updated.splice(errorIdx, 1);
+      state.setMessages(updated);
+    }
+
+    if (lastUserMsgIdx !== -1 && onRegenerate) {
+      onRegenerate(lastUserMsgIdx);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm m-0">{errorContent}</p>
+      <button
+        type="button"
+        disabled={isDisabling}
+        onClick={handleDisable}
+        className="self-start flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60 transition-colors"
+      >
+        Disable Function Calling &amp; Retry
+      </button>
+    </div>
+  );
+}
+
 function MCPDisconnectPrompt({
   serverName,
   onRegenerate,
@@ -391,6 +451,15 @@ export function MessageBubble({
       return (
         <MCPDisconnectPrompt
           serverName={serverName}
+          onRegenerate={onRegenerate}
+        />
+      );
+    }
+    // Tool calling not supported — offer to disable function calling and retry
+    if (message.role === 'error' && isToolCallError(message.content)) {
+      return (
+        <ToolCallErrorPrompt
+          errorContent={message.displayContent || message.content}
           onRegenerate={onRegenerate}
         />
       );

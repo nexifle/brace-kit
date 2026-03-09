@@ -42,6 +42,7 @@ interface StorageData {
   memories?: Memory[];
   memoryEnabled?: boolean;
   enableMCP?: boolean;
+  enableTools?: boolean;
   enableGoogleSearch?: boolean;
   enableReasoning?: boolean;
   enableGoogleSearchTool?: boolean;
@@ -112,6 +113,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   // MCP options
   enableMCP: true,
+
+  // Function calling (tools) master switch
+  enableTools: true,
 
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: false,
@@ -550,6 +554,10 @@ export const useStore = create<AppState>((set, get) => ({
     set({ enableMCP });
     get().saveToStorage();
   },
+  setEnableTools: (enableTools) => {
+    set({ enableTools });
+    get().saveToStorage();
+  },
   setEnableGoogleSearch: (enableGoogleSearch) => {
     set({ enableGoogleSearch });
     get().saveToStorage();
@@ -731,6 +739,7 @@ export const useStore = create<AppState>((set, get) => ({
         'memories',
         'memoryEnabled',
         'enableMCP',
+        'enableTools',
         'enableGoogleSearch',
         'enableReasoning',
         'enableGoogleSearchTool',
@@ -837,6 +846,12 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.enableMCP !== undefined) {
         updates.enableMCP = data.enableMCP;
+      }
+      if (data.enableTools !== undefined) {
+        updates.enableTools = data.enableTools;
+      } else if (data.enableMCP === false) {
+        // Migrate: if user had explicitly disabled MCP, carry that intent over to enableTools
+        updates.enableTools = false;
       }
       if (data.enableGoogleSearch !== undefined) {
         updates.enableGoogleSearch = data.enableGoogleSearch;
@@ -1012,6 +1027,7 @@ export const useStore = create<AppState>((set, get) => ({
         customProviders: encryptedCustomProviders,
         mcpServers: state.mcpServers,
         enableMCP: state.enableMCP,
+        enableTools: state.enableTools,
         enableGoogleSearch: state.enableGoogleSearch,
         enableReasoning: state.enableReasoning,
         enableGoogleSearchTool: state.enableGoogleSearchTool,

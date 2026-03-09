@@ -107,9 +107,9 @@ export function InputArea() {
   const enableReasoning = useStore((state) => state.enableReasoning);
   const setEnableReasoning = useStore((state) => state.setEnableReasoning);
 
-  // MCP toggle state from store
-  const enableMCP = useStore((state) => state.enableMCP);
-  const setEnableMCP = useStore((state) => state.setEnableMCP);
+  // Function calling (tools) master switch
+  const enableTools = useStore((state) => state.enableTools);
+  const setEnableTools = useStore((state) => state.setEnableTools);
 
   // Preferences state from store
   const preferences = useStore((state) => state.preferences);
@@ -448,20 +448,18 @@ export function InputArea() {
             <BrainIcon size={12} />
           </button>
 
-          {/* MCP toggle - icon only */}
-          {mcpServers.some((s) => s.enabled !== false) && (
-            <button
-              type="button"
-              className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableMCP
-                ? 'bg-primary/15 text-primary border-primary/40'
-                : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-                }`}
-              title={enableMCP ? 'MCP tools enabled — click to disable' : 'MCP tools disabled — click to enable'}
-              onClick={() => setEnableMCP(!enableMCP)}
-            >
-              <WrenchIcon size={12} />
-            </button>
-          )}
+          {/* Function calling toggle */}
+          <button
+            type="button"
+            className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableTools
+              ? 'bg-primary/15 text-primary border-primary/40'
+              : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+              }`}
+            title={enableTools ? 'Function Calling enabled — click to disable' : 'Function Calling disabled — click to enable'}
+            onClick={() => setEnableTools(!enableTools)}
+          >
+            <WrenchIcon size={12} />
+          </button>
 
           {/* Settings - icon only */}
           <button

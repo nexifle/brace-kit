@@ -372,6 +372,9 @@ export interface AppState {
   // MCP options
   enableMCP: boolean;
 
+  // Function calling (tools) master switch
+  enableTools: boolean;
+
   // Google Search Tool (for non-Gemini providers)
   enableGoogleSearchTool: boolean;
   googleSearchApiKey: string;
@@ -461,6 +464,7 @@ export interface AppState {
   refreshConversationMemories: (conversationId: string) => void;
 
   setEnableMCP: (enabled: boolean) => void;
+  setEnableTools: (enabled: boolean) => void;
   setEnableGoogleSearch: (enabled: boolean) => void;
   setEnableReasoning: (enabled: boolean) => void;
   setEnableGoogleSearchTool: (enabled: boolean) => void;

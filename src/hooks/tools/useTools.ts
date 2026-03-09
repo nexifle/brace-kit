@@ -67,6 +67,7 @@ export function useTools() {
   const fetchMCPTools = useCallback(async (): Promise<MCPTool[]> => {
     try {
       const state = useStore.getState();
+      if (state.enableTools === false) return [];
       if (state.enableMCP === false) return [];
 
       const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
@@ -172,6 +173,10 @@ export function useTools() {
   const getAllTools = useCallback(
     async (options?: GetAllToolsOptions): Promise<MCPTool[]> => {
       const state = useStore.getState();
+
+      // Master switch: if function calling is disabled, send no tools at all
+      if (state.enableTools === false) return [];
+
       const providerId = options?.providerId ?? state.providerConfig.providerId;
       const model = options?.model ?? state.providerConfig.model ?? '';
       const enableGoogleSearchTool =
