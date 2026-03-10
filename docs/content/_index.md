@@ -62,7 +62,7 @@ footer_links = [
     { label = "Installation", url = "/guide/getting-started/installation/" },
     { label = "Privacy Policy", url = "/privacy-policy/" },
     { label = "Terms of Service", url = "/terms/" },
-    { label = "GitHub", url = "https://github.com" }
+    { label = "GitHub", url = "https://github.com/satriaajiputra/brace-kit" }
 ]
 +++
 

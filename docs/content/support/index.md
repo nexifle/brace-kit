@@ -52,7 +52,7 @@ Saweria accepts:
 
 Not in a position to donate financially? That's completely fine. There are other valuable ways to support the project:
 
-- **Report bugs** — Open an issue if you find something broken.
+- **[Report bugs](https://github.com/satriaajiputra/brace-kit/issues)** — Open an issue if you find something broken.
 - **Spread the word** — Tell a friend or colleague who might find BraceKit useful.
 
 ## Transparency
