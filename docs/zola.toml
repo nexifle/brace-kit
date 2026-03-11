@@ -35,7 +35,7 @@ dark_theme = "github-dark"
 
 [extra]
 # Put all your custom variables here
-github_url = "https://github.com/satriaajiputra/brace-kit"
+github_url = "https://github.com/nexifle/brace-kit"
 twitter_url = ""
 saweria_url = "https://saweria.co/bracekit"
 kofi_url = "https://ko-fi.com/bracekit"

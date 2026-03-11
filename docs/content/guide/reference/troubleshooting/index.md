@@ -367,7 +367,7 @@ When reporting a bug or issue, please include:
 ### Where to Get Help
 
 - **Documentation:** [BraceKit Docs](/guide/)
-- **GitHub Issues:** [Report a Bug](https://github.com/satriaajiputra/brace-kit/issues)
+- **GitHub Issues:** [Report a Bug](https://github.com/nexifle/brace-kit/issues)
 
 ---
 
