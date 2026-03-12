@@ -16,9 +16,12 @@ export interface ThinkChunk {
   content: string;
 }
 
+const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/gi;
+
 export interface ThinkTagParser {
   /** Process a content delta, yielding text/reasoning chunks. */
   process(content: string): Generator<ThinkChunk>;
+  nonStreamingProcess(content: string): string; // Optional non-streaming version for static content
   /** Flush any buffered content when the stream ends. Returns null if nothing buffered. */
   flush(): ThinkChunk | null;
 }
@@ -36,6 +39,9 @@ export function createThinkTagParser(): ThinkTagParser {
   let buffer = '';
 
   return {
+    nonStreamingProcess(content: string): string {
+      return content.replace(THINK_TAG_REGEX, '').trim();
+    },
     *process(content: string): Generator<ThinkChunk> {
       buffer += content;
 

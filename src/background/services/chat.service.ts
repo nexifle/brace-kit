@@ -10,6 +10,7 @@ import {
   type ChatOptions,
   type TokenUsage,
 } from '../../providers';
+import { createThinkTagParser } from '../../providers/utils/thinkTagParser.ts';
 import type { Message, MCPTool, ProviderConfig, ToolCall } from '../../types';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import { getFriendlyErrorMessage } from '../utils/errors';
@@ -164,6 +165,12 @@ export function createChatService(): ChatService {
             name: tc.name || 'unknown',
             arguments: tc.arguments || '{}',
           }));
+
+          const thinkParser = createThinkTagParser();
+
+          if (result.content) {
+            result.content = thinkParser.nonStreamingProcess(result.content);
+          }
 
           sendResponse({
             content: result.content,
