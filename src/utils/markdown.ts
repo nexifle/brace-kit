@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import katex from 'katex';
 import { ALERT_TRIANGLE_ICON, CHECK_ICON, COLLAPSE_ROWS_ICON, COPY_ICON, CSV_ICON, DOWNLOAD_ICON, EXPAND_ICON, EXPAND_ROWS_ICON, FILE_TEXT_ICON, INFO_ICON, LIGHTBULB_ICON, MARKDOWN_ICON, PLAIN_TEXT_ICON, STAR_ICON, TABLE_ICON, X_CIRCLE_ICON } from './markdown-icons';
 
 declare global {
@@ -13,6 +14,9 @@ declare global {
 
 // Store for mermaid placeholders
 const mermaidPlaceholders = new Map<string, string>();
+
+// Store for LaTeX placeholders
+const latexPlaceholders = new Map<string, { code: string; display: boolean }>();
 
 // Configure marked with hljs integration
 marked.setOptions({
@@ -76,6 +80,47 @@ renderer.link = ({ href, title, text }: { href: string; title?: string | null; t
 
 marked.use({ renderer });
 
+/**
+ * Replace code blocks (fenced and inline) with opaque tokens so subsequent
+ * pre-processing steps (footnotes, citations, blockquotes) never touch their
+ * contents. Call restoreShields() before handing text to marked.parse().
+ */
+function shieldCodeBlocks(text: string): { shielded: string; shields: Map<string, string> } {
+  const shields = new Map<string, string>();
+
+  // Fenced code blocks first (``` or ~~~, any length ≥ 3)
+  let shielded = text.replace(/(`{3,}|~{3,})[^\n]*\n[\s\S]*?\1/g, (match) => {
+    const token = `\x02CS${shields.size}\x03`;
+    shields.set(token, match);
+    return token;
+  });
+
+  // Indented code blocks: one or more consecutive lines starting with 4 spaces or a tab,
+  // preceded by a blank line (or start of string) so we don't catch list continuations.
+  shielded = shielded.replace(/((?:^|\n\n)((?:[ \t]{4}[^\n]*\n?)+))/g, (match) => {
+    const token = `\x02CS${shields.size}\x03`;
+    shields.set(token, match);
+    return token;
+  });
+
+  // Inline code (double backtick before single to avoid partial matches)
+  shielded = shielded.replace(/``[^`\n]+``|`[^`\n]+`/g, (match) => {
+    const token = `\x02CS${shields.size}\x03`;
+    shields.set(token, match);
+    return token;
+  });
+
+  return { shielded, shields };
+}
+
+function restoreShields(text: string, shields: Map<string, string>): string {
+  shields.forEach((original, token) => {
+    // Token contains no regex special chars, but use replaceAll for safety
+    text = text.split(token).join(original);
+  });
+  return text;
+}
+
 // Store for blockquote placeholders (regular + callouts)
 const blockquotePlaceholders = new Map<string, { type: 'blockquote' | CalloutType; content: string; config?: CalloutConfig }>();
 
@@ -88,6 +133,110 @@ const blockquotePlaceholders = new Map<string, { type: 'blockquote' | CalloutTyp
 function sanitizeMermaidCode(code: string): string {
   // Match [...] labels that contain (...) and are not already quoted
   return code.replace(/\[([^\]"]*\([^)]*\)[^\]"]*)\]/g, '["$1"]');
+}
+
+/**
+ * Extract LaTeX math blocks and replace them with placeholders.
+ * Supports: $$...$$, \[...\] (display), $...$ with math chars, \(...\) (inline).
+ *
+ * Code blocks (fenced ``` and inline `) are shielded first so LaTeX patterns
+ * inside code are never extracted.
+ */
+function extractLatexBlocks(markdown: string): string {
+  latexPlaceholders.clear();
+
+  // Shield fenced code blocks and inline code from LaTeX extraction.
+  // We replace them with temporary tokens, run LaTeX extraction, then restore.
+  const codeShields = new Map<string, string>();
+
+  // Shield fenced code blocks: ```...```
+  markdown = markdown.replace(/`{3,}[\s\S]*?`{3,}/g, (match) => {
+    const token = `\x02CODESHIELD${codeShields.size}\x03`;
+    codeShields.set(token, match);
+    return token;
+  });
+
+  // Shield inline code: `...`
+  markdown = markdown.replace(/`[^`\n]+`/g, (match) => {
+    const token = `\x02CODESHIELD${codeShields.size}\x03`;
+    codeShields.set(token, match);
+    return token;
+  });
+
+  // Display math: $$...$$ (must be before inline $ to avoid conflicts)
+  markdown = markdown.replace(/\$\$([\s\S]+?)\$\$/g, (_match, code) => {
+    const id = `latex-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const placeholder = `[[LATEX-BLOCK-${id}-END]]`;
+    latexPlaceholders.set(placeholder, { code: code.trim(), display: true });
+    return placeholder;
+  });
+
+  // Display math: \[...\] — no s-flag; display math is typically multi-line
+  // but we limit to avoid cross-paragraph matches
+  markdown = markdown.replace(/\\\[([\s\S]{1,2000}?)\\\]/g, (_match, code) => {
+    const id = `latex-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const placeholder = `[[LATEX-BLOCK-${id}-END]]`;
+    latexPlaceholders.set(placeholder, { code: code.trim(), display: true });
+    return placeholder;
+  });
+
+  // Inline math: \(...\) — no s-flag to prevent cross-paragraph matches
+  markdown = markdown.replace(/\\\(([^\n]{1,500}?)\\\)/g, (_match, code) => {
+    const id = `latex-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const placeholder = `[[LATEX-INLINE-${id}-END]]`;
+    latexPlaceholders.set(placeholder, { code: code.trim(), display: false });
+    return placeholder;
+  });
+
+  // Inline math: $...$ — require at least one LaTeX special char to avoid
+  // false positives with dollar amounts like "$10 and $20"
+  markdown = markdown.replace(/(?<!\$)\$(?!\s)([^$\n]{1,500}?)(?<!\s)\$(?!\$)/g, (_match, code) => {
+    if (!/[\\^_{}]/.test(code)) return _match;
+    const id = `latex-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const placeholder = `[[LATEX-INLINE-${id}-END]]`;
+    latexPlaceholders.set(placeholder, { code: code.trim(), display: false });
+    return placeholder;
+  });
+
+  // Restore shielded code blocks
+  codeShields.forEach((original, token) => {
+    markdown = markdown.replace(token, original);
+  });
+
+  return markdown;
+}
+
+/**
+ * Replace LaTeX placeholders with KaTeX-rendered HTML (or a styled fallback
+ * if KaTeX is not loaded on the page).
+ */
+function replaceLatexPlaceholders(html: string): string {
+  latexPlaceholders.forEach(({ code, display }, placeholder) => {
+    let rendered: string;
+
+    try {
+      const katexHtml = katex.renderToString(code, {
+        displayMode: display,
+        throwOnError: false,
+      });
+      rendered = display
+        ? `<div class="latex-block not-prose my-4 overflow-x-auto text-center py-2">${katexHtml}</div>`
+        : `<span class="latex-inline">${katexHtml}</span>`;
+    } catch {
+      rendered = display
+        ? `<div class="latex-error my-3 p-2 rounded bg-destructive/10 font-mono text-sm text-destructive">${encodeForAttribute(code)}</div>`
+        : `<span class="latex-error font-mono text-xs text-destructive">${encodeForAttribute(code)}</span>`;
+    }
+
+    const escapedPlaceholder = placeholder.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+    if (display) {
+      html = html.replace(new RegExp(`<p>${escapedPlaceholder}</p>`, 'g'), rendered);
+    }
+    html = html.replace(new RegExp(escapedPlaceholder, 'g'), rendered);
+  });
+
+  latexPlaceholders.clear();
+  return html;
 }
 
 /**
@@ -281,6 +430,15 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
   // 0. Extract mermaid code blocks FIRST (before any other processing)
   let processedText = extractMermaidBlocks(text);
 
+  // 0b. Extract LaTeX blocks (before markdown parsing, after mermaid)
+  processedText = extractLatexBlocks(processedText);
+
+  // 0c. Shield remaining code blocks so all pre-processing steps below
+  //     (footnotes, citations, blockquotes) never mutate code content.
+  //     Shields are restored just before marked.parse().
+  const { shielded, shields } = shieldCodeBlocks(processedText);
+  processedText = shielded;
+
   // 1. Extract footnote definitions first (Gfm style: [^id]: content)
   // We do this by line to handle multi-line indented content properly
   const lines = processedText.split('\n');
@@ -368,6 +526,9 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
   // Pre-process blockquotes (callouts + regular) BEFORE markdown parsing
   processedText = processBlockquotes(processedText);
 
+  // Restore shielded code blocks before handing text to marked
+  processedText = restoreShields(processedText, shields);
+
   // Fix incomplete markdown tables during streaming
   if (isStreaming) {
     const lines = processedText.split('\n');
@@ -384,6 +545,9 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
 
   // Replace blockquote placeholders with actual HTML
   html = replaceBlockquotePlaceholders(html, isStreaming);
+
+  // Replace LaTeX placeholders with KaTeX-rendered HTML
+  html = replaceLatexPlaceholders(html);
 
   // Replace mermaid placeholders with HTML placeholder divs
   html = replaceMermaidPlaceholders(html);

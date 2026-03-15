@@ -2,6 +2,7 @@
 
 /* ===== TAILWIND CSS v4 IMPORT ===== */
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 @plugin "@tailwindcss/typography";
 @import "tw-animate-css";
 
