@@ -738,7 +738,7 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
   // Style inline code
   html = html.replace(
     /<code>([^<]+)<\/code>/g,
-    '<code class="md-inline-code px-1.5 py-0.5 rounded-sm bg-muted/60 text-primary font-mono text-base border border-border/40">$1</code>'
+    '<code class="not-prose md-inline-code px-1 py-0.5 rounded-sm bg-muted/60 text-primary font-mono border border-border/40">$1</code>'
   );
 
   // Wrap tables with premium, compact, elegant toolbar for horizontal scrolling and actions

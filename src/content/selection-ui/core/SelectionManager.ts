@@ -107,13 +107,11 @@ export function createSelectionManager(): SelectionManager {
   }
 
   function handleSelectionChange(): void {
-    console.log('[BraceKit] Main frame selectionchange fired, hostname:', window.location.hostname, 'isGoogleDocsPage:', isGoogleDocsPage());
     if (state.isActionInProgress) return;
 
     // In Google Docs, selection is handled by the iframe listener, not main frame
     // Main frame's selectionchange fires but getSelection() is always empty
     if (isGoogleDocsPage()) {
-      console.log('[BraceKit] Skipping main frame selectionchange in Google Docs');
       return;
     }
 
@@ -128,7 +126,6 @@ export function createSelectionManager(): SelectionManager {
   }
 
   function handleVisibilityChange(): void {
-    console.log('[BraceKit] visibilitychange fired, hidden:', document.hidden);
     if (document.hidden) cleanup();
   }
 
@@ -565,7 +562,6 @@ export function createSelectionManager(): SelectionManager {
 
     // Setup context invalidation listener
     state.contextCleanup = onContextInvalidated(() => {
-      logger.info('Extension context invalidated, cleaning up');
       forceCleanup();
     });
 
