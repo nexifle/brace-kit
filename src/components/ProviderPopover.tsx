@@ -31,6 +31,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
   const [newProviderName, setNewProviderName] = useState('');
   const [newProviderUrl, setNewProviderUrl] = useState('');
   const [newProviderFormat, setNewProviderFormat] = useState<ProviderFormat>('openai');
+  const [newProviderApiKey, setNewProviderApiKey] = useState('');
   const newModelInputRef = useRef<HTMLInputElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
 
@@ -54,13 +55,14 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
     const url = newProviderUrl.trim();
     if (!name || !url) return;
 
-    addCustomProvider(name, url, newProviderFormat);
+    addCustomProvider(name, url, newProviderFormat, undefined, newProviderApiKey.trim() || undefined);
     setNewProviderName('');
     setNewProviderUrl('');
     setNewProviderFormat('openai');
+    setNewProviderApiKey('');
     setShowNewProviderForm(false);
     onClose();
-  }, [newProviderName, newProviderUrl, newProviderFormat, addCustomProvider, onClose]);
+  }, [newProviderName, newProviderUrl, newProviderFormat, newProviderApiKey, addCustomProvider, onClose]);
 
   const handleNewModelKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -105,10 +107,15 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
 
   const localProvider = availableProviders.find(p => p.id === localSelectedProvider);
   const allModels = getAvailableModels(localSelectedProvider);
-  const models = useMemo(() =>
-    fuzzyFilter(allModels, modelSearch),
-    [allModels, modelSearch],
-  );
+  const models = useMemo(() => {
+    const filtered = fuzzyFilter(allModels, modelSearch);
+    const activeIdx = filtered.indexOf(providerConfig.model);
+    if (activeIdx > 0 && localSelectedProvider === providerConfig.providerId) {
+      const [active] = filtered.splice(activeIdx, 1);
+      filtered.unshift(active);
+    }
+    return filtered;
+  }, [allModels, modelSearch, providerConfig.model, providerConfig.providerId, localSelectedProvider]);
 
   if (!isOpen) return null;
 
@@ -182,6 +189,13 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                 placeholder="API URL"
                 value={newProviderUrl}
                 onChange={e => setNewProviderUrl(e.target.value)}
+              />
+              <input
+                className="w-full h-8 px-2.5 text-xs bg-muted/40 border border-input rounded-sm focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
+                type="password"
+                placeholder={newProviderFormat === 'ollama' ? 'API Key (optional)' : 'API Key'}
+                value={newProviderApiKey}
+                onChange={e => setNewProviderApiKey(e.target.value)}
               />
               <div className="flex gap-2">
                 <select

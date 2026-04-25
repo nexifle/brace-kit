@@ -68,17 +68,30 @@ export function useMessageBuilder() {
 
     // User with attachments
     if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-      const content: { type: string; text?: string; image_url?: { url: string } }[] = [];
-      if (msg.content) {
-        content.push({ type: 'text', text: msg.content });
+      const images = msg.attachments.filter(a => a.type === 'image');
+      const texts = msg.attachments.filter(a => a.type === 'text');
+
+      // Build inline text from text attachments
+      let textContent = msg.content || '';
+      for (const att of texts) {
+        textContent += `\n\n--- ${att.name} ---\n${att.data}`;
       }
-      for (const att of msg.attachments) {
-        if (att.type === 'image') {
-          content.push({
-            type: 'image_url',
-            image_url: { url: att.data },
-          });
-        }
+
+      // No images — send as plain string for compatibility with all providers
+      if (images.length === 0) {
+        return { role: msg.role, content: textContent };
+      }
+
+      // With images — use multi-part content format (required by OpenAI vision API)
+      const content: { type: string; text?: string; image_url?: { url: string } }[] = [];
+      if (textContent) {
+        content.push({ type: 'text', text: textContent });
+      }
+      for (const att of images) {
+        content.push({
+          type: 'image_url',
+          image_url: { url: att.data },
+        });
       }
       return { role: msg.role, content };
     }

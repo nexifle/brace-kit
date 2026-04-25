@@ -29,7 +29,6 @@ export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModal
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [autoFetch, setAutoFetch] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,7 +38,6 @@ export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModal
       setApiKey('');
       setModel('');
       setShowKey(false);
-      setAutoFetch(false);
     }
   }, [isOpen]);
 
@@ -57,7 +55,7 @@ export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModal
       format,
       apiKey: apiKey.trim(),
       model: model.trim(),
-      supportsModelFetch: autoFetch,
+      supportsModelFetch: true,
     });
   };
 
@@ -162,22 +160,6 @@ export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModal
               onChange={(e) => setModel(e.target.value)}
             />
           </div>
-
-          {/* Auto-fetch model list */}
-          {format !== 'ollama' && (
-            <label className="flex items-start gap-2.5 px-2 py-2 rounded-md cursor-pointer hover:bg-muted/30 transition-colors select-none">
-              <input
-                type="checkbox"
-                className="mt-0.5 shrink-0 accent-primary"
-                checked={autoFetch}
-                onChange={(e) => setAutoFetch(e.target.checked)}
-              />
-              <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">Auto-fetch model list</span>
-                <span className="text-xs text-muted-foreground">Fetches available models from the API automatically (requires API key)</span>
-              </span>
-            </label>
-          )}
         </div>
 
         {/* Actions */}

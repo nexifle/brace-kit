@@ -121,6 +121,11 @@ export function useProvider() {
           models: result.models,
           fetchedAt: Date.now(),
         });
+
+        // Persist fetched models to the custom provider's models array
+        if (isCustomProvider(providerId)) {
+          store.updateCustomProvider(providerId, { models: result.models });
+        }
       }
     } catch (e) {
       console.warn('Failed to fetch models:', e);
@@ -160,6 +165,8 @@ export function useProvider() {
 
   const addCustomProvider = useCallback((name: string, apiUrl: string, format: ProviderFormat, contextWindow?: number, apiKey?: string, model?: string, supportsModelFetch?: boolean) => {
     const id = 'custom_' + Date.now();
+    const shouldAutoFetch = supportsModelFetch !== false;
+
     const newProvider: CustomProvider = {
       id,
       name,
@@ -170,7 +177,7 @@ export function useProvider() {
       format,
       models: model ? [model] : [],
       contextWindow,
-      supportsModelFetch: supportsModelFetch || false,
+      supportsModelFetch: shouldAutoFetch,
     };
 
     store.addCustomProvider(newProvider);
@@ -186,11 +193,40 @@ export function useProvider() {
 
     store.saveToStorage();
 
-    // If supports fetch and has API key, trigger model fetch
-    if (supportsModelFetch && apiKey) {
-      setTimeout(() => fetchAndCacheModels(id), 100);
+    // Auto-fetch models if supported and possible
+    const isLocalhost = isOllamaLocalhost(format, apiUrl);
+    if (shouldAutoFetch && (apiKey || isLocalhost)) {
+      fetchModels({ ...newProvider, apiKey: apiKey || '' })
+        .then((result) => {
+          if (result?.models && result.models.length > 0) {
+            const firstModel = result.models[0];
+
+            // Persist fetched models to provider's models array
+            store.updateCustomProvider(id, {
+              models: result.models,
+              supportsModelFetch: true,
+            });
+
+            // Auto-select first model if no model was provided
+            if (!model) {
+              store.updateCustomProvider(id, { model: firstModel, defaultModel: firstModel });
+              store.setProviderConfig({ model: firstModel });
+            }
+
+            // Also cache in fetchedModels for getAvailableModels
+            store.setFetchedModels(id, {
+              models: result.models,
+              fetchedAt: Date.now(),
+            });
+
+            store.saveToStorage();
+          }
+        })
+        .catch(() => {
+          // Silently skip - provider still works with manual model entry
+        });
     }
-  }, [store, fetchAndCacheModels]);
+  }, [store]);
 
   const addModelToCustomProvider = useCallback((providerId: string, modelName: string) => {
     const cp = store.customProviders.find(p => p.id === providerId);
