@@ -18,9 +18,7 @@ export function useProvider() {
   );
 
   const availableProviders = useMemo(() => {
-    const builtIn = Object.entries(PROVIDER_PRESETS)
-      .filter(([id]) => id !== 'custom')
-      .map(([_, preset]) => preset);
+    const builtIn = Object.values(PROVIDER_PRESETS);
     return [...builtIn, ...store.customProviders];
   }, [store.customProviders]);
 
@@ -134,11 +132,16 @@ export function useProvider() {
   const getAvailableModels = useCallback((providerId: string): string[] => {
     const provider = getProvider(providerId);
 
-    // For custom providers, always use user-defined models — never fall through
-    // to fetchedModels cache which can contain wrong data (e.g. Anthropic's
-    // built-in static models when the custom provider uses the anthropic format).
     if (isCustomProvider(providerId)) {
-      return (provider as CustomProvider).models ?? [];
+      const cp = provider as CustomProvider;
+
+      // If custom provider supports model fetch, prefer fetched cache
+      if (cp.supportsModelFetch) {
+        const cached = store.fetchedModels[providerId];
+        if (cached?.models?.length) return cached.models;
+      }
+
+      return cp.models ?? [];
     }
 
     const providerPreset = provider as ProviderPreset;
@@ -155,33 +158,39 @@ export function useProvider() {
     return [];
   }, [store.fetchedModels, getProvider, isCustomProvider]);
 
-  const addCustomProvider = useCallback((name: string, apiUrl: string, format: ProviderFormat, contextWindow?: number) => {
+  const addCustomProvider = useCallback((name: string, apiUrl: string, format: ProviderFormat, contextWindow?: number, apiKey?: string, model?: string, supportsModelFetch?: boolean) => {
     const id = 'custom_' + Date.now();
     const newProvider: CustomProvider = {
       id,
       name,
       apiUrl,
-      apiKey: '',
-      model: '',
-      defaultModel: '',
+      apiKey: apiKey || '',
+      model: model || '',
+      defaultModel: model || '',
       format,
-      models: [],
+      models: model ? [model] : [],
       contextWindow,
+      supportsModelFetch: supportsModelFetch || false,
     };
 
     store.addCustomProvider(newProvider);
 
-    // Auto-select the new provider
+    // Auto-select the new provider with all config pre-filled
     store.setProviderConfig({
       providerId: id,
       apiUrl,
-      apiKey: '',
-      model: '',
+      apiKey: apiKey || '',
+      model: model || '',
       format,
     });
 
     store.saveToStorage();
-  }, [store]);
+
+    // If supports fetch and has API key, trigger model fetch
+    if (supportsModelFetch && apiKey) {
+      setTimeout(() => fetchAndCacheModels(id), 100);
+    }
+  }, [store, fetchAndCacheModels]);
 
   const addModelToCustomProvider = useCallback((providerId: string, modelName: string) => {
     const cp = store.customProviders.find(p => p.id === providerId);

@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useProvider } from '../../hooks/useProvider.ts';
 import { PROVIDER_PRESETS, GROQ_BUILTIN_TOOLS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
-import type { ProviderFormat, ProviderPreset } from '../../types/index.ts';
+import type { ProviderFormat, ProviderPreset, CustomProvider } from '../../types/index.ts';
 import { PlusIcon, XIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
 import { ModelParameterSettings } from './ModelParameterSettings.tsx';
+import { AddProviderModal } from './AddProviderModal.tsx';
 import { useStore } from '../../store/index.ts';
 
 // =============================================================================
@@ -55,12 +56,7 @@ export function ProviderSettings() {
   const [showKey, setShowKey] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [newModelInput, setNewModelInput] = useState('');
-  const [showAddProvider, setShowAddProvider] = useState(false);
-
-  // New provider form state
-  const [newName, setNewName] = useState('');
-  const [newUrl, setNewUrl] = useState('');
-  const [newFormat, setNewFormat] = useState<ProviderFormat>('openai');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Confirmation state
   const [providerToDelete, setProviderToDelete] = useState<{ id: string, name: string } | null>(null);
@@ -68,6 +64,14 @@ export function ProviderSettings() {
   const currentProvider = getProvider(providerConfig.providerId) as ProviderPreset;
   const isCustom = isCustomProvider(providerConfig.providerId);
   const isOllama = currentProvider?.format === 'ollama';
+
+  // Setup readiness
+  const hasApiKey = !!providerConfig.apiKey || isOllama;
+  const hasModel = !!providerConfig.model;
+  const isReady = hasApiKey && hasModel;
+
+  // Whether custom provider uses fetched dropdown instead of chip UI
+  const customUsesDropdown = isCustom && !!(currentProvider as CustomProvider)?.supportsModelFetch;
 
   useEffect(() => {
     const models = getAvailableModels(providerConfig.providerId);
@@ -101,14 +105,10 @@ export function ProviderSettings() {
     removeModelFromCustomProvider(providerConfig.providerId, modelName);
   }, [isCustom, providerConfig.providerId, removeModelFromCustomProvider]);
 
-  const handleAddProvider = useCallback(() => {
-    if (!newName.trim() || !newUrl.trim()) return;
-    addCustomProvider(newName.trim(), newUrl.trim(), newFormat);
-    setNewName('');
-    setNewUrl('');
-    setNewFormat('openai');
-    setShowAddProvider(false);
-  }, [newName, newUrl, newFormat, addCustomProvider]);
+  const handleAddFromModal = useCallback((fields: { name: string; apiUrl: string; format: import('../../types/index.ts').ProviderFormat; apiKey: string; model: string; supportsModelFetch: boolean }) => {
+    addCustomProvider(fields.name, fields.apiUrl, fields.format, undefined, fields.apiKey, fields.model, fields.supportsModelFetch);
+    setShowAddModal(false);
+  }, [addCustomProvider]);
 
   const handleConfirmRemoveProvider = useCallback(() => {
     if (!providerToDelete) return;
@@ -162,56 +162,43 @@ export function ProviderSettings() {
               })}
 
               <button
-                className={`h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-xs font-bold uppercase tracking-tight
-                  ${showAddProvider
-                    ? 'bg-primary/10 border-primary/40 text-primary'
-                    : 'bg-transparent border-border/60 text-muted-foreground hover:bg-muted/20 hover:text-foreground'}`}
-                onClick={() => setShowAddProvider(!showAddProvider)}
+                className="h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-xs font-bold uppercase tracking-tight bg-transparent border-border/60 text-muted-foreground hover:bg-muted/20 hover:text-foreground"
+                onClick={() => setShowAddModal(true)}
               >
                 <PlusIcon size={14} />
-                {showAddProvider ? 'Cancel' : 'Add'}
+                Add
               </button>
             </div>
 
-            {/* Inline Add Provider Form */}
-            {showAddProvider && (
-              <div className="flex flex-col gap-2.5 p-3 bg-secondary/30 border border-border/40 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
-                <p className="text-sm text-muted-foreground">Enter a name, API format, and base URL for your custom provider.</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
-                    placeholder="Provider name"
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                  />
-                  <select
-                    className="w-full h-8 px-2 text-sm bg-muted/40 border border-input rounded-md outline-none cursor-pointer text-foreground"
-                    value={newFormat}
-                    onChange={e => setNewFormat(e.target.value as ProviderFormat)}
-                  >
-                    <option value="openai">OpenAI format</option>
-                    <option value="anthropic">Anthropic format</option>
-                    <option value="gemini">Gemini format</option>
-                    <option value="ollama">Ollama format</option>
-                  </select>
-                </div>
-                <input
-                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
-                  placeholder="Base URL  (e.g. https://api.example.com/v1)"
-                  value={newUrl}
-                  onChange={e => setNewUrl(e.target.value)}
-                />
-                <button
-                  className="w-full h-8 bg-primary text-primary-foreground text-sm font-bold uppercase tracking-wider rounded-md shadow-sm hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
-                  onClick={handleAddProvider}
-                  disabled={!newName.trim() || !newUrl.trim()}
-                >
-                  Save Provider
-                </button>
-              </div>
-            )}
           </div>
         </SectionCard>
+
+        {/* ── SETUP STATUS ── */}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+          isReady
+            ? 'bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400'
+            : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-600 dark:text-yellow-400'
+        }`}>
+          {isReady ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <span>Ready to chat</span>
+              <span className="text-muted-foreground font-normal ml-1">— {providerConfig.model} on {currentProvider?.name || 'Provider'}</span>
+            </>
+          ) : !hasApiKey ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span>API Key required</span>
+              <span className="text-muted-foreground font-normal ml-1">— Enter your key below to start</span>
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>Select a model</span>
+              <span className="text-muted-foreground font-normal ml-1">— Choose a model to start chatting</span>
+            </>
+          )}
+        </div>
 
         {/* ── CONFIGURATION (API Key + Base URL + Model) ── */}
         <SectionCard>
@@ -258,12 +245,39 @@ export function ProviderSettings() {
               </div>
             )}
 
+            {/* API Format — custom providers only */}
+            {isCustom && (
+              <div className="flex flex-col gap-1.5 animate-in fade-in duration-200">
+                <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">API Format</label>
+                <select
+                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground cursor-pointer"
+                  value={providerConfig.format}
+                  onChange={(e) => updateProviderConfig({ format: e.target.value as ProviderFormat })}
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="ollama">Ollama</option>
+                </select>
+              </div>
+            )}
+
             {/* Model */}
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Model</label>
-              {isCustom ? (
-                // Custom providers: chip-based selector + add model
-                // Clicking a chip selects it; the active chip is highlighted
+              {customUsesDropdown && availableModels.length > 0 ? (
+                // Custom provider with auto-fetch: dropdown (same as preset)
+                <select
+                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
+                  value={providerConfig.model}
+                  onChange={(e) => updateProviderConfig({ model: e.target.value })}
+                >
+                  {availableModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              ) : isCustom ? (
+                // Custom providers without fetch: chip-based selector + add model
                 <div className="flex flex-col gap-2">
                   {availableModels.length === 0 ? (
                     <p className="text-sm text-muted-foreground/60 py-1">
@@ -343,32 +357,15 @@ export function ProviderSettings() {
         <SectionCard>
           <SectionHeader icon={<SlidersHorizontalIcon size={12} />} title="Advanced" />
           <div className="p-3 flex flex-col gap-3">
-            <div className={isCustom ? 'grid grid-cols-2 gap-3' : ''}>
-              {isCustom && (
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">API Format</label>
-                  <select
-                    className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground cursor-pointer"
-                    value={providerConfig.format}
-                    onChange={(e) => updateProviderConfig({ format: e.target.value as ProviderFormat })}
-                  >
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="gemini">Gemini</option>
-                    <option value="ollama">Ollama</option>
-                  </select>
-                </div>
-              )}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">Context Window</label>
-                <input
-                  type="number"
-                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
-                  placeholder={String(currentProvider?.contextWindow || 128000)}
-                  value={providerConfig.contextWindow || ''}
-                  onChange={(e) => updateProviderConfig({ contextWindow: e.target.value ? parseInt(e.target.value, 10) : undefined })}
-                />
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">Context Window</label>
+              <input
+                type="number"
+                className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
+                placeholder={String(currentProvider?.contextWindow || 128000)}
+                value={providerConfig.contextWindow || ''}
+                onChange={(e) => updateProviderConfig({ contextWindow: e.target.value ? parseInt(e.target.value, 10) : undefined })}
+              />
             </div>
 
             <ModelParameterSettings />
@@ -428,6 +425,12 @@ export function ProviderSettings() {
           variant="danger"
         />
       )}
+
+      <AddProviderModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSubmit={handleAddFromModal}
+      />
     </section>
   );
 }

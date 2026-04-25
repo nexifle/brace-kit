@@ -201,15 +201,6 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     supportsModelFetch: true,
     supportsReasoningContent: true,
   },
-  custom: {
-    id: 'custom',
-    name: 'Custom Endpoint',
-    apiUrl: '',
-    defaultModel: '',
-    format: 'openai',
-    models: [],
-    supportsModelFetch: false,
-  },
   ollama: {
     id: 'ollama',
     name: 'Ollama',

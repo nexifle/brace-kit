@@ -264,7 +264,7 @@ describe('Providers Index - Unified Interfaces', () => {
 
     it('should use OpenAI parser for unknown format', async () => {
       const provider = {
-        ...PROVIDER_PRESETS.custom,
+        ...PROVIDER_PRESETS.openai,
         format: 'unknown' as 'openai',
       };
       const chunks = ['data: {"choices":[{"delta":{"content":"Test"}}]}\n\n', 'data: [DONE]\n\n'];

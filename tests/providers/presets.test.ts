@@ -25,7 +25,7 @@ describe('Provider Presets', () => {
       expect(PROVIDER_PRESETS.gemini).toBeDefined();
       expect(PROVIDER_PRESETS.xai).toBeDefined();
       expect(PROVIDER_PRESETS.deepseek).toBeDefined();
-      expect(PROVIDER_PRESETS.custom).toBeDefined();
+      expect(PROVIDER_PRESETS.ollama).toBeDefined();
     });
 
     it('should have correct OpenAI preset', () => {
