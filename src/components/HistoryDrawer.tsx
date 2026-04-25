@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import fuzzysort from 'fuzzysort';
 import type { Message, Conversation } from '../types/index.ts';
@@ -61,14 +61,25 @@ interface SearchableItem {
   content: string;
 }
 
+const MAX_SEARCHABLE_CONTENT = 3000;
+const MESSAGE_LOAD_BATCH_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 150;
+
 function buildSearchableContent(messages: Message[]): string {
   const parts: string[] = [];
+  let total = 0;
   for (const m of messages) {
-    if (m.content) parts.push(m.content);
-    if (m.displayContent) parts.push(m.displayContent);
-    if (m.pageContext?.content) parts.push(m.pageContext.content);
-    if (m.pageContext?.pageTitle) parts.push(m.pageContext.pageTitle);
-    if (m.selectedText?.selectedText) parts.push(m.selectedText.selectedText);
+    if (total >= MAX_SEARCHABLE_CONTENT) break;
+    const chunks = [m.content, m.displayContent, m.pageContext?.content, m.pageContext?.pageTitle, m.selectedText?.selectedText];
+    for (const chunk of chunks) {
+      if (!chunk) continue;
+      if (total + chunk.length > MAX_SEARCHABLE_CONTENT) {
+        parts.push(chunk.slice(0, MAX_SEARCHABLE_CONTENT - total));
+        return parts.join(' ');
+      }
+      parts.push(chunk);
+      total += chunk.length;
+    }
   }
   return parts.join(' ');
 }
@@ -90,6 +101,13 @@ export function HistoryDrawer() {
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
   const searchableRef = useRef<SearchableItem[]>([]);
   const searchLoadedRef = useRef(false);
+
+  // Debounced search query — prevents main-thread thrashing on every keystroke
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleSwitchConversation = (id: string) => {
     if (id === store.activeConversationId) return;
@@ -179,15 +197,16 @@ export function HistoryDrawer() {
     // Set metadata-only list for immediate render
     setConversationsWithData(store.conversations.map(c => ({ ...c, messages: [] })));
 
-    // Pre-fetch all messages in parallel for search capability
+    // Pre-fetch messages in batches for search capability
     const loadAllMessages = async () => {
       setIsLoading(true);
       const cache = messagesCacheRef.current;
       const idsToFetch = store.conversations.filter(c => !cache.has(c.id)).map(c => c.id);
 
-      if (idsToFetch.length > 0) {
+      for (let i = 0; i < idsToFetch.length; i += MESSAGE_LOAD_BATCH_SIZE) {
+        const batch = idsToFetch.slice(i, i + MESSAGE_LOAD_BATCH_SIZE);
         const results = await Promise.all(
-          idsToFetch.map(async (id) => {
+          batch.map(async (id) => {
             try {
               const msgs = await getConversationMessages(id);
               return { id, messages: msgs ?? [] };
@@ -199,6 +218,8 @@ export function HistoryDrawer() {
         for (const { id, messages } of results) {
           cache.set(id, messages);
         }
+        // Yield to main thread between batches so UI stays responsive
+        await new Promise(r => setTimeout(r, 0));
       }
 
       // Pre-build searchable strings
@@ -230,13 +251,10 @@ export function HistoryDrawer() {
     });
   }, [conversationsWithData]);
 
-  // Deferred query: the input stays responsive while fuzzy search runs on a deferred value
-  const deferredQuery = useDeferredValue(searchQuery);
-
   const filtered = useMemo(() => {
-    if (!deferredQuery.trim()) return sorted;
+    if (!debouncedQuery.trim()) return sorted;
 
-    const query = deferredQuery.trim();
+    const query = debouncedQuery.trim();
 
     // Use pre-built searchable items from cache if available, otherwise build from sorted
     const items: SearchableItem[] = searchLoadedRef.current
@@ -277,7 +295,7 @@ export function HistoryDrawer() {
     return Array.from(resultMap.values())
       .sort((a, b) => b.score - a.score)
       .map((r) => r.item.conv);
-  }, [deferredQuery, sorted]);
+  }, [debouncedQuery, sorted]);
 
   const highlightMatch = (text: string, query: string): string => {
     if (!query.trim()) return text;
@@ -309,10 +327,11 @@ export function HistoryDrawer() {
     return (
       <div
         key={conv.id}
-        className={`group/item relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all duration-200 
+        className={`group/item relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all duration-200
           ${isActive ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted/40'}
           ${isHighlighted ? 'ring-2 ring-primary/40 bg-primary/5 animate-pulse' : ''}
           ${isRenaming ? 'bg-muted/30 ring-1 ring-border' : ''}`}
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 36px' }}
         onClick={() => !isRenaming && handleSwitchConversation(conv.id)}
         onDoubleClick={() => !isRenaming && startRename(conv)}
       >
