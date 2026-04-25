@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
-import fuzzysort from 'fuzzysort';
+import { fuzzySearchMulti, fuzzyHighlight } from '../utils/fuzzySearch.ts';
 import type { Message, Conversation } from '../types/index.ts';
 import { getConversationMessages } from '../utils/conversationDB.ts';
 import {
@@ -271,37 +271,22 @@ export function HistoryDrawer() {
       ? items.filter(i => sortedIds.has(i.conv.id))
       : items;
 
-    // Fast path: title-only search for short queries (most common)
-    if (query.length <= 2) {
-      const lower = query.toLowerCase();
-      return searchableItems
-        .filter(item => item.title.toLowerCase().includes(lower))
-        .map(item => item.conv);
-    }
-
-    const titleResults = fuzzysort.go(query, searchableItems, { key: 'title', threshold: -10000, limit: 100 });
-    const contentResults = fuzzysort.go(query, searchableItems, { key: 'content', threshold: -10000, limit: 100 });
-
-    const resultMap = new Map<string, { item: SearchableItem; score: number }>();
-    for (const r of titleResults) {
-      resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score * 1.5 });
-    }
-    for (const r of contentResults) {
-      const existing = resultMap.get(r.obj.conv.id);
-      if (existing) existing.score = Math.max(existing.score, r.score);
-      else resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score });
-    }
-
-    return Array.from(resultMap.values())
-      .sort((a, b) => b.score - a.score)
-      .map((r) => r.item.conv);
+    return fuzzySearchMulti<SearchableItem>(searchableItems, query, [
+      { key: 'title', weight: 1.5 },
+      { key: 'content' },
+    ], {
+      getId: (item) => item.conv.id,
+      threshold: -10000,
+      limit: 100,
+      shortQueryFallback: (items, q) => {
+        const lower = q.toLowerCase();
+        return items.filter(item => item.title.toLowerCase().includes(lower));
+      },
+    }).map(item => item.conv);
   }, [debouncedQuery, sorted]);
 
   const highlightMatch = (text: string, query: string): string => {
-    if (!query.trim()) return text;
-    const result = fuzzysort.single(query, text);
-    if (!result) return text;
-    return result.highlight('<mark class="bg-primary/20 text-primary font-bold rounded-xs px-0.5">', '</mark>');
+    return fuzzyHighlight(text, query, '<mark class="bg-primary/20 text-primary font-bold rounded-xs px-0.5">', '</mark>');
   };
 
   const grouped = useMemo(() => {

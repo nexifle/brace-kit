@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useProvider } from '../hooks';
 import { PROVIDER_PRESETS } from '../providers';
+import { fuzzyFilter } from '../utils/fuzzySearch.ts';
 import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
-import { XIcon } from 'lucide-react';
+import { XIcon, SearchIcon } from 'lucide-react';
 
 interface ProviderPopoverProps {
   isOpen: boolean;
@@ -25,11 +26,13 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
 
   const [localSelectedProvider, setLocalSelectedProvider] = useState(providerConfig.providerId);
   const [newModelInput, setNewModelInput] = useState('');
+  const [modelSearch, setModelSearch] = useState('');
   const [showNewProviderForm, setShowNewProviderForm] = useState(false);
   const [newProviderName, setNewProviderName] = useState('');
   const [newProviderUrl, setNewProviderUrl] = useState('');
   const [newProviderFormat, setNewProviderFormat] = useState<ProviderFormat>('openai');
   const newModelInputRef = useRef<HTMLInputElement>(null);
+  const modelSearchRef = useRef<HTMLInputElement>(null);
 
   const handleSelectModel = useCallback((modelName: string) => {
     if (localSelectedProvider !== providerConfig.providerId) {
@@ -74,6 +77,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
   useEffect(() => {
     if (isOpen) {
       setLocalSelectedProvider(providerConfig.providerId);
+      setModelSearch('');
     }
   }, [isOpen, providerConfig.providerId]);
 
@@ -86,10 +90,27 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
     }
   }, [isOpen, localSelectedProvider, availableProviders, fetchAndCacheModels]);
 
-  if (!isOpen) return null;
+  // Keyboard shortcut: / to focus search, Escape to clear
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        modelSearchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
 
   const localProvider = availableProviders.find(p => p.id === localSelectedProvider);
-  const models = getAvailableModels(localSelectedProvider);
+  const allModels = getAvailableModels(localSelectedProvider);
+  const models = useMemo(() =>
+    fuzzyFilter(allModels, modelSearch),
+    [allModels, modelSearch],
+  );
+
+  if (!isOpen) return null;
 
   // Built-in providers list (exclude 'custom' catch-all)
   const builtInProviders = Object.values(PROVIDER_PRESETS).filter(p => p.id !== 'custom');
@@ -124,7 +145,7 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                       ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                       : 'bg-muted/40 text-muted-foreground border-border hover:bg-muted/60 hover:text-foreground'
                       } ${isActive && !isSelected ? 'ring-1 ring-primary/30 ring-inset' : ''}`}
-                    onClick={() => setLocalSelectedProvider(provider.id)}
+                    onClick={() => { setLocalSelectedProvider(provider.id); setModelSearch(''); }}
                     title={provider.name}
                   >
                     {provider.name}
@@ -193,9 +214,32 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                     <span className="text-primary ml-1 lowpan opacity-80">(browsing)</span>
                   )}
                 </div>
+                {allModels.length > 5 && (
+                  <span className="text-2xs text-muted-foreground/40 tabular-nums">{models.length}/{allModels.length}</span>
+                )}
               </div>
 
-              {models.length > 0 ? (
+              {/* Search input */}
+              {allModels.length > 5 && (
+                <div className="relative flex items-center">
+                  <SearchIcon size={12} className="absolute left-2 text-muted-foreground/40 pointer-events-none" />
+                  <input
+                    ref={modelSearchRef}
+                    className="w-full h-7 pl-7 pr-2 text-xs bg-muted/40 border border-input rounded-sm focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
+                    type="text"
+                    placeholder="Search models…"
+                    value={modelSearch}
+                    onChange={e => setModelSearch(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && models.length > 0) {
+                        handleSelectModel(models[0]);
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {allModels.length > 0 && models.length > 0 ? (
                 <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto pr-1">
                   {models.map(model => {
                     const isActiveModel = model === providerConfig.model && localSelectedProvider === providerConfig.providerId;
@@ -228,11 +272,15 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                     );
                   })}
                 </div>
-              ) : (
+              ) : allModels.length > 0 && modelSearch ? (
+                <div className="py-4 px-2 text-center rounded-md border border-dashed border-border/40 bg-muted/10">
+                  <p className="text-2xs text-muted-foreground italic">No models match "{modelSearch}"</p>
+                </div>
+              ) : allModels.length === 0 ? (
                 <div className="py-8 px-2 text-center rounded-md border border-dashed border-border/40 bg-muted/10">
                   <p className="text-2xs text-muted-foreground italic">No models found for this provider.</p>
                 </div>
-              )}
+              ) : null}
 
               {/* Add model input — hanya untuk custom provider */}
               {isCustomProvider(localSelectedProvider) && (
