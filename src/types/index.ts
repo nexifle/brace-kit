@@ -173,9 +173,16 @@ export interface ModelParameters {
   topK?: number;
   /**
    * Thinking budget in tokens. Only applied when reasoning is enabled.
-   * Anthropic default: 4096. Gemini default: 24576.
+   * Anthropic default: 4096. Gemini 2.5 default: 24576.
+   * NOT supported by Gemini 3+ — use thinkingLevel instead.
    */
   thinkingBudget?: number;
+  /**
+   * Thinking level for Gemini 3+ models. Values: 'minimal', 'low', 'medium', 'high'.
+   * Replaces thinkingBudget for Gemini 3 and later.
+   * Default (when reasoning enabled): 'high'.
+   */
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
   /** Minimum probability threshold for token selection. Supported: Ollama only. */
   minP?: number;
   /** Context window size (number of tokens). Supported: Ollama only. */
@@ -191,7 +198,7 @@ export interface ModelParameters {
 export const SUPPORTED_PARAMETERS: Record<ProviderFormat, (keyof ModelParameters)[]> = {
   openai: ['temperature', 'maxTokens', 'topP'],
   anthropic: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
-  gemini: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
+  gemini: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget', 'thinkingLevel'],
   ollama: ['temperature', 'maxTokens', 'topP', 'topK', 'minP', 'numCtx', 'keepAlive'],
 };
 

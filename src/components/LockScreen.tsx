@@ -28,12 +28,7 @@ export function LockScreen() {
   };
 
   return (
-    <div className="fixed inset-0 z-200 flex items-center justify-center p-4 overflow-hidden">
-      {/* Dynamic Backdrop */}
-      <div
-        className="absolute inset-0 bg-background/60 backdrop-blur-md animate-in fade-in duration-500"
-        onClick={() => { /* Prevents clicks from passing through if needed */ }}
-      />
+    <div className="fixed inset-0 z-200 flex items-center justify-center p-4 overflow-hidden bg-background">
 
       {/* Dialog Card - Compact Version */}
       <div className="relative w-full max-w-[400px] p-6 rounded-lg bg-card/95 backdrop-blur-2xl border border-white/10 shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-500">

@@ -16,6 +16,8 @@ export interface ChatOptions {
   enableGoogleSearch?: boolean;
   /** Image aspect ratio for generation models */
   aspectRatio?: string;
+  /** Image resolution for generation models: '512', '1K', '2K', '4K' (Gemini-specific) */
+  imageSize?: string;
   /** Enable streaming response */
   stream?: boolean;
   /** Enable reasoning/thinking mode */
@@ -172,6 +174,10 @@ export interface ModelFetchResult {
  */
 export interface GeminiPart {
   text?: string;
+  /** Whether this part contains thinking/reasoning content */
+  thought?: boolean | string;
+  /** Thought signature for multi-turn context (Gemini 3+) */
+  thoughtSignature?: string;
   functionCall?: { name: string; args: Record<string, unknown> };
   inlineData?: { mimeType: string; data: string };
   functionResponse?: { name: string; response: unknown };

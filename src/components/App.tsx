@@ -54,9 +54,12 @@ export function App() {
     !store.isAuthenticated &&
     store.security.passwordHash !== null;
 
+  if (shouldShowLockScreen) {
+    return <LockScreen />;
+  }
+
   return (
     <div id="app" className="relative flex flex-col h-screen overflow-hidden bg-background text-foreground">
-      {shouldShowLockScreen && <LockScreen />}
       {store.isCompacting && (
         <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center z-[1000] text-white gap-3 animate-in fade-in duration-300">
           <div className="compacting-spinner"></div>

@@ -248,6 +248,45 @@ describe('Gemini Format', () => {
       expect(body.generationConfig.imageConfig.aspectRatio).toBe('16:9');
     });
 
+    it('should detect Gemini 3.1 image models by pattern', () => {
+      const imageProvider = {
+        ...provider,
+        model: 'gemini-3.1-flash-image-preview',
+      };
+
+      const config = formatGemini(imageProvider, [], [], { aspectRatio: '1:1' });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.responseModalities).toContain('IMAGE');
+    });
+
+    it('should include imageSize for image models', () => {
+      const imageProvider = {
+        ...provider,
+        model: 'gemini-3.1-flash-image-preview',
+      };
+
+      const config = formatGemini(imageProvider, [], [], { aspectRatio: '16:9', imageSize: '2K' });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.responseModalities).toContain('IMAGE');
+      expect(body.generationConfig.imageConfig.aspectRatio).toBe('16:9');
+      expect(body.generationConfig.imageConfig.imageSize).toBe('2K');
+    });
+
+    it('should set responseModalities for image models without aspect ratio', () => {
+      const imageProvider = {
+        ...provider,
+        model: 'gemini-3-flash-image',
+      };
+
+      const config = formatGemini(imageProvider, [], [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.responseModalities).toContain('IMAGE');
+      expect(body.generationConfig.imageConfig).toBeUndefined();
+    });
+
     it('should enable reasoning for thinking models', () => {
       const thinkingProvider = {
         ...provider,
@@ -261,6 +300,49 @@ describe('Gemini Format', () => {
       expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
     });
 
+    it('should use thinkingLevel for Gemini 3 models', () => {
+      const gemini3Provider = {
+        ...provider,
+        model: 'gemini-3-flash-preview',
+      };
+
+      const config = formatGemini(gemini3Provider, [], [], { enableReasoning: true });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.thinkingConfig).toBeDefined();
+      expect(body.generationConfig.thinkingConfig.thinkingLevel).toBe('high');
+      expect(body.generationConfig.thinkingConfig.thinkingBudget).toBeUndefined();
+    });
+
+    it('should use thinkingLevel with custom level for Gemini 3 models', () => {
+      const gemini3Provider = {
+        ...provider,
+        model: 'gemini-3-flash-preview',
+      };
+
+      const config = formatGemini(gemini3Provider, [], [], {
+        enableReasoning: true,
+        modelParameters: { thinkingLevel: 'low' },
+      });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.thinkingConfig.thinkingLevel).toBe('low');
+    });
+
+    it('should use thinkingBudget for Gemini 2.5 models', () => {
+      const gemini25Provider = {
+        ...provider,
+        model: 'gemini-2.5-flash',
+      };
+
+      const config = formatGemini(gemini25Provider, [], [], { enableReasoning: true });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.thinkingConfig).toBeDefined();
+      expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
+      expect(body.generationConfig.thinkingConfig.thinkingLevel).toBeUndefined();
+    });
+
     it('should handle custom URL with /models/ path', () => {
       const customProvider = {
         ...provider,
@@ -270,6 +352,64 @@ describe('Gemini Format', () => {
       const config = formatGemini(customProvider, [], [], {});
 
       expect(config.url).toContain('https://custom.googleapis.com/v1beta/models/gemini-custom?');
+    });
+
+    it('should include reasoning content as thought parts for Gemini 3 models', () => {
+      const gemini3Provider = {
+        ...provider,
+        model: 'gemini-3-flash-preview',
+      };
+
+      const messages: Message[] = [
+        { role: 'user', content: 'Solve this puzzle' },
+        {
+          role: 'assistant',
+          content: 'The answer is 42',
+          reasoningContent: 'Let me work through this step by step...',
+          reasoningSignature: 'sig_prev_turn',
+        },
+        { role: 'user', content: 'Why?' },
+      ];
+
+      const config = formatGemini(gemini3Provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      // Model turn should have thought part + text part
+      const modelTurn = body.contents[1];
+      expect(modelTurn.role).toBe('model');
+      expect(modelTurn.parts).toHaveLength(2);
+      expect(modelTurn.parts[0].thought).toBe(true);
+      expect(modelTurn.parts[0].text).toBe('Let me work through this step by step...');
+      expect(modelTurn.parts[0].thoughtSignature).toBe('sig_prev_turn');
+      expect(modelTurn.parts[1].text).toBe('The answer is 42');
+    });
+
+    it('should not include reasoning content for non-Gemini-3 models', () => {
+      const gemini25Provider = {
+        ...provider,
+        model: 'gemini-2.5-flash',
+      };
+
+      const messages: Message[] = [
+        { role: 'user', content: 'Hello' },
+        {
+          role: 'assistant',
+          content: 'Hi!',
+          reasoningContent: 'Thinking...',
+          reasoningSignature: 'sig_123',
+        },
+        { role: 'user', content: 'How are you?' },
+      ];
+
+      const config = formatGemini(gemini25Provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      // Model turn should only have text part (no thought part for Gemini 2.5)
+      const modelTurn = body.contents[1];
+      expect(modelTurn.role).toBe('model');
+      expect(modelTurn.parts).toHaveLength(1);
+      expect(modelTurn.parts[0].text).toBe('Hi!');
+      expect(modelTurn.parts[0].thought).toBeUndefined();
     });
   });
 
@@ -304,6 +444,60 @@ describe('Gemini Format', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0]).toEqual({ type: 'reasoning', content: 'Let me think...' });
+    });
+
+    it('should parse thought signatures from thought parts', async () => {
+      const chunks = [
+        'data: {"candidates":[{"content":{"parts":[{"text":"Reasoning...","thought":true,"thoughtSignature":"sig_abc123"}]}}]}\n\n',
+      ];
+
+      const response = createMockStreamResponse(chunks);
+      const results = [];
+
+      for await (const chunk of parseGeminiStream(response)) {
+        results.push(chunk);
+      }
+
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ type: 'reasoning', content: 'Reasoning...' });
+      expect(results[1]).toEqual({ type: 'reasoning_signature', content: 'sig_abc123' });
+    });
+
+    it('should parse thought signatures from non-thought parts (Gemini 3+)', async () => {
+      const chunks = [
+        'data: {"candidates":[{"content":{"parts":[{"text":"Response text","thoughtSignature":"sig_xyz789"}]}}]}\n\n',
+      ];
+
+      const response = createMockStreamResponse(chunks);
+      const results = [];
+
+      for await (const chunk of parseGeminiStream(response)) {
+        results.push(chunk);
+      }
+
+      // thoughtSignature is yielded before text content
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ type: 'reasoning_signature', content: 'sig_xyz789' });
+      expect(results[1]).toEqual({ type: 'text', content: 'Response text' });
+    });
+
+    it('should not yield thought parts as regular text', async () => {
+      const chunks = [
+        'data: {"candidates":[{"content":{"parts":[{"text":"Thinking...","thought":true},{"text":"Answer"}]}}]}\n\n',
+      ];
+
+      const response = createMockStreamResponse(chunks);
+      const results = [];
+
+      for await (const chunk of parseGeminiStream(response)) {
+        results.push(chunk);
+      }
+
+      expect(results).toHaveLength(2);
+      expect(results[0].type).toBe('reasoning');
+      expect(results[0].content).toBe('Thinking...');
+      expect(results[1].type).toBe('text');
+      expect(results[1].content).toBe('Answer');
     });
 
     it('should parse tool calls', async () => {

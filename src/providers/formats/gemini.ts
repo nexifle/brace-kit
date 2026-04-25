@@ -7,10 +7,11 @@
 import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, GeminiContent, GeminiPart, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import {
-  GEMINI_IMAGE_MODELS,
   GEMINI_NO_TOOLS_MODELS,
   GEMINI_SEARCH_ONLY_MODELS,
   GEMINI_ASPECT_RATIO_MAP,
+  isGeminiImageModel,
+  isGemini3Model,
 } from '../presets.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 import { cleanSchema, convertToGeminiSchema } from '../utils/schema.ts';
@@ -55,8 +56,23 @@ export function formatGemini(
     } else if (msg.role === 'assistant') {
       // Assistant messages → model role
       const parts: GeminiPart[] = [];
+
+      // Include reasoning/thinking content as thought parts (required for Gemini 3+ multi-turn)
+      if (msg.reasoningContent && isGemini3Model(model)) {
+        const thoughtPart: GeminiPart = { text: msg.reasoningContent, thought: true };
+        if (msg.reasoningSignature) {
+          thoughtPart.thoughtSignature = msg.reasoningSignature;
+        }
+        parts.push(thoughtPart);
+      }
+
       if (msg.content) {
-        parts.push({ text: msg.content });
+        const textPart: GeminiPart = { text: msg.content };
+        // Attach thought signature to text part if present (Gemini 3+ multi-turn)
+        if (msg.reasoningSignature && !msg.reasoningContent && isGemini3Model(model)) {
+          textPart.thoughtSignature = msg.reasoningSignature;
+        }
+        parts.push(textPart);
       }
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
@@ -157,19 +173,36 @@ export function formatGemini(
   if (p?.topK !== undefined) genConfig.topK = p.topK;
 
   // Add thinking config for Gemini thinking models when reasoning is enabled
+  // Gemini 3+ uses thinkingLevel, Gemini 2.5 uses thinkingBudget
   if (shouldEnableReasoning) {
-    genConfig.thinkingConfig = {
-      thinkingBudget: p?.thinkingBudget ?? 24576,
-      includeThoughts: true,
-    };
+    if (isGemini3Model(model)) {
+      genConfig.thinkingConfig = {
+        thinkingLevel: p?.thinkingLevel ?? 'high',
+        includeThoughts: true,
+      };
+    } else {
+      genConfig.thinkingConfig = {
+        thinkingBudget: p?.thinkingBudget ?? 24576,
+        includeThoughts: true,
+      };
+    }
   }
 
-  // Add aspect ratio for Gemini image generation models
-  if (options.aspectRatio && GEMINI_IMAGE_MODELS.includes(model)) {
-    const geminiAspectRatio = GEMINI_ASPECT_RATIO_MAP[options.aspectRatio];
-    if (geminiAspectRatio) {
-      genConfig.responseModalities = ['TEXT', 'IMAGE'];
-      genConfig.imageConfig = { aspectRatio: geminiAspectRatio };
+  // Add image generation config for Gemini image models
+  if (isGeminiImageModel(model)) {
+    genConfig.responseModalities = ['TEXT', 'IMAGE'];
+    const imageConfig: Record<string, string> = {};
+    if (options.aspectRatio) {
+      const geminiAspectRatio = GEMINI_ASPECT_RATIO_MAP[options.aspectRatio];
+      if (geminiAspectRatio) {
+        imageConfig.aspectRatio = geminiAspectRatio;
+      }
+    }
+    if (options.imageSize) {
+      imageConfig.imageSize = options.imageSize;
+    }
+    if (Object.keys(imageConfig).length > 0) {
+      genConfig.imageConfig = imageConfig;
     }
   }
 
@@ -308,13 +341,18 @@ export async function* parseGeminiStream(
               // 2. thought is boolean: {"thought": true, "text": "reasoning"}
               if (part.thought) {
                 if (typeof part.thought === 'string') {
-                  // New format: thought contains reasoning string
                   yield { type: 'reasoning', content: part.thought };
                 } else if (part.text) {
-                  // Legacy format: thought is boolean, text contains reasoning
                   yield { type: 'reasoning', content: part.text };
-                  continue; // Skip yielding text as regular content
                 }
+                if (part.thoughtSignature) {
+                  yield { type: 'reasoning_signature', content: part.thoughtSignature };
+                }
+                continue;
+              }
+
+              if (part.thoughtSignature) {
+                yield { type: 'reasoning_signature', content: part.thoughtSignature };
               }
 
               // Regular text content — parsed through think-tag state machine for

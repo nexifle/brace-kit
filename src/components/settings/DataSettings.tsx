@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
     DownloadIcon, UploadIcon, AlertCircleIcon, CheckCircle2Icon,
     Loader2Icon, KeyRoundIcon, InfoIcon, Trash2Icon, LockIcon,
     FileJsonIcon, XIcon, ShieldAlertIcon
 } from 'lucide-react';
 import { exportData, importData, inspectBackup, resetAllData } from '../../utils/backup.ts';
-import type { BackupInspection } from '../../utils/backup.types.ts';
+import type { BackupInspection, ExportPhase, ImportPhase } from '../../utils/backup.types.ts';
 import { useStore } from '../../store/index.ts';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
 
@@ -29,6 +29,24 @@ function StatusMessage({ status }: { status: StatusState }) {
     );
 }
 
+const PHASE_LABELS: Record<ExportPhase, string> = {
+    storage: 'Settings',
+    conversations: 'Conversations',
+    images: 'Images',
+    metadata: 'Metadata',
+    encrypting: 'Finalizing',
+};
+
+const IMPORT_PHASE_LABELS: Record<ImportPhase, string> = {
+    reading: 'Reading file',
+    decrypting: 'Decrypting',
+    storage: 'Restoring settings',
+    conversations: 'Restoring conversations',
+    images: 'Restoring images',
+    metadata: 'Restoring metadata',
+    api_keys: 'Restoring API keys',
+};
+
 export function DataSettings() {
     const store = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,35 +54,53 @@ export function DataSettings() {
     const [exportPassword, setExportPassword] = useState('');
     const [includeApiKeys, setIncludeApiKeys] = useState(false);
     const [exportStatus, setExportStatus] = useState<StatusState>(emptyStatus);
+    const [exportProgress, setExportProgress] = useState<string | null>(null);
 
     const [importPassword, setImportPassword] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [backupInfo, setBackupInfo] = useState<BackupInspection | null>(null);
     const [importStatus, setImportStatus] = useState<StatusState>(emptyStatus);
+    const [importProgress, setImportProgress] = useState<string | null>(null);
 
     const [resetStatus, setResetStatus] = useState<StatusState>(emptyStatus);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // ── Export ──────────────────────────────────────────────────────────────
-    const handleExport = async () => {
+    const handleExport = useCallback(async () => {
         try {
             if (includeApiKeys && !exportPassword.trim()) {
                 setExportStatus({ type: 'error', message: 'Password is required when including API keys.' });
                 return;
             }
             setExportStatus({ type: 'loading', message: 'Exporting data...' });
-            await exportData({ password: exportPassword || undefined, includeApiKeys });
+            setExportProgress(null);
+
+            await exportData({
+                password: exportPassword || undefined,
+                includeApiKeys,
+                onProgress: (phase: ExportPhase, current: number, total: number) => {
+                    const label = PHASE_LABELS[phase];
+                    if (phase === 'conversations' || phase === 'images') {
+                        setExportProgress(`${label} ${current}/${total}`);
+                    } else {
+                        setExportProgress(label);
+                    }
+                },
+            });
+
             const suffix = includeApiKeys ? ' with API keys' : '';
             setExportStatus({ type: 'success', message: `Exported${suffix} successfully!` });
             setExportPassword('');
             setIncludeApiKeys(false);
+            setExportProgress(null);
             setTimeout(() => setExportStatus(emptyStatus), 3000);
         } catch (err) {
             console.error(err);
             const message = err instanceof Error ? err.message : 'Failed to export data.';
             setExportStatus({ type: 'error', message });
+            setExportProgress(null);
         }
-    };
+    }, [exportPassword, includeApiKeys]);
 
     // ── Import ──────────────────────────────────────────────────────────────
     const handleImportClick = () => fileInputRef.current?.click();
@@ -86,7 +122,7 @@ export function DataSettings() {
             }
         } catch (err) {
             console.error(err);
-            const message = err instanceof Error ? err.message : 'Failed to read backup file.';
+            const message = err instanceof Error ? err.message : 'Failed to read backup.';
             setImportStatus({ type: 'error', message });
         }
     };
@@ -95,16 +131,30 @@ export function DataSettings() {
         const hasKeys = (info ?? backupInfo)?.hasApiKeys;
         try {
             setImportStatus({ type: 'loading', message: 'Importing data...' });
-            await importData(file, { password: importPassword || undefined });
+            setImportProgress(null);
+
+            await importData(file, {
+                password: importPassword || undefined,
+                onProgress: (phase: ImportPhase, current: number, total: number) => {
+                    const label = IMPORT_PHASE_LABELS[phase];
+                    if (phase === 'conversations' && total > 1) {
+                        setImportProgress(`${label} ${current}/${total}`);
+                    } else {
+                        setImportProgress(label);
+                    }
+                },
+            });
+
             setImportStatus({
                 type: 'success',
                 message: hasKeys
                     ? 'Imported! API keys re-encrypted for this device. Reloading...'
-                    : 'Imported successfully! Reloading...'
+                    : 'Imported successfully! Reloading...',
             });
             setImportPassword('');
             setBackupInfo(null);
             setSelectedFile(null);
+            setImportProgress(null);
             await store.loadFromStorage();
             setTimeout(() => {
                 setImportStatus(emptyStatus);
@@ -114,6 +164,7 @@ export function DataSettings() {
             console.error(err);
             const message = err instanceof Error ? err.message : 'Failed to import. Check file format.';
             setImportStatus({ type: 'error', message });
+            setImportProgress(null);
         }
     };
 
@@ -127,6 +178,7 @@ export function DataSettings() {
         setSelectedFile(null);
         setImportPassword('');
         setImportStatus(emptyStatus);
+        setImportProgress(null);
     };
 
     // ── Reset ───────────────────────────────────────────────────────────────
@@ -227,7 +279,9 @@ export function DataSettings() {
 
                         <div className="flex items-center justify-between">
                             <p className="text-sm text-muted-foreground leading-tight">
-                                App may freeze briefly during export.
+                                {isExporting && exportProgress
+                                    ? exportProgress
+                                    : 'Encrypts per-section for large backups.'}
                             </p>
                             <button
                                 onClick={handleExport}
@@ -274,6 +328,11 @@ export function DataSettings() {
                                         )}
                                         {!backupInfo.encrypted && !backupInfo.hasApiKeys && (
                                             <span className="text-sm text-muted-foreground">Plain backup</span>
+                                        )}
+                                        {backupInfo.meta && (
+                                            <span className="text-sm text-muted-foreground">
+                                                {backupInfo.meta.conversationCount} convs, {backupInfo.meta.imageCount} image batches
+                                            </span>
                                         )}
                                     </div>
                                 </div>
@@ -350,6 +409,13 @@ export function DataSettings() {
                         )}
 
                         <StatusMessage status={importStatus} />
+
+                        {/* Import progress */}
+                        {isImporting && importProgress && (
+                            <p className="text-sm text-blue-500 leading-tight animate-in fade-in duration-200">
+                                {importProgress}
+                            </p>
+                        )}
 
                         <p className="text-sm text-amber-500/70 leading-tight">
                             Restoring will overwrite all current settings and history.

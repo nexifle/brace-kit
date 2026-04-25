@@ -10,18 +10,33 @@ import type { ProviderPreset } from '../types/index.ts';
 
 /**
  * Gemini models that do not support function calling or Google Search
+ * Pattern: models with "-image" in the name that are Flash-based
  */
-export const GEMINI_NO_TOOLS_MODELS = ['gemini-2.5-flash-image'];
+export const GEMINI_NO_TOOLS_MODELS = [
+  'gemini-2.5-flash-image',
+  'gemini-3-flash-image',
+  'gemini-3.1-flash-image-preview',
+];
 
 /**
  * Gemini models that support Google Search but not function calling
  */
-export const GEMINI_SEARCH_ONLY_MODELS = ['gemini-3-pro-image-preview'];
+export const GEMINI_SEARCH_ONLY_MODELS = [
+  'gemini-3-pro-image-preview',
+  'gemini-3.1-pro-image-preview',
+];
 
 /**
- * Gemini image generation models that support aspect ratio selection
+ * Gemini image generation models that support native image output.
+ * Pattern-based: any Gemini model name containing "-image" supports image generation.
  */
-export const GEMINI_IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
+export const GEMINI_IMAGE_MODELS = [
+  'gemini-2.5-flash-image',
+  'gemini-3-flash-image',
+  'gemini-3-pro-image-preview',
+  'gemini-3.1-flash-image-preview',
+  'gemini-3.1-pro-image-preview',
+];
 
 /**
  * xAI image generation models
@@ -65,11 +80,15 @@ export function supportsFunctionCalling(model: string): boolean {
 /**
  * Check if a model is a Gemini image generation model
  *
+ * Uses pattern-based detection: any Gemini model with "-image" in the name
+ * supports native image generation via responseModalities.
+ *
  * @param model - Model name
  * @returns true if the model is a Gemini image generation model
  */
 export function isGeminiImageModel(model: string): boolean {
-  return GEMINI_IMAGE_MODELS.includes(model);
+  // Pattern-based: any Gemini model containing "-image" supports image generation
+  return model.includes('-image');
 }
 
 /**
@@ -81,6 +100,21 @@ export function isGeminiImageModel(model: string): boolean {
 export function isXAIImageModel(model: string): boolean {
   return XAI_IMAGE_MODELS.includes(model);
 }
+
+/**
+ * Check if a Gemini model is a Gemini 3+ series (uses thinkingLevel instead of thinkingBudget)
+ *
+ * @param model - Gemini model name
+ * @returns true if the model is Gemini 3 or later
+ */
+export function isGemini3Model(model: string): boolean {
+  return /^gemini-[3-9]/.test(model);
+}
+
+/**
+ * Gemini image resolution options
+ */
+export const GEMINI_IMAGE_SIZES = ['512', '1K', '2K', '4K'] as const;
 
 // ==================== Provider Presets ====================
 
@@ -192,7 +226,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
 /**
  * Supported aspect ratios for image generation
  */
-export const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '4:5', '5:4', '21:9'] as const;
+export const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '4:5', '5:4', '21:9', '1:4', '4:1', '1:8', '8:1'] as const;
 
 /**
  * Map aspect ratios to Gemini format
@@ -208,4 +242,8 @@ export const GEMINI_ASPECT_RATIO_MAP: Record<string, string> = {
   '4:5': '4:5',
   '5:4': '5:4',
   '21:9': '21:9',
+  '1:4': '1:4',
+  '4:1': '4:1',
+  '1:8': '1:8',
+  '8:1': '8:1',
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import { useStore } from '../store/index.ts';
 import fuzzysort from 'fuzzysort';
 import type { Message, Conversation } from '../types/index.ts';
@@ -55,6 +55,24 @@ function getTimeGroup(conv: ConversationWithMessages): TimeGroup {
   return 'older';
 }
 
+interface SearchableItem {
+  conv: ConversationWithMessages;
+  title: string;
+  content: string;
+}
+
+function buildSearchableContent(messages: Message[]): string {
+  const parts: string[] = [];
+  for (const m of messages) {
+    if (m.content) parts.push(m.content);
+    if (m.displayContent) parts.push(m.displayContent);
+    if (m.pageContext?.content) parts.push(m.pageContext.content);
+    if (m.pageContext?.pageTitle) parts.push(m.pageContext.pageTitle);
+    if (m.selectedText?.selectedText) parts.push(m.selectedText.selectedText);
+  }
+  return parts.join(' ');
+}
+
 export function HistoryDrawer() {
   const store = useStore();
   const [isVisible, setIsVisible] = useState(false);
@@ -67,6 +85,11 @@ export function HistoryDrawer() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+
+  // Cache: store messages + pre-built searchable strings, survive across search changes
+  const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
+  const searchableRef = useRef<SearchableItem[]>([]);
+  const searchLoadedRef = useRef(false);
 
   const handleSwitchConversation = (id: string) => {
     if (id === store.activeConversationId) return;
@@ -143,38 +166,61 @@ export function HistoryDrawer() {
     }
   }, [store.historyDrawerOpen]);
 
-  // Refactored: Only load full messages when searching to avoid memory limits
+  // Load messages once when drawer opens and keep cached in ref.
+  // Re-uses cached data across search query changes — no re-fetching.
   useEffect(() => {
-    if (!shouldRender) return;
-
-    if (searchQuery.trim().length > 0) {
-      // If there's a search query, fetch full messages for fuzzy search
-      const loadMessagesForSearch = async () => {
-        setIsLoading(true);
-        const loaded: ConversationWithMessages[] = [];
-        for (const conv of store.conversations) {
-          try {
-            let messagesOrNull = await getConversationMessages(conv.id);
-            let messages: Message[] = [];
-            if (messagesOrNull) {
-              messages = messagesOrNull;
-            }
-            loaded.push({ ...conv, messages });
-          } catch (e) {
-            loaded.push({ ...conv, messages: [] });
-          }
-        }
-        setConversationsWithData(loaded);
-        setIsLoading(false);
-      };
-
-      const timeoutId = setTimeout(loadMessagesForSearch, 300); // Debounce search load
-      return () => clearTimeout(timeoutId);
-    } else {
-      // If no search, just pass mapped metadata
-      setConversationsWithData(store.conversations.map(c => ({ ...c, messages: [] })));
+    if (!shouldRender) {
+      messagesCacheRef.current.clear();
+      searchableRef.current = [];
+      searchLoadedRef.current = false;
+      return;
     }
-  }, [shouldRender, store.conversations, searchQuery]);
+
+    // Set metadata-only list for immediate render
+    setConversationsWithData(store.conversations.map(c => ({ ...c, messages: [] })));
+
+    // Pre-fetch all messages in parallel for search capability
+    const loadAllMessages = async () => {
+      setIsLoading(true);
+      const cache = messagesCacheRef.current;
+      const idsToFetch = store.conversations.filter(c => !cache.has(c.id)).map(c => c.id);
+
+      if (idsToFetch.length > 0) {
+        const results = await Promise.all(
+          idsToFetch.map(async (id) => {
+            try {
+              const msgs = await getConversationMessages(id);
+              return { id, messages: msgs ?? [] };
+            } catch {
+              return { id, messages: [] as Message[] };
+            }
+          })
+        );
+        for (const { id, messages } of results) {
+          cache.set(id, messages);
+        }
+      }
+
+      // Pre-build searchable strings
+      searchableRef.current = store.conversations.map(conv => {
+        const messages = cache.get(conv.id) ?? [];
+        return {
+          conv: { ...conv, messages },
+          title: conv.title,
+          content: buildSearchableContent(messages),
+        };
+      });
+      searchLoadedRef.current = true;
+
+      // Also update conversationsWithData with loaded messages
+      setConversationsWithData(
+        store.conversations.map(c => ({ ...c, messages: cache.get(c.id) ?? [] }))
+      );
+      setIsLoading(false);
+    };
+
+    loadAllMessages();
+  }, [shouldRender, store.conversations]);
 
   const sorted = useMemo(() => {
     return [...conversationsWithData].sort((a, b) => {
@@ -184,42 +230,54 @@ export function HistoryDrawer() {
     });
   }, [conversationsWithData]);
 
+  // Deferred query: the input stays responsive while fuzzy search runs on a deferred value
+  const deferredQuery = useDeferredValue(searchQuery);
+
   const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return sorted;
+    if (!deferredQuery.trim()) return sorted;
 
-    const query = searchQuery.trim();
+    const query = deferredQuery.trim();
 
-    const searchableItems = sorted.map((conv) => {
-      const messageContent = conv.messages
-        .map((m) => {
-          const parts: string[] = [];
-          if (m.content) parts.push(m.content);
-          if (m.displayContent) parts.push(m.displayContent);
-          if (m.pageContext?.content) parts.push(m.pageContext.content);
-          if (m.pageContext?.pageTitle) parts.push(m.pageContext.pageTitle);
-          if (m.selectedText?.selectedText) parts.push(m.selectedText.selectedText);
-          return parts.join(' ');
-        })
-        .join(' ');
+    // Use pre-built searchable items from cache if available, otherwise build from sorted
+    const items: SearchableItem[] = searchLoadedRef.current
+      ? searchableRef.current
+      : sorted.map(conv => ({
+          conv,
+          title: conv.title,
+          content: buildSearchableContent(conv.messages),
+        }));
 
-      return { conv, title: conv.title, content: messageContent };
-    });
+    // Filter out conversations not in current sorted list (stale cache entries)
+    const sortedIds = new Set(sorted.map(c => c.id));
+    const searchableItems = searchLoadedRef.current
+      ? items.filter(i => sortedIds.has(i.conv.id))
+      : items;
+
+    // Fast path: title-only search for short queries (most common)
+    if (query.length <= 2) {
+      const lower = query.toLowerCase();
+      return searchableItems
+        .filter(item => item.title.toLowerCase().includes(lower))
+        .map(item => item.conv);
+    }
 
     const titleResults = fuzzysort.go(query, searchableItems, { key: 'title', threshold: -10000, limit: 100 });
     const contentResults = fuzzysort.go(query, searchableItems, { key: 'content', threshold: -10000, limit: 100 });
 
-    const resultMap = new Map<string, { item: typeof searchableItems[0]; score: number }>();
-    titleResults.forEach((r) => resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score * 1.5 }));
-    contentResults.forEach((r) => {
+    const resultMap = new Map<string, { item: SearchableItem; score: number }>();
+    for (const r of titleResults) {
+      resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score * 1.5 });
+    }
+    for (const r of contentResults) {
       const existing = resultMap.get(r.obj.conv.id);
       if (existing) existing.score = Math.max(existing.score, r.score);
       else resultMap.set(r.obj.conv.id, { item: r.obj, score: r.score });
-    });
+    }
 
     return Array.from(resultMap.values())
       .sort((a, b) => b.score - a.score)
       .map((r) => r.item.conv);
-  }, [searchQuery, sorted]);
+  }, [deferredQuery, sorted]);
 
   const highlightMatch = (text: string, query: string): string => {
     if (!query.trim()) return text;
@@ -377,7 +435,6 @@ export function HistoryDrawer() {
               className="w-full bg-muted/40 border border-border/40 rounded-md pl-10 pr-10 py-2.5 text-xs text-foreground placeholder:text-muted-foreground/50 transition-all outline-none focus:bg-muted/60 focus:border-primary/30 focus:ring-4 focus:ring-primary/5"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              disabled={isLoading}
             />
             {searchQuery && (
               <button
@@ -388,14 +445,14 @@ export function HistoryDrawer() {
               </button>
             )}
           </div>
+          {isLoading && searchQuery.trim() && (
+            <div className="text-2xs text-muted-foreground/60 mb-2 px-1">
+              Loading messages for search...
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto scrollbar-thin px-1 flex flex-col gap-4">
-            {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3 animate-pulse">
-                <HistoryIcon size={32} className="opacity-20" />
-                <span className="text-xs font-bold uppercase tracking-widest opacity-40">Scanning...</span>
-              </div>
-            ) : filtered.length === 0 ? (
+            {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <div className="w-12 h-12 bg-muted/30 rounded-full flex items-center justify-center">
                   <SearchIcon size={20} className="opacity-40" />
