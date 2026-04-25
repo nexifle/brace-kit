@@ -1,9 +1,29 @@
-import { BookOpenIcon, HeartIcon, MousePointer2Icon, SparklesIcon } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { AlertCircleIcon, BookOpenIcon, HeartIcon, MousePointer2Icon, SparklesIcon, XIcon } from 'lucide-react';
 import { usePageContext } from '../hooks';
 import { Btn } from './ui/Btn.tsx';
 
 export function WelcomeScreen() {
   const { attachPageContext, grabSelection } = usePageContext();
+  const [error, setError] = useState<string | null>(null);
+
+  const handleReadPage = useCallback(async () => {
+    setError(null);
+    try {
+      await attachPageContext();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [attachPageContext]);
+
+  const handleGrabSelection = useCallback(async () => {
+    setError(null);
+    try {
+      await grabSelection();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [grabSelection]);
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-700">
@@ -33,7 +53,7 @@ export function WelcomeScreen() {
             variant="default"
             size="lg"
             className="px-4! w-full justify-start h-14 rounded-lg gap-4 group/btn"
-            onClick={attachPageContext}
+            onClick={handleReadPage}
           >
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
               <BookOpenIcon size={16} />
@@ -48,7 +68,7 @@ export function WelcomeScreen() {
             variant="outline"
             size="lg"
             className="px-4! w-full justify-start h-14 rounded-lg gap-4 border-border/50 bg-card/50 backdrop-blur-md group/btn"
-            onClick={grabSelection}
+            onClick={handleGrabSelection}
           >
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover/btn:scale-110 transition-transform">
               <MousePointer2Icon size={16} />
@@ -59,6 +79,28 @@ export function WelcomeScreen() {
             </div>
           </Btn>
         </div>
+
+        {/* Inline Error */}
+        {error && (
+          <div
+            className="animate-in slide-in-from-bottom-3 fade-in duration-300 relative rounded-lg border border-rose-500/30 bg-rose-500/10 backdrop-blur-md overflow-hidden"
+            role="alert"
+          >
+            <div className="flex items-start gap-3 px-4 py-3">
+              <AlertCircleIcon size={16} className="text-rose-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs font-medium text-rose-200 leading-relaxed flex-1 min-w-0 break-words">
+                {error}
+              </p>
+              <button
+                onClick={() => setError(null)}
+                className="flex-shrink-0 p-0.5 rounded-md text-rose-400/60 hover:text-rose-300 hover:bg-rose-500/20 transition-colors"
+                aria-label="Dismiss error"
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Donate Button */}
         <a
