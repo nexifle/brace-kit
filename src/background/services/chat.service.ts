@@ -11,7 +11,7 @@ import {
   type TokenUsage,
 } from '../../providers';
 import { createThinkTagParser } from '../../providers/utils/thinkTagParser.ts';
-import type { Message, MCPTool, ProviderConfig, ToolCall } from '../../types';
+import type { Message, MCPTool, ProviderConfig, ToolCall, StreamingBufferEntry } from '../../types';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import { getFriendlyErrorMessage } from '../utils/errors';
 import {
@@ -92,6 +92,48 @@ export interface ChatService {
 
 // Track active streaming requests for cancellation
 const activeRequests = new Map<string, ActiveRequest>();
+
+// ===================== Streaming Buffer =====================
+// In-memory buffer in the background worker. Each stream is buffered so the sidebar
+// can recover when closed and reopened mid-stream or after streaming completes.
+
+const BUFFER_COMPLETED_TTL_MS = 30_000; // purge 30s after completed/error
+const MAX_BUFFER_ENTRIES = 20;
+
+const streamingBuffers = new Map<string, StreamingBufferEntry>();
+
+function createBufferEntry(requestId: string, conversationId: string): StreamingBufferEntry {
+  if (streamingBuffers.size >= MAX_BUFFER_ENTRIES) {
+    const oldestKey = streamingBuffers.keys().next().value;
+    if (oldestKey !== undefined) streamingBuffers.delete(oldestKey);
+  }
+  const entry: StreamingBufferEntry = {
+    requestId,
+    conversationId,
+    status: 'in_progress',
+    chunks: [],
+    reasoningChunks: [],
+    startedAt: Date.now(),
+  };
+  streamingBuffers.set(conversationId, entry);
+  return entry;
+}
+
+function scheduleBufferCleanup(conversationId: string): void {
+  setTimeout(() => streamingBuffers.delete(conversationId), BUFFER_COMPLETED_TTL_MS);
+}
+
+function clearBufferEntry(conversationId: string): void {
+  streamingBuffers.delete(conversationId);
+}
+
+export function getActiveStreamingBuffers(): Record<string, StreamingBufferEntry> {
+  const result: Record<string, StreamingBufferEntry> = {};
+  for (const [convId, entry] of streamingBuffers.entries()) {
+    result[convId] = { ...entry, chunks: [...entry.chunks], reasoningChunks: [...entry.reasoningChunks] };
+  }
+  return result;
+}
 
 /**
  * Create a chat service instance
@@ -230,6 +272,11 @@ export function createChatService(): ChatService {
       // (not sendResponse) to avoid double error messages.
       let streamingStarted = false;
 
+      // Create buffer entry agar sidebar bisa recover jika ditutup saat streaming
+      const bufferEntry = (message.requestId && message.conversationId)
+        ? createBufferEntry(message.requestId, message.conversationId)
+        : null;
+
       try {
         for await (const chunk of streamingService.processStream(
           response,
@@ -243,6 +290,7 @@ export function createChatService(): ChatService {
 
           if (chunk.type === 'text') {
             chunks.push(chunk.content || '');
+            if (bufferEntry) bufferEntry.chunks.push(chunk.content || '');
             streamingStarted = true;
             chrome.runtime.sendMessage({
               type: 'CHAT_STREAM_CHUNK',
@@ -256,6 +304,7 @@ export function createChatService(): ChatService {
             // regardless of any request parameter, so we must filter here.
             if (message.options?.enableReasoning !== false) {
               reasoningChunks.push(chunk.content || '');
+              if (bufferEntry) bufferEntry.reasoningChunks.push(chunk.content || '');
               streamingStarted = true;
               chrome.runtime.sendMessage({
                 type: 'CHAT_STREAM_CHUNK',
@@ -272,6 +321,7 @@ export function createChatService(): ChatService {
           } else if (chunk.type === 'error') {
             const errorContent = `\n\n⚠️ ${chunk.content}`;
             chunks.push(errorContent);
+            if (bufferEntry) bufferEntry.chunks.push(errorContent);
             streamingStarted = true;
             chrome.runtime.sendMessage({
               type: 'CHAT_STREAM_CHUNK',
@@ -307,8 +357,17 @@ export function createChatService(): ChatService {
       } catch (streamError) {
         const error = streamError as Error;
         if (error.name === 'AbortError' || activeRequest.aborted) {
+          // Clear buffer on user abort — tidak perlu recovery
+          if (message.conversationId) clearBufferEntry(message.conversationId);
           // Re-throw so the outer catch in dispatchChatRequest calls sendResponse
           throw error;
+        }
+        // Mark buffer as error agar sidebar bisa menampilkan pesan error saat re-open
+        if (bufferEntry && message.conversationId) {
+          bufferEntry.status = 'error';
+          bufferEntry.errorMessage = error.message;
+          bufferEntry.completedAt = Date.now();
+          scheduleBufferCleanup(message.conversationId);
         }
         if (streamingStarted) {
           // Partial content already in frontend — route error via broadcast only
@@ -327,6 +386,20 @@ export function createChatService(): ChatService {
 
       // Merge tool calls
       const mergedToolCalls = streamingService.mergeToolCalls(toolCalls);
+
+      // Mark buffer entry as completed dengan semua final data
+      if (bufferEntry && message.conversationId) {
+        bufferEntry.status = 'completed';
+        bufferEntry.fullContent = chunks.join('');
+        bufferEntry.toolCalls = mergedToolCalls.length > 0 ? (mergedToolCalls as ToolCall[]) : undefined;
+        bufferEntry.images = images.length > 0 ? images : undefined;
+        bufferEntry.reasoningContent = reasoningChunks.length > 0 ? reasoningChunks.join('') : undefined;
+        bufferEntry.reasoningSignature = reasoningSignatureChunks.length > 0 ? reasoningSignatureChunks.join('') : undefined;
+        bufferEntry.groundingMetadata = groundingMetadata;
+        bufferEntry.usage = tokenUsage;
+        bufferEntry.completedAt = Date.now();
+        scheduleBufferCleanup(message.conversationId);
+      }
 
       // Signal stream complete
       chrome.runtime.sendMessage({
@@ -361,6 +434,13 @@ export function createChatService(): ChatService {
         activeRequest.aborted = true;
         activeRequest.abortController?.abort();
         activeRequests.delete(requestId);
+        // Clear buffer — user abort tidak perlu recovery
+        for (const [convId, entry] of streamingBuffers.entries()) {
+          if (entry.requestId === requestId) {
+            clearBufferEntry(convId);
+            break;
+          }
+        }
         return true;
       }
       return false;

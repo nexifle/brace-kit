@@ -288,6 +288,11 @@ export function useChat() {
     stateAfterCompact.setPageContext(null);
     stateAfterCompact.clearAttachments();
 
+    // Persist user message to IDB immediately before streaming starts.
+    // If the sidebar is closed mid-stream, the recovery logic reads from IDB — without
+    // this save the user message would be missing when the assistant response is appended.
+    await useStore.getState().saveActiveConversation();
+
     // Build messages for API using unified builder with new message
     const apiMessages = buildAPIMessages([...stateAfterCompact.messages, messageData]);
 
@@ -382,6 +387,11 @@ export function useChat() {
     const stateAfterCompact = useStore.getState();
     const messagesUpToIndex = stateAfterCompact.messages.slice(0, messageIndex + 1);
     stateAfterCompact.setMessages(messagesUpToIndex);
+
+    // Persist truncated messages to IDB immediately so that if the sidebar is closed
+    // and reopened during streaming, the recovery logic appends to the correct position.
+    await useStore.getState().saveActiveConversation();
+
     const apiMessages = buildAPIMessages(messagesUpToIndex);
     await dispatchChatRequest(apiMessages);
   }, [buildAPIMessages, dispatchChatRequest, checkAndAutoCompact]);
@@ -425,6 +435,11 @@ export function useChat() {
 
     updatedMessagesUpToIndex[messageIndex] = updatedMessage;
     stateAfterCompact.setMessages(updatedMessagesUpToIndex);
+
+    // Persist truncated/edited messages to IDB immediately so that if the sidebar is
+    // closed and reopened during streaming, the recovery logic appends to the correct position.
+    await useStore.getState().saveActiveConversation();
+
     const apiMessages = buildAPIMessages(updatedMessagesUpToIndex);
     await dispatchChatRequest(apiMessages);
   }, [buildAPIMessages, dispatchChatRequest, checkAndAutoCompact]);

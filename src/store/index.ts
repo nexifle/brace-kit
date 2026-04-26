@@ -82,6 +82,10 @@ export const useStore = create<AppState>((set, get) => ({
   streamingReasoningContent: '',
   streamingConversations: {} as Record<string, ConversationStreamingState>,
 
+  // Storage ready signal — diset true setelah loadFromStorage selesai
+  storageReady: false,
+  setStorageReady: (storageReady) => set({ storageReady }),
+
   // Context
   pageContext: null,
   selectedText: null,
@@ -353,7 +357,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (id === state.activeConversationId) return;
 
-    // Jika conversation aktif kosong, hapus dari state sebelum switch
+    // If the active conversation is empty, remove it from state before switching
     if (state.messages.length === 0 && state.activeConversationId) {
       const currentId = state.activeConversationId;
       set((s) => ({
@@ -365,7 +369,7 @@ export const useStore = create<AppState>((set, get) => ({
       await state.saveActiveConversation();
     }
 
-    // Snapshot streamingContent untuk conv yang sedang streaming sebelum switch away
+    // Snapshot streamingContent for the conversation currently streaming before switching away
     const currentConvId = state.activeConversationId;
     if (currentConvId && get().streamingConversations[currentConvId]) {
       set((s) => ({
@@ -383,8 +387,8 @@ export const useStore = create<AppState>((set, get) => ({
     const targetConvStreaming = get().streamingConversations[id];
     set({
       activeConversationId: id,
-      // Reset messages segera agar saveActiveConversation yang berjalan paralel
-      // tidak menyimpan messages conversation lama ke conversation ini
+      // Reset messages immediately so a concurrent saveActiveConversation call
+      // does not persist the previous conversation's messages into this one
       messages: [],
       showSystemPromptEditor: false,
       isStreaming: !!targetConvStreaming,
@@ -996,15 +1000,19 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       set(updates);
+      // Tandai bahwa storage sudah selesai dimuat — trigger recovery di useStreaming
+      get().setStorageReady(true);
     } catch (e) {
       console.warn('Failed to load settings:', e);
+      // Tetap signal ready agar recovery tidak terblokir selamanya
+      get().setStorageReady(true);
     }
   },
 
   saveToStorage: async () => {
     const state = get();
     try {
-      // Jangan simpan conversation aktif yang masih kosong (belum pernah kirim pesan)
+      // Do not save the active conversation if it is still empty (no messages sent yet)
       const activeIsEmpty = state.messages.length === 0;
 
       // Encrypt API keys before storing
@@ -1046,7 +1054,7 @@ export const useStore = create<AppState>((set, get) => ({
         googleSearchApiKey: encryptedGoogleSearchApiKey,
         groqEnabledBuiltinTools: state.groqEnabledBuiltinTools,
         enableStreaming: state.enableStreaming,
-        // Jika aktif kosong, simpan null agar saat reload tidak coba load conversation ini
+        // If the active conversation is empty, save null so reload does not attempt to load it
         activeConversationId: activeIsEmpty ? null : state.activeConversationId,
         memories: state.memories,
         memoryEnabled: state.memoryEnabled,
@@ -1069,13 +1077,13 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (!state.activeConversationId) return;
 
-    // Jangan simpan conversation yang masih kosong
+    // Do not save a conversation that is still empty
     if (state.messages.length === 0) return;
 
     try {
       const convId = state.activeConversationId;
 
-      // Simpan gambar ke IndexedDB, dapat kembali key map per message
+      // Save images to IndexedDB, returns a key map per message
       let imageKeyMap: string[][] = [];
       try {
         imageKeyMap = await saveImagesForConversation(convId, state.messages);
@@ -1083,7 +1091,7 @@ export const useStore = create<AppState>((set, get) => ({
         console.warn('[Store] IndexedDB save failed, images will not persist:', e);
       }
 
-      // Buat messages untuk chrome.storage dengan imageRef menggantikan data base64
+      // Build messages for chrome.storage with imageRef replacing base64 data
       const messagesToSave = state.messages.map((msg, msgIdx) => {
         if (!msg.generatedImages || msg.generatedImages.length === 0) {
           return msg;

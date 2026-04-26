@@ -339,6 +339,30 @@ export interface ConversationStreamingState {
   streamingContent?: string; // snapshot saat user switch away dari conv ini
 }
 
+export type StreamBufferStatus = 'in_progress' | 'completed' | 'error';
+
+export interface StreamingBufferEntry {
+  requestId: string;
+  conversationId: string;
+  status: StreamBufferStatus;
+  chunks: string[];
+  reasoningChunks: string[];
+  fullContent?: string;
+  toolCalls?: ToolCall[];
+  images?: Array<{ mimeType: string; data: string }>;
+  reasoningContent?: string;
+  reasoningSignature?: string;
+  groundingMetadata?: unknown;
+  usage?: import('../providers/types.ts').TokenUsage;
+  errorMessage?: string;
+  startedAt: number;
+  completedAt?: number;
+}
+
+export interface ActiveStreamsResponse {
+  streams: Record<string, StreamingBufferEntry>;
+}
+
 // ==================== App State ====================
 
 export interface AppState {
@@ -515,6 +539,10 @@ export interface AppState {
   removeCustomQuickAction: (id: string) => void;
   setBuiltinActionOverride: (id: string, override: Partial<Omit<BuiltinActionOverride, 'id'>>) => void;
   resetBuiltinActionOverride: (id: string) => void;
+
+  // Storage ready signal (true setelah loadFromStorage selesai)
+  storageReady: boolean;
+  setStorageReady: (ready: boolean) => void;
 
   // Persistence
   loadFromStorage: () => Promise<void>;

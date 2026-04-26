@@ -8,6 +8,7 @@ import {
   handleChatRequest,
   handleStopStream,
   handleGoogleSearchToolDirect,
+  handleGetActiveStreams,
 } from './handlers/chat.handler';
 import type { ChatRequestMessage } from './services/chat.service';
 import {
@@ -152,6 +153,10 @@ chrome.runtime.onMessage.addListener(
 
       case 'STOP_STREAM':
         handleStopStream(message as unknown as StopStreamMessage, sendResponse);
+        return false;
+
+      case 'GET_ACTIVE_STREAMS':
+        handleGetActiveStreams(sendResponse);
         return false;
 
       case 'GOOGLE_SEARCH_TOOL':

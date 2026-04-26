@@ -8,7 +8,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../store/index.ts';
 import { useToast } from '../components/ui/toast/useToast.ts';
-import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message } from '../types/index.ts';
+import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message, ActiveStreamsResponse, StreamingBufferEntry } from '../types/index.ts';
 import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
 import { useMemory } from './useMemory.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
@@ -378,6 +378,123 @@ export function useStreaming() {
     store.setStreamingReasoningContent('');
     streamProcessor.reset();
   }, [store, streamProcessor]);
+
+  // Recovery: query background untuk streaming yang berjalan saat sidebar tutup
+  const hasRecoveredRef = useRef(false);
+
+  useEffect(() => {
+    if (hasRecoveredRef.current) return;
+
+    const tryRecover = () => {
+      if (hasRecoveredRef.current) return;
+      const state = useStore.getState();
+      if (!state.storageReady) return;
+      hasRecoveredRef.current = true;
+
+      chrome.runtime.sendMessage({ type: 'GET_ACTIVE_STREAMS' })
+        .then(async (response: ActiveStreamsResponse) => {
+          if (!response?.streams) return;
+          const entries = Object.entries(response.streams) as [string, StreamingBufferEntry][];
+          if (entries.length === 0) return;
+
+          let currentState = useStore.getState();
+
+          // If startOnWelcome causes no active conversation but there is an active stream,
+          // ignore startOnWelcome and navigate the user to the conversation that is streaming.
+          // Prefer in_progress (most urgently needs recovery), fall back to the first entry.
+          if (!currentState.activeConversationId) {
+            const preferred = entries.find(([, e]) => e.status === 'in_progress') ?? entries[0];
+            const [targetConvId] = preferred;
+            try {
+              await useStore.getState().switchConversation(targetConvId);
+              currentState = useStore.getState();
+            } catch {
+              // switchConversation gagal — lanjut dengan activeConversationId null
+            }
+          }
+
+          for (const [convId, entry] of entries) {
+            // Skip jika sudah diproses (guard double processing)
+            if (processedDoneRequestsRef.current.has(entry.requestId)) continue;
+
+            if (entry.status === 'completed') {
+              processedDoneRequestsRef.current.add(entry.requestId);
+              if (convId === currentState.activeConversationId) {
+                // Active conv selesai streaming saat sidebar tutup — finalize ke UI
+                useStore.setState({
+                  isStreaming: true,
+                  currentRequestId: entry.requestId,
+                  streamingContent: entry.chunks.join(''),
+                  streamingReasoningContent: entry.reasoningChunks.join(''),
+                });
+                finishStream(
+                  entry.fullContent || entry.chunks.join(''),
+                  entry.toolCalls,
+                  entry.groundingMetadata as GroundingMetadata | undefined,
+                  entry.images as GeneratedImage[] | undefined,
+                  entry.reasoningContent,
+                  entry.reasoningSignature
+                );
+              } else {
+                // Background conv — save ke IDB
+                handleBackgroundStreamDone(convId, {
+                  fullContent: entry.fullContent || entry.chunks.join(''),
+                  reasoningContent: entry.reasoningContent,
+                  reasoningSignature: entry.reasoningSignature,
+                  toolCalls: entry.toolCalls,
+                });
+              }
+            } else if (entry.status === 'in_progress') {
+              const partial = entry.chunks.join('');
+              const partialReasoning = entry.reasoningChunks.join('');
+              if (convId === currentState.activeConversationId) {
+                // Active conv masih streaming — restore state agar listener utama bisa lanjut
+                useStore.setState({
+                  isStreaming: true,
+                  currentRequestId: entry.requestId,
+                  streamingContent: partial,
+                  streamingReasoningContent: partialReasoning,
+                });
+              } else {
+                // Background conv — restore agar background message terus di-akumulasi
+                currentState.setConversationStreaming(convId, {
+                  requestId: entry.requestId,
+                  streamingContent: partial,
+                });
+              }
+            } else if (entry.status === 'error') {
+              if (convId === currentState.activeConversationId) {
+                useStore.getState().addMessage({
+                  role: 'error',
+                  content: entry.errorMessage || 'Stream error',
+                });
+                useStore.setState({ isStreaming: false, currentRequestId: null, streamingContent: '' });
+              } else {
+                currentState.setConversationStreaming(convId, null);
+              }
+            }
+          }
+        })
+        .catch(() => {
+          // Background mungkin belum siap — tidak apa-apa
+        });
+    };
+
+    // Check if storageReady is already true before subscribing
+    if (useStore.getState().storageReady) {
+      tryRecover();
+      return;
+    }
+
+    // Subscribe dan tunggu storageReady signal
+    const unsub = useStore.subscribe((state) => {
+      if (state.storageReady) {
+        unsub();
+        tryRecover();
+      }
+    });
+    return () => unsub();
+  }, [finishStream, handleBackgroundStreamDone]);
 
   // Listen for stream messages
   useEffect(() => {

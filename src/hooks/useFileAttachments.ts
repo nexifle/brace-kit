@@ -66,7 +66,7 @@ export function useFileAttachments() {
       return;
     }
 
-    // Cek apakah teks yang di-paste melebihi 250 baris
+    // Check if the pasted text exceeds 250 lines
     const pastedText = e.clipboardData?.getData('text');
     if (!pastedText) return;
 

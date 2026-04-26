@@ -5,10 +5,12 @@
 
 import {
   createChatService,
+  getActiveStreamingBuffers,
   type ChatService,
   type ChatRequestMessage,
   type ChatServiceResponse,
 } from '../services/chat.service';
+import type { ActiveStreamsResponse } from '../../types/index.ts';
 import { executeTool, type ToolExecutionContext } from '../tools/index';
 import { decryptApiKey } from '../../utils/keyEncryption.ts';
 
@@ -79,6 +81,17 @@ export async function handleGoogleSearchToolDirect(
     sendResponse({ content: [{ text: `Google Search Error: ${(e as Error).message}` }] });
   }
   return true;
+}
+
+/**
+ * Handle GET_ACTIVE_STREAMS request dari sidebar saat reconnect.
+ * Returns snapshot of all active/recently-completed streaming buffers.
+ */
+export function handleGetActiveStreams(sendResponse: SendResponse): boolean {
+  const streams = getActiveStreamingBuffers();
+  const response: ActiveStreamsResponse = { streams };
+  sendResponse(response);
+  return false;
 }
 
 // Export chatService for testing
