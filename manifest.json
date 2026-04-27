@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BraceKit: AI Sidebar",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Premium AI sidebar with local vault, multi-chat branching, full page & selection reading, MCP tools, and multi-LLM support.",
   "permissions": [
     "sidePanel",
