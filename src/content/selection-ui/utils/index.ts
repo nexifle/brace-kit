@@ -25,6 +25,7 @@ export {
 export {
   isExtensionContextInvalidated,
   isChromeRuntimeAvailable,
+  isChromeRuntimeResponsive,
   onContextInvalidated,
 } from './chromeErrorHandler.ts';
 export {

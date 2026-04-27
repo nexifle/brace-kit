@@ -30,7 +30,31 @@ export function isExtensionContextInvalidated(error: unknown): boolean {
  */
 export function isChromeRuntimeAvailable(): boolean {
   try {
-    return !!(chrome && chrome.runtime && chrome.runtime.id);
+    if (!(chrome && chrome.runtime && chrome.runtime.id && chrome.storage?.local)) {
+      return false;
+    }
+
+    // `runtime.id` can remain truthy for a stale content-script context after the
+    // extension is disabled. Touch a runtime method as a stronger validity check.
+    const baseUrl = chrome.runtime.getURL('');
+    return typeof baseUrl === 'string' && baseUrl.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether the current extension context is not just present, but still
+ * responsive for storage/runtime operations.
+ */
+export async function isChromeRuntimeResponsive(): Promise<boolean> {
+  if (!isChromeRuntimeAvailable()) {
+    return false;
+  }
+
+  try {
+    await chrome.storage.local.get([]);
+    return true;
   } catch {
     return false;
   }

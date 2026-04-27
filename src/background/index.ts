@@ -23,6 +23,49 @@ import { registerContentHandlers } from './handlers/content.handler';
 import { migrateOldConversations } from '../utils/conversationDB';
 import { initOmniboxHandler } from './handlers/omnibox.handler';
 
+const CONTENT_SCRIPT_FILES = ['content.js'];
+const GOOGLE_DOCS_BRIDGE_FILES = ['google-docs-bridge.js'];
+const CLOUDFLARE_EXCLUDE_PATTERNS = [
+  '://challenges.cloudflare.com/',
+  '://cf-assets.cloudflare.com/',
+];
+
+function isInjectableTabUrl(url?: string): boolean {
+  if (!url) return false;
+  if (!(url.startsWith('http://') || url.startsWith('https://'))) return false;
+  return !CLOUDFLARE_EXCLUDE_PATTERNS.some((pattern) => url.includes(pattern));
+}
+
+async function injectContentScriptsIntoTab(tab: chrome.tabs.Tab): Promise<void> {
+  if (!tab.id || !isInjectableTabUrl(tab.url)) return;
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: CONTENT_SCRIPT_FILES,
+    });
+
+    if (tab.url?.startsWith('https://docs.google.com/')) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: GOOGLE_DOCS_BRIDGE_FILES,
+        world: 'MAIN',
+      });
+    }
+  } catch {
+    // Ignore tabs where injection is not allowed or the page is gone.
+  }
+}
+
+async function reinjectContentScriptsIntoOpenTabs(): Promise<void> {
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.allSettled(tabs.map((tab) => injectContentScriptsIntoTab(tab)));
+  } catch {
+    // Ignore transient startup/query failures.
+  }
+}
+
 // Initialize MCP servers on startup.
 // Register the promise with setRestorePromise so that handleMCPListTools can
 // wait for restore to finish before returning tools — preventing the race
@@ -36,6 +79,15 @@ let lastActiveTabId: number | undefined;
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   lastActiveTabId = tabId;
+
+  void chrome.tabs.get(tabId)
+    .then((tab) => injectContentScriptsIntoTab(tab))
+    .catch(() => {});
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete') return;
+  void injectContentScriptsIntoTab({ ...tab, id: tabId });
 });
 
 // Initialize omnibox quick search (keyword: "bk")
@@ -43,6 +95,12 @@ initOmniboxHandler(
   () => lastActiveTabId,
   (id) => { lastActiveTabId = id; },
 );
+
+chrome.runtime.onStartup.addListener(() => {
+  void reinjectContentScriptsIntoOpenTabs();
+});
+
+void reinjectContentScriptsIntoOpenTabs();
 
 // Modify User-Agent only for LLM API requests made by this extension.
 // IMPORTANT: Do NOT use urlFilter:'*' here — that would rewrite the UA on
