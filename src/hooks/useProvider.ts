@@ -4,8 +4,25 @@ import { PROVIDER_PRESETS, fetchModels } from '../providers';
 import type { ProviderPreset, CustomProvider, ProviderFormat } from '../types/index.ts';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil, isOllamaLocalhost } from '../utils/providerUtils.ts';
 
+function normalizeModelList(models?: string[]): string[] {
+  if (!models?.length) return [];
+
+  const unique = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const model of models) {
+    const trimmed = model.trim();
+    if (!trimmed || unique.has(trimmed)) continue;
+    unique.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
 export function useProvider() {
   const store = useStore();
+  const getState = useStore.getState;
 
   const getProvider = useCallback(
     (providerId: string): ProviderPreset | CustomProvider => getProviderUtil(providerId, store.customProviders),
@@ -22,87 +39,55 @@ export function useProvider() {
     return [...builtIn, ...store.customProviders];
   }, [store.customProviders]);
 
-  const switchProvider = useCallback((newId: string) => {
-    const oldId = store.providerConfig.providerId;
-    const provider = getProvider(newId);
+  const getAvailableModels = useCallback((providerId: string): string[] => {
+    const provider = getProvider(providerId);
 
-    // Save current provider's API key and model before switching
-    store.setProviderKeys({
-      ...store.providerKeys,
-      [oldId]: {
-        apiKey: store.providerConfig.apiKey,
-        model: store.providerConfig.model,
-      },
-    });
+    if (isCustomProvider(providerId)) {
+      const cp = provider as CustomProvider;
 
-    // Load the new provider's stored key and model
-    const saved = store.providerKeys[newId] || {};
-
-    store.setProviderConfig({
-      providerId: newId,
-      apiUrl: provider.apiUrl,
-      format: provider.format as ProviderFormat,
-      apiKey: saved.apiKey || (isCustomProvider(newId) ? (provider as CustomProvider).apiKey : '') || '',
-      model: saved.model || provider.defaultModel || '',
-      // Clear model parameters when switching providers so settings from
-      // one provider do not unexpectedly carry over to another.
-      modelParameters: undefined,
-    });
-
-    store.saveToStorage();
-
-    // Fetch models for the new provider if supported
-    // Ollama localhost doesn't require API key, others do
-    const isLocalhost = isOllamaLocalhost(provider.format, provider.apiUrl);
-    const hasApiKey = saved.apiKey || store.providerConfig.apiKey;
-    if ((provider as ProviderPreset).supportsModelFetch && (hasApiKey || isLocalhost)) {
-      fetchAndCacheModels(newId);
-    }
-  }, [store, getProvider, isCustomProvider]);
-
-  const updateProviderConfig = useCallback((updates: Partial<typeof store.providerConfig>) => {
-    store.setProviderConfig(updates);
-
-    // Keep providerKeys in sync
-    if (updates.apiKey !== undefined || updates.model !== undefined) {
-      const providerId = store.providerConfig.providerId;
-      store.setProviderKeys({
-        ...store.providerKeys,
-        [providerId]: {
-          apiKey: updates.apiKey ?? store.providerConfig.apiKey,
-          model: updates.model ?? store.providerConfig.model,
-        },
-      });
-
-      // If the active provider is custom, sync back to the custom provider entry
-      if (isCustomProvider(providerId)) {
-        store.updateCustomProvider(providerId, {
-          apiKey: updates.apiKey ?? store.providerConfig.apiKey,
-          apiUrl: updates.apiUrl ?? store.providerConfig.apiUrl,
-          model: updates.model ?? store.providerConfig.model,
-          format: (updates.format as ProviderFormat) ?? store.providerConfig.format,
-        });
+      // If custom provider supports model fetch, prefer fetched cache
+      if (cp.supportsModelFetch) {
+        const cached = store.fetchedModels[providerId];
+        if (cached?.models?.length) return normalizeModelList(cached.models);
       }
+
+      return normalizeModelList(cp.models);
     }
 
-    store.saveToStorage();
-  }, [store, isCustomProvider]);
+    const providerPreset = provider as ProviderPreset;
+    const cached = store.fetchedModels[providerId];
+
+    if (cached?.models && cached.models.length > 0) {
+      return normalizeModelList(cached.models);
+    } else if (providerPreset?.staticModels?.length && providerPreset.staticModels.length > 0) {
+      return normalizeModelList(providerPreset.staticModels);
+    } else if (providerPreset?.models?.length && providerPreset.models.length > 0) {
+      return normalizeModelList(providerPreset.models);
+    }
+
+    return [];
+  }, [store.fetchedModels, getProvider, isCustomProvider]);
 
   const fetchAndCacheModels = useCallback(async (providerId: string) => {
-    if (store.fetchingModels) return;
+    const initialState = getState();
+    if (initialState.fetchingModels) return;
 
     // Check if we have a valid cache (less than 1 hour old)
-    const cached = store.fetchedModels[providerId];
+    const cached = initialState.fetchedModels[providerId];
     if (cached && Date.now() - cached.fetchedAt < 3600000) {
       return;
     }
 
-    // Use the stored API key for this specific provider, fallback to active config if it's the same provider
-    const apiKey = store.providerKeys[providerId]?.apiKey
-      || (providerId === store.providerConfig.providerId ? store.providerConfig.apiKey : '');
+    const provider = getProviderUtil(providerId, initialState.customProviders);
+    const isCustom = isCustomProviderUtil(providerId, initialState.customProviders);
 
-    // Get provider to check if it's Ollama localhost (doesn't require API key)
-    const provider = getProvider(providerId);
+    // Use the stored API key for this specific provider, fallback to the
+    // active config if it's the same provider, or the custom provider entry
+    // if the provider has just been added and providerKeys has not been synced yet.
+    const apiKey = initialState.providerKeys[providerId]?.apiKey
+      || (providerId === initialState.providerConfig.providerId ? initialState.providerConfig.apiKey : '')
+      || (isCustom ? (provider as CustomProvider).apiKey : '');
+
     const isLocalhost = isOllamaLocalhost(provider?.format, provider?.apiUrl);
 
     // Skip if no API key and not Ollama localhost
@@ -117,14 +102,17 @@ export function useProvider() {
       });
 
       if (result?.models && result.models.length > 0) {
+        const models = normalizeModelList(result.models);
+        if (models.length === 0) return;
+
         store.setFetchedModels(providerId, {
-          models: result.models,
+          models,
           fetchedAt: Date.now(),
         });
 
         // Persist fetched models to the custom provider's models array
-        if (isCustomProvider(providerId)) {
-          store.updateCustomProvider(providerId, { models: result.models });
+        if (isCustom) {
+          store.updateCustomProvider(providerId, { models: models.slice() });
         }
       }
     } catch (e) {
@@ -132,40 +120,94 @@ export function useProvider() {
     } finally {
       store.setFetchingModels(false);
     }
-  }, [store, getProvider]);
+  }, [store, getState]);
 
-  const getAvailableModels = useCallback((providerId: string): string[] => {
-    const provider = getProvider(providerId);
+  const switchProvider = useCallback((newId: string, modelOverride?: string) => {
+    const state = getState();
+    const oldId = state.providerConfig.providerId;
+    const provider = getProviderUtil(newId, state.customProviders);
+    const isCustom = isCustomProviderUtil(newId, state.customProviders);
 
-    if (isCustomProvider(providerId)) {
-      const cp = provider as CustomProvider;
+    // Save current provider's API key and model before switching
+    store.setProviderKeys({
+      ...state.providerKeys,
+      [oldId]: {
+        apiKey: state.providerConfig.apiKey,
+        model: state.providerConfig.model,
+      },
+    });
 
-      // If custom provider supports model fetch, prefer fetched cache
-      if (cp.supportsModelFetch) {
-        const cached = store.fetchedModels[providerId];
-        if (cached?.models?.length) return cached.models;
-      }
+    // Load the new provider's stored key and model
+    const saved = state.providerKeys[newId] || {};
+    const nextApiKey = saved.apiKey || (isCustom ? (provider as CustomProvider).apiKey : '') || '';
+    const nextAvailableModels = normalizeModelList(
+      isCustom
+        ? (state.fetchedModels[newId]?.models?.length
+          ? state.fetchedModels[newId]?.models
+          : (provider as CustomProvider).models)
+        : (state.fetchedModels[newId]?.models?.length
+          ? state.fetchedModels[newId]?.models
+          : (provider as ProviderPreset).staticModels?.length
+            ? (provider as ProviderPreset).staticModels
+            : (provider as ProviderPreset).models)
+    );
+    const nextModel = modelOverride || saved.model || provider.defaultModel || nextAvailableModels[0] || '';
 
-      return cp.models ?? [];
+    store.setProviderConfig({
+      providerId: newId,
+      apiUrl: provider.apiUrl,
+      format: provider.format as ProviderFormat,
+      apiKey: nextApiKey,
+      model: nextModel,
+      // Clear model parameters when switching providers so settings from
+      // one provider do not unexpectedly carry over to another.
+      modelParameters: undefined,
+    });
+
+    store.saveToStorage();
+
+    // Fetch models for the new provider if supported
+    // Ollama localhost doesn't require API key, others do
+    const isLocalhost = isOllamaLocalhost(provider.format, provider.apiUrl);
+    if ((provider as ProviderPreset).supportsModelFetch && (nextApiKey || isLocalhost)) {
+      fetchAndCacheModels(newId);
+    }
+  }, [store, getState, fetchAndCacheModels]);
+
+  const updateProviderConfig = useCallback((updates: Partial<typeof store.providerConfig>) => {
+    const state = getState();
+    const providerId = state.providerConfig.providerId;
+
+    store.setProviderConfig(updates);
+
+    // Keep providerKeys in sync
+    if (updates.apiKey !== undefined || updates.model !== undefined) {
+      store.setProviderKeys({
+        ...state.providerKeys,
+        [providerId]: {
+          apiKey: updates.apiKey ?? state.providerConfig.apiKey,
+          model: updates.model ?? state.providerConfig.model,
+        },
+      });
     }
 
-    const providerPreset = provider as ProviderPreset;
-    const cached = store.fetchedModels[providerId];
-
-    if (cached?.models && cached.models.length > 0) {
-      return cached.models;
-    } else if (providerPreset?.staticModels?.length && providerPreset.staticModels.length > 0) {
-      return providerPreset.staticModels;
-    } else if (providerPreset?.models?.length && providerPreset.models.length > 0) {
-      return providerPreset.models ?? [];
+    // If the active provider is custom, sync back to the custom provider entry
+    if (isCustomProviderUtil(providerId, state.customProviders)) {
+      store.updateCustomProvider(providerId, {
+        apiKey: updates.apiKey ?? state.providerConfig.apiKey,
+        apiUrl: updates.apiUrl ?? state.providerConfig.apiUrl,
+        model: updates.model ?? state.providerConfig.model,
+        format: (updates.format as ProviderFormat) ?? state.providerConfig.format,
+      });
     }
 
-    return [];
-  }, [store.fetchedModels, getProvider, isCustomProvider]);
+    store.saveToStorage();
+  }, [store, getState]);
 
   const addCustomProvider = useCallback((name: string, apiUrl: string, format: ProviderFormat, contextWindow?: number, apiKey?: string, model?: string, supportsModelFetch?: boolean) => {
     const id = 'custom_' + Date.now();
     const shouldAutoFetch = supportsModelFetch !== false;
+    const initialModels = normalizeModelList(model ? [model] : []);
 
     const newProvider: CustomProvider = {
       id,
@@ -175,12 +217,19 @@ export function useProvider() {
       model: model || '',
       defaultModel: model || '',
       format,
-      models: model ? [model] : [],
+      models: initialModels,
       contextWindow,
       supportsModelFetch: shouldAutoFetch,
     };
 
     store.addCustomProvider(newProvider);
+    store.setProviderKeys({
+      ...getState().providerKeys,
+      [id]: {
+        apiKey: apiKey || '',
+        model: model || '',
+      },
+    });
 
     // Auto-select the new provider with all config pre-filled
     store.setProviderConfig({
@@ -199,11 +248,13 @@ export function useProvider() {
       fetchModels({ ...newProvider, apiKey: apiKey || '' })
         .then((result) => {
           if (result?.models && result.models.length > 0) {
-            const firstModel = result.models[0];
+            const models = normalizeModelList(result.models);
+            const firstModel = models[0];
+            if (!firstModel) return;
 
             // Persist fetched models to provider's models array
             store.updateCustomProvider(id, {
-              models: result.models,
+              models,
               supportsModelFetch: true,
             });
 
@@ -215,7 +266,7 @@ export function useProvider() {
 
             // Also cache in fetchedModels for getAvailableModels
             store.setFetchedModels(id, {
-              models: result.models,
+              models: models.slice(),
               fetchedAt: Date.now(),
             });
 
@@ -226,17 +277,21 @@ export function useProvider() {
           // Silently skip - provider still works with manual model entry
         });
     }
-  }, [store]);
+  }, [store, getState]);
 
   const addModelToCustomProvider = useCallback((providerId: string, modelName: string) => {
-    const cp = store.customProviders.find(p => p.id === providerId);
-    if (!cp || cp.models.includes(modelName)) return;
-    store.updateCustomProvider(providerId, { models: [...cp.models, modelName] });
+    const cp = getState().customProviders.find(p => p.id === providerId);
+    const normalizedModel = modelName.trim();
+    if (!cp || !normalizedModel || cp.models.includes(normalizedModel)) return;
+    store.updateCustomProvider(providerId, {
+      models: normalizeModelList([...cp.models, normalizedModel]),
+    });
     store.saveToStorage();
-  }, [store]);
+  }, [store, getState]);
 
   const removeModelFromCustomProvider = useCallback((providerId: string, modelName: string) => {
-    const cp = store.customProviders.find(p => p.id === providerId);
+    const state = getState();
+    const cp = state.customProviders.find(p => p.id === providerId);
     if (!cp) return;
     const updatedModels = cp.models.filter(m => m !== modelName);
     const newActiveModel = cp.model === modelName ? (updatedModels[0] || '') : cp.model;
@@ -245,17 +300,18 @@ export function useProvider() {
       model: newActiveModel,
     });
     // Sync providerConfig.model if this is the active provider and the removed model was selected
-    if (providerId === store.providerConfig.providerId && store.providerConfig.model === modelName) {
+    if (providerId === state.providerConfig.providerId && state.providerConfig.model === modelName) {
       store.setProviderConfig({ model: newActiveModel });
     }
     store.saveToStorage();
-  }, [store]);
+  }, [store, getState]);
 
   const removeCustomProvider = useCallback((id: string) => {
+    const state = getState();
     store.removeCustomProvider(id);
 
     // If the removed provider was active, switch to openai
-    if (store.providerConfig.providerId === id) {
+    if (state.providerConfig.providerId === id) {
       const fallback = PROVIDER_PRESETS.openai;
       store.setProviderConfig({
         providerId: 'openai',
@@ -267,7 +323,7 @@ export function useProvider() {
     }
 
     store.saveToStorage();
-  }, [store]);
+  }, [store, getState]);
 
   const providerInfo = useMemo(() => {
     const provider = getProvider(store.providerConfig.providerId);

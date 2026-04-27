@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProvider } from '../../hooks/useProvider.ts';
 import { PROVIDER_PRESETS, GROQ_BUILTIN_TOOLS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
@@ -54,7 +54,6 @@ export function ProviderSettings() {
   const setGroqEnabledBuiltinTools = useStore((s) => s.setGroqEnabledBuiltinTools);
 
   const [showKey, setShowKey] = useState(false);
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [newModelInput, setNewModelInput] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
@@ -72,11 +71,10 @@ export function ProviderSettings() {
 
   // Whether custom provider uses fetched dropdown instead of chip UI
   const customUsesDropdown = isCustom && !!(currentProvider as CustomProvider)?.supportsModelFetch;
-
-  useEffect(() => {
-    const models = getAvailableModels(providerConfig.providerId);
-    setAvailableModels(models);
-  }, [providerConfig.providerId, getAvailableModels]);
+  const availableModels = useMemo(
+    () => getAvailableModels(providerConfig.providerId),
+    [providerConfig.providerId, getAvailableModels]
+  );
 
   useEffect(() => {
     const isLocalhost = isOllamaLocalhost(currentProvider?.format, providerConfig.apiUrl);

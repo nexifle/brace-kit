@@ -37,7 +37,9 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
 
   const handleSelectModel = useCallback((modelName: string) => {
     if (localSelectedProvider !== providerConfig.providerId) {
-      switchProvider(localSelectedProvider);
+      switchProvider(localSelectedProvider, modelName);
+      onClose();
+      return;
     }
     updateProviderConfig({ model: modelName });
     onClose();
@@ -82,6 +84,11 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
       setModelSearch('');
     }
   }, [isOpen, providerConfig.providerId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setModelSearch('');
+  }, [isOpen, localSelectedProvider]);
 
   // Auto-fetch models when browsing a provider that supports it
   useEffect(() => {
@@ -255,10 +262,10 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
 
               {allModels.length > 0 && models.length > 0 ? (
                 <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto pr-1">
-                  {models.map(model => {
+                  {models.map((model, index) => {
                     const isActiveModel = model === providerConfig.model && localSelectedProvider === providerConfig.providerId;
                     return (
-                      <div key={model} className="group flex items-center gap-1">
+                      <div key={`${model}:${index}`} className="group flex items-center gap-1">
                         <button
                           className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 text-xs text-left transition-all rounded-sm border ${isActiveModel
                             ? 'bg-primary/10 text-primary border-primary/30 font-medium'

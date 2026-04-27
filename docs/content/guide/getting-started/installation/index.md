@@ -24,7 +24,7 @@ Before you begin, ensure you have:
 ## Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/brace-kit.git
+git clone https://github.com/nexifle/brace-kit.git
 cd brace-kit
 ```
 
