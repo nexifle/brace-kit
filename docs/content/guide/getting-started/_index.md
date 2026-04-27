@@ -33,7 +33,7 @@ Before installing BraceKit, make sure you have:
 Clone and build the extension:
 
 ```bash
-git clone https://github.com/your-org/brace-kit.git
+git clone https://github.com/nexifle/brace-kit.git
 cd brace-kit
 bun install
 bun run build

@@ -20,6 +20,22 @@ import { getProvider, isCustomProvider } from '../../src/utils/providerUtils.ts'
 import { PROVIDER_PRESETS } from '../../src/providers';
 import type { CustomProvider, ProviderPreset, FetchedModelsCache } from '../../src/types/index.ts';
 
+function normalizeModels(models?: string[]): string[] {
+  if (!models?.length) return [];
+
+  const unique = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const model of models) {
+    const trimmed = model.trim();
+    if (!trimmed || unique.has(trimmed)) continue;
+    unique.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
 // ---------------------------------------------------------------------------
 // Pure helper that mirrors getAvailableModels logic from useProvider.ts
 // ---------------------------------------------------------------------------
@@ -38,18 +54,19 @@ function getAvailableModelsLogic(
 
   // Custom providers always use user-defined models — bypass fetchedModels cache.
   if (isCustom) {
-    return (provider as CustomProvider).models ?? [];
+    const models = (provider as CustomProvider).models ?? [];
+    return normalizeModels(models);
   }
 
   const providerPreset = provider as ProviderPreset;
   const cached = fetchedModels[providerId];
 
   if (cached?.models && cached.models.length > 0) {
-    return cached.models;
+    return normalizeModels(cached.models);
   } else if (providerPreset?.staticModels?.length && providerPreset.staticModels.length > 0) {
-    return providerPreset.staticModels;
+    return normalizeModels(providerPreset.staticModels);
   } else if (providerPreset?.models?.length && providerPreset.models.length > 0) {
-    return providerPreset.models ?? [];
+    return normalizeModels(providerPreset.models);
   }
 
   return [];
@@ -220,6 +237,21 @@ describe('getAvailableModels logic', () => {
       expect(result).not.toContain('gpt-4o');
     });
 
+    it('[REGRESSION] custom provider fetched models are deduplicated before render', () => {
+      const cp = makeCustomProvider({
+        id: 'custom_dup',
+        format: 'openai',
+        models: ['openai/gpt-oss-120b', 'openai/gpt-oss-120b', 'nvidia/nemotron-3-super-120b-a12b'],
+      });
+
+      const result = getAvailableModelsLogic('custom_dup', [cp], {});
+
+      expect(result).toEqual([
+        'openai/gpt-oss-120b',
+        'nvidia/nemotron-3-super-120b-a12b',
+      ]);
+    });
+
     it('custom provider does not leak staticModels from a built-in preset', () => {
       // Even if someone somehow adds staticModels to a custom provider entry,
       // the function must return provider.models (user-defined), not staticModels.
@@ -266,6 +298,22 @@ describe('getAvailableModels logic', () => {
 
       const customResult = getAvailableModelsLogic('custom_x', [cp], cache);
       expect(customResult).toEqual(['custom-model']);
+    });
+
+    it('[REGRESSION] mutating one provider model list does not affect the source preset or cache', () => {
+      const anthropicModels = getAvailableModelsLogic('anthropic', [], {});
+      anthropicModels.splice(0, 1);
+
+      expect(PROVIDER_PRESETS.anthropic.staticModels).toContain('claude-sonnet-4-6');
+
+      const cache: Record<string, FetchedModelsCache> = {
+        openai: { models: ['gpt-4o', 'gpt-4.1'], fetchedAt: Date.now() },
+      };
+
+      const openaiModels = getAvailableModelsLogic('openai', [], cache);
+      openaiModels.pop();
+
+      expect(cache.openai.models).toEqual(['gpt-4o', 'gpt-4.1']);
     });
   });
 });
