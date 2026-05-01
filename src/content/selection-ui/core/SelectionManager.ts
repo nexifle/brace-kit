@@ -22,7 +22,7 @@ import {
   applyTextToEditable,
   isExcludedElement,
   onContextInvalidated,
-  isChromeRuntimeAvailable,
+  isChromeRuntimeResponsive,
   isGoogleDocsPage,
   replaceTextInGoogleDocs,
   type ShadowContainer,
@@ -539,11 +539,35 @@ export function createSelectionManager(): SelectionManager {
 
   // === Lifecycle ===
 
+  /**
+   * Poll until the extension runtime is valid again (e.g. after disable → re-enable),
+   * then fully re-initialize so toolbar and providers work without a page reload.
+   */
+  function scheduleRuntimeRecovery(): void {
+    const POLL_MS = 1_000;
+    const MAX_WAIT_MS = 120_000; // stop trying after 2 minutes
+    const deadline = Date.now() + MAX_WAIT_MS;
+
+    const timer = setInterval(async () => {
+      if (!(await isChromeRuntimeResponsive())) {
+        if (Date.now() >= deadline) clearInterval(timer);
+        return;
+      }
+
+      clearInterval(timer);
+
+      // Re-initialize: destroy old state first so event listeners are re-attached
+      // cleanly and provider state is reloaded with a valid runtime.
+      destroy();
+      await init();
+    }, POLL_MS);
+  }
+
   async function init(): Promise<void> {
     if (state.isInitialized) return;
 
     // Check if extension context is valid
-    if (!isChromeRuntimeAvailable()) {
+    if (!(await isChromeRuntimeResponsive())) {
       logger.warn('Extension context not available, skipping initialization');
       return;
     }
@@ -563,6 +587,10 @@ export function createSelectionManager(): SelectionManager {
     // Setup context invalidation listener
     state.contextCleanup = onContextInvalidated(() => {
       forceCleanup();
+      // When extension is re-enabled the runtime becomes valid again.
+      // Poll until that happens, then fully re-initialize so event listeners
+      // and provider state are restored without requiring a page reload.
+      scheduleRuntimeRecovery();
     });
 
     // Setup Google Docs annotated canvas support

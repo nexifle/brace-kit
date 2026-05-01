@@ -133,7 +133,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   },
   anthropic: {
     id: 'anthropic',
-    name: 'Anthropic (Claude)',
+    name: 'Anthropic',
     apiUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-sonnet-4-6',
     format: 'anthropic',
@@ -159,7 +159,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   },
   xai: {
     id: 'xai',
-    name: 'xAI (Grok)',
+    name: 'xAI',
     apiUrl: 'https://api.x.ai/v1',
     defaultModel: 'grok-4-1-fast-non-reasoning',
     format: 'openai',

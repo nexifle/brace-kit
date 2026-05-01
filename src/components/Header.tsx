@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useStore } from '../store/index.ts';
 import { IconButton } from './ui/IconButton.tsx';
-import { MoonIcon, SunIcon, HelpCircleIcon } from 'lucide-react';
+import { MoonIcon, SunIcon, HelpCircleIcon, ExternalLinkIcon } from 'lucide-react';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { Logo } from './ui/Logo.tsx';
 import { useChat } from '../hooks';
+import { useLayoutMode } from './LayoutModeContext.tsx';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -12,6 +13,7 @@ export function Header() {
   const store = useStore();
   const { stopStreaming, newChat } = useChat();
   const [showConfirm, setShowConfirm] = useState(false);
+  const { isTabLayout } = useLayoutMode();
 
   const handleNewChat = () => {
     if (store.isStreaming) {
@@ -27,8 +29,16 @@ export function Header() {
     setShowConfirm(false);
   };
 
+  const handleOpenInNewTab = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('sidebar.html?view=tab') });
+  };
+
   return (
-    <header className="flex items-center justify-between px-3.5 py-2.5 bg-background border-b border-border shrink-0 backdrop-blur-md sticky top-0 z-10">
+    <header
+      className={`flex items-center justify-between gap-3 bg-background border-b border-border shrink-0 backdrop-blur-md sticky top-0 z-10 ${
+        isTabLayout ? 'px-5 py-3.5 sm:px-6' : 'px-3.5 py-2.5'
+      }`}
+    >
       <ConfirmDialog
         isOpen={showConfirm}
         title="Stop Chat?"
@@ -37,13 +47,28 @@ export function Header() {
         onConfirm={confirmNewChat}
         onCancel={() => setShowConfirm(false)}
       />
-      <div className="flex items-center gap-2">
-        <div className="flex items-center text-white justify-center w-7 h-7 rounded-md bg-primary p-1 shadow-sm text-primary-foreground">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center text-white justify-center w-7 h-7 rounded-md bg-primary p-1 shadow-sm text-primary-foreground shrink-0">
           <Logo />
         </div>
-        <span className="font-bold text-base tracking-tight text-foreground">BraceKit</span>
+        <div className="min-w-0">
+          <span className="block font-bold text-base tracking-tight text-foreground">BraceKit</span>
+          {isTabLayout && (
+            <span className="block text-[11px] uppercase tracking-[0.22em] text-muted-foreground/70">
+              Workspace Tab
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex gap-1 shrink-0">
+        {!isTabLayout && (
+          <IconButton
+            title="Open in New Tab"
+            onClick={handleOpenInNewTab}
+          >
+            <ExternalLinkIcon size={18} />
+          </IconButton>
+        )}
         <IconButton
           title={store.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           onClick={() => store.setTheme(store.theme === 'dark' ? 'light' : 'dark')}

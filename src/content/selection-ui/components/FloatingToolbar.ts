@@ -14,7 +14,11 @@ import { loadAllActions } from '../utils/actionsLoader.ts';
 
 import { PROVIDER_PRESETS } from '../../../providers/index.ts';
 import type { ProviderPreset, CustomProvider } from '../../../types/index.ts';
-import { isChromeRuntimeAvailable, isExtensionContextInvalidated } from '../utils/chromeErrorHandler.ts';
+import {
+  isChromeRuntimeAvailable,
+  isChromeRuntimeResponsive,
+  isExtensionContextInvalidated
+} from '../utils/chromeErrorHandler.ts';
 
 export interface FloatingToolbarConfig {
   position: SelectionPosition;
@@ -26,6 +30,10 @@ export interface FloatingToolbarConfig {
 export interface FloatingToolbarAPI {
   element: HTMLElement;
   destroy: () => void;
+}
+
+interface FloatingToolbarElement extends HTMLElement {
+  __bracekitDestroy?: () => void;
 }
 
 // === Factory Function ===
@@ -41,7 +49,7 @@ export function createFloatingToolbar(
   const { position, onActionClick, onDismiss, initiallyExpanded = false } = config;
 
   // Create container for toolbar
-  const container = document.createElement('div');
+  const container = document.createElement('div') as FloatingToolbarElement;
   container.className = 'bk-toolbar-container';
   shadow.appendChild(container);
 
@@ -67,11 +75,37 @@ export function createFloatingToolbar(
     renderToolbar();
   }).catch(() => {/* keep defaults */});
 
+  // Retry timer for loadProviderState when runtime is unavailable at creation time
+  let providerLoadRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let runtimeRecoveryTimer: ReturnType<typeof setInterval> | null = null;
+  let runtimeRecoveryCheckInFlight = false;
+  let isStorageListenerAttached = false;
+  let isProviderStateLoading = false;
+  let hasLoadedProviderStateOnce = false;
+  let lastRuntimeAvailable = isChromeRuntimeAvailable();
+
+  function markRuntimeUnavailable() {
+    lastRuntimeAvailable = false;
+    detachStorageChangeListener();
+  }
+
   // Load provider state from storage
   async function loadProviderState() {
-    if (!isChromeRuntimeAvailable()) {
+    if (isProviderStateLoading) return;
+    if (!(await isChromeRuntimeResponsive())) {
+      markRuntimeUnavailable();
+      // Runtime not yet available (e.g. race during extension re-enable).
+      // Schedule one retry so providers load as soon as runtime is valid.
+      if (providerLoadRetryTimer === null) {
+        providerLoadRetryTimer = setTimeout(() => {
+          providerLoadRetryTimer = null;
+          loadProviderState();
+        }, 1_500);
+      }
       return;
     }
+
+    isProviderStateLoading = true;
 
     try {
       const data = await chrome.storage.local.get([
@@ -149,6 +183,7 @@ export function createFloatingToolbar(
           providers,
         },
       };
+      hasLoadedProviderStateOnce = true;
       renderToolbar();
 
       // Background Fetch: Proactively fetch models for supported providers
@@ -159,7 +194,10 @@ export function createFloatingToolbar(
 
       // Don't block the UI, run in background
       setTimeout(async () => {
-        if (!isChromeRuntimeAvailable()) return;
+        if (!(await isChromeRuntimeResponsive())) {
+          markRuntimeUnavailable();
+          return;
+        }
 
         for (const p of allProviders) {
           if (p.supportsModelFetch || (p as CustomProvider).apiUrl) {
@@ -172,7 +210,10 @@ export function createFloatingToolbar(
             }
 
             try {
-              if (!isChromeRuntimeAvailable()) break;
+              if (!(await isChromeRuntimeResponsive())) {
+                markRuntimeUnavailable();
+                break;
+              }
 
               const result = await chrome.runtime.sendMessage({
                 type: 'FETCH_MODELS',
@@ -216,6 +257,10 @@ export function createFloatingToolbar(
                 }
               }
             } catch (err) {
+              if (isExtensionContextInvalidated(err)) {
+                markRuntimeUnavailable();
+                break;
+              }
               console.warn(`Failed to background fetch models for ${p.id}`, err);
             }
           }
@@ -223,20 +268,103 @@ export function createFloatingToolbar(
 
         // Save back to storage if anything changed
         if (hasUpdates) {
-          await chrome.storage.local.set({ fetchedModels: newFetchedModels });
+          try {
+            await chrome.storage.local.set({ fetchedModels: newFetchedModels });
+          } catch (error) {
+            if (isExtensionContextInvalidated(error)) {
+              markRuntimeUnavailable();
+              return;
+            }
+            throw error;
+          }
         }
       }, 500);
 
     } catch (e) {
       if (isExtensionContextInvalidated(e)) {
+        markRuntimeUnavailable();
         return;
       }
       console.warn('Failed to load provider state', e);
+    } finally {
+      isProviderStateLoading = false;
     }
   }
 
   // Load it immediately
   loadProviderState();
+
+  // Re-load provider state whenever relevant storage keys change (e.g. user updates settings in popup)
+  const handleStorageChange = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    area: string
+  ) => {
+    if (area !== 'local') return;
+    const watched = ['providerConfig', 'providerKeys', 'customProviders', 'fetchedModels'];
+    if (watched.some(key => key in changes)) {
+      loadProviderState();
+    }
+  };
+
+  function attachStorageChangeListener() {
+    if (!isChromeRuntimeAvailable() || isStorageListenerAttached) return;
+    try {
+      chrome.storage.onChanged.addListener(handleStorageChange);
+      isStorageListenerAttached = true;
+    } catch (error) {
+      if (isExtensionContextInvalidated(error)) {
+        markRuntimeUnavailable();
+        return;
+      }
+      throw error;
+    }
+  }
+
+  function detachStorageChangeListener() {
+    if (!isStorageListenerAttached) return;
+    try {
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    } catch {
+      // Ignore teardown errors when the extension context is already gone.
+    }
+    isStorageListenerAttached = false;
+  }
+
+  function startRuntimeRecoveryPolling() {
+    if (runtimeRecoveryTimer !== null) return;
+
+    runtimeRecoveryTimer = setInterval(async () => {
+      if (runtimeRecoveryCheckInFlight) return;
+      runtimeRecoveryCheckInFlight = true;
+
+      try {
+        const runtimeAvailable = await isChromeRuntimeResponsive();
+
+        if (!runtimeAvailable) {
+          markRuntimeUnavailable();
+          return;
+        }
+
+        attachStorageChangeListener();
+
+        const shouldReloadProviderState =
+          !lastRuntimeAvailable ||
+          !hasLoadedProviderStateOnce ||
+          state.providerState.providers.length === 0;
+
+        if (shouldReloadProviderState) {
+          void loadProviderState();
+        }
+
+        lastRuntimeAvailable = true;
+      } finally {
+        runtimeRecoveryCheckInFlight = false;
+      }
+    }, 1_000);
+  }
+
+  attachStorageChangeListener();
+  startRuntimeRecoveryPolling();
 
   // Track initial click target to avoid race condition with setTimeout
   let initialClickTarget: EventTarget | null = null;
@@ -347,7 +475,10 @@ export function createFloatingToolbar(
 
       // Save global provider selection to chrome.storage.local
       try {
-        if (!isChromeRuntimeAvailable()) return;
+        if (!(await isChromeRuntimeResponsive())) {
+          markRuntimeUnavailable();
+          return;
+        }
 
         const data = await chrome.storage.local.get(['providerConfig', 'providerKeys', 'customProviders']) as Record<string, any>;
 
@@ -402,6 +533,10 @@ export function createFloatingToolbar(
 
         await chrome.storage.local.set(updates);
       } catch (err) {
+        if (isExtensionContextInvalidated(err)) {
+          markRuntimeUnavailable();
+          return;
+        }
         console.warn('Failed to save selected model to storage', err);
       }
     },
@@ -500,7 +635,16 @@ export function createFloatingToolbar(
 
   // Destroy function
   function destroy() {
+    if (providerLoadRetryTimer !== null) {
+      clearTimeout(providerLoadRetryTimer);
+      providerLoadRetryTimer = null;
+    }
+    if (runtimeRecoveryTimer !== null) {
+      clearInterval(runtimeRecoveryTimer);
+      runtimeRecoveryTimer = null;
+    }
     detachDocumentListeners();
+    detachStorageChangeListener();
     if (container.parentNode) {
       container.remove();
     }
@@ -508,6 +652,7 @@ export function createFloatingToolbar(
 
   // Initial render
   renderToolbar();
+  container.__bracekitDestroy = destroy;
 
   // Attach listeners after initial render
   attachDocumentListeners();
@@ -522,8 +667,11 @@ export function createFloatingToolbar(
  * Remove floating toolbar from shadow DOM
  */
 export function removeFloatingToolbar(shadow: ShadowRoot): void {
-  const container = shadow.querySelector('.bk-toolbar-container');
+  const container = shadow.querySelector('.bk-toolbar-container') as FloatingToolbarElement | null;
   if (container) {
-    container.remove();
+    container.__bracekitDestroy?.();
+    if (container.parentNode) {
+      container.remove();
+    }
   }
 }

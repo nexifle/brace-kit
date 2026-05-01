@@ -8,6 +8,8 @@ import { TextInput } from './ui/TextInput.tsx';
 import { Btn } from './ui/Btn.tsx';
 import { SquarePenIcon, DownloadIcon } from 'lucide-react';
 import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
+import { cn } from '../utils/cn.ts';
+import { useLayoutMode } from './LayoutModeContext.tsx';
 
 function ConversationTitleBar() {
   const activeConversationId = useStore((state) => state.activeConversationId);
@@ -101,13 +103,18 @@ export function ChatView() {
   const messages = useStore((state) => state.messages);
   const showSystemPromptEditor = useStore((state) => state.showSystemPromptEditor);
   const setShowSystemPromptEditor = useStore((state) => state.setShowSystemPromptEditor);
+  const { isTabLayout } = useLayoutMode();
 
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden animate-in fade-in duration-300">
       {showSystemPromptEditor && (
         <SystemPromptEditor onClose={() => setShowSystemPromptEditor(false)} />
       )}
-      <ConversationTitleBar />
+      <div className={cn(isTabLayout && 'px-4 pt-4 sm:px-6')}>
+        <div className={cn(isTabLayout && 'mx-auto w-full max-w-5xl')}>
+          <ConversationTitleBar />
+        </div>
+      </div>
       <div className="flex-1 overflow-hidden relative flex flex-col">
         {messages.length === 0 ? <WelcomeScreen /> : <MessageList />}
       </div>

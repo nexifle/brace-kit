@@ -2,6 +2,13 @@
 import TurndownService from 'turndown';
 import { initSelectionUI } from './content/selection-ui/index.ts';
 
+const BRACEKIT_CONTENT_INIT_KEY = '__bracekitContentInitialized__';
+
+if ((globalThis as Record<string, unknown>)[BRACEKIT_CONTENT_INIT_KEY]) {
+  // Script already injected in this live page context.
+} else {
+  (globalThis as Record<string, unknown>)[BRACEKIT_CONTENT_INIT_KEY] = true;
+
 // Content script — smart page reader with HTML-to-Markdown conversion
 // Uses Turndown to convert page HTML to clean markdown, stripping scripts, styles, etc.
 // Also provides text selection UI for quick AI actions
@@ -212,3 +219,4 @@ function cleanText(text: string) {
 initSelectionUI().catch(() => {
   // Silent fail - selection UI is optional
 });
+}

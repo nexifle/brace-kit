@@ -7,9 +7,10 @@ import { PageContextPreview } from './PageContextPreview.tsx';
 import { ProviderPopover } from './ProviderPopover.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon, MaximizeIcon, MinimizeIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
+import { useLayoutMode } from './LayoutModeContext.tsx';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -22,6 +23,7 @@ export function InputArea() {
   const [imageAspectRatio, setImageAspectRatio] = useState('auto');
   const [showProviderPopover, setShowProviderPopover] = useState(false);
   const [showPreferencesPopover, setShowPreferencesPopover] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +38,7 @@ export function InputArea() {
   useOmnibox(sendMessage);
   const currentModel = useStore((state) => state.providerConfig.model || '');
   const currentProviderId = useStore((state) => state.providerConfig.providerId || '');
+  const { isTabLayout } = useLayoutMode();
   const isXAIImageModel = currentProviderId === 'xai' && XAI_IMAGE_MODELS.includes(currentModel);
   const isGeminiImageModel = currentProviderId === 'gemini' && GEMINI_IMAGE_MODELS.includes(currentModel);
   const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
@@ -94,6 +97,40 @@ export function InputArea() {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [showProviderPopover, showPreferencesPopover]);
+
+  // Fullscreen escape handler
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isFullscreen]);
+
+  // Auto-minimize when dialogs open (SystemPromptEditor, etc.)
+  useEffect(() => {
+    if (store.showSystemPromptEditor) {
+      setIsFullscreen(false);
+    }
+  }, [store.showSystemPromptEditor]);
+
+  // Manage textarea height when toggling fullscreen
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    if (isFullscreen) {
+      textareaRef.current.style.height = '';
+    } else {
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+        }
+      }, 0);
+    }
+  }, [isFullscreen]);
 
   const placeholder = store.pageContext
     ? 'Ask about this page... (type \'/\' for commands)'
@@ -169,6 +206,7 @@ export function InputArea() {
     if (!text.trim() && store.attachments.length === 0) return;
     sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : { enableReasoning });
     setText('');
+    setIsFullscreen(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -191,10 +229,11 @@ export function InputArea() {
   }, [handleSend, autocompleteSuggestion]);
 
   const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
+    if (isFullscreen) return;
     const target = e.currentTarget;
     target.style.height = 'auto';
     target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-  }, []);
+  }, [isFullscreen]);
 
   // Sync scroll between textarea and ghost overlay
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -220,42 +259,52 @@ export function InputArea() {
   }, [store.pageContext, store]);
 
   return (
-    <div id="input-area" className="p-3 border-t bg-background">
-      {/* Slash Command Processing Indicator */}
-      {isProcessingCommand && (
-        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-primary/10 border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200">
-          <Loader2Icon size={12} className="animate-spin shrink-0 text-primary" />
-          <span className="text-2xs font-semibold text-primary tracking-wide">{processingCommandLabel}</span>
-        </div>
+    <div
+      id="input-area"
+      className={cn(
+        'border-t bg-background',
+        isTabLayout ? 'px-4 pb-4 pt-3 sm:px-6' : 'p-3',
       )}
+    >
+      <div className={cn(isTabLayout && 'mx-auto w-full max-w-5xl')}>
+        {/* Slash Command Processing Indicator */}
+        {isProcessingCommand && (
+          <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-primary/10 border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200">
+            <Loader2Icon size={12} className="animate-spin shrink-0 text-primary" />
+            <span className="text-2xs font-semibold text-primary tracking-wide">{processingCommandLabel}</span>
+          </div>
+        )}
 
-      {/* MCP Reconnecting Indicator */}
-      {isMCPReconnecting && (
-        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-warning/10 border border-warning/20 animate-in fade-in slide-in-from-top-1 duration-200">
-          <RefreshCwIcon size={12} className="animate-spin shrink-0 text-warning" />
-          <span className="text-2xs font-semibold text-warning tracking-wide">Reconnecting MCP servers…</span>
-        </div>
-      )}
+        {/* MCP Reconnecting Indicator */}
+        {isMCPReconnecting && (
+          <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-warning/10 border border-warning/20 animate-in fade-in slide-in-from-top-1 duration-200">
+            <RefreshCwIcon size={12} className="animate-spin shrink-0 text-warning" />
+            <span className="text-2xs font-semibold text-warning tracking-wide">Reconnecting MCP servers…</span>
+          </div>
+        )}
 
-      {/* MCP Disconnected Indicator */}
-      {hasMCPDisconnected && (
-        <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 animate-in fade-in slide-in-from-top-1 duration-200">
-          <AlertCircleIcon size={12} className="shrink-0 text-destructive" />
-          <span className="text-2xs font-semibold text-destructive tracking-wide flex-1">
-            MCP tools unavailable — message will be sent without them
-          </span>
-          <button
-            type="button"
-            className="text-2xs font-bold text-destructive underline underline-offset-2 opacity-80 hover:opacity-100 shrink-0"
-            onClick={() => syncAndReconnect()}
-          >
-            Retry
-          </button>
-        </div>
-      )}
+        {/* MCP Disconnected Indicator */}
+        {hasMCPDisconnected && (
+          <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-destructive/10 border border-destructive/20 animate-in fade-in slide-in-from-top-1 duration-200">
+            <AlertCircleIcon size={12} className="shrink-0 text-destructive" />
+            <span className="text-2xs font-semibold text-destructive tracking-wide flex-1">
+              MCP tools unavailable — message will be sent without them
+            </span>
+            <button
+              type="button"
+              className="text-2xs font-bold text-destructive underline underline-offset-2 opacity-80 hover:opacity-100 shrink-0"
+              onClick={() => syncAndReconnect()}
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
       {/* Main unified card */}
-      <div className="relative rounded-lg border border-border bg-card/30 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10">
+      <div className={cn(
+          'relative rounded-lg border border-border bg-card/30 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10',
+          isFullscreen && 'fixed inset-0 z-[200] flex flex-col rounded-none border-0 bg-background shadow-none animate-in zoom-in-95 duration-300'
+        )}>
 
         {/* Previews area */}
         <div className={cn('flex flex-col gap-1.5 px-4', (attachments.length > 0 || selectedText || hasPageContext) && 'pt-4')}>
@@ -295,34 +344,49 @@ export function InputArea() {
           </div>
         )}
 
-        {/* Slash Commands Popover */}
-        {filteredCommands.length > 0 && (
-          <div className="absolute bottom-full left-3 right-3 bg-popover border border-border rounded-lg shadow-xl mb-2 overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
-            {filteredCommands.map(({ cmd, desc }) => (
-              <div
-                key={cmd}
-                className={`px-3 py-2 cursor-pointer flex flex-col gap-0 transition-colors ${cmd === autocompleteSuggestion
-                  ? 'bg-accent/20 text-accent-foreground'
-                  : 'hover:bg-accent/10 focus:bg-accent/20'
-                  }`}
-                onClick={() => {
-                  setText(cmd + ' ');
-                  textareaRef.current?.focus();
-                }}
-              >
-                <div className="font-bold text-xs text-primary font-mono">{cmd}</div>
-                <div className="text-2xs text-muted-foreground leading-tight tracking-tight">{desc}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Textarea with Ghost Overlay */}
-        <div className="px-3 pt-1 pb-1">
-          <div className="relative">
+        <div className={cn('px-3 pt-1 pb-1', isFullscreen && 'flex-1 min-h-0 relative')}>
+          {/* Slash Commands Popover */}
+          {filteredCommands.length > 0 && (
+            <div className="absolute bottom-full left-3 right-3 bg-popover border border-border rounded-lg shadow-xl mb-2 overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
+              {filteredCommands.map(({ cmd, desc }) => (
+                <div
+                  key={cmd}
+                  className={`px-3 py-2 cursor-pointer flex flex-col gap-0 transition-colors ${cmd === autocompleteSuggestion
+                    ? 'bg-accent/20 text-accent-foreground'
+                    : 'hover:bg-accent/10 focus:bg-accent/20'
+                    }`}
+                  onClick={() => {
+                    setText(cmd + ' ');
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  <div className="font-bold text-xs text-primary font-mono">{cmd}</div>
+                  <div className="text-2xs text-muted-foreground leading-tight tracking-tight">{desc}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className={cn('relative', isFullscreen && 'flex-1 min-h-0')}>
+            {/* Maximize/Minimize Button */}
+            <button
+              type="button"
+              className={cn(
+                'absolute top-0 right-0 z-20 flex items-center justify-center w-6 h-6 rounded-md transition-all duration-200',
+                'opacity-30 hover:opacity-100',
+                'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}
+              onClick={() => setIsFullscreen(v => !v)}
+              title={isFullscreen ? 'Minimize (Esc)' : 'Maximize textarea'}
+            >
+              {isFullscreen ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
+            </button>
             <div
               ref={ghostRef}
-              className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[120px]"
+              className={cn(
+                'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1',
+                isFullscreen ? 'h-full' : 'max-h-[120px]'
+              )}
               aria-hidden="true"
             >
               <span className="text-transparent">{text}</span>
@@ -334,7 +398,10 @@ export function InputArea() {
             </div>
             <textarea
               ref={textareaRef}
-              className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
+              className={cn(
+                'relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed py-1.5 px-1 outline-none placeholder:text-muted-foreground/50',
+                isFullscreen ? 'h-full overflow-y-auto' : 'max-h-[120px]'
+              )}
               placeholder={placeholder}
               rows={3}
               value={text}
@@ -372,7 +439,7 @@ export function InputArea() {
         )}
 
         {/* Bottom Toolbar */}
-        <div className="flex items-center gap-1.5 px-3 pb-3 pt-2 border-t border-border/50" ref={footerRef}>
+        <div className={cn("flex items-center gap-1.5 px-3 pb-3 pt-2 border-t border-border/50", isFullscreen && "relative")} ref={footerRef}>
           <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
           <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
 
@@ -542,6 +609,7 @@ export function InputArea() {
           multiple
           onChange={(e) => handleFileSelect(e.target.files)}
         />
+      </div>
       </div>
     </div>
   );
