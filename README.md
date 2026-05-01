@@ -2,7 +2,8 @@
 
 # BraceKit — AI Sidebar for Chrome
 
-[![Chrome Web Store](https://developer.chrome.com/static/images/badges/en/webstore-badge-2.png)](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
+[![Chrome Web Store Version](https://img.shields.io/chrome-web-store/v/kdlbihnhbaeoghamncndigpgnjociehh?style=for-the-badge&logo=google-chrome&color=4285f4)](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
+[![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/kdlbihnhbaeoghamncndigpgnjociehh?style=for-the-badge&color=5f6368)](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
 
 An AI-powered Chrome sidebar that reads the current page content and lets you chat with multiple LLM providers. Features MCP (Model Context Protocol) support, conversation branching, AI floating toolbar, and streaming responses with markdown rendering.
 
