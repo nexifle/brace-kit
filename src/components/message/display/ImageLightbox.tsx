@@ -125,13 +125,13 @@ export function ImageLightbox({ src, favId, isFavorited, onToggleFavorite, onClo
 
       {/* Image Container */}
       <div
-        className="max-w-[90vw] max-h-[75vh] relative animate-in zoom-in-95 duration-500"
+        className="relative flex max-w-[94vw] max-h-[calc(100vh-10rem)] items-center justify-center animate-in zoom-in-95 duration-500"
         onClick={(e) => e.stopPropagation()}
       >
         <img
           src={src}
           alt="Preview"
-          className="w-full h-full object-contain rounded-lg shadow-[0_0_100px_rgba(var(--primary-rgb),0.2)] grayscale-0"
+          className="block max-w-full max-h-[calc(100vh-10rem)] w-auto h-auto object-contain rounded-lg shadow-[0_0_100px_rgba(var(--primary-rgb),0.2)] grayscale-0"
         />
       </div>
     </div>

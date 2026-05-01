@@ -5,12 +5,15 @@ import { StreamingBubble } from './message/StreamingBubble.tsx';
 import { ToolMessage, ToolMessageGroup, ToolMessageData } from './ToolMessage.tsx';
 import { useChat } from '../hooks';
 import type { Message } from '../types/index.ts';
+import { cn } from '../utils/cn.ts';
+import { useLayoutMode } from './LayoutModeContext.tsx';
 
 export function MessageList() {
   const messages = useStore((state) => state.messages);
   const isStreaming = useStore((state) => state.isStreaming);
   const preferences = useStore((state) => state.preferences);
   const { branchFrom, regenerateFrom, editMessage } = useChat();
+  const { isTabLayout } = useLayoutMode();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
@@ -244,65 +247,70 @@ export function MessageList() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-2 scrollbar-thin not-dark:bg-muted"
+      className={cn(
+        'flex-1 overflow-y-auto flex flex-col gap-2 scrollbar-thin not-dark:bg-muted',
+        isTabLayout ? 'px-4 py-6 sm:px-6' : 'px-3 py-4',
+      )}
       ref={containerRef}
       onScroll={handleScroll}
     >
-      {processedMessages.map((item, idx) => {
-        if (item.type === 'tool-group' && item.tools) {
-          return (
-            <ToolMessageGroup
-              key={`tool-group-${idx}`}
-              tools={item.tools}
-              mode={preferences.toolMessageDisplay}
-            />
-          );
-        }
-
-        if (item.message) {
-          const msg = item.message;
-
-          // Hide empty assistant messages (e.g., those that only carry tool calls or are residues)
-          if (msg.role === 'assistant') {
-            const hasContent = msg.content || msg.displayContent || msg.reasoningContent;
-            const hasAssets = msg.generatedImages?.length || msg.attachments?.length || msg.summary || msg.groundingMetadata;
-
-            if (!hasContent && !hasAssets) {
-              return null;
-            }
-          }
-
-          // For tool messages in detailed mode
-          if (msg.role === 'tool') {
+      <div className={cn('flex w-full flex-col gap-2', isTabLayout && 'mx-auto max-w-5xl')}>
+        {processedMessages.map((item, idx) => {
+          if (item.type === 'tool-group' && item.tools) {
             return (
-              <ToolMessage
-                key={item.index}
-                name={msg.name || 'unknown'}
-                content={msg.content}
-                toolCallId={msg.toolCallId}
-                toolArguments={msg.toolArguments}
-                isCachedResult={msg.isCachedResult}
-                mode="detailed"
+              <ToolMessageGroup
+                key={`tool-group-${idx}`}
+                tools={item.tools}
+                mode={preferences.toolMessageDisplay}
               />
             );
           }
 
-          return (
-            <MessageBubble
-              key={item.index}
-              message={msg}
-              messageIndex={item.index ?? idx}
-              onBranch={branchFrom}
-              onRegenerate={regenerateFrom}
-              onEdit={editMessage}
-            />
-          );
-        }
+          if (item.message) {
+            const msg = item.message;
 
-        return null;
-      })}
-      {isStreaming && <StreamingBubble />}
-      <div ref={messagesEndRef} style={{ height: '20px' }} />
+            // Hide empty assistant messages (e.g., those that only carry tool calls or are residues)
+            if (msg.role === 'assistant') {
+              const hasContent = msg.content || msg.displayContent || msg.reasoningContent;
+              const hasAssets = msg.generatedImages?.length || msg.attachments?.length || msg.summary || msg.groundingMetadata;
+
+              if (!hasContent && !hasAssets) {
+                return null;
+              }
+            }
+
+            // For tool messages in detailed mode
+            if (msg.role === 'tool') {
+              return (
+                <ToolMessage
+                  key={item.index}
+                  name={msg.name || 'unknown'}
+                  content={msg.content}
+                  toolCallId={msg.toolCallId}
+                  toolArguments={msg.toolArguments}
+                  isCachedResult={msg.isCachedResult}
+                  mode="detailed"
+                />
+              );
+            }
+
+            return (
+              <MessageBubble
+                key={item.index}
+                message={msg}
+                messageIndex={item.index ?? idx}
+                onBranch={branchFrom}
+                onRegenerate={regenerateFrom}
+                onEdit={editMessage}
+              />
+            );
+          }
+
+          return null;
+        })}
+        {isStreaming && <StreamingBubble />}
+        <div ref={messagesEndRef} style={{ height: '20px' }} />
+      </div>
     </div>
   );
 }

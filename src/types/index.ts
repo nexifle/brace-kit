@@ -67,6 +67,9 @@ export interface Message {
   // Reasoning/thinking content
   reasoningContent?: string;
   reasoningSignature?: string; // Anthropic thinking block signature (required for history replay)
+  // Generation options for regeneration
+  aspectRatio?: string;
+  enableReasoning?: boolean;
   // Indicates generation was interrupted before completion
   truncated?: boolean;
   truncatedReason?: 'user_stopped' | 'network_error';

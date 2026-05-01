@@ -15,6 +15,8 @@ import {
   SparklesIcon
 } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
+import { useLayoutMode } from './LayoutModeContext.tsx';
+import { cn } from '../utils/cn.ts';
 
 interface MarkdownImage {
   type: 'url';
@@ -56,6 +58,7 @@ async function getMarkdownImages(conversations: { id: string; updatedAt: number;
 
 export function GalleryView() {
   const store = useStore();
+  const { isTabLayout } = useLayoutMode();
   const [images, setImages] = useState<StoredImageRecord[]>([]);
   const [markdownImages, setMarkdownImages] = useState<MarkdownImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -218,56 +221,73 @@ export function GalleryView() {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background">
       {/* Header */}
-      <div className="flex items-center gap-4 px-4 py-2.5 border-b border-border/50 bg-card/50 backdrop-blur-md shrink-0">
-        <Btn
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-2 text-muted-foreground hover:text-foreground pl-1 pr-2.5"
-          onClick={() => store.setView('chat')}
-        >
-          <ArrowLeftIcon size={14} />
-          <span className="text-xs">Back</span>
-        </Btn>
-        <div className="flex items-center gap-3 flex-1">
-          <span className="text-base font-bold text-foreground">Gallery</span>
-          {!loading && (
-            <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-2xs font-black uppercase tracking-widest text-primary">
-              {images.length + markdownImages.length} items
-            </div>
-          )}
+      <div className={cn(
+        'border-b border-border/50 bg-card/50 backdrop-blur-md shrink-0',
+        isTabLayout ? 'px-5 py-4 sm:px-6 lg:px-8' : 'px-4 py-2.5',
+      )}>
+        <div className={cn('flex items-center gap-4', isTabLayout && 'mx-auto w-full max-w-7xl')}>
+          <Btn
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-2 text-muted-foreground hover:text-foreground pl-1 pr-2.5"
+            onClick={() => store.setView('chat')}
+          >
+            <ArrowLeftIcon size={14} />
+            <span className="text-xs">Back</span>
+          </Btn>
+          <div className="flex items-center gap-3 flex-1">
+            <span className="text-base font-bold text-foreground">Gallery</span>
+            {!loading && (
+              <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-2xs font-black uppercase tracking-widest text-primary">
+                {images.length + markdownImages.length} items
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0">
-        <button
-          className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 ${activeTab === 'all'
-            ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-105'
-            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-            }`}
-          onClick={() => setActiveTab('all')}
-        >
-          All Images
-        </button>
-        <button
-          className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 flex items-center gap-2 ${activeTab === 'favorites'
-            ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105'
-            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
-            }`}
-          onClick={() => setActiveTab('favorites')}
-        >
-          <StarIcon size={12} fill={activeTab === 'favorites' ? "currentColor" : "none"} />
-          Favorites
-          {!loading && activeFavoriteCount > 0 && (
-            <span className={`flex items-center justify-center min-w-4 h-4 rounded-full px-1 text-2xs font-black ${activeTab === 'favorites' ? 'bg-white/20 text-white' : 'bg-muted/80 text-muted-foreground'}`}>
-              {activeFavoriteCount}
-            </span>
-          )}
-        </button>
+      <div className={cn(
+        'border-b border-border/40 bg-background/80 backdrop-blur-sm shrink-0',
+        isTabLayout ? 'px-5 py-3 sm:px-6 lg:px-8' : 'px-4 py-2',
+      )}>
+        <div className={cn('flex items-center gap-2', isTabLayout && 'mx-auto w-full max-w-7xl')}>
+          <button
+            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 ${activeTab === 'all'
+              ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-105'
+              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+              }`}
+            onClick={() => setActiveTab('all')}
+          >
+            All Images
+          </button>
+          <button
+            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 flex items-center gap-2 ${activeTab === 'favorites'
+              ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105'
+              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+              }`}
+            onClick={() => setActiveTab('favorites')}
+          >
+            <StarIcon size={12} fill={activeTab === 'favorites' ? 'currentColor' : 'none'} />
+            Favorites
+            {!loading && activeFavoriteCount > 0 && (
+              <span className={`flex items-center justify-center min-w-4 h-4 rounded-full px-1 text-2xs font-black ${activeTab === 'favorites' ? 'bg-white/20 text-white' : 'bg-muted/80 text-muted-foreground'}`}>
+                {activeFavoriteCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Grid Content */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-5 scrollbar-thin animate-in fade-in duration-500">
+      <div
+        ref={scrollContainerRef}
+        className={cn(
+          'flex-1 overflow-y-auto scrollbar-thin animate-in fade-in duration-500',
+          isTabLayout ? 'px-5 py-6 sm:px-6 lg:px-8' : 'p-5',
+        )}
+      >
+        <div className={cn(isTabLayout && 'mx-auto w-full max-w-7xl')}>
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full gap-5 py-32 animate-in fade-in duration-700">
             <div className="relative">
@@ -306,7 +326,10 @@ export function GalleryView() {
           }
 
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className={cn(
+              'grid gap-4',
+              isTabLayout ? 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3',
+            )}>
               {sortedFilteredItems.map((item) => {
                 const isMd = isMarkdownImage(item);
                 const itemKey = getItemId(item);
@@ -358,6 +381,7 @@ export function GalleryView() {
             </div>
           );
         })()}
+        </div>
       </div>
 
       {/* Lightbox / Cinema Mode */}
@@ -446,13 +470,13 @@ export function GalleryView() {
 
             {/* Image Container */}
             <div
-              className="max-w-[90vw] max-h-[75vh] relative animate-in zoom-in-95 duration-500"
+              className="relative flex max-w-[94vw] max-h-[calc(100vh-10rem)] items-center justify-center animate-in zoom-in-95 duration-500"
               onClick={e => e.stopPropagation()}
             >
               <img
                 src={isMarkdownImage(lightbox) ? lightbox.url : `data:${lightbox.mimeType};base64,${lightbox.data}`}
                 alt="Cinema View"
-                className="w-full h-full object-contain rounded-lg shadow-[0_0_100px_rgba(var(--primary-rgb),0.1)] grayscale-0 transition-all duration-700"
+                className="block max-w-full max-h-[calc(100vh-10rem)] w-auto h-auto object-contain rounded-lg shadow-[0_0_100px_rgba(var(--primary-rgb),0.1)] grayscale-0 transition-all duration-700"
               />
               <div className="absolute -bottom-8 inset-x-0 text-center pointer-events-none">
                 <span className="text-2xs font-black uppercase tracking-[0.3em] text-muted-foreground/40">

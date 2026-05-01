@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
 import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
+import { cn } from '../utils/cn.ts';
+import { useLayoutMode } from './LayoutModeContext.tsx';
 
 interface ConversationWithMessages {
   id: string;
@@ -62,8 +64,8 @@ interface SearchableItem {
 }
 
 const MAX_SEARCHABLE_CONTENT = 3000;
-const MESSAGE_LOAD_BATCH_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 150;
+const SEARCH_INDEX_NOTIFY_BATCH_SIZE = 5;
 
 function buildSearchableContent(messages: Message[]): string {
   const parts: string[] = [];
@@ -84,23 +86,36 @@ function buildSearchableContent(messages: Message[]): string {
   return parts.join(' ');
 }
 
+function needsSearchRefresh(conv: Conversation, existing?: SearchableItem): boolean {
+  if (!existing) return true;
+  return (
+    existing.conv.updatedAt !== conv.updatedAt ||
+    existing.conv.title !== conv.title ||
+    existing.conv.pinned !== conv.pinned ||
+    existing.conv.branchedFromId !== conv.branchedFromId
+  );
+}
+
 export function HistoryDrawer() {
   const store = useStore();
+  const { isTabLayout } = useLayoutMode();
   const [isVisible, setIsVisible] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [conversationsWithData, setConversationsWithData] = useState<ConversationWithMessages[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [searchIndexVersion, setSearchIndexVersion] = useState(0);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Cache: store messages + pre-built searchable strings, survive across search changes
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
-  const searchableRef = useRef<SearchableItem[]>([]);
-  const searchLoadedRef = useRef(false);
+  const searchableRef = useRef<Map<string, SearchableItem>>(new Map());
+  const indexedIdsRef = useRef<Set<string>>(new Set());
+  const indexingRunRef = useRef(0);
+  const isIndexingRef = useRef(false);
 
   // Debounced search query — prevents main-thread thrashing on every keystroke
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -189,89 +204,115 @@ export function HistoryDrawer() {
   useEffect(() => {
     if (!shouldRender) {
       messagesCacheRef.current.clear();
-      searchableRef.current = [];
-      searchLoadedRef.current = false;
+      searchableRef.current.clear();
+      indexedIdsRef.current.clear();
+      indexingRunRef.current += 1;
+      isIndexingRef.current = false;
+      setSearchIndexVersion(0);
+      setIsLoading(false);
       return;
     }
-
-    // Set metadata-only list for immediate render
-    setConversationsWithData(store.conversations.map(c => ({ ...c, messages: [] })));
-
-    // Pre-fetch messages in batches for search capability
-    const loadAllMessages = async () => {
-      setIsLoading(true);
-      const cache = messagesCacheRef.current;
-      const idsToFetch = store.conversations.filter(c => !cache.has(c.id)).map(c => c.id);
-
-      for (let i = 0; i < idsToFetch.length; i += MESSAGE_LOAD_BATCH_SIZE) {
-        const batch = idsToFetch.slice(i, i + MESSAGE_LOAD_BATCH_SIZE);
-        const results = await Promise.all(
-          batch.map(async (id) => {
-            try {
-              const msgs = await getConversationMessages(id);
-              return { id, messages: msgs ?? [] };
-            } catch {
-              return { id, messages: [] as Message[] };
-            }
-          })
-        );
-        for (const { id, messages } of results) {
-          cache.set(id, messages);
-        }
-        // Yield to main thread between batches so UI stays responsive
-        await new Promise(r => setTimeout(r, 0));
-      }
-
-      // Pre-build searchable strings
-      searchableRef.current = store.conversations.map(conv => {
-        const messages = cache.get(conv.id) ?? [];
-        return {
-          conv: { ...conv, messages },
-          title: conv.title,
-          content: buildSearchableContent(messages),
-        };
-      });
-      searchLoadedRef.current = true;
-
-      // Also update conversationsWithData with loaded messages
-      setConversationsWithData(
-        store.conversations.map(c => ({ ...c, messages: cache.get(c.id) ?? [] }))
-      );
-      setIsLoading(false);
-    };
-
-    loadAllMessages();
   }, [shouldRender, store.conversations]);
 
   const sorted = useMemo(() => {
-    return [...conversationsWithData].sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return b.updatedAt - a.updatedAt;
+    return [...store.conversations]
+      .sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return b.updatedAt - a.updatedAt;
+      })
+      .map((conv) => ({
+        ...conv,
+        messages: messagesCacheRef.current.get(conv.id) ?? [],
+      }));
+  }, [searchIndexVersion, store.conversations]);
+
+  const ensureSearchData = useCallback((conversations: Conversation[]) => {
+    if (!shouldRender || isIndexingRef.current) return;
+
+    const missing = conversations.filter((conv) => needsSearchRefresh(conv, searchableRef.current.get(conv.id)));
+    if (missing.length === 0) {
+      setIsLoading(false);
+      return;
+    }
+
+    isIndexingRef.current = true;
+    const runId = ++indexingRunRef.current;
+    const cache = messagesCacheRef.current;
+    const searchable = searchableRef.current;
+    const indexedIds = indexedIdsRef.current;
+    let processedSinceNotify = 0;
+    setIsLoading(true);
+
+    const scheduleNext = (cb: () => void) => {
+      const requestIdle = window.requestIdleCallback as
+        | ((callback: IdleRequestCallback, options?: IdleRequestOptions) => number)
+        | undefined;
+      if (requestIdle) {
+        requestIdle(() => cb(), { timeout: 100 });
+        return;
+      }
+      window.setTimeout(cb, 0);
+    };
+
+    const step = async (index: number) => {
+      if (index >= missing.length || runId !== indexingRunRef.current) {
+        isIndexingRef.current = false;
+        setIsLoading(false);
+        if (processedSinceNotify > 0) {
+          setSearchIndexVersion((v) => v + 1);
+        }
+        return;
+      }
+
+      const conv = missing[index];
+      const existing = searchable.get(conv.id);
+      const needsMessageReload = !existing || existing.conv.updatedAt !== conv.updatedAt;
+      let messages = needsMessageReload ? undefined : cache.get(conv.id);
+      if (!messages) {
+        try {
+          messages = (await getConversationMessages(conv.id)) ?? [];
+        } catch {
+          messages = [];
+        }
+        cache.set(conv.id, messages);
+      }
+
+      searchable.set(conv.id, {
+        conv: { ...conv, messages },
+        title: conv.title,
+        content: buildSearchableContent(messages),
+      });
+      indexedIds.add(conv.id);
+      processedSinceNotify += 1;
+
+      if (processedSinceNotify >= SEARCH_INDEX_NOTIFY_BATCH_SIZE || debouncedQuery.trim()) {
+        processedSinceNotify = 0;
+        setSearchIndexVersion((v) => v + 1);
+      }
+
+      scheduleNext(() => {
+        void step(index + 1);
+      });
+    };
+
+    scheduleNext(() => {
+      void step(0);
     });
-  }, [conversationsWithData]);
+  }, [debouncedQuery, shouldRender]);
+
+  useEffect(() => {
+    if (!shouldRender) return;
+    ensureSearchData(sorted);
+  }, [ensureSearchData, shouldRender, sorted]);
 
   const filtered = useMemo(() => {
     if (!debouncedQuery.trim()) return sorted;
 
     const query = debouncedQuery.trim();
-
-    // Use pre-built searchable items from cache if available, otherwise build from sorted
-    const items: SearchableItem[] = searchLoadedRef.current
-      ? searchableRef.current
-      : sorted.map(conv => ({
-          conv,
-          title: conv.title,
-          content: buildSearchableContent(conv.messages),
-        }));
-
-    // Filter out conversations not in current sorted list (stale cache entries)
     const sortedIds = new Set(sorted.map(c => c.id));
-    const searchableItems = searchLoadedRef.current
-      ? items.filter(i => sortedIds.has(i.conv.id))
-      : items;
-
-    return fuzzySearchMulti<SearchableItem>(searchableItems, query, [
+    const indexedItems = Array.from(searchableRef.current.values()).filter((item) => sortedIds.has(item.conv.id));
+    const indexedResults = fuzzySearchMulti<SearchableItem>(indexedItems, query, [
       { key: 'title', weight: 1.5 },
       { key: 'content' },
     ], {
@@ -283,7 +324,15 @@ export function HistoryDrawer() {
         return items.filter(item => item.title.toLowerCase().includes(lower));
       },
     }).map(item => item.conv);
-  }, [debouncedQuery, sorted]);
+
+    const indexedResultIds = new Set(indexedResults.map((conv) => conv.id));
+    const titleFallback = sorted.filter((conv) => {
+      if (indexedResultIds.has(conv.id)) return false;
+      return conv.title.toLowerCase().includes(query.toLowerCase());
+    });
+
+    return [...indexedResults, ...titleFallback];
+  }, [debouncedQuery, searchIndexVersion, sorted]);
 
   const highlightMatch = (text: string, query: string): string => {
     return fuzzyHighlight(text, query, '<mark class="bg-primary/20 text-primary font-bold rounded-xs px-0.5">', '</mark>');
@@ -416,8 +465,13 @@ export function HistoryDrawer() {
         onClick={() => store.setHistoryDrawerOpen(false)}
       />
 
-      <div className={`relative w-2xs h-full bg-card/95 backdrop-blur-2xl border-l border-border/50 shadow-2xl flex flex-col transition-all duration-300 
-        ${isVisible ? 'animate-in slide-in-from-right-full' : 'animate-out slide-out-to-right-full'}`}>
+      <div
+        className={cn(
+          'relative h-full bg-card/95 backdrop-blur-2xl border-l border-border/50 shadow-2xl flex flex-col transition-all duration-300',
+          isTabLayout ? 'w-full max-w-[36rem]' : 'w-2xs',
+          isVisible ? 'animate-in slide-in-from-right-full' : 'animate-out slide-out-to-right-full',
+        )}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
           <div className="flex items-center gap-2 font-semibold text-foreground">
             <div className="flex items-center justify-center w-7 h-7 bg-muted/50 rounded-lg text-muted-foreground">
@@ -451,7 +505,7 @@ export function HistoryDrawer() {
           </div>
           {isLoading && searchQuery.trim() && (
             <div className="text-2xs text-muted-foreground/60 mb-2 px-1">
-              Loading messages for search...
+              Indexing messages for search...
             </div>
           )}
 

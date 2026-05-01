@@ -2,10 +2,13 @@ import { useCallback, useState } from 'react';
 import { AlertCircleIcon, BookOpenIcon, HeartIcon, MousePointer2Icon, SparklesIcon, XIcon } from 'lucide-react';
 import { usePageContext } from '../hooks';
 import { Btn } from './ui/Btn.tsx';
+import { cn } from '../utils/cn.ts';
+import { useLayoutMode } from './LayoutModeContext.tsx';
 
 export function WelcomeScreen() {
   const { attachPageContext, grabSelection } = usePageContext();
   const [error, setError] = useState<string | null>(null);
+  const { isTabLayout } = useLayoutMode();
 
   const handleReadPage = useCallback(async () => {
     setError(null);
@@ -26,8 +29,13 @@ export function WelcomeScreen() {
   }, [grabSelection]);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-700">
-      <div className="w-full max-w-[280px] space-y-8">
+    <div
+      className={cn(
+        'flex-1 flex flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-700',
+        isTabLayout ? 'px-6 py-10 sm:px-10' : 'p-8',
+      )}
+    >
+      <div className={cn('w-full space-y-8', isTabLayout ? 'max-w-3xl' : 'max-w-[280px]')}>
 
         {/* Branding Section */}
         <div className="flex flex-col items-center gap-4">
@@ -38,21 +46,31 @@ export function WelcomeScreen() {
             </div>
           </div>
           <div className="space-y-1">
-            <h1 className="text-2xl font-black tracking-tight text-foreground">
+            <h1 className={cn('font-black tracking-tight text-foreground', isTabLayout ? 'text-4xl' : 'text-2xl')}>
               BraceKit
             </h1>
-            <p className="text-xs text-muted-foreground font-medium max-w-[220px] leading-relaxed mx-auto">
+            <p
+              className={cn(
+                'text-muted-foreground font-medium leading-relaxed mx-auto',
+                isTabLayout ? 'max-w-2xl text-sm' : 'text-xs max-w-[220px]',
+              )}
+            >
               Your intelligent companion for the web. Explore, analyze, and create.
             </p>
           </div>
         </div>
 
         {/* Action Grid */}
-        <div className="grid gap-3 animate-in slide-in-from-bottom-6 duration-700 delay-200">
+        <div
+          className={cn(
+            'grid gap-3 animate-in slide-in-from-bottom-6 duration-700 delay-200',
+            isTabLayout && 'md:grid-cols-2',
+          )}
+        >
           <Btn
             variant="default"
             size="lg"
-            className="px-4! w-full justify-start h-14 rounded-lg gap-4 group/btn"
+            className={cn('px-4! w-full justify-start rounded-lg gap-4 group/btn', isTabLayout ? 'h-16' : 'h-14')}
             onClick={handleReadPage}
           >
             <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center group-hover/btn:scale-110 transition-transform">
@@ -67,7 +85,10 @@ export function WelcomeScreen() {
           <Btn
             variant="outline"
             size="lg"
-            className="px-4! w-full justify-start h-14 rounded-lg gap-4 border-border/50 bg-card/50 backdrop-blur-md group/btn"
+            className={cn(
+              'px-4! w-full justify-start rounded-lg gap-4 border-border/50 bg-card/50 backdrop-blur-md group/btn',
+              isTabLayout ? 'h-16' : 'h-14',
+            )}
             onClick={handleGrabSelection}
           >
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover/btn:scale-110 transition-transform">
@@ -107,7 +128,10 @@ export function WelcomeScreen() {
           href="https://bracekit.nexifle.com/support"
           target="_blank"
           rel="noopener noreferrer"
-          className="animate-in slide-in-from-bottom-4 duration-700 delay-300 group relative overflow-hidden"
+          className={cn(
+            'animate-in slide-in-from-bottom-4 duration-700 delay-300 group relative overflow-hidden',
+            isTabLayout && 'mx-auto w-full max-w-md',
+          )}
         >
           <div className="absolute inset-0 bg-linear-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 rounded-lg blur-sm group-hover:blur-md transition-all" />
           <div className="relative flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-linear-to-r from-rose-500/10 via-pink-500/10 to-orange-500/10 border border-rose-500/20 group-hover:border-rose-500/40 group-hover:from-rose-500/20 group-hover:via-pink-500/20 group-hover:to-orange-500/20 transition-all">

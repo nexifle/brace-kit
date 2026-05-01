@@ -275,7 +275,9 @@ export function useChat() {
       content: userContent,
       displayContent,
       pageContext: pageContextAttachment || undefined,
-      selectedText: selectedTextAttachment || undefined
+      selectedText: selectedTextAttachment || undefined,
+      aspectRatio: sendOptions?.aspectRatio,
+      enableReasoning: sendOptions?.enableReasoning,
     };
     if (messageAttachments && messageAttachments.some((a) => a.type === 'image' || a.type === 'text')) {
       messageData.attachments = messageAttachments.filter((a) => a.type === 'image' || a.type === 'text');
@@ -393,7 +395,13 @@ export function useChat() {
     await useStore.getState().saveActiveConversation();
 
     const apiMessages = buildAPIMessages(messagesUpToIndex);
-    await dispatchChatRequest(apiMessages);
+    const lastMessage = messagesUpToIndex[messagesUpToIndex.length - 1];
+    const opts = lastMessage ? {
+      aspectRatio: lastMessage.aspectRatio,
+      enableReasoning: lastMessage.enableReasoning,
+    } : undefined;
+
+    await dispatchChatRequest(apiMessages, opts);
   }, [buildAPIMessages, dispatchChatRequest, checkAndAutoCompact]);
 
   const editMessage = useCallback(async (messageIndex: number, editData: { text: string; pageContext?: PageContext | null; selectedText?: SelectedText | null; attachments?: Attachment[] }) => {
@@ -441,7 +449,13 @@ export function useChat() {
     await useStore.getState().saveActiveConversation();
 
     const apiMessages = buildAPIMessages(updatedMessagesUpToIndex);
-    await dispatchChatRequest(apiMessages);
+    const lastMessage = updatedMessagesUpToIndex[updatedMessagesUpToIndex.length - 1];
+    const opts = lastMessage ? {
+      aspectRatio: lastMessage.aspectRatio,
+      enableReasoning: lastMessage.enableReasoning,
+    } : undefined;
+
+    await dispatchChatRequest(apiMessages, opts);
   }, [buildAPIMessages, dispatchChatRequest, checkAndAutoCompact]);
 
   /**
