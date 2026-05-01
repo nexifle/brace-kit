@@ -2,6 +2,8 @@
 
 # BraceKit — AI Sidebar for Chrome
 
+[![Chrome Web Store](https://developer.chrome.com/static/images/badges/en/webstore-badge-2.png)](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
+
 An AI-powered Chrome sidebar that reads the current page content and lets you chat with multiple LLM providers. Features MCP (Model Context Protocol) support, conversation branching, AI floating toolbar, and streaming responses with markdown rendering.
 
 > **Bring Your Own Key (BYOK)** — BraceKit is free to use. You supply your own API keys directly to your chosen providers. No subscriptions, no telemetry, no data sent to BraceKit servers.
