@@ -296,7 +296,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
     const highlighted = idx === activeIdx;
 
     return (
-      <div key={p.id} className="relative group flex items-center">
+      <div key={p.id} className="group relative">
         <div
           ref={(el) => {
             rowRefs.current[idx] = el;
@@ -305,7 +305,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
           aria-selected={isActive}
           onClick={() => selectProvider(p)}
           onMouseEnter={() => setActiveIdx(idx)}
-          className={`flex-1 min-w-0 flex items-center gap-2.5 pl-2.5 py-2 pr-2 rounded-md text-left transition-all duration-150 border cursor-pointer
+          className={`w-full flex items-center gap-2.5 pl-2.5 pr-2 py-2 rounded-md text-left transition-all duration-150 border cursor-pointer
             ${isActive
               ? 'bg-primary/10 border-primary/25'
               : highlighted
@@ -343,24 +343,24 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
               />
             </span>
           )}
-        </div>
 
-        {/* Remove button — sibling of the option (not nested interactive), visible
-            on hover/focus for every custom provider including the active one. */}
-        {isCustom && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              close();
-              onRequestRemove({ id: p.id, name: p.name });
-            }}
-            className="ml-0.5 mr-1.5 shrink-0 w-7 h-7 flex items-center justify-center rounded-sm text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-            title="Remove provider"
-            aria-label={`Remove ${p.name}`}
-          >
-            <Trash2Icon size={13} />
-          </button>
-        )}
+          {/* Remove — inline row action, styled to match the item (same radius &
+              rhythm as the row). Appears on hover/focus for custom providers. */}
+          {isCustom && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                close();
+                onRequestRemove({ id: p.id, name: p.name });
+              }}
+              className="shrink-0 -mr-0.5 h-7 w-7 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
+              title="Remove provider"
+              aria-label={`Remove ${p.name}`}
+            >
+              <Trash2Icon size={13} />
+            </button>
+          )}
+        </div>
       </div>
     );
   };
