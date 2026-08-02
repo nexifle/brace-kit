@@ -6,7 +6,7 @@
 
 import { render } from 'lit-html';
 import type { QuickAction, SelectionPosition } from '../types.ts';
-import { toolbarTemplate, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
+import { toolbarTemplate, getProviderMenuView, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
 import { QUICK_ACTIONS } from '../constants.ts';
 import { loadAllActions } from '../utils/actionsLoader.ts';
 
@@ -57,6 +57,10 @@ export function createFloatingToolbar(
       currentProvider: 'openai',
       currentModel: '',
       providers: [],
+      search: '',
+      expandedProviderId: null,
+      highlightIndex: 0,
+      menuAlignRight: false,
     },
     actions: [...QUICK_ACTIONS],
   };
@@ -309,23 +313,122 @@ export function createFloatingToolbar(
 
     onProviderMenuToggle: (e: Event) => {
       e.stopPropagation();
+      const opening = !state.providerState.isOpen;
+      let menuAlignRight = state.providerState.menuAlignRight;
+      if (opening) {
+        // Flip the popover right-aligned when the toolbar sits near the right
+        // edge of the viewport (320px-wide menu would otherwise overflow).
+        const headerEl = container.querySelector('.bk-toolbar-header') as HTMLElement | null;
+        const rect = headerEl?.getBoundingClientRect();
+        if (rect && rect.left + 340 > window.innerWidth - 16) {
+          menuAlignRight = true;
+        }
+      }
       state = {
         ...state,
         providerState: {
           ...state.providerState,
-          isOpen: !state.providerState.isOpen,
+          isOpen: opening,
+          search: opening ? '' : state.providerState.search,
+          expandedProviderId: opening ? state.providerState.currentProvider : state.providerState.expandedProviderId,
+          highlightIndex: 0,
+          menuAlignRight,
         },
         menuState: { isOpen: false, selectedCategory: null },
         isTranslateMode: false, // Close translate mode too if open
       };
       renderToolbar();
+      if (opening) focusProviderSearch();
     },
 
     onProviderMenuClose: (e?: Event) => {
       e?.stopPropagation();
       state = {
         ...state,
-        providerState: { ...state.providerState, isOpen: false },
+        providerState: {
+          ...state.providerState,
+          isOpen: false,
+          search: '',
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+    },
+
+    onProviderSearchInput: (e: Event) => {
+      e.stopPropagation();
+      const value = (e.target as HTMLInputElement).value;
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          search: value,
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+    },
+
+    onProviderSearchClear: (e: Event) => {
+      e.stopPropagation();
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          search: '',
+          expandedProviderId: state.providerState.currentProvider,
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+      focusProviderSearch();
+    },
+
+    onProviderToggle: (e: Event, providerId: string) => {
+      e.stopPropagation();
+      const wasExpanded = state.providerState.expandedProviderId === providerId;
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          expandedProviderId: wasExpanded ? null : providerId,
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+    },
+
+    onProviderMenuKeydown: (e: Event) => {
+      const kb = e as KeyboardEvent;
+      const { rows } = getProviderMenuView(state);
+      if (kb.key === 'ArrowDown' || kb.key === 'ArrowUp') {
+        if (rows.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const delta = kb.key === 'ArrowDown' ? 1 : -1;
+        const next =
+          (state.providerState.highlightIndex + delta + rows.length) % rows.length;
+        state = {
+          ...state,
+          providerState: { ...state.providerState, highlightIndex: next },
+        };
+        renderToolbar();
+        scrollHighlightedRowIntoView();
+      } else if (kb.key === 'Enter') {
+        const row = rows[state.providerState.highlightIndex];
+        if (row) {
+          e.preventDefault();
+          e.stopPropagation();
+          callbacks.onModelSelect(e, row.providerId, row.model);
+        }
+      }
+    },
+
+    onProviderMenuHover: (rowIndex: number) => {
+      if (rowIndex === state.providerState.highlightIndex) return;
+      state = {
+        ...state,
+        providerState: { ...state.providerState, highlightIndex: rowIndex },
       };
       renderToolbar();
     },
@@ -412,6 +515,29 @@ export function createFloatingToolbar(
     render(toolbarTemplate(state, callbacks), container);
   }
 
+  // Focus the search input once the provider menu is open.
+  function focusProviderSearch() {
+    queueMicrotask(() => {
+      const input = container.querySelector<HTMLInputElement>('.bk-provider-search-input');
+      if (input && document.activeElement !== input) input.focus();
+    });
+  }
+
+  // Keep the keyboard cursor visible inside the scrollable list.
+  function scrollHighlightedRowIntoView() {
+    queueMicrotask(() => {
+      const row = container.querySelector<HTMLElement>('.bk-model-item--highlight');
+      const list = container.querySelector<HTMLElement>('.bk-provider-menu-content');
+      if (!row || !list) return;
+      const top = row.offsetTop - list.offsetTop;
+      const bottom = top + row.offsetHeight;
+      if (top < list.scrollTop) list.scrollTop = top - 4;
+      else if (bottom > list.scrollTop + list.clientHeight) {
+        list.scrollTop = bottom - list.clientHeight + 4;
+      }
+    });
+  }
+
   // Document click handler
   const handleDocumentClick = (e: MouseEvent) => {
     // Ignore the initial click that expanded the toolbar (avoids race condition)
@@ -420,8 +546,13 @@ export function createFloatingToolbar(
       return;
     }
 
-    // Don't dismiss if clicking inside the toolbar
-    if (container.contains(e.target as Node)) return;
+    // Don't dismiss if clicking inside the toolbar. The toolbar lives in a
+    // shadow root, so e.target is retargeted to the shadow host for document
+    // listeners — check the composed path (which contains the real element)
+    // in addition to a plain container.contains().
+    if (e.composedPath().includes(container) || container.contains(e.target as Node)) {
+      return;
+    }
 
     // Don't dismiss if interacting with select dropdown (select, option elements)
     const target = e.target as HTMLElement;
