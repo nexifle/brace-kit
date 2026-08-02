@@ -246,9 +246,9 @@ export function createFloatingToolbar(
   // Track initial click target to avoid race condition with setTimeout
   let initialClickTarget: EventTarget | null = null;
 
-  // Input modality for the model picker: once the user navigates with the
-  // arrow keys, hover is ignored until the pointer re-enters the list.
-  let keyboardNavActive = false;
+  // Whether the document-level listeners are currently attached (attach is
+  // called on init and on FAB re-expansion — keep it idempotent).
+  let docListenersAttached = false;
 
   // Callbacks
   const callbacks: ToolbarCallbacks = {
@@ -348,7 +348,6 @@ export function createFloatingToolbar(
       };
       renderToolbar();
       if (opening) {
-        keyboardNavActive = false;
         focusProviderSearch();
       } else {
         focusProviderTrigger();
@@ -408,40 +407,9 @@ export function createFloatingToolbar(
       renderToolbar();
     },
 
-    onProviderMenuKeydown: (e: Event) => {
-      const kb = e as KeyboardEvent;
-      const { rows } = getProviderMenuView(state);
-      if (kb.key === 'ArrowDown' || kb.key === 'ArrowUp') {
-        if (rows.length === 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        // Keyboard takes over the cursor: row hover (mousemove) must not
-        // snap it back while the user is navigating with arrows.
-        keyboardNavActive = true;
-        const delta = kb.key === 'ArrowDown' ? 1 : -1;
-        const next =
-          (state.providerState.highlightIndex + delta + rows.length) % rows.length;
-        state = {
-          ...state,
-          providerState: { ...state.providerState, highlightIndex: next },
-        };
-        renderToolbar();
-        scrollHighlightedRowIntoView();
-      } else if (kb.key === 'Enter') {
-        const row = rows[state.providerState.highlightIndex];
-        if (row) {
-          e.preventDefault();
-          e.stopPropagation();
-          callbacks.onModelSelect(e, row.providerId, row.model);
-        }
-      }
-    },
+    onProviderMenuKeydown: (e: Event) => handleProviderMenuKeys(e),
 
     onProviderMenuHover: (rowIndex: number) => {
-      // While the user is navigating with the keyboard, ignore hover — it
-      // would fight the arrow cursor (a resting mouse fires mousemove on any
-      // micro-movement, making arrow navigation look broken).
-      if (keyboardNavActive) return;
       if (rowIndex === state.providerState.highlightIndex) return;
       state = {
         ...state,
@@ -450,23 +418,15 @@ export function createFloatingToolbar(
       renderToolbar();
     },
 
-    // Sync the keyboard cursor with the focused row so Tab + Enter selects
-    // the same model as Space (native button activation).
+    // Keep the cursor in sync when a row is focused (Tab) so Enter selects the
+    // same model the user is looking at.
     onProviderMenuFocus: (rowIndex: number) => {
-      keyboardNavActive = true;
       if (rowIndex === state.providerState.highlightIndex) return;
       state = {
         ...state,
         providerState: { ...state.providerState, highlightIndex: rowIndex },
       };
       renderToolbar();
-    },
-
-    // The pointer entered the results list (mouseenter only fires when the
-    // pointer crosses the boundary from outside) — hand the cursor back to
-    // hover mode. Tiny in-place movements inside the list stay ignored.
-    onProviderMenuEnter: () => {
-      keyboardNavActive = false;
     },
 
     onModelSelect: async (e: Event, providerId: string, model: string) => {
@@ -551,12 +511,34 @@ export function createFloatingToolbar(
     render(toolbarTemplate(state, callbacks), container);
   }
 
-  // Focus the search input once the provider menu is open.
+  // Focus the search input once the provider menu is open. The input lives in
+  // a shadow root, so document.activeElement is retargeted to the host — check
+  // the shadow root's own activeElement instead, and retry after the click
+  // fully settles in case the first attempt races the browser's focus handling.
   function focusProviderSearch() {
-    queueMicrotask(() => {
+    const focus = () => {
       const input = container.querySelector<HTMLInputElement>('.bk-provider-search-input');
-      if (input && document.activeElement !== input) input.focus();
-    });
+      const root = container.getRootNode() as ShadowRoot;
+      if (input && root.activeElement !== input) input.focus();
+    };
+    queueMicrotask(focus);
+    setTimeout(focus, 60);
+  }
+
+  // Shared Enter handling for the model picker (select the hovered/focused
+  // row). Bound to the search input and the popover container.
+  function handleProviderMenuKeys(e: Event): void {
+    if (!state.providerState.isOpen) return;
+    const kb = e as KeyboardEvent;
+    if (kb.key === 'Enter') {
+      const { rows } = getProviderMenuView(state);
+      const row = rows[state.providerState.highlightIndex];
+      if (row) {
+        e.preventDefault();
+        e.stopPropagation();
+        callbacks.onModelSelect(e, row.providerId, row.model);
+      }
+    }
   }
 
   // Return keyboard focus to the model-selector trigger after the menu closes.
@@ -572,21 +554,6 @@ export function createFloatingToolbar(
   // consistent between close and open).
   function closedProviderState(): ToolbarState['providerState'] {
     return { ...state.providerState, isOpen: false, search: '', highlightIndex: 0 };
-  }
-
-  // Keep the keyboard cursor visible inside the scrollable list.
-  function scrollHighlightedRowIntoView() {
-    queueMicrotask(() => {
-      const row = container.querySelector<HTMLElement>('.bk-model-item--highlight');
-      const list = container.querySelector<HTMLElement>('.bk-provider-menu-content');
-      if (!row || !list) return;
-      const top = row.offsetTop - list.offsetTop;
-      const bottom = top + row.offsetHeight;
-      if (top < list.scrollTop) list.scrollTop = top - 4;
-      else if (bottom > list.scrollTop + list.clientHeight) {
-        list.scrollTop = bottom - list.clientHeight + 4;
-      }
-    });
   }
 
   // Document click handler
@@ -669,6 +636,10 @@ export function createFloatingToolbar(
   function attachDocumentListeners() {
     // Use setTimeout to avoid catching the current click
     setTimeout(() => {
+      // Guard against duplicate attachment: attachDocumentListeners is called
+      // on init and again on each FAB re-expansion.
+      if (docListenersAttached) return;
+      docListenersAttached = true;
       document.addEventListener('click', handleDocumentClick);
       document.addEventListener('keydown', handleEscape);
     }, 0);
@@ -676,6 +647,7 @@ export function createFloatingToolbar(
 
   // Detach document listeners
   function detachDocumentListeners() {
+    docListenersAttached = false;
     document.removeEventListener('click', handleDocumentClick);
     document.removeEventListener('keydown', handleEscape);
   }

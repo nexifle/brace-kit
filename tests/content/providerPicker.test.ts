@@ -49,6 +49,18 @@ describe('getProviderMenuView — collapsed (accordion) mode', () => {
     expect(rows).toEqual([]);
   });
 
+  test('provider with no models falls back to the first provider that has models', () => {
+    const providers = [
+      { id: 'empty', name: 'Empty', models: [] },
+      { id: 'gemini', name: 'Gemini', models: ['gemini-3.6-flash'] },
+    ];
+    const { groups, rows } = getProviderMenuView(
+      makeState({ providers, currentProvider: 'empty', expandedProviderId: 'empty' })
+    );
+    expect(groups.map((g) => g.provider.id)).toEqual(['gemini']);
+    expect(rows.map((r) => r.model)).toEqual(['gemini-3.6-flash']);
+  });
+
   test('expanding another provider swaps the visible models', () => {
     const { rows } = getProviderMenuView(makeState({ expandedProviderId: 'gemini' }));
     expect(rows.map((r) => r.providerId)).toEqual(['gemini', 'gemini']);

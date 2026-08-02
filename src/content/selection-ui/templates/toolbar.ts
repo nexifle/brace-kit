@@ -78,8 +78,6 @@ export interface ToolbarCallbacks {
   onProviderMenuKeydown: (e: Event) => void;
   onProviderMenuHover: (rowIndex: number) => void;
   onProviderMenuFocus: (rowIndex: number) => void;
-  /** Pointer entered the results list — release keyboard claim so hover works again. */
-  onProviderMenuEnter: () => void;
   onModelSelect: (e: Event, providerId: string, model: string) => void;
 }
 
@@ -180,7 +178,16 @@ export function getProviderMenuView(state: ToolbarState): ProviderMenuView {
   const expanded = expandedProviderId
     ? providers.find((p) => p.id === expandedProviderId)
     : undefined;
-  const groups = expanded ? [{ provider: expanded, models: expanded.models }] : [];
+  // If the selected provider exists but has no models (e.g. a custom provider
+  // without a fetched list), fall back to the first provider that has any —
+  // otherwise the accordion would be empty and arrow-key navigation would
+  // no-op. An explicit collapse (expandedProviderId === null) stays empty.
+  const target = expanded
+    ? expanded.models.length > 0
+      ? expanded
+      : providers.find((p) => p.models.length > 0)
+    : undefined;
+  const groups = target ? [{ provider: target, models: target.models }] : [];
   return { groups, rows: flattenRows(groups) };
 }
 
@@ -504,6 +511,7 @@ function providerMenuOverlayTemplate(
       role="dialog"
       aria-label="Select model"
       style="${ps.menuAbove ? 'bottom: 38px; top: auto;' : 'top: 36px;'} ${ps.menuAlignRight ? 'right: 0; left: auto;' : 'left: 0;'}"
+      @keydown=${callbacks.onProviderMenuKeydown}
       @click=${(e: Event) => e.stopPropagation()}
     >
       <div class="bk-provider-menu-head">
@@ -534,7 +542,7 @@ function providerMenuOverlayTemplate(
           ` : ''}
         </div>
       </div>
-      <div class="bk-menu-content bk-provider-menu-content" @keydown=${callbacks.onProviderMenuKeydown} @mouseenter=${() => callbacks.onProviderMenuEnter()}>
+      <div class="bk-menu-content bk-provider-menu-content">
         ${query
       ? (() => {
         let running = 0;
@@ -548,7 +556,6 @@ function providerMenuOverlayTemplate(
         ${query && rows.length === 0 ? providerEmptyTemplate() : ''}
       </div>
       <div class="bk-provider-menu-footer">
-        <span class="bk-kbd" aria-hidden="true">↑↓</span><span class="bk-kbd-hint">Navigate</span>
         <span class="bk-kbd" aria-hidden="true">↵</span><span class="bk-kbd-hint">Select</span>
         <span class="bk-kbd" aria-hidden="true">esc</span><span class="bk-kbd-hint">Close</span>
         ${rows.length > 0 ? html`<span class="bk-provider-menu-results">${rows.length} result${rows.length === 1 ? '' : 's'}</span>` : ''}
