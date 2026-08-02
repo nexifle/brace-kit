@@ -90,7 +90,7 @@ The input toolbar contains quick actions:
 | 🌐 | Page Context | Attach current page content |
 | 📎 | Attach File | Add images, text files, or PDFs |
 | 💻 | System Prompt | Edit the system prompt |
-| 🧠 | Reasoning Mode | Enable extended thinking (Claude) |
+| 🧠 | Thinking | Open popover with extended-thinking switch + effort level (Minimal→Max) |
 | ⚙️ | Settings | Open settings panel |
 
 ## Slash Commands

@@ -22,6 +22,13 @@ export interface ChatOptions {
   stream?: boolean;
   /** Enable reasoning/thinking mode */
   enableReasoning?: boolean;
+  /**
+   * Thinking effort level (minimal/low/medium/high/max). Only honored when
+   * enableReasoning is true; each formatter maps it to its provider's param
+   * (reasoning_effort, adaptive effort, thinkingBudget/thinkingLevel, …).
+   * Unsupported by the endpoint → the background service retries without it.
+   */
+  reasoningLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'max';
   /** Model generation parameters forwarded from ProviderConfig */
   modelParameters?: ModelParameters;
   /** Context window size (Ollama-specific) */

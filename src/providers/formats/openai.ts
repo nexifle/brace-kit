@@ -9,6 +9,11 @@ import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
+import {
+  deepseekReasoningEffort,
+  openaiReasoningEffort,
+  xaiReasoningEffort,
+} from '../utils/reasoning.ts';
 
 // ==================== Request Formatting ====================
 
@@ -27,13 +32,23 @@ import { createThinkTagParser } from '../utils/thinkTagParser.ts';
  * @returns Request configuration with URL and fetch options
  */
 export function formatOpenAI(
-  provider: { apiUrl: string; apiKey?: string; model?: string; defaultModel: string; supportsReasoningContent?: boolean },
+  provider: {
+    apiUrl: string;
+    apiKey?: string;
+    model?: string;
+    defaultModel: string;
+    supportsReasoningContent?: boolean;
+    /** Provider preset id (openai, xai, deepseek, groq, custom, …) */
+    id?: string;
+  },
   messages: Message[],
   tools: MCPTool[],
   _options: ChatOptions
 ): RequestConfig {
   const model = provider.model || provider.defaultModel;
   const supportsReasoningContent = provider.supportsReasoningContent === true;
+  const providerId = provider.id ?? '';
+  const shouldEnableReasoning = !!_options.enableReasoning;
 
   // Transform messages to OpenAI format
   const processedMessages = messages.map((msg) => {
@@ -96,6 +111,26 @@ export function formatOpenAI(
   if (p?.temperature !== undefined) body.temperature = p.temperature;
   if (p?.maxTokens !== undefined) body.max_tokens = p.maxTokens;
   if (p?.topP !== undefined) body.top_p = p.topP;
+
+  // Thinking / reasoning parameters.
+  // OpenAI-compatible reasoning models take `reasoning_effort`. DeepSeek V4
+  // also exposes a `thinking` toggle that defaults to ON server-side, so we
+  // explicitly disable it when the user has reasoning turned off.
+  if (shouldEnableReasoning) {
+    const effort =
+      providerId === 'xai'
+        ? xaiReasoningEffort(_options.reasoningLevel)
+        : providerId === 'deepseek'
+          ? deepseekReasoningEffort(_options.reasoningLevel)
+          : openaiReasoningEffort(_options.reasoningLevel);
+    if (effort) body.reasoning_effort = effort;
+    if (providerId === 'deepseek') {
+      body.thinking = { type: 'enabled' };
+    }
+  } else if (providerId === 'deepseek') {
+    // DeepSeek V4 thinks by default — honor the composer toggle.
+    body.thinking = { type: 'disabled' };
+  }
 
   // Add tools if available
   if (tools.length > 0) {

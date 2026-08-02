@@ -7,6 +7,7 @@
 import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
+import { anthropicThinkingBlock } from '../utils/reasoning.ts';
 
 // ==================== Model Fetching ====================
 
@@ -243,13 +244,11 @@ export function formatAnthropic(
   }
   if (p?.topK !== undefined) body.top_k = p.topK;
 
-  // Add thinking parameter for Anthropic models when reasoning is enabled
+  // Add thinking parameter for Anthropic models when reasoning is enabled.
+  // Claude 4.6+ / 5.x use adaptive thinking (effort level); older models (≤4.5)
+  // use the legacy `enabled` + `budget_tokens` form.
   if (shouldEnableReasoning) {
-    body.thinking = {
-      type: 'enabled',
-      // Anthropic requires a minimum of 1024 tokens for thinking budget
-      budget_tokens: Math.max(1024, p?.thinkingBudget ?? 4096),
-    };
+    body.thinking = anthropicThinkingBlock(model, _options.reasoningLevel, p?.thinkingBudget);
   }
 
   if (system) body.system = system;

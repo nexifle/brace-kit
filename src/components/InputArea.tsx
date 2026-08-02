@@ -6,8 +6,9 @@ import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
 import { ComposerPicker } from './ComposerPicker.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
+import { ReasoningPopover } from './ReasoningPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 
@@ -103,7 +104,6 @@ export function InputArea() {
 
   // Reasoning state from store
   const enableReasoning = useStore((state) => state.enableReasoning);
-  const setEnableReasoning = useStore((state) => state.setEnableReasoning);
 
   // Function calling (tools) master switch
   const enableTools = useStore((state) => state.enableTools);
@@ -420,22 +420,8 @@ export function InputArea() {
             <TooltipContent side="top">System Prompt</TooltipContent>
           </Tooltip>
 
-          {/* Reasoning toggle */}
-          <Tooltip>
-            <TooltipTrigger>
-              <button
-                type="button"
-                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${enableReasoning
-                  ? 'bg-primary/15 text-primary border-primary/40'
-                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                onClick={() => setEnableReasoning(!enableReasoning)}
-              >
-                <BrainIcon size={11} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Enable extended thinking</TooltipContent>
-          </Tooltip>
+          {/* Reasoning toggle → popover with switch + effort level */}
+          <ReasoningPopover />
 
           {/* Function calling toggle */}
           <Tooltip>

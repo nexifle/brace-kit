@@ -412,4 +412,65 @@ describe('OpenAI Format', () => {
       });
     });
   });
+
+  describe('reasoning parameters', () => {
+    const base = {
+      apiUrl: 'https://api.openai.com/v1',
+      apiKey: 'test-api-key',
+      model: 'gpt-5.6-sol',
+      defaultModel: 'gpt-5.6-sol',
+    };
+
+    it('sends reasoning_effort for OpenAI when reasoning enabled', () => {
+      const config = formatOpenAI(base, [], [], { enableReasoning: true, reasoningLevel: 'high' });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.reasoning_effort).toBe('high');
+    });
+
+    it('clamps max → high for OpenAI', () => {
+      const config = formatOpenAI(base, [], [], { enableReasoning: true, reasoningLevel: 'max' });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.reasoning_effort).toBe('high');
+    });
+
+    it('omits reasoning_effort when disabled', () => {
+      const config = formatOpenAI(base, [], [], { enableReasoning: false, reasoningLevel: 'high' });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.reasoning_effort).toBeUndefined();
+    });
+
+    it('maps minimal → low for xAI', () => {
+      const xaiProvider = { ...base, id: 'xai', model: 'grok-4.5', defaultModel: 'grok-4.5' };
+      const config = formatOpenAI(xaiProvider, [], [], { enableReasoning: true, reasoningLevel: 'minimal' });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.reasoning_effort).toBe('low');
+    });
+
+    it('enables thinking + reasoning_effort for DeepSeek', () => {
+      const ds = { ...base, id: 'deepseek', model: 'deepseek-v4-pro', defaultModel: 'deepseek-v4-pro' };
+      const config = formatOpenAI(ds, [], [], { enableReasoning: true, reasoningLevel: 'max' });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.thinking).toEqual({ type: 'enabled' });
+      expect(body.reasoning_effort).toBe('max');
+    });
+
+    it('disables DeepSeek thinking when reasoning is off (defaults to on server-side)', () => {
+      const ds = { ...base, id: 'deepseek', model: 'deepseek-v4-pro', defaultModel: 'deepseek-v4-pro' };
+      const config = formatOpenAI(ds, [], [], { enableReasoning: false });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.thinking).toEqual({ type: 'disabled' });
+    });
+
+    it('sends reasoning_effort for Groq and custom endpoints', () => {
+      const groq = { ...base, id: 'groq', model: 'groq/compound', defaultModel: 'groq/compound' };
+      const config = formatOpenAI(groq, [], [], { enableReasoning: true, reasoningLevel: 'medium' });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.reasoning_effort).toBe('medium');
+
+      const custom = { ...base, id: 'custom', model: 'my-model', defaultModel: 'my-model' };
+      const config2 = formatOpenAI(custom, [], [], { enableReasoning: true, reasoningLevel: 'low' });
+      const body2 = JSON.parse(config2.options.body as string);
+      expect(body2.reasoning_effort).toBe('low');
+    });
+  });
 });

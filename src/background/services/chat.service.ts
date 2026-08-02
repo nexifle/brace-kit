@@ -13,7 +13,7 @@ import {
 import { createThinkTagParser } from '../../providers/utils/thinkTagParser.ts';
 import type { Message, MCPTool, ProviderConfig, ToolCall, StreamingBufferEntry } from '../../types';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
-import { getFriendlyErrorMessage } from '../utils/errors';
+import { getFriendlyErrorMessage, isThinkingParamError } from '../utils/errors';
 import {
   createStreamingService,
   type StreamingService,
@@ -180,15 +180,41 @@ export function createChatService(): ChatService {
         }
 
         // Format and send request
-        const { url, options: fetchOptions } = formatRequest(
-          provider,
-          messages,
-          tools || [],
-          options || {}
-        );
-        fetchOptions.signal = abortController.signal;
+        const buildFetchOptions = (opts: ChatOptions) => {
+          const { url: u, options: o } = formatRequest(provider, messages, tools || [], opts);
+          o.signal = abortController.signal;
+          return { url: u, options: o };
+        };
 
-        const response = await fetch(url, fetchOptions);
+        let { url, options: fetchOptions } = buildFetchOptions(options || {});
+        let response = await fetch(url, fetchOptions);
+
+        // Graceful fallback: some OpenAI/Anthropic/Gemini-compatible endpoints
+        // reject thinking params (reasoning_effort, adaptive thinking,
+        // thinkingLevel/budget…). Retry once without them instead of failing.
+        // Reasoning display filtering still uses the ORIGINAL options, so the
+        // model's reasoning chunks (if any) keep showing.
+        if (!response.ok) {
+          let probeBody = '';
+          try {
+            probeBody = await response.clone().text();
+          } catch {
+            probeBody = '';
+          }
+          if (isThinkingParamError(response.status, probeBody)) {
+            const fallbackOptions: ChatOptions = {
+              ...(options || {}),
+              enableReasoning: false,
+              reasoningLevel: undefined,
+            };
+            const fb = buildFetchOptions(fallbackOptions);
+            const retry = await fetch(fb.url, fb.options);
+            if (retry.ok) {
+              response = retry;
+              console.info('[chat.service] Provider rejected thinking params — retried request without them.');
+            }
+          }
+        }
 
         if (!response.ok) {
           const error = await getFriendlyErrorMessage(response);

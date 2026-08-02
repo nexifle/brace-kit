@@ -149,6 +149,42 @@ describe('Anthropic Format', () => {
       expect(body.thinking.budget_tokens).toBe(4096);
     });
 
+    it('uses adaptive thinking with effort level on Claude 5.x models', () => {
+      const sonnet5 = { ...provider, model: 'claude-sonnet-5', defaultModel: 'claude-sonnet-5' };
+      const config = formatAnthropic(sonnet5, [], [], { enableReasoning: true, reasoningLevel: 'high' });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.thinking).toEqual({ type: 'adaptive', effort: 'high' });
+    });
+
+    it('defaults adaptive effort to medium on Claude 5.x', () => {
+      const sonnet5 = { ...provider, model: 'claude-sonnet-5', defaultModel: 'claude-sonnet-5' };
+      const config = formatAnthropic(sonnet5, [], [], { enableReasoning: true });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.thinking).toEqual({ type: 'adaptive', effort: 'medium' });
+    });
+
+    it('maps level to budget on legacy models (haiku-4-5)', () => {
+      const haiku = { ...provider, model: 'claude-haiku-4-5', defaultModel: 'claude-haiku-4-5' };
+      const config = formatAnthropic(haiku, [], [], { enableReasoning: true, reasoningLevel: 'max' });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 32000 });
+    });
+
+    it('lets an explicit thinkingBudget win over the level on legacy models', () => {
+      const haiku = { ...provider, model: 'claude-haiku-4-5', defaultModel: 'claude-haiku-4-5' };
+      const config = formatAnthropic(haiku, [], [], {
+        enableReasoning: true,
+        reasoningLevel: 'low',
+        modelParameters: { thinkingBudget: 20000 },
+      });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 20000 });
+    });
+
     it('should not enable reasoning when not requested', () => {
       const config = formatAnthropic(provider, [], [], {});
       const body = JSON.parse(config.options.body as string);

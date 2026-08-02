@@ -343,6 +343,40 @@ describe('Gemini Format', () => {
       expect(body.generationConfig.thinkingConfig.thinkingLevel).toBeUndefined();
     });
 
+    it('maps composer reasoningLevel to thinkingLevel on Gemini 3', () => {
+      const gemini3Provider = { ...provider, model: 'gemini-3-flash-preview' };
+      const config = formatGemini(gemini3Provider, [], [], {
+        enableReasoning: true,
+        reasoningLevel: 'low',
+      });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.thinkingConfig.thinkingLevel).toBe('low');
+    });
+
+    it('modelParameters.thinkingLevel wins over composer reasoningLevel', () => {
+      const gemini3Provider = { ...provider, model: 'gemini-3-flash-preview' };
+      const config = formatGemini(gemini3Provider, [], [], {
+        enableReasoning: true,
+        reasoningLevel: 'high',
+        modelParameters: { thinkingLevel: 'minimal' },
+      });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.thinkingConfig.thinkingLevel).toBe('minimal');
+    });
+
+    it('maps composer reasoningLevel to budget on Gemini 2.5', () => {
+      const gemini25Provider = { ...provider, model: 'gemini-2.5-flash' };
+      const config = formatGemini(gemini25Provider, [], [], {
+        enableReasoning: true,
+        reasoningLevel: 'low',
+      });
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(8192);
+    });
+
     it('should handle custom URL with /models/ path', () => {
       const customProvider = {
         ...provider,

@@ -8,7 +8,7 @@
 
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
-import type { Message, Attachment, APIMessage, PageContext, SelectedText, ToolCall } from '../types/index.ts';
+import type { Message, Attachment, APIMessage, PageContext, SelectedText, ToolCall, ReasoningLevel } from '../types/index.ts';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import { saveConversationMessages } from '../utils/conversationDB.ts';
 import { isGeminiImageModel, isXAIImageModel } from '../providers';
@@ -119,7 +119,7 @@ export function useChat() {
 
   const dispatchChatRequest = useCallback(async (
     apiMessages: APIMessage[],
-    opts?: { aspectRatio?: string; enableReasoning?: boolean }
+    opts?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }
   ) => {
     const currentState = useStore.getState();
     currentState.setIsStreaming(true);
@@ -145,6 +145,7 @@ export function useChat() {
     const chatOptions = getChatOptions({
       aspectRatio: (isXAIImg || isGeminiImg) ? opts?.aspectRatio : undefined,
       enableReasoning: opts?.enableReasoning,
+      reasoningLevel: opts?.reasoningLevel,
     });
 
     try {
@@ -196,7 +197,7 @@ export function useChat() {
     }
   }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions]);
 
-  const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean }) => {
+  const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
     const currentState = useStore.getState();
     const convId = currentState.activeConversationId;
     const isConvStreaming = convId ? !!currentState.streamingConversations[convId] : false;

@@ -55,3 +55,18 @@ export async function getFriendlyErrorMessage(
 
   return `${statusPrefix}: ${details}`;
 }
+
+/**
+ * Detect a 400 caused by a provider rejecting thinking/reasoning parameters
+ * (e.g. custom OpenAI-compatible endpoints that don't accept `reasoning_effort`,
+ * Anthropic-compatible endpoints without adaptive thinking, Gemini clones that
+ * reject `thinkingConfig`). The chat service uses this to retry the request
+ * without thinking params instead of failing outright.
+ */
+const THINKING_PARAM_ERROR_RE =
+  /(unknown parameter|unknown_parameter|unsupported parameter|unsupported_parameter|not support|does not support|invalid parameter|invalid_request_error|unexpected parameter|extra inputs|extra fields|reasoning_effort|reasoning effort|thinkinglevel|thinkingbudget|budget_tokens|thinking config|thinking mode|thinking)/i;
+
+export function isThinkingParamError(status: number, body: string): boolean {
+  if (status !== 400) return false;
+  return THINKING_PARAM_ERROR_RE.test(body || '');
+}
