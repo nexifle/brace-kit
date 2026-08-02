@@ -69,12 +69,39 @@ describe('computePopoverPlacement', () => {
     expect(p.maxHeight).toBeLessThanOrEqual(800 - POPOVER_GAP);
   });
 
-  // Trigger near the bottom → flip above
-  it('flips above when there is more room above', () => {
+  // Trigger near the bottom → flip above, with the popover's BOTTOM edge at the
+  // trigger's top so the trigger is never covered (chat composer case).
+  it('flips above, bottom-anchored at the trigger top (never covers the trigger)', () => {
     const rect = { top: 600, bottom: 648 };
     const p = computePopoverPlacement(rect, 700);
     expect(p.flipAbove).toBe(true);
-    expect(p.top).toBe(600 - POPOVER_GAP);
+    expect(p.top).toBeGreaterThanOrEqual(0);
+    expect(p.bottom).toBe(600 - POPOVER_GAP);
+    expect(p.bottom).toBeLessThanOrEqual(rect.top - POPOVER_GAP);
+  });
+
+  // Composer at the very bottom of a short viewport — the popover must open
+  // above and hug the trigger (bottom edge at the trigger top).
+  it('anchors to the trigger on a short viewport (composer at bottom)', () => {
+    const rect = { top: 326, bottom: 362 };
+    const p = computePopoverPlacement(rect, 433);
+    expect(p.flipAbove).toBe(true);
+    expect(p.bottom).toBe(rect.top - POPOVER_GAP);
+    expect(p.top).toBeGreaterThanOrEqual(0);
+    expect(p.bottom).toBeLessThanOrEqual(433);
+  });
+
+  // A short popover is anchored by its bottom — its top edge must sit ABOVE
+  // the bottom edge (not at the viewport top) when the content is shorter
+  // than the available space.
+  it('keeps the popover top below the viewport top when content is short', () => {
+    const rect = { top: 400, bottom: 448 };
+    const p = computePopoverPlacement(rect, 700);
+    expect(p.flipAbove).toBe(true);
+    // Anchor: bottom at the trigger top; top must be above it, not pinned to 0.
+    expect(p.bottom).toBe(400 - POPOVER_GAP);
+    expect(p.top).toBeLessThan(p.bottom);
+    expect(p.top + p.maxHeight).toBe(p.bottom);
   });
 
   // Neither side fits → pick the larger side and clamp to the viewport

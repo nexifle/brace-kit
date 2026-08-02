@@ -5,7 +5,8 @@ import { PROVIDER_PRESETS, FORMAT_LABELS } from '../../providers';
 import { useStore } from '../../store/index.ts';
 import type { CustomProvider, ProviderPreset } from '../../types/index.ts';
 import { SearchIcon, XIcon, PlusIcon, CheckIcon, ChevronDownIcon, SearchXIcon, Trash2Icon } from 'lucide-react';
-import { PROVIDER_BRANDS, CUSTOM_BRAND } from './providerBrands.ts';
+import { Kbd, SectionLabel } from '../ui/ComboPopover.tsx';
+import { ProviderMark } from '../ui/ProviderMark.tsx';
 
 export type SelectableProvider = ProviderPreset | CustomProvider;
 
@@ -14,58 +15,16 @@ interface ProviderSelectProps {
   onRequestRemove: (p: { id: string; name: string }) => void;
 }
 
-/** Minimum usable popover height before we flip to the other side */
-export const POPOVER_MIN_HEIGHT = 260;
-export const POPOVER_GAP = 8;
+// Placement helpers live in src/utils/popover.ts (shared with the chat
+// ComboPopover) — re-exported here so existing imports/tests keep working.
+import {
+  computePopoverPlacement,
+  POPOVER_MIN_HEIGHT,
+  POPOVER_GAP,
+  type PopoverPlacement,
+} from '../../utils/popover.ts';
 
-// =============================================================================
-// Pure helpers (unit-tested in tests/components/settings/ProviderSelect.test.ts)
-// =============================================================================
-
-export interface PopoverPlacement {
-  top: number;
-  maxHeight: number;
-  flipAbove: boolean;
-}
-
-/**
- * Compute the popover position for a given trigger rect and viewport height.
- * Prefers opening below; flips above when there is more room; if neither side
- * fits, picks the side with more space. The height is always clamped so the
- * footer action stays on screen, even on very small displays.
- */
-export function computePopoverPlacement(
-  rect: { top: number; bottom: number },
-  viewportHeight: number,
-  gap = POPOVER_GAP,
-  minHeight = POPOVER_MIN_HEIGHT
-): PopoverPlacement {
-  const availBelow = viewportHeight - rect.bottom - gap;
-  const availAbove = rect.top - gap;
-
-  let top: number;
-  let flipAbove: boolean;
-
-  if (availBelow >= minHeight) {
-    top = rect.bottom + gap;
-    flipAbove = false;
-  } else if (availAbove >= minHeight) {
-    top = Math.max(gap, rect.top - gap);
-    flipAbove = true;
-  } else {
-    flipAbove = availAbove > availBelow;
-    top = flipAbove ? Math.max(gap, rect.top - gap) : rect.bottom + gap;
-  }
-
-  const sideSpace = flipAbove ? availAbove : availBelow;
-  // Room from the popover's top edge to the bottom of the viewport.
-  const viewportSpace = viewportHeight - top - gap;
-  // Prefer the side's space; never exceed what fits between the popover top
-  // and the viewport bottom. The 120px floor only applies when it fits.
-  const maxHeight = Math.min(Math.max(120, sideSpace), viewportSpace);
-
-  return { top, maxHeight, flipAbove };
-}
+export { computePopoverPlacement, POPOVER_MIN_HEIGHT, POPOVER_GAP, type PopoverPlacement };
 
 /**
  * Flatten the popover list: pinned active provider first, then remaining
@@ -80,48 +39,6 @@ export function flattenSelectable(
 }
 
 // =============================================================================
-// Small presentational pieces
-// =============================================================================
-
-function ProviderMark({ id, name, size = 30 }: { id: string; name: string; size?: number }) {
-  const brand = PROVIDER_BRANDS[id] ?? CUSTOM_BRAND;
-  const letter = (name || '?').trim().charAt(0).toUpperCase();
-  return (
-    <span
-      className="flex items-center justify-center font-bold shrink-0 select-none"
-      style={{
-        width: size,
-        height: size,
-        fontSize: Math.round(size * 0.42),
-        background: brand.color,
-        color: brand.fg,
-        boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.16), 0 1px 2px rgba(0,0,0,0.18)`,
-      }}
-    >
-      {letter}
-    </span>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="min-w-4.5 h-4 px-1 inline-flex items-center justify-center rounded-sm border border-border bg-muted/70 font-mono text-[10px] leading-none text-muted-foreground/70 shadow-[0_1px_0_theme(colors.border)]">
-      {children}
-    </kbd>
-  );
-}
-
-function SectionLabel({ label, count }: { label: string; count: number }) {
-  return (
-    <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-1">
-      <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/50">{label}</span>
-      <span className="text-2xs tabular-nums text-muted-foreground/30">{count}</span>
-      <span className="flex-1 h-px bg-border/50" />
-    </div>
-  );
-}
-
-// =============================================================================
 // ProviderSelect
 // =============================================================================
 
@@ -133,7 +50,10 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
   const [search, setSearch] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const [abovePlaced, setAbovePlaced] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const [pos, setPos] = useState<
+    | { top?: number; bottom?: number; left: number; width: number; maxHeight: number }
+    | null
+  >(null);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -202,8 +122,8 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
     const el = wrapperRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const { top, maxHeight, flipAbove } = computePopoverPlacement(rect, window.innerHeight);
-    setPos({ top, left: rect.left, width: rect.width, maxHeight });
+    const { top, bottom, maxHeight, flipAbove } = computePopoverPlacement(rect, window.innerHeight);
+    setPos(flipAbove ? { bottom, left: rect.left, width: rect.width, maxHeight } : { top, left: rect.left, width: rect.width, maxHeight });
     setAbovePlaced(flipAbove);
     setSearch('');
     setActiveIdx(Math.max(0, selectable.indexOf(current as SelectableProvider)));
@@ -431,7 +351,11 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
         createPortal(
           <div
             ref={popoverRef}
-            style={{ top: pos.top, left: pos.left, width: pos.width }}
+            style={{
+              ...(abovePlaced ? { bottom: window.innerHeight - (pos.bottom ?? 0) } : { top: pos.top }),
+              left: pos.left,
+              width: pos.width,
+            }}
             className={`fixed z-[70] animate-in fade-in zoom-in-95 duration-200 ${
               abovePlaced ? 'origin-bottom slide-in-from-bottom-2' : 'origin-top slide-in-from-top-2'
             }`}
@@ -490,8 +414,8 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
                 </div>
               </div>
 
-              {/* List */}
-              <div id="provider-select-listbox" role="listbox" aria-label="Providers" className="flex-1 min-h-0 overflow-y-auto p-1.5">
+              {/* List — grow-0 shrink (no flex-grow) so it shrink-wraps short content */}
+              <div id="provider-select-listbox" role="listbox" aria-label="Providers" className="shrink basis-auto min-h-0 overflow-y-auto p-1.5">
                 {selectable.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
                     <SearchXIcon size={20} className="text-muted-foreground/40" />

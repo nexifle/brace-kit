@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat, useFileAttachments, usePageContext, useProvider, useMCP, useOmnibox } from '../hooks';
+import { useChat, useFileAttachments, usePageContext, useMCP, useOmnibox } from '../hooks';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
-import { ProviderPopover } from './ProviderPopover.tsx';
+import { ChatProviderSelect } from './ChatProviderSelect.tsx';
+import { ChatModelSelect } from './ChatModelSelect.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
@@ -20,7 +21,6 @@ const SLASH_COMMANDS = [
 export function InputArea() {
   const [text, setText] = useState('');
   const [imageAspectRatio, setImageAspectRatio] = useState('auto');
-  const [showProviderPopover, setShowProviderPopover] = useState(false);
   const [showPreferencesPopover, setShowPreferencesPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -31,7 +31,6 @@ export function InputArea() {
   const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
   const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText, pageContext: hasPageContext } = usePageContext();
-  const { providerInfo } = useProvider();
   const { syncAndReconnect } = useMCP();
   useOmnibox(sendMessage);
   const currentModel = useStore((state) => state.providerConfig.model || '');
@@ -69,31 +68,29 @@ export function InputArea() {
     }
   }, [isGeminiImageModel, imageAspectRatio]);
 
-  // Close popover on click outside
+  // Close preferences popover on click outside
   useEffect(() => {
-    if (!showProviderPopover && !showPreferencesPopover) return;
+    if (!showPreferencesPopover) return;
     const handler = (e: MouseEvent) => {
       if (footerRef.current && !footerRef.current.contains(e.target as Node)) {
-        setShowProviderPopover(false);
         setShowPreferencesPopover(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showProviderPopover, showPreferencesPopover]);
+  }, [showPreferencesPopover]);
 
-  // Close popover on Escape
+  // Close preferences popover on Escape (combo selects handle their own Escape)
   useEffect(() => {
-    if (!showProviderPopover && !showPreferencesPopover) return;
+    if (!showPreferencesPopover) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowProviderPopover(false);
         setShowPreferencesPopover(false);
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [showProviderPopover, showPreferencesPopover]);
+  }, [showPreferencesPopover]);
 
   const placeholder = store.pageContext
     ? 'Ask about this page... (type \'/\' for commands)'
@@ -354,6 +351,15 @@ export function InputArea() {
           </div>
         </div>
 
+        {/* Composer config — provider & model segmented selects */}
+        <div className="px-3 pt-2">
+          <div className="flex items-stretch rounded-md border border-border/80 bg-card/70 shadow-sm overflow-hidden">
+            <ChatProviderSelect />
+            <div className="w-px bg-border/70 shrink-0" aria-hidden="true" />
+            <ChatModelSelect />
+          </div>
+        </div>
+
         {/* Context usage indicator - own row above toolbar */}
         {compactEnabled && percentUntilCompact <= 15 && (
           <div className="flex justify-end p-2">
@@ -373,33 +379,7 @@ export function InputArea() {
 
         {/* Bottom Toolbar */}
         <div className="flex items-center gap-1.5 px-3 pb-3 pt-2 border-t border-border/50" ref={footerRef}>
-          <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
           <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
-
-          {/* Provider + Model selector */}
-          <button
-            type="button"
-            className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-200 min-w-0 max-w-[40%] ${showProviderPopover
-              ? 'bg-primary/15 text-primary'
-              : 'text-foreground hover:bg-muted/50'
-              }`}
-            onClick={() => setShowProviderPopover(v => !v)}
-          >
-            <span className="text-sm font-semibold truncate shrink-0">
-              {providerInfo.isConfigured ? providerInfo.providerName : 'No Provider'}
-            </span>
-            {providerInfo.model && (
-              <span className="text-xs text-muted-foreground font-normal truncate min-w-0">
-                {providerInfo.model}
-              </span>
-            )}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted-foreground/70 shrink-0">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-
-          {/* Vertical divider */}
-          <div className="w-px h-4 bg-border/70 mx-0.5 shrink-0" />
 
           {/* Page context - pill with label */}
           <Tooltip>
