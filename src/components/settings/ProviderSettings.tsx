@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProvider } from '../../hooks/useProvider.ts';
-import { PROVIDER_PRESETS, GROQ_BUILTIN_TOOLS } from '../../providers';
+import { GROQ_BUILTIN_TOOLS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import type { ProviderFormat, ProviderPreset, CustomProvider } from '../../types/index.ts';
 import { PlusIcon, XIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
 import { ModelParameterSettings } from './ModelParameterSettings.tsx';
 import { AddProviderModal } from './AddProviderModal.tsx';
+import { ProviderSelect } from './ProviderSelect.tsx';
 import { useStore } from '../../store/index.ts';
 
 // =============================================================================
@@ -37,13 +38,11 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 export function ProviderSettings() {
   const {
     providerConfig,
-    switchProvider,
     updateProviderConfig,
     getProvider,
     isCustomProvider,
     getAvailableModels,
     fetchAndCacheModels,
-    availableProviders,
     addCustomProvider,
     removeCustomProvider,
     addModelToCustomProvider,
@@ -126,48 +125,16 @@ export function ProviderSettings() {
         {/* ── PROVIDER SELECTION ── */}
         <SectionCard>
           <SectionHeader icon={<LayersIcon size={12} />} title="Provider" />
-          <div className="p-3 flex flex-col gap-3">
-            <div className="grid grid-cols-3 gap-2">
-              {availableProviders.map((p) => {
-                const isActive = p.id === providerConfig.providerId;
-                const isPreset = !!PROVIDER_PRESETS[p.id];
-                return (
-                  <div key={p.id} className="group relative">
-                    <button
-                      className={`w-full h-10 px-2 flex items-center justify-center text-xs font-bold uppercase tracking-tight rounded-md border transition-all truncate
-                        ${isActive
-                          ? 'bg-primary border-primary text-primary-foreground shadow-md'
-                          : 'bg-muted/30 border-border/60 text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                      onClick={() => switchProvider(p.id)}
-                      title={p.name}
-                    >
-                      {p.name}
-                    </button>
-                    {!isPreset && (
-                      <button
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110 active:scale-95 z-10"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setProviderToDelete({ id: p.id, name: p.name });
-                        }}
-                        title="Remove Provider"
-                      >
-                        <XIcon size={12} strokeWidth={2.5} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              <button
-                className="h-10 border border-dashed rounded-md flex items-center justify-center gap-1.5 transition-all text-xs font-bold uppercase tracking-tight bg-transparent border-border/60 text-muted-foreground hover:bg-muted/20 hover:text-foreground"
-                onClick={() => setShowAddModal(true)}
-              >
-                <PlusIcon size={14} />
-                Add
-              </button>
-            </div>
-
+          <div className="p-3 flex flex-col gap-2.5">
+            <ProviderSelect
+              onAddClick={() => setShowAddModal(true)}
+              onRequestRemove={(p) => setProviderToDelete(p)}
+            />
+            <p className="text-2xs text-muted-foreground/50 leading-relaxed px-0.5">
+              Pick a provider to chat with — search, then hit{' '}
+              <span className="font-mono">Enter</span>. Add your own service with the{' '}
+              <span className="font-semibold">+ Add</span> button.
+            </p>
           </div>
         </SectionCard>
 

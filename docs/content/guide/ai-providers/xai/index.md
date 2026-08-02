@@ -32,41 +32,36 @@ Settings are saved automatically as you type.
 
 ## Available Models
 
-### Grok 4.1 Series (Latest)
+### Current Flagship
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **grok-4-1-fast-reasoning** | Complex reasoning | 2M | Extended thinking, best quality |
-| **grok-4-1-fast-non-reasoning** | Fast responses | 2M | Quick, capable, cost-efficient |
+| **grok-4.5** | Coding, agentic tasks | 500K | Current flagship, configurable reasoning |
+| **grok-4.3** | Balanced workloads | 1M | Strong reasoning + tool use |
 
-### Grok 4 Series
-
-| Model | Best For | Context | Notes |
-|-------|----------|---------|-------|
-| **grok-4** | Complex tasks | 131K | Reasoning model |
-| **grok-4-fast-reasoning** | Reasoning | 2M | Faster reasoning variant |
-| **grok-4-fast-non-reasoning** | General use | 2M | Fast, no reasoning |
-
-### Grok 3 Series
+### Grok 4.20 Series
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **grok-3** | General use | 131K | Balanced performance |
-| **grok-3-mini** | Quick tasks | 131K | Faster, cheaper |
+| **grok-4.20-0309-reasoning** | Complex reasoning | 1M | Extended thinking (alias `grok-4.20`) |
+| **grok-4.20-0309-non-reasoning** | Fast responses | 1M | Quick, no reasoning (alias `grok-4.20-non-reasoning`) |
+| **grok-4.20-multi-agent-0309** | Multi-agent workflows | 1M | Coordinated agent runs |
 
-### Image Generation
+### Coding & Media
 
 | Model | Best For | Notes |
 |-------|----------|-------|
-| **grok-2-image-1212** | Image generation | Latest image model |
+| **grok-build-0.1** | Agentic coding | Code-first model |
 | **grok-imagine-image** | Image generation | Standard quality |
 | **grok-imagine-image-pro** | Image generation | Higher quality |
+| **grok-imagine-image-quality** | Image generation | Quality-tuned |
+| **grok-imagine-video-1.5** | Video generation | Latest video model |
 
 ## Features
 
 ### Reasoning Mode
 
-Grok 4 and 4.1 models are reasoning models that show their thinking process:
+Grok 4.x models are reasoning models that show their thinking process:
 
 1. Click the brain icon (🧠) in the toolbar
 2. Send your message

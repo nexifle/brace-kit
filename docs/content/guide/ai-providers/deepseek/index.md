@@ -32,18 +32,20 @@ Settings are saved automatically as you type.
 
 ## Available Models
 
-Both models are powered by **DeepSeek-V3.2** with different modes:
+DeepSeek's current lineup is powered by **DeepSeek-V4**:
 
 | Model | Mode | Best For | Context | Max Output |
 |-------|------|----------|---------|------------|
-| **deepseek-chat** | Non-thinking | General chat, code, summarization | 128K | 8K tokens |
-| **deepseek-reasoner** | Thinking | Math, logic, complex analysis | 128K | 64K tokens |
+| **deepseek-v4-flash** | Thinking / Non-thinking | General chat, code, high-throughput tasks | 1M | 384K tokens |
+| **deepseek-v4-pro** | Thinking / Non-thinking | Complex reasoning, agentic coding, analysis | 1M | 384K tokens |
+
+> Note: the legacy `deepseek-chat` and `deepseek-reasoner` names were retired on July 24, 2026 — they now route to `deepseek-v4-flash`.
 
 ## Features
 
 ### Reasoning (Thinking Mode)
 
-The `deepseek-reasoner` model shows its Chain-of-Thought reasoning process:
+The `deepseek-v4-pro` model shows its Chain-of-Thought reasoning process when thinking mode is enabled:
 
 ```
 ┌─────────────────────────────────────┐
@@ -84,9 +86,9 @@ Configure in **Settings → AI Provider** under the **Advanced** section:
 
 | Use Case | Model | Temperature |
 |----------|-------|-------------|
-| Code generation | deepseek-chat | 0.3 |
-| General chat | deepseek-chat | 0.7 |
-| Complex reasoning | deepseek-reasoner | 0.5 |
+| Code generation | deepseek-v4-flash | 0.3 |
+| General chat | deepseek-v4-flash | 0.7 |
+| Complex reasoning | deepseek-v4-pro | 0.5 |
 | Math/Logic | deepseek-reasoner | 0.0 |
 
 ## Pricing
@@ -115,14 +117,14 @@ DeepSeek V3.2 offers **unified pricing** for both models with automatic context 
 
 ### Reasoning not showing
 
-- Ensure you're using `deepseek-reasoner` (not `deepseek-chat`)
+- Ensure you're using `deepseek-v4-pro` (not the flash variant) for complex reasoning
 - The thinking mode is optimized for complex queries (math, logic, code)
 - Simple queries may not trigger extended Chain-of-Thought
 
 ### Slow responses
 
 - The reasoner model takes longer to "think"
-- For faster responses, use `deepseek-chat`
+- For faster responses, use `deepseek-v4-flash`
 
 ## Related
 

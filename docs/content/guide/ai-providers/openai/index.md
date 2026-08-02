@@ -35,36 +35,23 @@ Settings are saved automatically when you make changes.
 
 ## Available Models
 
-### GPT-5 Series (Recommended)
+### GPT-5.6 Family (Recommended)
 
-The latest generation with improved reasoning and agentic capabilities.
-
-| Model | Best For | Context | Notes |
-|-------|----------|---------|-------|
-| **gpt-5** | General purpose, coding, agentic tasks | 400K | Balanced performance |
-| **gpt-5-mini** | Fast, cost-efficient for well-defined tasks | 400K | Cheaper, faster |
-| **gpt-5-nano** | Simple tasks, high volume | 128K | Fastest, cheapest |
-| **gpt-5.1** | Enhanced reasoning with configurable effort | 400K | Higher reasoning |
-| **gpt-5.2** | Best for coding and agentic tasks | 400K | Latest capabilities |
-| **gpt-5.2-pro** | Maximum precision and reasoning | 400K | Slowest, most expensive |
-
-### GPT-4.1 Series
-
-Improved GPT-4 with better performance.
+The latest generation. The `gpt-5.6` alias routes to `gpt-5.6-sol`.
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **gpt-4.1** | General purpose, reliable | 128K | Improved GPT-4 |
-| **gpt-4.1-mini** | Fast, affordable alternative | 128K | Cheaper than GPT-5 |
+| **gpt-5.6-sol** | Complex professional work | 1.05M | Frontier model, all reasoning levels |
+| **gpt-5.6-terra** | Balanced intelligence & cost | 1.05M | Strong middle tier |
+| **gpt-5.6-luna** | Cost-sensitive, high volume | 1.05M | Fastest, cheapest |
 
-### GPT-4o Series
-
-Multimodal models with vision support.
+### Previous Generation
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **gpt-4o** | Multimodal (text + images) | 128K | Vision support |
-| **gpt-4o-mini** | Fast multimodal tasks | 128K | Cheaper vision |
+| **gpt-5.5** | General purpose | 400K | Previous flagship |
+| **gpt-5.4** | General purpose, coding | 1.05M | Prior generation, computer use |
+| **gpt-oss** | Open-weight models | 400K | Openly available weights |
 
 ### Reasoning Models (o-series)
 

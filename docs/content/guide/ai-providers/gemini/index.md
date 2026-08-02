@@ -38,19 +38,25 @@ Settings are saved automatically as you type.
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **gemini-2.5-flash** | General use | 1M | Best price-performance, fast |
-| **gemini-2.5-pro** | Complex tasks | 1M | Most capable, deep reasoning |
-| **gemini-2.5-flash-lite** | Simple tasks | 1M | Ultra-low latency, cost-efficient |
+| **gemini-3.6-flash** | General production | 1M | Latest stable, great price-performance |
+| **gemini-3.5-flash** | General use | 1M | Balanced speed and intelligence |
+| **gemini-3.5-flash-lite** | High-volume tasks | 1M | Ultra-low latency, cost-efficient |
+| **gemini-3.1-pro** | Complex reasoning | 2M | Most capable, deep reasoning |
+| **gemini-3.1-flash** | Agentic workflows | 1M | Fast with strong tool use |
+| **gemini-3.1-flash-lite** | Simple tasks | 1M | Ultra-low latency |
+| **gemini-3-flash** | General use | 1M | Frontier intelligence, fast |
 
 ### Image Generation Models
 
 | Model | Best For |
 |-------|----------|
 | **gemini-2.5-flash-image** | Native image generation and editing |
+| **gemini-3-pro-image** | High-quality image generation (Nano Banana Pro) |
+| **gemini-3.1-flash-image** | Fast image generation (Nano Banana 2) |
 
 ### Thinking Models
 
-Gemini 2.5 Pro supports extended thinking for complex reasoning:
+Gemini Pro and Flash models support extended thinking for complex reasoning:
 - Click the **brain icon** (🧠) in the toolbar to enable
 - The model shows its reasoning process before the response
 

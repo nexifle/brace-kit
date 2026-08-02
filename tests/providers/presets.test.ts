@@ -33,25 +33,30 @@ describe('Provider Presets', () => {
       expect(preset.id).toBe('openai');
       expect(preset.name).toBe('OpenAI');
       expect(preset.format).toBe('openai');
-      expect(preset.defaultModel).toBe('gpt-4o');
+      expect(preset.defaultModel).toBe('gpt-5.6-sol');
       expect(preset.supportsModelFetch).toBe(true);
+      expect(preset.staticModels).toContain('gpt-5.6-sol');
+      expect(preset.staticModels).toContain('gpt-5.6-terra');
     });
 
     it('should have correct Anthropic preset with static models', () => {
       const preset = PROVIDER_PRESETS.anthropic;
       expect(preset.id).toBe('anthropic');
       expect(preset.format).toBe('anthropic');
-      expect(preset.supportsModelFetch).toBe(false);
+      expect(preset.supportsModelFetch).toBe(true); // live fetch via /v1/models
       expect(preset.staticModels).toBeDefined();
       expect(preset.staticModels?.length).toBeGreaterThan(0);
+      expect(preset.staticModels).toContain('claude-opus-5');
+      expect(preset.staticModels).toContain('claude-sonnet-5');
     });
 
     it('should have correct Gemini preset', () => {
       const preset = PROVIDER_PRESETS.gemini;
       expect(preset.id).toBe('gemini');
       expect(preset.format).toBe('gemini');
-      expect(preset.defaultModel).toBe('gemini-2.5-flash');
+      expect(preset.defaultModel).toBe('gemini-3.6-flash');
       expect(preset.supportsModelFetch).toBe(true);
+      expect(preset.staticModels).toContain('gemini-3.6-flash');
     });
 
     it('should have correct xAI preset with static models', () => {
@@ -59,7 +64,9 @@ describe('Provider Presets', () => {
       expect(preset.id).toBe('xai');
       expect(preset.format).toBe('openai'); // xAI uses OpenAI-compatible format
       expect(preset.staticModels).toBeDefined();
-      expect(preset.staticModels).toContain('grok-2-image-1212');
+      expect(preset.staticModels).toContain('grok-4.5');
+      expect(preset.staticModels).toContain('grok-4.3');
+      expect(preset.defaultModel).toBe('grok-4.5');
     });
   });
 
@@ -69,18 +76,21 @@ describe('Provider Presets', () => {
     });
 
     it('should have Gemini search-only models', () => {
-      expect(GEMINI_SEARCH_ONLY_MODELS).toContain('gemini-3-pro-image-preview');
+      // Currently no Gemini models are search-only without function calling —
+      // native image models are covered by GEMINI_NO_TOOLS_MODELS instead.
+      expect(GEMINI_SEARCH_ONLY_MODELS).toEqual([]);
     });
 
     it('should have Gemini image models', () => {
       expect(GEMINI_IMAGE_MODELS).toContain('gemini-2.5-flash-image');
-      expect(GEMINI_IMAGE_MODELS).toContain('gemini-3-pro-image-preview');
+      expect(GEMINI_IMAGE_MODELS).toContain('gemini-3-pro-image');
+      expect(GEMINI_IMAGE_MODELS).toContain('gemini-3.1-flash-image');
     });
 
     it('should have xAI image models', () => {
-      expect(XAI_IMAGE_MODELS).toContain('grok-2-image-1212');
       expect(XAI_IMAGE_MODELS).toContain('grok-imagine-image');
       expect(XAI_IMAGE_MODELS).toContain('grok-imagine-image-pro');
+      expect(XAI_IMAGE_MODELS).toContain('grok-imagine-image-quality');
     });
   });
 
@@ -106,14 +116,14 @@ describe('Provider Presets', () => {
     });
 
     it('should return false for search-only models', () => {
-      expect(supportsFunctionCalling('gemini-3-pro-image-preview')).toBe(false);
+      expect(supportsFunctionCalling('gemini-3-pro-image')).toBe(false);
     });
   });
 
   describe('isGeminiImageModel', () => {
     it('should return true for Gemini image models', () => {
       expect(isGeminiImageModel('gemini-2.5-flash-image')).toBe(true);
-      expect(isGeminiImageModel('gemini-3-pro-image-preview')).toBe(true);
+      expect(isGeminiImageModel('gemini-3-pro-image')).toBe(true);
     });
 
     it('should return false for regular Gemini models', () => {
@@ -123,8 +133,8 @@ describe('Provider Presets', () => {
 
   describe('isXAIImageModel', () => {
     it('should return true for xAI image models', () => {
-      expect(isXAIImageModel('grok-2-image-1212')).toBe(true);
       expect(isXAIImageModel('grok-imagine-image')).toBe(true);
+      expect(isXAIImageModel('grok-imagine-image-quality')).toBe(true);
       expect(isXAIImageModel('grok-imagine-image-pro')).toBe(true);
     });
 

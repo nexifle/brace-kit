@@ -8,6 +8,48 @@ import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 
+// ==================== Model Fetching ====================
+
+/**
+ * Fetch available models from the Anthropic /v1/models endpoint.
+ *
+ * @param apiUrl - Anthropic API base URL
+ * @param apiKey - Anthropic API key (x-api-key header)
+ * @returns Object with model id list
+ */
+export async function fetchAnthropicModels(
+  apiUrl: string,
+  apiKey: string
+): Promise<{ models: string[] }> {
+  const baseUrl = apiUrl.replace(/\/+$/, '');
+  const url = `${baseUrl}/models`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  // Anthropic returns { data: [{ type: 'model', id, display_name, created_at }] }
+  if (Array.isArray(data?.data)) {
+    const models = data.data
+      .map((m: { id?: string }) => m?.id)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+    return { models };
+  }
+
+  return { models: [] };
+}
+
 // ==================== Request Formatting ====================
 
 /**
