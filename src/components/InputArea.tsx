@@ -408,7 +408,7 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${store.showSystemPromptEditor
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
@@ -425,7 +425,7 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${enableReasoning
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${enableReasoning
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
@@ -442,7 +442,7 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${enableTools
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${enableTools
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
@@ -461,7 +461,7 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${preferences.toolMessageDisplay === 'compact'
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}

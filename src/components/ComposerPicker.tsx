@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useProvider } from '../hooks/useProvider.ts';
 import { PROVIDER_PRESETS, FORMAT_LABELS } from '../providers';
@@ -11,6 +11,7 @@ import { ComboList, type ComboRow } from './ui/ComboPopover.tsx';
 import { ProviderMark } from './ui/ProviderMark.tsx';
 import { AddProviderModal } from './settings/AddProviderModal.tsx';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
+import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 
 type SelectableProvider = ProviderPreset | CustomProvider;
 
@@ -42,9 +43,32 @@ export function ComposerPicker() {
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxHeight: number } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [toRemove, setToRemove] = useState<{ id: string; name: string } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
 
   const current = availableProviders.find((p) => p.id === providerConfig.providerId) ?? null;
   const currentModel = providerConfig.model;
+
+  // Show the tooltip only when the trigger text is actually clipped
+  useEffect(() => {
+    const btn = triggerRef.current;
+    if (!btn) return;
+    const measure = () => {
+      let t = false;
+      btn.querySelectorAll('.truncate').forEach((s) => {
+        if ((s as HTMLElement).scrollWidth > (s as HTMLElement).clientWidth) t = true;
+      });
+      setIsTruncated(t);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(btn);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [current?.name, currentModel]);
 
   const builtIns = Object.values(PROVIDER_PRESETS).filter((p) => !isCustomProvider(p.id));
   const customs = availableProviders.filter((p) => isCustomProvider(p.id));
@@ -271,36 +295,48 @@ export function ComposerPicker() {
   return (
     <>
       {/* ── Single trigger chip ── */}
-      <button
-        id="composer-picker-trigger"
-        type="button"
-        onClick={() => (open ? close() : openPicker())}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls="composer-picker-popup"
-        className={`h-7 min-w-0 max-w-[240px] flex items-center gap-1.5 px-1.5 rounded-md text-left transition-all duration-150 select-none focus-visible:outline-none focus-visible:bg-muted/40 ${
-          open ? 'bg-primary/10' : 'hover:bg-muted/40'
-        }`}
-        title={current ? `Provider & model — ${current.name} · ${currentModel || 'no model'}` : 'Select provider and model'}
-      >
-        {current && <ProviderMark id={current.id} name={current.name} size={16} />}
-        <span className={`shrink-0 truncate text-xs font-semibold leading-tight ${open ? 'text-primary' : 'text-foreground'}`}>
-          {current?.name ?? 'Provider'}
-        </span>
-        <span className="shrink-0 text-muted-foreground/40">·</span>
-        <span
-          className={`min-w-0 truncate text-[11px] leading-tight ${
-            currentModel ? 'font-mono text-muted-foreground' : 'italic text-muted-foreground/60'
-          }`}
-        >
-          {currentModel || 'select model'}
-        </span>
-        <ChevronDownIcon
-          size={12}
-          strokeWidth={2.5}
-          className={`shrink-0 text-muted-foreground/70 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
+      <Tooltip>
+        <TooltipTrigger className="min-w-0 flex">
+          <button
+            ref={triggerRef}
+            id="composer-picker-trigger"
+            type="button"
+            onClick={() => (open ? close() : openPicker())}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-controls="composer-picker-popup"
+            className={`w-full min-w-0 h-7 max-w-[240px] flex items-center gap-1.5 px-1.5 rounded-md text-left transition-all duration-150 select-none focus-visible:outline-none focus-visible:bg-muted/40 ${
+              open ? 'bg-primary/10' : 'hover:bg-muted/40'
+            }`}
+          >
+            {current && <ProviderMark id={current.id} name={current.name} size={16} />}
+            <span className={`min-w-0 truncate text-xs font-semibold leading-tight ${open ? 'text-primary' : 'text-foreground'}`}>
+              {current?.name ?? 'Provider'}
+            </span>
+            <span className="shrink-0 text-muted-foreground/40">·</span>
+            <span
+              className={`min-w-0 truncate text-[11px] leading-tight ${
+                currentModel ? 'font-mono text-muted-foreground' : 'italic text-muted-foreground/60'
+              }`}
+            >
+              {currentModel || 'select model'}
+            </span>
+            <ChevronDownIcon
+              size={12}
+              strokeWidth={2.5}
+              className={`shrink-0 text-muted-foreground/70 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </TooltipTrigger>
+        {isTruncated && current && (
+          <TooltipContent side="top">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-semibold text-foreground">{current.name}</span>
+              <span className="text-[11px] font-mono text-muted-foreground">{currentModel || 'No model selected'}</span>
+            </div>
+          </TooltipContent>
+        )}
+      </Tooltip>
 
       {/* ── Popup with both selectors ── */}
       {open &&
