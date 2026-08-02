@@ -265,20 +265,28 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
           )}
 
           {/* Remove — inline row action, styled to match the item (same radius &
-              rhythm as the row). Appears on hover/focus for custom providers. */}
+              rhythm as the row). Lives in a zero-width wrapper so it takes no
+              layout space by default: the status dot stays right-aligned like
+              built-in rows. -ml-2.5 cancels the row's gap-2.5 between the dot
+              and the collapsed wrapper (flex gaps apply between ALL items). On
+              hover/focus the wrapper expands AND the negative margin relaxes to
+              -ml-0.5, so the dot slides left while the button slides in with an
+              8px gap between them, flush right. */}
           {isCustom && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                close();
-                onRequestRemove({ id: p.id, name: p.name });
-              }}
-              className="shrink-0 -mr-0.5 h-7 w-7 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
-              title="Remove provider"
-              aria-label={`Remove ${p.name}`}
-            >
-              <Trash2Icon size={13} />
-            </button>
+            <span className="shrink-0 overflow-hidden w-0 group-hover:w-7 group-focus-within:w-7 transition-[width,margin-left] duration-150 ease-out -ml-2.5 group-hover:-ml-0.5 group-focus-within:-ml-0.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  close();
+                  onRequestRemove({ id: p.id, name: p.name });
+                }}
+                className="h-7 w-7 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
+                title="Remove provider"
+                aria-label={`Remove ${p.name}`}
+              >
+                <Trash2Icon size={13} />
+              </button>
+            </span>
           )}
         </div>
       </div>
