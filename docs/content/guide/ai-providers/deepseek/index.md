@@ -10,7 +10,7 @@ category = "AI Providers"
 
 # DeepSeek
 
-DeepSeek offers powerful models at competitive prices, with V3.2 powering both chat and reasoning modes.
+DeepSeek offers powerful models at competitive prices, with **DeepSeek-V4** powering both chat and reasoning modes.
 
 ## Setup
 
@@ -24,7 +24,7 @@ DeepSeek offers powerful models at competitive prices, with V3.2 powering both c
 ### 2. Configure in BraceKit
 
 1. Open **Settings → AI Provider**
-2. Click **DeepSeek** in the provider grid
+2. Select **DeepSeek** from the provider dropdown
 3. Paste your API key
 4. Select a model
 
@@ -89,11 +89,11 @@ Configure in **Settings → AI Provider** under the **Advanced** section:
 | Code generation | deepseek-v4-flash | 0.3 |
 | General chat | deepseek-v4-flash | 0.7 |
 | Complex reasoning | deepseek-v4-pro | 0.5 |
-| Math/Logic | deepseek-reasoner | 0.0 |
+| Math/Logic | deepseek-v4-pro | 0.0 |
 
 ## Pricing
 
-DeepSeek V3.2 offers **unified pricing** for both models with automatic context caching:
+DeepSeek V4 offers **unified pricing** for both models with automatic context caching:
 
 | Type | Price (per 1M tokens) |
 |------|----------------------|

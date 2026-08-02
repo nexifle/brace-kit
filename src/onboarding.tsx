@@ -53,7 +53,7 @@ const steps = [
         id: 'models',
         title: 'Cognitive Sovereignty',
         subtitle: 'Multi-Model Switcher',
-        description: 'Switch instantly between GPT-4o, Claude 3.5, Gemini 1.5 Pro, or DeepSeek. Use the right brain for every specific task.',
+        description: 'Switch instantly between GPT-5.6, Claude Sonnet 5, Gemini 3.6 Flash, or Grok 4.5. Use the right brain for every specific task.',
         icon: <Zap className="w-12 h-12" />,
         color: 'from-amber-500/20 to-orange-500/20'
     },

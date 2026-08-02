@@ -24,7 +24,7 @@ xAI's Grok models offer frontier-level reasoning with exceptional cost efficienc
 ### 2. Configure in BraceKit
 
 1. Open **Settings → AI Provider**
-2. Click **xAI** in the provider grid
+2. Select **xAI** from the provider dropdown
 3. Paste your API key
 4. Select a model
 
@@ -67,7 +67,7 @@ Grok 4.x models are reasoning models that show their thinking process:
 2. Send your message
 3. View the reasoning in a collapsible section
 
-> **Note:** Grok 4 and 4.1 always use reasoning — there's no non-reasoning mode for the base models. Use `grok-4-1-fast-non-reasoning` or `grok-4-fast-non-reasoning` for quick responses without extended thinking.
+> **Note:** Reasoning can be toggled per request. Use the `-non-reasoning` variants (e.g. `grok-4.20-0309-non-reasoning`) for quick responses without extended thinking.
 
 ### Image Generation
 
@@ -107,7 +107,7 @@ Configure in **Settings → AI Provider** under the **Advanced** section:
 | **Temperature** | 0-2 | Higher = more creative |
 | **Max Tokens** | 1-131K | Maximum response length |
 
-> **Note:** Reasoning models (Grok 4, Grok 4.1) don't support `presencePenalty`, `frequencyPenalty`, or `stop` parameters.
+> **Note:** Reasoning models (Grok 4.x) don't support `presencePenalty`, `frequencyPenalty`, or `stop` parameters.
 
 ## Image Generation Settings
 
@@ -126,10 +126,10 @@ xAI pricing (per 1M tokens):
 
 | Model | Input | Output | Context |
 |-------|-------|--------|---------|
-| grok-4-1-fast-reasoning | $0.20 | $0.50 | 2M |
-| grok-4-0709 | $3.00 | $15.00 | 131K |
-| grok-3 | $3.00 | $15.00 | 131K |
-| grok-3-mini | $0.30 | $0.50 | 131K |
+| grok-4.5 | $2.00 | $6.00 | 500K |
+| grok-4.3 | $1.25 | $2.50 | 1M |
+| grok-4.20-0309-reasoning | $1.25 | $2.50 | 1M |
+| grok-4.20-0309-non-reasoning | $1.25 | $2.50 | 1M |
 
 > **Note:** Check [xAI pricing](https://docs.x.ai/developers/models) for current rates. Image generation priced separately.
 

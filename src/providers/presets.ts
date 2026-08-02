@@ -4,7 +4,31 @@
  * Provider configurations, model constants, and feature detection utilities.
  */
 
-import type { ProviderPreset } from '../types/index.ts';
+import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
+
+// ==================== Provider Format Metadata ====================
+
+/**
+ * Human-readable label per provider format.
+ * Single source of truth used by the provider select, add-provider form,
+ * and settings UI — avoids drift between duplicated maps.
+ */
+export const FORMAT_LABELS: Record<ProviderFormat, string> = {
+  openai: 'OpenAI API',
+  anthropic: 'Anthropic API',
+  gemini: 'Gemini API',
+  ollama: 'Local · Ollama',
+};
+
+/**
+ * Example base URL placeholder per provider format (add-provider form).
+ */
+export const FORMAT_PLACEHOLDERS: Record<ProviderFormat, string> = {
+  openai: 'https://api.example.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  ollama: 'http://localhost:11434',
+};
 
 // ==================== Model Constants ====================
 
@@ -199,6 +223,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
       'gemini-2.5-flash-image',
       'gemini-3-pro-image',
       'gemini-3.1-flash-image',
+      'gemini-3.1-flash-lite-image',
     ],
   },
   xai: {
@@ -222,7 +247,6 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
       'grok-imagine-image',
       'grok-imagine-image-pro',
       'grok-imagine-image-quality',
-      'grok-imagine-video-1.5',
     ],
   },
   groq: {

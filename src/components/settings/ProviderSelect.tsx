@@ -1,20 +1,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useProvider } from '../../hooks/useProvider.ts';
-import { PROVIDER_PRESETS } from '../../providers';
+import { PROVIDER_PRESETS, FORMAT_LABELS } from '../../providers';
 import { useStore } from '../../store/index.ts';
-import type { CustomProvider, ProviderFormat, ProviderPreset } from '../../types/index.ts';
+import type { CustomProvider, ProviderPreset } from '../../types/index.ts';
 import { SearchIcon, XIcon, PlusIcon, CheckIcon, ChevronDownIcon, SearchXIcon, Trash2Icon } from 'lucide-react';
 import { PROVIDER_BRANDS, CUSTOM_BRAND } from './providerBrands.ts';
 
-const FORMAT_LABELS: Record<ProviderFormat, string> = {
-  openai: 'OpenAI API',
-  anthropic: 'Anthropic API',
-  gemini: 'Gemini API',
-  ollama: 'Local · Ollama',
-};
-
-type SelectableProvider = ProviderPreset | CustomProvider;
+export type SelectableProvider = ProviderPreset | CustomProvider;
 
 interface ProviderSelectProps {
   onAddClick: () => void;
@@ -22,8 +15,69 @@ interface ProviderSelectProps {
 }
 
 /** Minimum usable popover height before we flip to the other side */
-const POPOVER_MIN_HEIGHT = 260;
-const POPOVER_GAP = 8;
+export const POPOVER_MIN_HEIGHT = 260;
+export const POPOVER_GAP = 8;
+
+// =============================================================================
+// Pure helpers (unit-tested in tests/components/settings/ProviderSelect.test.ts)
+// =============================================================================
+
+export interface PopoverPlacement {
+  top: number;
+  maxHeight: number;
+  flipAbove: boolean;
+}
+
+/**
+ * Compute the popover position for a given trigger rect and viewport height.
+ * Prefers opening below; flips above when there is more room; if neither side
+ * fits, picks the side with more space. The height is always clamped so the
+ * footer action stays on screen, even on very small displays.
+ */
+export function computePopoverPlacement(
+  rect: { top: number; bottom: number },
+  viewportHeight: number,
+  gap = POPOVER_GAP,
+  minHeight = POPOVER_MIN_HEIGHT
+): PopoverPlacement {
+  const availBelow = viewportHeight - rect.bottom - gap;
+  const availAbove = rect.top - gap;
+
+  let top: number;
+  let flipAbove: boolean;
+
+  if (availBelow >= minHeight) {
+    top = rect.bottom + gap;
+    flipAbove = false;
+  } else if (availAbove >= minHeight) {
+    top = Math.max(gap, rect.top - gap);
+    flipAbove = true;
+  } else {
+    flipAbove = availAbove > availBelow;
+    top = flipAbove ? Math.max(gap, rect.top - gap) : rect.bottom + gap;
+  }
+
+  const sideSpace = flipAbove ? availAbove : availBelow;
+  // Room from the popover's top edge to the bottom of the viewport.
+  const viewportSpace = viewportHeight - top - gap;
+  // Prefer the side's space; never exceed what fits between the popover top
+  // and the viewport bottom. The 120px floor only applies when it fits.
+  const maxHeight = Math.min(Math.max(120, sideSpace), viewportSpace);
+
+  return { top, maxHeight, flipAbove };
+}
+
+/**
+ * Flatten the popover list: pinned active provider first, then remaining
+ * built-ins, then remaining custom providers.
+ */
+export function flattenSelectable(
+  pinned: SelectableProvider | null,
+  restBuiltIns: SelectableProvider[],
+  restCustoms: SelectableProvider[]
+): SelectableProvider[] {
+  return [...(pinned ? [pinned] : []), ...restBuiltIns, ...restCustoms];
+}
 
 // =============================================================================
 // Small presentational pieces
@@ -83,7 +137,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const rowRefs = useRef<(HTMLElement | null)[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const current = useMemo(
@@ -133,11 +187,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
   );
 
   const selectable = useMemo(
-    () => [
-      ...(pinned ? [pinned] : []),
-      ...restBuiltIns,
-      ...restCustoms,
-    ],
+    () => flattenSelectable(pinned, restBuiltIns, restCustoms),
     [pinned, restBuiltIns, restCustoms]
   );
 
@@ -152,33 +202,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
     const el = wrapperRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const availBelow = window.innerHeight - rect.bottom - POPOVER_GAP;
-    const availAbove = rect.top - POPOVER_GAP;
-
-    // Prefer opening below; flip above when there is more room; if neither
-    // fits, pick the side with more space and clamp the popover height so the
-    // footer action is always visible on small displays.
-    let top: number;
-    let flipAbove: boolean;
-
-    if (availBelow >= POPOVER_MIN_HEIGHT) {
-      top = rect.bottom + POPOVER_GAP;
-      flipAbove = false;
-    } else if (availAbove >= POPOVER_MIN_HEIGHT) {
-      top = Math.max(POPOVER_GAP, rect.top - POPOVER_GAP);
-      flipAbove = true;
-    } else {
-      flipAbove = availAbove > availBelow;
-      top = flipAbove ? Math.max(POPOVER_GAP, rect.top - POPOVER_GAP) : rect.bottom + POPOVER_GAP;
-    }
-
-    // Height available on the chosen side, further clamped by the distance
-    // from the popover's top edge to the bottom of the viewport.
-    const maxHeight = Math.max(
-      120,
-      Math.min(flipAbove ? availAbove : availBelow, window.innerHeight - top - POPOVER_GAP)
-    );
-
+    const { top, maxHeight, flipAbove } = computePopoverPlacement(rect, window.innerHeight);
     setPos({ top, left: rect.left, width: rect.width, maxHeight });
     setAbovePlaced(flipAbove);
     setSearch('');
@@ -272,14 +296,16 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
     const highlighted = idx === activeIdx;
 
     return (
-      <div key={p.id} className="relative group">
-        <button
+      <div key={p.id} className="relative group flex items-center">
+        <div
           ref={(el) => {
             rowRefs.current[idx] = el;
           }}
+          role="option"
+          aria-selected={isActive}
           onClick={() => selectProvider(p)}
           onMouseEnter={() => setActiveIdx(idx)}
-          className={`w-full flex items-center gap-2.5 pl-2.5 pr-2 py-2 rounded-md text-left transition-all duration-150 border
+          className={`flex-1 min-w-0 flex items-center gap-2.5 pl-2.5 py-2 pr-2 rounded-md text-left transition-all duration-150 border cursor-pointer
             ${isActive
               ? 'bg-primary/10 border-primary/25'
               : highlighted
@@ -310,26 +336,31 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
               </span>
             </span>
           ) : (
-            <span className="shrink-0 flex items-center gap-1">
+            <span className="shrink-0 flex items-center">
               <span
                 className={`w-1.5 h-1.5 rounded-full ${isConfigured(p) ? 'bg-success' : 'bg-warning'}`}
                 title={isConfigured(p) ? 'Configured' : 'API key needed'}
               />
-              {isCustom && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRequestRemove({ id: p.id, name: p.name });
-                  }}
-                  className="w-7 h-7 flex items-center justify-center rounded-sm text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                  title="Remove provider"
-                >
-                  <Trash2Icon size={13} />
-                </button>
-              )}
             </span>
           )}
-        </button>
+        </div>
+
+        {/* Remove button — sibling of the option (not nested interactive), visible
+            on hover/focus for every custom provider including the active one. */}
+        {isCustom && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              close();
+              onRequestRemove({ id: p.id, name: p.name });
+            }}
+            className="ml-0.5 mr-1.5 shrink-0 w-7 h-7 flex items-center justify-center rounded-sm text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            title="Remove provider"
+            aria-label={`Remove ${p.name}`}
+          >
+            <Trash2Icon size={13} />
+          </button>
+        )}
       </div>
     );
   };
@@ -342,6 +373,9 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
         {/* ── Select trigger ── */}
         <button
           onClick={() => (open ? close() : openPopover())}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls="provider-select-listbox"
           className={`group flex-1 flex items-center gap-2.5 h-12 px-3 rounded-md border text-left transition-all duration-200 select-none
             ${open
               ? 'border-primary/50 bg-card shadow-[0_0_0_3px_theme(colors.primary/12%)]'
@@ -408,7 +442,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
               className="bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-2xl shadow-black/15 overflow-hidden flex flex-col"
             >
               {/* Search */}
-              <div className="p-2.5 pb-2 border-b border-border/60">
+              <div className="p-2.5 pb-2 border-b border-border/60 shrink-0">
                 <div className="relative">
                   <SearchIcon
                     size={14}
@@ -457,7 +491,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
               </div>
 
               {/* List */}
-              <div className="flex-1 min-h-0 overflow-y-auto p-1.5">
+              <div id="provider-select-listbox" role="listbox" aria-label="Providers" className="flex-1 min-h-0 overflow-y-auto p-1.5">
                 {selectable.length === 0 ? (
                   <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
                     <SearchXIcon size={20} className="text-muted-foreground/40" />
@@ -488,11 +522,11 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
               </div>
 
               {/* Footer */}
-              <div className="p-1.5 border-t border-border/60 bg-muted/20">
+              <div className="p-1.5 border-t border-border/60 bg-muted/20 shrink-0">
                 <button
                   onClick={() => {
-                    onAddClick();
                     close();
+                    onAddClick();
                   }}
                   className="w-full h-9 rounded-md text-sm font-semibold text-primary flex items-center justify-center gap-1.5 hover:bg-primary/10 active:scale-[0.99] transition-all"
                 >

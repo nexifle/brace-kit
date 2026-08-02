@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProvider } from '../../hooks/useProvider.ts';
-import { GROQ_BUILTIN_TOOLS } from '../../providers';
+import { GROQ_BUILTIN_TOOLS, FORMAT_LABELS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import type { ProviderFormat, ProviderPreset, CustomProvider } from '../../types/index.ts';
 import { PlusIcon, XIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
@@ -219,10 +219,9 @@ export function ProviderSettings() {
                   value={providerConfig.format}
                   onChange={(e) => updateProviderConfig({ format: e.target.value as ProviderFormat })}
                 >
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="gemini">Gemini</option>
-                  <option value="ollama">Ollama</option>
+                  {(Object.keys(FORMAT_LABELS) as ProviderFormat[]).map((f) => (
+                    <option key={f} value={f}>{FORMAT_LABELS[f]}</option>
+                  ))}
                 </select>
               </div>
             )}

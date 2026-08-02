@@ -319,7 +319,8 @@ describe('Providers Index - Unified Interfaces', () => {
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
       const calledUrl = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0]?.[0];
       expect(calledUrl).toContain('/models');
-      expect(result.models).toEqual(['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']);
+      // fetchAnthropicModels sorts the ids alphabetically
+      expect(result.models).toEqual(['claude-haiku-4-5', 'claude-opus-5', 'claude-sonnet-5']);
     });
 
     // ── Regression tests ──────────────────────────────────────────────────

@@ -43,7 +43,8 @@ export async function fetchAnthropicModels(
   if (Array.isArray(data?.data)) {
     const models = data.data
       .map((m: { id?: string }) => m?.id)
-      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+      .sort(); // stable alphabetical order, like the other fetchers
     return { models };
   }
 

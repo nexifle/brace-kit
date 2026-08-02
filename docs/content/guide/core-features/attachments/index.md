@@ -57,10 +57,10 @@ Image attachments require a vision-capable model:
 
 | Provider | Vision Models |
 |----------|---------------|
-| OpenAI | GPT-4o, GPT-4 Turbo |
-| Anthropic | Claude 3.5 Sonnet, Claude 3 Opus |
+| OpenAI | GPT-5.6, GPT-5.5, GPT-5.4 |
+| Anthropic | Claude Opus 5, Sonnet 5, Haiku 4.5 |
 | Google | Gemini models |
-| xAI | Grok Vision |
+| xAI | Grok 4.5, Grok 4.3 |
 | Ollama | llava, bakllava, etc. |
 
 ### Image Preview

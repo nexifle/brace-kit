@@ -25,7 +25,7 @@ Anthropic's Claude models are known for nuanced understanding, careful reasoning
 
 1. Open **Settings**
 2. Select the **AI Provider** tab
-3. Click **Anthropic** in the provider grid
+3. Select **Anthropic** from the provider dropdown
 4. Paste your API key
 5. Select a model
 

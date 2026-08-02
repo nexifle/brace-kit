@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useProvider } from '../hooks';
-import { PROVIDER_PRESETS } from '../providers';
+import { PROVIDER_PRESETS, FORMAT_LABELS } from '../providers';
 import { fuzzyFilter } from '../utils/fuzzySearch.ts';
 import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
 import { XIcon, SearchIcon } from 'lucide-react';
@@ -210,9 +210,9 @@ export function ProviderPopover({ isOpen, onClose }: ProviderPopoverProps) {
                   value={newProviderFormat}
                   onChange={e => setNewProviderFormat(e.target.value as ProviderFormat)}
                 >
-                  <option value="openai">OpenAI format</option>
-                  <option value="anthropic">Anthropic format</option>
-                  <option value="gemini">Gemini format</option>
+                  {(Object.keys(FORMAT_LABELS) as ProviderFormat[]).filter(f => f !== 'ollama').map((f) => (
+                    <option key={f} value={f}>{FORMAT_LABELS[f]}</option>
+                  ))}
                 </select>
                 <button
                   className="px-3 h-8 text-2xs font-bold uppercase bg-primary text-primary-foreground rounded-sm shadow-sm hover:brightness-110 active:scale-95 disabled:opacity-30 transition-all"
