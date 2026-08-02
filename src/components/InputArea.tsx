@@ -4,8 +4,7 @@ import { useChat, useFileAttachments, usePageContext, useMCP, useOmnibox } from 
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
-import { ChatProviderSelect } from './ChatProviderSelect.tsx';
-import { ChatModelSelect } from './ChatModelSelect.tsx';
+import { ComposerPicker } from './ComposerPicker.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
@@ -333,7 +332,7 @@ export function InputArea() {
               ref={textareaRef}
               className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
               placeholder={placeholder}
-              rows={3}
+              rows={2}
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
@@ -351,15 +350,7 @@ export function InputArea() {
           </div>
         </div>
 
-        {/* Composer config — provider & model segmented selects */}
-        <div className="px-3 pt-2">
-          <div className="flex items-stretch rounded-md border border-border/80 bg-card/70 shadow-sm overflow-hidden">
-            <ChatProviderSelect />
-            <div className="w-px bg-border/70 shrink-0" aria-hidden="true" />
-            <ChatModelSelect />
-          </div>
-        </div>
-
+        {/* Bottom Toolbar — composer chips + actions in one row */}
         {/* Context usage indicator - own row above toolbar */}
         {compactEnabled && percentUntilCompact <= 15 && (
           <div className="flex justify-end p-2">
@@ -377,8 +368,8 @@ export function InputArea() {
           </div>
         )}
 
-        {/* Bottom Toolbar */}
-        <div className="flex items-center gap-1.5 px-3 pb-3 pt-2 border-t border-border/50" ref={footerRef}>
+        {/* Bottom Toolbar — composer picker chip + actions in one row */}
+        <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-1.5 border-t border-border/50" ref={footerRef}>
           <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
 
           {/* Page context - pill with label */}
@@ -386,13 +377,13 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={handleAttachClick}
               >
-                <GlobeIcon size={12} />
+                <GlobeIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Add current page to context</TooltipContent>
@@ -403,10 +394,10 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className="flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground"
+                className="flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <PaperclipIcon size={12} />
+                <PaperclipIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Attach file (image, txt, csv, pdf)</TooltipContent>
@@ -417,13 +408,13 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
               >
-                <SquareTerminal size={12} />
+                <SquareTerminal size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">System Prompt</TooltipContent>
@@ -434,13 +425,13 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableReasoning
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${enableReasoning
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => setEnableReasoning(!enableReasoning)}
               >
-                <BrainIcon size={12} />
+                <BrainIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Enable extended thinking</TooltipContent>
@@ -451,13 +442,13 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableTools
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${enableTools
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => setEnableTools(!enableTools)}
               >
-                <WrenchIcon size={12} />
+                <WrenchIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
@@ -470,13 +461,13 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => setShowPreferencesPopover(true)}
               >
-                <SettingsIcon size={12} />
+                <SettingsIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Display preferences for tool messages</TooltipContent>
@@ -484,6 +475,9 @@ export function InputArea() {
 
           {/* Spacer */}
           <div className="flex-1 min-w-0" />
+
+          {/* Provider + Model — single trigger → popup with both selectors */}
+          <ComposerPicker />
 
           {/* Send/Stop button */}
           {store.isStreaming ? (

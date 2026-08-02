@@ -27,7 +27,7 @@ export function SectionLabel({ label, count }: { label: string; count: number })
 }
 
 // =============================================================================
-// ComboPopover — generic "select + search" popover shell
+// ComboRow / ComboList — a search input + selectable list (self-contained)
 // =============================================================================
 
 export interface ComboRow<T> {
@@ -41,6 +41,191 @@ export interface ComboRow<T> {
   /** row content; `highlighted` = current keyboard highlight */
   render: (highlighted: boolean, actions: { select: () => void; close: () => void }) => ReactNode;
 }
+
+interface ComboListProps<T> {
+  rows: ComboRow<T>[];
+  /** fired when a row is chosen via Enter or click (the caller decides whether to close) */
+  onSelect: (row: ComboRow<T>) => void;
+  placeholder: string;
+  ariaLabel: string;
+  listboxId: string;
+  emptyState?: ReactNode;
+  /** focus the search input on mount (when the popover opens) */
+  autoFocus?: boolean;
+  /** max-height of the scrollable list area (px) */
+  maxHeight?: number;
+  /** show the ↑↓ ↵ esc hints row under the search */
+  showHints?: boolean;
+  /** close callback exposed to row renders (e.g. trash actions) */
+  onRequestClose?: () => void;
+}
+
+/** A self-contained search + selectable list. Used by ComboPopover and by the
+ *  two-section ComposerPicker popup. */
+export function ComboList<T>({
+  rows,
+  onSelect,
+  placeholder,
+  ariaLabel,
+  listboxId,
+  emptyState,
+  autoFocus = false,
+  maxHeight,
+  showHints = false,
+  onRequestClose,
+}: ComboListProps<T>) {
+  const [search, setSearch] = useState('');
+  const [activeIdx, setActiveIdx] = useState(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const activeRowRef = useRef<HTMLDivElement>(null);
+
+  const selectable = useMemo(() => rows.filter((r) => r.selectable), [rows]);
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => r.searchText && r.searchText.toLowerCase().includes(q));
+  }, [rows, search]);
+
+  // Keep the highlight index within bounds whenever the list changes
+  useEffect(() => {
+    setActiveIdx((prev) => Math.min(prev, Math.max(selectable.length - 1, 0)));
+  }, [selectable.length]);
+
+  // Focus the search when the popover mounts
+  useEffect(() => {
+    if (autoFocus) requestAnimationFrame(() => searchRef.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the highlighted row visible
+  useEffect(() => {
+    activeRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeIdx, visible]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIdx((i) => (selectable.length ? (i + 1) % selectable.length : 0));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIdx((i) => (selectable.length ? (i - 1 + selectable.length) % selectable.length : 0));
+      } else if (e.key === 'Enter') {
+        const row = selectable[activeIdx];
+        if (row) {
+          e.preventDefault();
+          onSelect(row);
+        }
+      }
+    },
+    [selectable, activeIdx, onSelect]
+  );
+
+  const hasSelectable = visible.some((r) => r.selectable);
+
+  return (
+    <div className="flex flex-col">
+      {/* Search */}
+      <div className="px-2.5 pt-2 pb-2 shrink-0">
+        <div className="relative">
+          <SearchIcon
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none"
+          />
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setActiveIdx(0);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className="w-full h-8 pl-9 pr-8 text-sm bg-muted/40 border border-transparent focus:border-primary/40 focus:bg-background rounded-md outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
+          />
+          {search && (
+            <button
+              onClick={() => {
+                setSearch('');
+                searchRef.current?.focus();
+              }}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors"
+              title="Clear search"
+            >
+              <XIcon size={12} />
+            </button>
+          )}
+        </div>
+        {showHints && (
+          <div className="flex items-center gap-2 mt-2 px-1.5 text-2xs text-muted-foreground/40">
+            <span className="flex items-center gap-1">
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd>
+              <span>navigate</span>
+            </span>
+            <span className="w-px h-3 bg-border" />
+            <span className="flex items-center gap-1">
+              <Kbd>↵</Kbd>
+              <span>select</span>
+            </span>
+            <span className="w-px h-3 bg-border" />
+            <span className="flex items-center gap-1">
+              <Kbd>esc</Kbd>
+              <span>close</span>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* List */}
+      <div
+        id={listboxId}
+        role="listbox"
+        aria-label={ariaLabel}
+        className={cn('shrink basis-auto min-h-0 overflow-y-auto p-1.5', maxHeight && `max-h-[${maxHeight}px]`)}
+      >
+        {!hasSelectable ? (
+          emptyState ?? (
+            <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
+              <SearchXIcon size={20} className="text-muted-foreground/40" />
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium text-foreground">Nothing found</p>
+                <p className="text-2xs text-muted-foreground/60">Try a different search</p>
+              </div>
+            </div>
+          )
+        ) : (
+          (() => {
+            let seen = -1;
+            return visible.map((row) => {
+              const isSel = row.selectable;
+              if (isSel) seen++;
+              const rowIndex = seen; // snapshot for closures below
+              const highlighted = isSel && rowIndex === activeIdx;
+              const select = () => onSelect(row);
+              return (
+                <div
+                  key={row.key}
+                  ref={highlighted ? activeRowRef : undefined}
+                  onClick={isSel ? select : undefined}
+                  onMouseEnter={isSel ? () => setActiveIdx(rowIndex) : undefined}
+                  className={cn(isSel && 'cursor-pointer')}
+                >
+                  {row.render(highlighted, { select, close: onRequestClose ?? (() => {}) })}
+                </div>
+              );
+            });
+          })()
+        )}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// ComboPopover — generic "select + search" popover shell (single trigger)
+// =============================================================================
 
 interface ComboPopoverProps<T> {
   /** trigger element; receives open state + a11y attrs + toggle */
@@ -78,8 +263,6 @@ export function ComboPopover<T>({
   wrapperClassName,
 }: ComboPopoverProps<T>) {
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [activeIdx, setActiveIdx] = useState(0);
   const [abovePlaced, setAbovePlaced] = useState(false);
   const [pos, setPos] = useState<
     | { top?: number; bottom?: number; left: number; width: number; maxHeight: number }
@@ -88,21 +271,6 @@ export function ComboPopover<T>({
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const activeRowRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const selectable = useMemo(() => rows.filter((r) => r.selectable), [rows]);
-
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => r.searchText && r.searchText.toLowerCase().includes(q));
-  }, [rows, search]);
-
-  // Keep the highlight index within bounds whenever the list changes
-  useEffect(() => {
-    setActiveIdx((prev) => Math.min(prev, Math.max(selectable.length - 1, 0)));
-  }, [selectable.length]);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -117,8 +285,6 @@ export function ComboPopover<T>({
     // short popover hugs the trigger instead of floating at the viewport top.
     setPos(flipAbove ? { bottom, left, width, maxHeight } : { top, left, width, maxHeight });
     setAbovePlaced(flipAbove);
-    setSearch('');
-    setActiveIdx(0);
     setOpen(true);
   }, [minWidth]);
 
@@ -163,38 +329,6 @@ export function ComboPopover<T>({
     };
   }, [open, close]);
 
-  // Autofocus the search field on open
-  useEffect(() => {
-    if (open) requestAnimationFrame(() => searchRef.current?.focus());
-  }, [open]);
-
-  // Keep the highlighted row visible
-  useEffect(() => {
-    activeRowRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [activeIdx, visible]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActiveIdx((i) => (selectable.length ? (i + 1) % selectable.length : 0));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActiveIdx((i) => (selectable.length ? (i - 1 + selectable.length) % selectable.length : 0));
-      } else if (e.key === 'Enter') {
-        const row = selectable[activeIdx];
-        if (row) {
-          e.preventDefault();
-          close();
-          onSelect(row);
-        }
-      }
-    },
-    [selectable, activeIdx, close, onSelect]
-  );
-
-  const hasSelectable = visible.some((r) => r.selectable);
-
   return (
     <>
       <div ref={wrapperRef} className={cn('relative', wrapperClassName)}>
@@ -218,102 +352,25 @@ export function ComboPopover<T>({
             className={`fixed z-[70] animate-in fade-in zoom-in-95 duration-200 ${
               abovePlaced ? 'origin-bottom slide-in-from-bottom-2' : 'origin-top slide-in-from-top-2'
             }`}
-            onKeyDown={handleKeyDown}
           >
             <div
               style={{ maxHeight: pos.maxHeight }}
               className="bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-2xl shadow-black/15 overflow-hidden flex flex-col"
             >
-              {/* Search */}
-              <div className="p-2.5 pb-2 border-b border-border/60 shrink-0">
-                <div className="relative">
-                  <SearchIcon
-                    size={14}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none"
-                  />
-                  <input
-                    ref={searchRef}
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value);
-                      setActiveIdx(0);
-                    }}
-                    placeholder={placeholder}
-                    className="w-full h-9 pl-9 pr-8 text-sm bg-muted/40 border border-transparent focus:border-primary/40 focus:bg-background rounded-md outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
-                  />
-                  {search && (
-                    <button
-                      onClick={() => {
-                        setSearch('');
-                        searchRef.current?.focus();
-                      }}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-accent transition-colors"
-                      title="Clear search"
-                    >
-                      <XIcon size={12} />
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-2 px-1.5 text-2xs text-muted-foreground/40">
-                  <span className="flex items-center gap-1">
-                    <Kbd>↑</Kbd>
-                    <Kbd>↓</Kbd>
-                    <span>navigate</span>
-                  </span>
-                  <span className="w-px h-3 bg-border" />
-                  <span className="flex items-center gap-1">
-                    <Kbd>↵</Kbd>
-                    <span>select</span>
-                  </span>
-                  <span className="w-px h-3 bg-border" />
-                  <span className="flex items-center gap-1">
-                    <Kbd>esc</Kbd>
-                    <span>close</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* List — grow-0 shrink (no flex-grow) so it shrink-wraps short
-                  content; shrinks + scrolls only when content exceeds the
-                  popover max-height */}
-              <div id={listboxId} role="listbox" aria-label={ariaLabel} className="shrink basis-auto min-h-0 overflow-y-auto p-1.5">
-                {!hasSelectable ? (
-                  emptyState ?? (
-                    <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
-                      <SearchXIcon size={20} className="text-muted-foreground/40" />
-                      <div className="flex flex-col gap-0.5">
-                        <p className="text-sm font-medium text-foreground">Nothing found</p>
-                        <p className="text-2xs text-muted-foreground/60">Try a different search</p>
-                      </div>
-                    </div>
-                  )
-                ) : (
-                  (() => {
-                    let seen = -1;
-                    return visible.map((row) => {
-                      const isSel = row.selectable;
-                      if (isSel) seen++;
-                      const rowIndex = seen; // snapshot for closures below
-                      const highlighted = isSel && rowIndex === activeIdx;
-                      const select = () => {
-                        close();
-                        onSelect(row);
-                      };
-                      return (
-                        <div
-                          key={row.key}
-                          ref={highlighted ? activeRowRef : undefined}
-                          onClick={isSel ? select : undefined}
-                          onMouseEnter={isSel ? () => setActiveIdx(rowIndex) : undefined}
-                          className={cn(isSel && 'cursor-pointer')}
-                        >
-                          {row.render(highlighted, { select, close })}
-                        </div>
-                      );
-                    });
-                  })()
-                )}
-              </div>
+              <ComboList<T>
+                rows={rows}
+                onSelect={(row) => {
+                  close();
+                  onSelect(row);
+                }}
+                placeholder={placeholder}
+                ariaLabel={ariaLabel}
+                listboxId={listboxId}
+                emptyState={emptyState}
+                autoFocus
+                showHints
+                onRequestClose={close}
+              />
 
               {/* Footer — always visible, never scrolled away */}
               {footer && <div className="p-1 border-t border-border/60 bg-muted/20 shrink-0">{footer({ close })}</div>}
