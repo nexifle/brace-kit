@@ -8,8 +8,13 @@ export { logoSvgTemplate, loadingSpinnerTemplate, errorTemplate, overlayTemplate
 // Toolbar templates
 export {
   toolbarTemplate,
+  getProviderMenuView,
   type ToolbarState,
   type ToolbarCallbacks,
+  type ToolbarProvider,
+  type ProviderMenuView,
+  type ProviderMenuGroup,
+  type ProviderModelRow,
 } from './toolbar.ts';
 
 // Popover templates

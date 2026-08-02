@@ -286,7 +286,7 @@ export function HistoryDrawer() {
   }, [debouncedQuery, sorted]);
 
   const highlightMatch = (text: string, query: string): string => {
-    return fuzzyHighlight(text, query, '<mark class="bg-primary/20 text-primary font-bold rounded-xs px-0.5">', '</mark>');
+    return fuzzyHighlight(text, query, '<mark class="bg-primary/20 text-primary font-bold rounded-xs">', '</mark>');
   };
 
   const grouped = useMemo(() => {

@@ -139,6 +139,15 @@ export function createSelectionManager(): SelectionManager {
     const settings = settingsService.getSettings();
     if (!settings.enabled || state.isActionInProgress) return;
 
+    // The floating toolbar lives inside a shadow root. Clicking its buttons
+    // (provider trigger, "more", model rows…) makes the browser clear the
+    // page's text selection, which fires selectionchange and lands here with an
+    // empty selection. Tearing the toolbar down in that case is wrong — the
+    // user is interacting with it. Dismissal on outside clicks is owned by the
+    // toolbar's own document listener, and a fresh selection below will
+    // re-show it normally.
+    const toolbarOpen = !!document.querySelector('#bracekit-selection-ui');
+
     // Try to get selection from window.getSelection()
     const selection = window.getSelection();
     let text = selection?.toString().trim() || '';
@@ -158,12 +167,12 @@ export function createSelectionManager(): SelectionManager {
     }
 
     if (!selection || selection.rangeCount === 0) {
-      cleanup();
+      if (!toolbarOpen) cleanup();
       return;
     }
 
     if (text.length < settings.minLength) {
-      cleanup();
+      if (!toolbarOpen) cleanup();
       return;
     }
 
@@ -256,6 +265,9 @@ export function createSelectionManager(): SelectionManager {
     }
 
     const theme = detectPageTheme();
+    // Expose the detected theme on the host so shadow CSS can apply
+    // theme-specific overrides (e.g. WCAG-safe highlight text in light mode).
+    state.shadowContainer.container.dataset.bkTheme = theme.isDark ? 'dark' : 'light';
     state.shadowContainer.styleElement.textContent = getSelectionUIStyles(theme);
 
     // Store local references to avoid closure issues
@@ -446,7 +458,11 @@ export function createSelectionManager(): SelectionManager {
         // Only cleanup if text is empty AND we previously had a selection
         // This prevents cleanup from firing on initial empty selection events
         if (text.length < settings.minLength) {
-          if (state.currentSelection) {
+          // Mirror the main-frame toolbarOpen guard: clicking the floating
+          // toolbar's buttons clears the docs-iframe selection; don't tear the
+          // toolbar down while the user is interacting with it.
+          const toolbarOpen = !!document.querySelector('#bracekit-selection-ui');
+          if (state.currentSelection && !toolbarOpen) {
             cleanup();
           }
           return;

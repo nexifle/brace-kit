@@ -161,19 +161,21 @@ export function ComposerPicker() {
             )}
 
             {isCustom && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeList();
-                  setToRemove({ id: p.id, name: p.name });
-                }}
-                className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
-                title="Remove provider"
-                aria-label={`Remove ${p.name}`}
-              >
-                <Trash2Icon size={12} />
-              </button>
+              <span className="shrink-0 overflow-hidden w-0 group-hover:w-6 group-focus-within:w-6 transition-[width,margin-left] duration-150 ease-out -ml-2 group-hover:ml-0 group-focus-within:ml-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeList();
+                    setToRemove({ id: p.id, name: p.name });
+                  }}
+                  className="h-6 w-6 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
+                  title="Remove provider"
+                  aria-label={`Remove ${p.name}`}
+                >
+                  <Trash2Icon size={12} />
+                </button>
+              </span>
             )}
           </div>
         ),

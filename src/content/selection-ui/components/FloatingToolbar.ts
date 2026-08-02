@@ -6,7 +6,7 @@
 
 import { render } from 'lit-html';
 import type { QuickAction, SelectionPosition } from '../types.ts';
-import { toolbarTemplate, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
+import { toolbarTemplate, getProviderMenuView, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
 import { QUICK_ACTIONS } from '../constants.ts';
 import { loadAllActions } from '../utils/actionsLoader.ts';
 
@@ -57,6 +57,11 @@ export function createFloatingToolbar(
       currentProvider: 'openai',
       currentModel: '',
       providers: [],
+      search: '',
+      expandedProviderId: null,
+      highlightIndex: 0,
+      menuAlignRight: false,
+      menuAbove: false,
     },
     actions: [...QUICK_ACTIONS],
   };
@@ -241,6 +246,10 @@ export function createFloatingToolbar(
   // Track initial click target to avoid race condition with setTimeout
   let initialClickTarget: EventTarget | null = null;
 
+  // Whether the document-level listeners are currently attached (attach is
+  // called on init and on FAB re-expansion — keep it idempotent).
+  let docListenersAttached = false;
+
   // Callbacks
   const callbacks: ToolbarCallbacks = {
     onIconClick: (e: Event) => {
@@ -258,7 +267,7 @@ export function createFloatingToolbar(
       state = {
         ...state,
         menuState: { isOpen: false, selectedCategory: null },
-        providerState: { ...state.providerState, isOpen: false }
+        providerState: closedProviderState()
       };
       onActionClick(actionId);
     },
@@ -293,7 +302,7 @@ export function createFloatingToolbar(
           ...state.menuState,
           isOpen: !state.menuState.isOpen,
         },
-        providerState: { ...state.providerState, isOpen: false },
+        providerState: closedProviderState(),
       };
       renderToolbar();
     },
@@ -309,23 +318,113 @@ export function createFloatingToolbar(
 
     onProviderMenuToggle: (e: Event) => {
       e.stopPropagation();
+      const opening = !state.providerState.isOpen;
+      let menuAlignRight = state.providerState.menuAlignRight;
+      let menuAbove = state.providerState.menuAbove;
+      if (opening) {
+        // Flip the popover right-aligned when the toolbar sits near the right
+        // edge of the viewport, and above the toolbar when it would overflow
+        // the bottom (320px-wide, ~430px-tall menu).
+        const headerEl = container.querySelector('.bk-toolbar-header') as HTMLElement | null;
+        const rect = headerEl?.getBoundingClientRect();
+        if (rect) {
+          if (rect.left + 340 > window.innerWidth - 16) menuAlignRight = true;
+          if (rect.top + 470 > window.innerHeight - 12) menuAbove = true;
+        }
+      }
       state = {
         ...state,
         providerState: {
           ...state.providerState,
-          isOpen: !state.providerState.isOpen,
+          isOpen: opening,
+          search: opening ? '' : state.providerState.search,
+          expandedProviderId: opening ? state.providerState.currentProvider : state.providerState.expandedProviderId,
+          highlightIndex: 0,
+          menuAlignRight,
+          menuAbove,
         },
         menuState: { isOpen: false, selectedCategory: null },
         isTranslateMode: false, // Close translate mode too if open
       };
       renderToolbar();
+      if (opening) {
+        focusProviderSearch();
+      } else {
+        focusProviderTrigger();
+      }
     },
 
     onProviderMenuClose: (e?: Event) => {
       e?.stopPropagation();
       state = {
         ...state,
-        providerState: { ...state.providerState, isOpen: false },
+        providerState: closedProviderState(),
+      };
+      renderToolbar();
+      focusProviderTrigger();
+    },
+
+    onProviderSearchInput: (e: Event) => {
+      e.stopPropagation();
+      const value = (e.target as HTMLInputElement).value;
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          search: value,
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+    },
+
+    onProviderSearchClear: (e: Event) => {
+      e.stopPropagation();
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          search: '',
+          expandedProviderId: state.providerState.currentProvider,
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+      focusProviderSearch();
+    },
+
+    onProviderToggle: (e: Event, providerId: string) => {
+      e.stopPropagation();
+      const wasExpanded = state.providerState.expandedProviderId === providerId;
+      state = {
+        ...state,
+        providerState: {
+          ...state.providerState,
+          expandedProviderId: wasExpanded ? null : providerId,
+          highlightIndex: 0,
+        },
+      };
+      renderToolbar();
+    },
+
+    onProviderMenuKeydown: (e: Event) => handleProviderMenuKeys(e),
+
+    onProviderMenuHover: (rowIndex: number) => {
+      if (rowIndex === state.providerState.highlightIndex) return;
+      state = {
+        ...state,
+        providerState: { ...state.providerState, highlightIndex: rowIndex },
+      };
+      renderToolbar();
+    },
+
+    // Keep the cursor in sync when a row is focused (Tab) so Enter selects the
+    // same model the user is looking at.
+    onProviderMenuFocus: (rowIndex: number) => {
+      if (rowIndex === state.providerState.highlightIndex) return;
+      state = {
+        ...state,
+        providerState: { ...state.providerState, highlightIndex: rowIndex },
       };
       renderToolbar();
     },
@@ -337,13 +436,13 @@ export function createFloatingToolbar(
       state = {
         ...state,
         providerState: {
-          ...state.providerState,
-          isOpen: false,
+          ...closedProviderState(),
           currentProvider: providerId,
           currentModel: model,
         },
       };
       renderToolbar();
+      focusProviderTrigger();
 
       // Save global provider selection to chrome.storage.local
       try {
@@ -412,6 +511,51 @@ export function createFloatingToolbar(
     render(toolbarTemplate(state, callbacks), container);
   }
 
+  // Focus the search input once the provider menu is open. The input lives in
+  // a shadow root, so document.activeElement is retargeted to the host — check
+  // the shadow root's own activeElement instead, and retry after the click
+  // fully settles in case the first attempt races the browser's focus handling.
+  function focusProviderSearch() {
+    const focus = () => {
+      const input = container.querySelector<HTMLInputElement>('.bk-provider-search-input');
+      const root = container.getRootNode() as ShadowRoot;
+      if (input && root.activeElement !== input) input.focus();
+    };
+    queueMicrotask(focus);
+    setTimeout(focus, 60);
+  }
+
+  // Shared Enter handling for the model picker (select the hovered/focused
+  // row). Bound to the search input and the popover container.
+  function handleProviderMenuKeys(e: Event): void {
+    if (!state.providerState.isOpen) return;
+    const kb = e as KeyboardEvent;
+    if (kb.key === 'Enter') {
+      const { rows } = getProviderMenuView(state);
+      const row = rows[state.providerState.highlightIndex];
+      if (row) {
+        e.preventDefault();
+        e.stopPropagation();
+        callbacks.onModelSelect(e, row.providerId, row.model);
+      }
+    }
+  }
+
+  // Return keyboard focus to the model-selector trigger after the menu closes.
+  function focusProviderTrigger() {
+    queueMicrotask(() => {
+      const trigger = container.querySelector<HTMLElement>('.bk-model-selector-btn');
+      if (trigger && document.activeElement !== trigger) trigger.focus();
+    });
+  }
+
+  // Closed provider-menu state: every close path resets search + cursor so the
+  // next open starts clean (open itself also resets them, this keeps the state
+  // consistent between close and open).
+  function closedProviderState(): ToolbarState['providerState'] {
+    return { ...state.providerState, isOpen: false, search: '', highlightIndex: 0 };
+  }
+
   // Document click handler
   const handleDocumentClick = (e: MouseEvent) => {
     // Ignore the initial click that expanded the toolbar (avoids race condition)
@@ -420,8 +564,13 @@ export function createFloatingToolbar(
       return;
     }
 
-    // Don't dismiss if clicking inside the toolbar
-    if (container.contains(e.target as Node)) return;
+    // Don't dismiss if clicking inside the toolbar. The toolbar lives in a
+    // shadow root, so e.target is retargeted to the shadow host for document
+    // listeners — check the composed path (which contains the real element)
+    // in addition to a plain container.contains().
+    if (e.composedPath().includes(container) || container.contains(e.target as Node)) {
+      return;
+    }
 
     // Don't dismiss if interacting with select dropdown (select, option elements)
     const target = e.target as HTMLElement;
@@ -432,7 +581,7 @@ export function createFloatingToolbar(
       state = {
         ...state,
         menuState: { isOpen: false, selectedCategory: null },
-        providerState: { ...state.providerState, isOpen: false }
+        providerState: closedProviderState()
       };
       renderToolbar();
       return;
@@ -467,7 +616,7 @@ export function createFloatingToolbar(
         state = {
           ...state,
           menuState: { isOpen: false, selectedCategory: null },
-          providerState: { ...state.providerState, isOpen: false }
+          providerState: closedProviderState()
         };
         renderToolbar();
         return;
@@ -487,6 +636,10 @@ export function createFloatingToolbar(
   function attachDocumentListeners() {
     // Use setTimeout to avoid catching the current click
     setTimeout(() => {
+      // Guard against duplicate attachment: attachDocumentListeners is called
+      // on init and again on each FAB re-expansion.
+      if (docListenersAttached) return;
+      docListenersAttached = true;
       document.addEventListener('click', handleDocumentClick);
       document.addEventListener('keydown', handleEscape);
     }, 0);
@@ -494,6 +647,7 @@ export function createFloatingToolbar(
 
   // Detach document listeners
   function detachDocumentListeners() {
+    docListenersAttached = false;
     document.removeEventListener('click', handleDocumentClick);
     document.removeEventListener('keydown', handleEscape);
   }

@@ -1,11 +1,11 @@
-import { PROVIDER_BRANDS, CUSTOM_BRAND } from '../settings/providerBrands.ts';
+import { resolveProviderBrand } from '../settings/providerBrands.ts';
 
 /**
- * Colored monogram chip for a provider. Falls back to the custom-provider
- * gradient identity when the provider id has no brand entry.
+ * Colored monogram chip for a provider. Built-ins use their real brand
+ * color; custom providers get a stable per-id color from the hash palette.
  */
 export function ProviderMark({ id, name, size = 30 }: { id: string; name: string; size?: number }) {
-  const brand = PROVIDER_BRANDS[id] ?? CUSTOM_BRAND;
+  const brand = resolveProviderBrand(id);
   const letter = (name || '?').trim().charAt(0).toUpperCase();
   return (
     <span

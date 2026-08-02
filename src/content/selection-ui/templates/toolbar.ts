@@ -4,11 +4,38 @@
  */
 
 import { html, type TemplateResult } from 'lit-html';
+import fuzzysort from 'fuzzysort';
 import type { QuickAction, SelectionPosition, MenuState } from '../types.ts';
 import { TRANSLATION_TARGETS, ACTION_CATEGORIES } from '../constants.ts';
 import { logoSvgTemplate, icons } from './shared.ts';
+import { resolveProviderBrand } from '../../../components/settings/providerBrands.ts';
+import { fuzzyFilter } from '../../../utils/fuzzySearch.ts';
 
 // === Types ===
+
+export interface ToolbarProvider {
+  id: string;
+  name: string;
+  models: string[];
+}
+
+export interface ProviderMenuGroup {
+  provider: ToolbarProvider;
+  models: string[];
+}
+
+export interface ProviderModelRow {
+  providerId: string;
+  providerName: string;
+  model: string;
+}
+
+export interface ProviderMenuView {
+  /** Groups in render order (active provider pinned first while searching). */
+  groups: ProviderMenuGroup[];
+  /** Flattened rows — the exact keyboard-navigation target list. */
+  rows: ProviderModelRow[];
+}
 
 export interface ToolbarState {
   isExpanded: boolean;
@@ -20,7 +47,16 @@ export interface ToolbarState {
     isOpen: boolean;
     currentProvider: string;
     currentModel: string;
-    providers: { id: string; name: string; models: string[] }[];
+    providers: ToolbarProvider[];
+    search: string;
+    /** Provider whose models are visible in collapsed (accordion) mode. */
+    expandedProviderId: string | null;
+    /** Keyboard-navigation cursor over the flattened visible model rows. */
+    highlightIndex: number;
+    /** Flip the popover right-aligned when the toolbar sits near the viewport edge. */
+    menuAlignRight: boolean;
+    /** Render the popover above the toolbar when it would overflow the bottom. */
+    menuAbove: boolean;
   };
   actions: QuickAction[];
 }
@@ -36,6 +72,12 @@ export interface ToolbarCallbacks {
   onMenuClose: (e?: Event) => void;
   onProviderMenuToggle: (e: Event) => void;
   onProviderMenuClose: (e?: Event) => void;
+  onProviderSearchInput: (e: Event) => void;
+  onProviderSearchClear: (e: Event) => void;
+  onProviderToggle: (e: Event, providerId: string) => void;
+  onProviderMenuKeydown: (e: Event) => void;
+  onProviderMenuHover: (rowIndex: number) => void;
+  onProviderMenuFocus: (rowIndex: number) => void;
   onModelSelect: (e: Event, providerId: string, model: string) => void;
 }
 
@@ -77,6 +119,108 @@ function groupActionsByCategory(actions: QuickAction[]): Map<string, QuickAction
       return orderA - orderB;
     })
   );
+}
+
+// === Provider & Model Selection ===
+
+function providerBrand(providerId: string): { color: string; fg: string } {
+  return resolveProviderBrand(providerId);
+}
+
+function providerMonogram(name: string): string {
+  return name.charAt(0).toUpperCase();
+}
+
+/**
+ * Whether a query matches a provider NAME. Mirrors fuzzyFilter semantics:
+ * short queries (≤2 chars) use strict substring, longer ones use fuzzy
+ * subsequence matching ("oai" → OpenAI).
+ */
+function providerNameMatches(query: string, name: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return false;
+  if (q.length <= 2) return name.toLowerCase().includes(q);
+  return fuzzysort.single(query.trim(), name) !== null;
+}
+
+/**
+ * Compute the provider menu's visible content. Single source of truth shared
+ * by the template (render) and the keyboard handler (navigation).
+ *
+ * - Empty query → accordion: only the expanded provider's models are visible.
+ * - Non-empty query → fuzzy search across every provider; a provider-name
+ *   match expands to that provider's full model list; the active provider is
+ *   pinned to the top. Collapse is bypassed so results are never hidden.
+ */
+export function getProviderMenuView(state: ToolbarState): ProviderMenuView {
+  const { providers, search, currentProvider, expandedProviderId } = state.providerState;
+  const q = search.trim();
+
+  if (q) {
+    const groups: ProviderMenuGroup[] = providers
+      .map((provider) => ({
+        provider,
+        models: providerNameMatches(q, provider.name)
+          ? provider.models.slice()
+          : fuzzyFilter(provider.models, q),
+      }))
+      .filter((g) => g.models.length > 0);
+
+    const pinned: ProviderMenuGroup[] = [];
+    const rest: ProviderMenuGroup[] = [];
+    for (const g of groups) {
+      (g.provider.id === currentProvider ? pinned : rest).push(g);
+    }
+    const sorted = [...pinned, ...rest];
+    return { groups: sorted, rows: flattenRows(sorted) };
+  }
+
+  const expanded = expandedProviderId
+    ? providers.find((p) => p.id === expandedProviderId)
+    : undefined;
+  // If the selected provider exists but has no models (e.g. a custom provider
+  // without a fetched list), fall back to the first provider that has any —
+  // otherwise the accordion would be empty and arrow-key navigation would
+  // no-op. An explicit collapse (expandedProviderId === null) stays empty.
+  const target = expanded
+    ? expanded.models.length > 0
+      ? expanded
+      : providers.find((p) => p.models.length > 0)
+    : undefined;
+  const groups = target ? [{ provider: target, models: target.models }] : [];
+  return { groups, rows: flattenRows(groups) };
+}
+
+function flattenRows(groups: ProviderMenuGroup[]): ProviderModelRow[] {
+  const rows: ProviderModelRow[] = [];
+  for (const g of groups) {
+    for (const model of g.models) {
+      rows.push({ providerId: g.provider.id, providerName: g.provider.name, model });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Highlight the fuzzy-matched characters of a model id with <mark>.
+ * Returns a lit-html TemplateResult with the raw text escaped by lit-html
+ * (no unsafeHTML) — matches are wrapped in a styled mark element.
+ */
+function highlightModel(text: string, query: string): TemplateResult {
+  const q = query.trim();
+  if (!q) return html`${text}`;
+  const result = fuzzysort.single(q, text);
+  if (!result || result.indexes.length === 0) return html`${text}`;
+
+  const parts: TemplateResult[] = [];
+  let last = 0;
+  for (const idx of result.indexes) {
+    if (idx > last) parts.push(html`${text.slice(last, idx)}`);
+    parts.push(html`<mark class="bk-fuzzy-hl">${text[idx]}</mark>`);
+    last = idx + 1;
+  }
+  if (last < text.length) parts.push(html`${text.slice(last)}`);
+  return html`${parts}`;
 }
 
 // === Main Template ===
@@ -188,16 +332,18 @@ function providerSelectorTemplate(
   const providerName = currentProviderObj?.name || state.providerState.currentProvider;
   const modelName = state.providerState.currentModel || 'Default';
   const displayText = `${providerName}: ${modelName}`;
+  const brand = providerBrand(state.providerState.currentProvider);
 
   return html`
     <button
       class="bk-action-btn bk-model-selector-btn"
       aria-label="Select AI Model"
       aria-expanded=${state.providerState.isOpen}
-      aria-haspopup="menu"
+      aria-haspopup="dialog"
       title="${displayText}"
       @click=${callbacks.onProviderMenuToggle}
     >
+      <span class="bk-provider-chip" style="background: ${brand.color}; color: ${brand.fg};" aria-hidden="true">${providerMonogram(providerName)}</span>
       <span class="bk-label">${displayText}</span>
       <span class="bk-chevron" aria-hidden="true">${icons.chevronDown}</span>
     </button>
@@ -341,47 +487,203 @@ function menuOverlayTemplate(
 }
 
 /**
- * Provider & Model Menu overlay
+ * Provider & Model Menu — searchable, collapsible model picker.
+ *
+ * Header: title + provider/model counts, fuzzy search input (with clear).
+ * Body: accordion of collapsible providers (active one expanded by default) —
+ * typing switches to a fuzzy result list grouped by provider, active provider
+ * pinned first, matched characters highlighted.
+ * Footer: keyboard hints + live result count.
  */
 function providerMenuOverlayTemplate(
   state: ToolbarState,
   callbacks: ToolbarCallbacks
 ): TemplateResult {
+  const ps = state.providerState;
+  const query = ps.search.trim();
+  const { groups, rows } = getProviderMenuView(state);
+  const totalModels = ps.providers.reduce((n, p) => n + p.models.length, 0);
+
   return html`
     <div class="bk-menu-overlay" @click=${callbacks.onProviderMenuClose} aria-hidden="true"></div>
     <div
       class="bk-menu bk-provider-menu"
-      role="menu"
-      aria-label="Select Model"
-      style="top: 36px; left: 0;"
+      role="dialog"
+      aria-label="Select model"
+      style="${ps.menuAbove ? 'bottom: 38px; top: auto;' : 'top: 36px;'} ${ps.menuAlignRight ? 'right: 0; left: auto;' : 'left: 0;'}"
+      @keydown=${callbacks.onProviderMenuKeydown}
       @click=${(e: Event) => e.stopPropagation()}
     >
-      <div class="bk-menu-content">
-        ${state.providerState.providers.map(provider =>
-    provider.models.length > 0 ? html`
-            <div class="bk-menu-category">
-              <div class="bk-menu-category-label">${provider.name}</div>
-              ${provider.models.map(model => html`
-                <button
-                  class="bk-menu-item bk-model-item"
-                  role="menuitem"
-                  title="${model}"
-                  aria-label="${model}"
-                  @click=${(e: Event) => {
-        e.stopPropagation();
-        callbacks.onModelSelect(e, provider.id, model);
-      }}
-                >
-                  <span class="bk-menu-item-icon" style="visibility: ${state.providerState.currentProvider === provider.id && state.providerState.currentModel === model ? 'visible' : 'hidden'}">
-                    ${icons.check}
-                  </span>
-                  <span class="bk-menu-item-label">${model}</span>
-                </button>
-              `)}
-            </div>
-          ` : ''
-  )}
+      <div class="bk-provider-menu-head">
+        <div class="bk-provider-menu-title">
+          <span>Select model</span>
+          <span class="bk-provider-menu-count">${ps.providers.length} providers · ${totalModels} models</span>
+        </div>
+        <div class="bk-provider-search">
+          <span class="bk-provider-search-icon" aria-hidden="true">${icons.search}</span>
+          <input
+            class="bk-provider-search-input"
+            type="text"
+            placeholder="Search models…"
+            aria-label="Search models"
+            autocomplete="off"
+            spellcheck="false"
+            .value=${ps.search}
+            @input=${callbacks.onProviderSearchInput}
+            @keydown=${callbacks.onProviderMenuKeydown}
+          />
+          ${ps.search ? html`
+            <button
+              class="bk-provider-search-clear"
+              aria-label="Clear search"
+              @click=${callbacks.onProviderSearchClear}
+              @mousedown=${(e: Event) => e.preventDefault()}
+            >${icons.close}</button>
+          ` : ''}
+        </div>
       </div>
+      <div class="bk-menu-content bk-provider-menu-content">
+        ${query
+      ? (() => {
+        let running = 0;
+        return groups.map((group) => {
+          const out = providerSearchGroupTemplate(group, state, callbacks, query, running);
+          running += group.models.length;
+          return out;
+        });
+      })()
+      : ps.providers.filter((p) => p.models.length > 0).map((provider) => providerSectionTemplate(provider, state, callbacks))}
+        ${query && rows.length === 0 ? providerEmptyTemplate() : ''}
+      </div>
+      <div class="bk-provider-menu-footer">
+        <span class="bk-kbd" aria-hidden="true">↵</span><span class="bk-kbd-hint">Select</span>
+        <span class="bk-kbd" aria-hidden="true">esc</span><span class="bk-kbd-hint">Close</span>
+        ${rows.length > 0 ? html`<span class="bk-provider-menu-results">${rows.length} result${rows.length === 1 ? '' : 's'}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Collapsible provider section (accordion). Only one provider is expanded at a
+ * time; the header shows the brand monogram, provider name and model count.
+ */
+function providerSectionTemplate(
+  provider: ToolbarProvider,
+  state: ToolbarState,
+  callbacks: ToolbarCallbacks
+): TemplateResult {
+  const ps = state.providerState;
+  const isExpanded = ps.expandedProviderId === provider.id;
+  const isActive = ps.currentProvider === provider.id;
+  const brand = providerBrand(provider.id);
+
+  return html`
+    <div class="bk-provider-section ${isExpanded ? 'is-expanded' : ''} ${isActive ? 'is-active' : ''}">
+      <button
+        class="bk-provider-header"
+        aria-expanded=${isExpanded}
+        aria-label="${provider.name} — ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}"
+        @click=${(e: Event) => {
+      e.stopPropagation();
+      callbacks.onProviderToggle(e, provider.id);
+    }}
+      >
+        <span class="bk-provider-monogram" style="background: ${brand.color}; color: ${brand.fg};" aria-hidden="true">${providerMonogram(provider.name)}</span>
+        <span class="bk-provider-name">${provider.name}</span>
+        <span class="bk-provider-meta">
+          ${isActive ? html`<span class="bk-provider-current-dot" aria-hidden="true"></span>` : ''}
+          <span class="bk-provider-model-count">${provider.models.length}</span>
+          <span class="bk-provider-chevron" aria-hidden="true">${icons.chevronDown}</span>
+        </span>
+      </button>
+      ${isExpanded ? html`
+        <div class="bk-provider-models">
+          ${provider.models.map((model) => modelRowTemplate(provider, model, state, callbacks, 0, ''))}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Search-result group: provider header (monogram + name + match count) followed
+ * by every matching model row. Rows carry their flattened index for keyboard
+ * navigation — `startIndex` offsets the running counter within the menu.
+ */
+function providerSearchGroupTemplate(
+  group: ProviderMenuGroup,
+  state: ToolbarState,
+  callbacks: ToolbarCallbacks,
+  query: string,
+  startIndex = 0
+): TemplateResult {
+  const brand = providerBrand(group.provider.id);
+
+  return html`
+    <div class="bk-provider-section bk-search-group">
+      <div class="bk-provider-search-head" aria-hidden="true">
+        <span class="bk-provider-monogram" style="background: ${brand.color}; color: ${brand.fg};">${providerMonogram(group.provider.name)}</span>
+        <span class="bk-provider-name">${group.provider.name}</span>
+        <span class="bk-provider-model-count">${group.models.length}</span>
+      </div>
+      ${group.models.map((model, i) =>
+    modelRowTemplate(group.provider, model, state, callbacks, startIndex + i, query)
+  )}
+    </div>
+  `;
+}
+
+/**
+ * Individual model row. `rowIndex` is the flattened position used by the
+ * keyboard cursor; `query` drives the fuzzy highlight.
+ */
+function modelRowTemplate(
+  provider: ToolbarProvider,
+  model: string,
+  state: ToolbarState,
+  callbacks: ToolbarCallbacks,
+  rowIndex: number,
+  query: string
+): TemplateResult {
+  const ps = state.providerState;
+  const isCurrent = ps.currentProvider === provider.id && ps.currentModel === model;
+  const isHighlight = rowIndex === ps.highlightIndex;
+
+  return html`
+    <button
+      class="bk-menu-item bk-model-item ${isCurrent ? 'bk-model-item--active' : ''} ${isHighlight ? 'bk-model-item--highlight' : ''}"
+      aria-current=${isCurrent ? 'true' : 'false'}
+      data-row-index=${rowIndex}
+      title="${model}"
+      aria-label="${model}"
+      @click=${(e: Event) => {
+      e.stopPropagation();
+      callbacks.onModelSelect(e, provider.id, model);
+    }}
+      @mousemove=${(e: Event) => {
+      if (isHighlight) return;
+      e.stopPropagation();
+      callbacks.onProviderMenuHover(rowIndex);
+    }}
+      @focus=${(e: Event) => {
+      if (isHighlight) return;
+      e.stopPropagation();
+      callbacks.onProviderMenuFocus(rowIndex);
+    }}
+    >
+      <span class="bk-menu-item-icon" aria-hidden="true">${isCurrent ? icons.check : ''}</span>
+      <span class="bk-menu-item-label">${highlightModel(model, query)}</span>
+    </button>
+  `;
+}
+
+function providerEmptyTemplate(): TemplateResult {
+  return html`
+    <div class="bk-provider-empty">
+      <span aria-hidden="true">${icons.search}</span>
+      <div class="bk-provider-empty-title">No models match</div>
+      <div class="bk-provider-empty-hint">Try a shorter query or check the provider settings.</div>
     </div>
   `;
 }
