@@ -78,6 +78,8 @@ export interface ToolbarCallbacks {
   onProviderMenuKeydown: (e: Event) => void;
   onProviderMenuHover: (rowIndex: number) => void;
   onProviderMenuFocus: (rowIndex: number) => void;
+  /** Pointer entered the results list — release keyboard claim so hover works again. */
+  onProviderMenuEnter: () => void;
   onModelSelect: (e: Event, providerId: string, model: string) => void;
 }
 
@@ -532,7 +534,7 @@ function providerMenuOverlayTemplate(
           ` : ''}
         </div>
       </div>
-      <div class="bk-menu-content bk-provider-menu-content" @keydown=${callbacks.onProviderMenuKeydown}>
+      <div class="bk-menu-content bk-provider-menu-content" @keydown=${callbacks.onProviderMenuKeydown} @mouseenter=${() => callbacks.onProviderMenuEnter()}>
         ${query
       ? (() => {
         let running = 0;

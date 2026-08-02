@@ -246,6 +246,10 @@ export function createFloatingToolbar(
   // Track initial click target to avoid race condition with setTimeout
   let initialClickTarget: EventTarget | null = null;
 
+  // Input modality for the model picker: once the user navigates with the
+  // arrow keys, hover is ignored until the pointer re-enters the list.
+  let keyboardNavActive = false;
+
   // Callbacks
   const callbacks: ToolbarCallbacks = {
     onIconClick: (e: Event) => {
@@ -343,8 +347,12 @@ export function createFloatingToolbar(
         isTranslateMode: false, // Close translate mode too if open
       };
       renderToolbar();
-      if (opening) focusProviderSearch();
-      else focusProviderTrigger();
+      if (opening) {
+        keyboardNavActive = false;
+        focusProviderSearch();
+      } else {
+        focusProviderTrigger();
+      }
     },
 
     onProviderMenuClose: (e?: Event) => {
@@ -407,6 +415,9 @@ export function createFloatingToolbar(
         if (rows.length === 0) return;
         e.preventDefault();
         e.stopPropagation();
+        // Keyboard takes over the cursor: row hover (mousemove) must not
+        // snap it back while the user is navigating with arrows.
+        keyboardNavActive = true;
         const delta = kb.key === 'ArrowDown' ? 1 : -1;
         const next =
           (state.providerState.highlightIndex + delta + rows.length) % rows.length;
@@ -427,6 +438,10 @@ export function createFloatingToolbar(
     },
 
     onProviderMenuHover: (rowIndex: number) => {
+      // While the user is navigating with the keyboard, ignore hover — it
+      // would fight the arrow cursor (a resting mouse fires mousemove on any
+      // micro-movement, making arrow navigation look broken).
+      if (keyboardNavActive) return;
       if (rowIndex === state.providerState.highlightIndex) return;
       state = {
         ...state,
@@ -438,12 +453,20 @@ export function createFloatingToolbar(
     // Sync the keyboard cursor with the focused row so Tab + Enter selects
     // the same model as Space (native button activation).
     onProviderMenuFocus: (rowIndex: number) => {
+      keyboardNavActive = true;
       if (rowIndex === state.providerState.highlightIndex) return;
       state = {
         ...state,
         providerState: { ...state.providerState, highlightIndex: rowIndex },
       };
       renderToolbar();
+    },
+
+    // The pointer entered the results list (mouseenter only fires when the
+    // pointer crosses the boundary from outside) — hand the cursor back to
+    // hover mode. Tiny in-place movements inside the list stay ignored.
+    onProviderMenuEnter: () => {
+      keyboardNavActive = false;
     },
 
     onModelSelect: async (e: Event, providerId: string, model: string) => {
