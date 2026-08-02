@@ -227,7 +227,13 @@ export function createChatService(): ChatService {
 
         // Handle non-streaming
         if (options?.stream === false) {
-          const data = (await response.json()) as Record<string, unknown>;
+          const raw = (await response.json()) as Record<string, unknown>;
+          // Some OpenAI-compatible gateways (OpenRouter wrapped mode) return
+          // {"data": {…}, "success": true} — unwrap before parsing.
+          const data =
+            raw && typeof raw === 'object' && raw.data && typeof raw.data === 'object'
+              ? (raw.data as Record<string, unknown>)
+              : raw;
           const result = streamingService.buildNonStreamingResponse(data, provider);
 
           // Convert tool_calls to ToolCall format if present

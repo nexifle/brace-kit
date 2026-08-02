@@ -111,19 +111,26 @@ export async function handleTitleGenerate(
 
     const data = (await response.json()) as Record<string, unknown>;
 
+    // Some OpenAI-compatible gateways (e.g. OpenRouter wrapped mode) return
+    // {"data": {…}, "success": true} — unwrap so we read the fields below.
+    const payload =
+      data && typeof data === 'object' && data.data && typeof data.data === 'object'
+        ? (data.data as Record<string, unknown>)
+        : data;
+
     let title = '';
     if (provider.format === 'openai') {
-      const choices = data.choices as OpenAIChoice[] | undefined;
+      const choices = payload.choices as OpenAIChoice[] | undefined;
       title = choices?.[0]?.message?.content || '';
     } else if (provider.format === 'anthropic') {
-      const content = data.content as AnthropicContent[] | undefined;
+      const content = payload.content as AnthropicContent[] | undefined;
       title = content?.map((c) => c.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'gemini') {
-      const candidates = data.candidates as GeminiCandidate[] | undefined;
+      const candidates = payload.candidates as GeminiCandidate[] | undefined;
       title =
         candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'ollama') {
-      const msg = data.message as { content?: string } | undefined;
+      const msg = payload.message as { content?: string } | undefined;
       title = msg?.content || '';
     }
 

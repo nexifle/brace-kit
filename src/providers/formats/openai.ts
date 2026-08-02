@@ -342,8 +342,17 @@ export async function fetchOpenAIModels(
 
   const data = await response.json();
 
+  // Standard: {"data": [ … ]}. Some gateways wrap again (OpenRouter wrapped
+  // mode returns {"data": {"data": [ … ]}, "success": true}). Handle both.
+  const inner = data?.data;
+  const list: { id: string }[] | undefined = Array.isArray(inner)
+    ? (inner as { id: string }[])
+    : inner && typeof inner === 'object' && Array.isArray((inner as { data?: unknown }).data)
+      ? ((inner as { data: unknown }).data as { id: string }[])
+      : undefined;
+
   // Filter and sort models
-  const models = (data.data || [])
+  const models = (list || [])
     .map((m: { id: string }) => m.id)
     .filter((id: string) => !EXCLUDED_MODEL_PATTERNS.some((p) => p.test(id)))
     .sort((a: string, b: string) => a.localeCompare(b));
