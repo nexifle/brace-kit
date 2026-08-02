@@ -17,11 +17,11 @@ BraceKit supports multiple AI providers, letting you switch between models insta
 
 | Provider | Type | Models | Special Features |
 |----------|------|--------|------------------|
-| **[OpenAI](/guide/ai-providers/openai/)** | Cloud | GPT-5.2, GPT-4.1, o3, o4-mini | Reasoning models |
-| **[Anthropic](/guide/ai-providers/anthropic/)** | Cloud | Claude 4.6 (Opus, Sonnet), Haiku 4.5 | Extended thinking |
-| **[Gemini](/guide/ai-providers/gemini/)** | Cloud | Gemini 3 Pro, Gemini 2.5 Pro/Flash | Google Search, Image gen |
-| **[xAI](/guide/ai-providers/xai/)** | Cloud | Grok 4.1, Grok 4 | Image generation |
-| **[DeepSeek](/guide/ai-providers/deepseek/)** | Cloud | V3.2, R1 | Reasoning (R1) |
+| **[OpenAI](/guide/ai-providers/openai/)** | Cloud | GPT-5.6 (Sol/Terra/Luna), GPT-5.5 | Reasoning models |
+| **[Anthropic](/guide/ai-providers/anthropic/)** | Cloud | Claude Opus 5, Sonnet 5, Haiku 4.5 | Extended thinking |
+| **[Gemini](/guide/ai-providers/gemini/)** | Cloud | Gemini 3.6 Flash, 3.5 Flash, 3.1 Pro | Google Search, Image gen |
+| **[xAI](/guide/ai-providers/xai/)** | Cloud | Grok 4.5, Grok 4.3, Grok 4.20 | Image generation |
+| **[DeepSeek](/guide/ai-providers/deepseek/)** | Cloud | DeepSeek V4 (Flash, Pro) | Thinking mode |
 | **[Ollama](/guide/ai-providers/ollama/)** | Local | Any model | Offline, Private |
 | **[Custom](/guide/ai-providers/custom/)** | Any | Any | Multi-format (OpenAI, Anthropic, Gemini, Ollama) |
 
@@ -34,7 +34,7 @@ BraceKit supports multiple AI providers, letting you switch between models insta
 
 ### Step 2: Select Provider
 
-Click any provider button in the grid to select it. The configuration fields below update to reflect the selected provider.
+Open the provider dropdown and pick a provider — search for it or use the keyboard (↑↓ to navigate, Enter to select). The configuration fields below update to reflect the selected provider. Use the **+ Add** button to register a custom provider.
 
 ### Step 3: Enter API Key
 
@@ -75,11 +75,11 @@ Some models can show their reasoning process:
 
 | Provider | Models | How to Enable |
 |----------|--------|---------------|
-| Anthropic | Claude 4.x, Claude 3.5 | Click brain icon (🧠) |
-| OpenAI | o1, o3, o4-mini | Automatic |
-| Gemini | 2.5 Pro, Thinking models | Click brain icon (🧠) |
-| xAI | Grok 4, Grok 4.1 reasoning | Automatic (reasoning models) |
-| DeepSeek | R1, Reasoner | Automatic |
+| Anthropic | Claude Opus 5, Sonnet 5 | Click brain icon (🧠) |
+| OpenAI | GPT-5.6 (reasoning levels) | Automatic |
+| Gemini | 3.6 Flash, 3.1 Pro, Thinking models | Click brain icon (🧠) |
+| xAI | Grok 4.5, Grok 4.20 reasoning | Automatic (reasoning models) |
+| DeepSeek | V4 (thinking mode) | Automatic |
 | Ollama | With think mode | Click brain icon |
 
 ### Function Calling / Tools
@@ -101,8 +101,8 @@ Generate images directly in chat:
 
 | Provider | Models | Aspect Ratios |
 |----------|--------|---------------|
-| Gemini | gemini-2.5-flash-image | 1:1, 16:9, 9:16, etc. |
-| xAI | grok-imagine-image, grok-2-image-1212 | 1:1, 16:9, 9:16, etc. |
+| Gemini | gemini-3-pro-image, gemini-3.1-flash-image | 1:1, 16:9, 9:16, etc. |
+| xAI | grok-imagine-image, grok-imagine-image-pro | 1:1, 16:9, 9:16, etc. |
 
 ### Vision (Image Input)
 
@@ -110,10 +110,10 @@ Send images for analysis:
 
 | Provider | Vision Models |
 |----------|---------------|
-| OpenAI | GPT-5, GPT-4.1, GPT-4o |
-| Anthropic | Claude 4.x, Claude 3.5 |
+| OpenAI | GPT-5.6, GPT-5.5, GPT-5.4 |
+| Anthropic | Claude Opus 5, Sonnet 5 |
 | Gemini | All Gemini models |
-| xAI | Grok Vision |
+| xAI | Grok 4.5, Grok 4.3 |
 | Ollama | llava, bakllava |
 
 ## API Key Security
@@ -138,7 +138,7 @@ Each provider stores its own key independently.
 
 For self-hosted or proxy services, add a custom provider:
 
-1. Click the **+ Add** button in the provider grid
+1. Click the **+ Add** button next to the provider dropdown
 2. Fill in the **Name**, **Format**, and **Base URL**:
    - **OpenAI** format — LM Studio, vLLM, OpenRouter, Azure OpenAI
    - **Anthropic** format — Anthropic-compatible proxies
@@ -164,7 +164,7 @@ See the [Custom Provider guide](/guide/ai-providers/custom/) for details.
 
 ### "Model not responding"
 
-- Some models (o1, o3) take longer to respond
+- Some models (gpt-5.6-sol at high reasoning levels) take longer to respond
 - Check provider status pages for outages
 - Try a different model
 

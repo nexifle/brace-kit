@@ -53,7 +53,7 @@ const steps = [
         id: 'models',
         title: 'Cognitive Sovereignty',
         subtitle: 'Multi-Model Switcher',
-        description: 'Switch instantly between GPT-4o, Claude 3.5, Gemini 1.5 Pro, or DeepSeek. Use the right brain for every specific task.',
+        description: 'Switch instantly between GPT-5.6, Claude Sonnet 5, Gemini 3.6 Flash, or Grok 4.5. Use the right brain for every specific task.',
         icon: <Zap className="w-12 h-12" />,
         color: 'from-amber-500/20 to-orange-500/20'
     },
@@ -251,8 +251,8 @@ const Onboarding = () => {
                 >
                     <div className="absolute inset-0 bg-linear-to-r from-rose-500/30 via-pink-500/30 to-orange-500/30 rounded-full blur-lg opacity-50 group-hover:opacity-80 transition-opacity" />
                     <div className="relative flex items-center gap-3 px-8 py-4 rounded-full bg-linear-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 border border-rose-500/30 group-hover:border-rose-400/50 group-hover:from-rose-500/30 group-hover:via-pink-500/30 group-hover:to-orange-500/30 transition-all backdrop-blur-sm overflow-hidden">
-                        <Heart size={18} className="text-rose-400 group-hover:text-rose-300 group-hover:scale-110 transition-all" />
-                        <span className="text-sm font-semibold tracking-wide text-rose-200 group-hover:text-rose-100">
+                        <Heart size={18} className="text-rose-600 group-hover:text-rose-500 dark:text-rose-400 dark:group-hover:text-rose-300 group-hover:scale-110 transition-all" />
+                        <span className="text-sm font-semibold tracking-wide text-rose-700 group-hover:text-rose-600 dark:text-rose-200 dark:group-hover:text-rose-100">
                             Support Development
                         </span>
                         <motion.div

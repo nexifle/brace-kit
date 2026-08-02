@@ -28,7 +28,7 @@ Connect BraceKit to any AI API endpoint with support for multiple formats: OpenA
 
 ### 2. Add Custom Provider
 
-Click the **+ Add** button in the provider grid and fill in:
+Click the **+ Add** button next to the provider dropdown and fill in:
 
 | Field | Description | Example |
 |-------|-------------|---------|
@@ -40,7 +40,7 @@ Click **Save Provider** to create it.
 
 ### 3. Configure and Use
 
-1. The new provider appears in the provider grid — click to select it
+1. The new provider appears at the top of the provider dropdown — select it to activate
 2. Enter your **API Key** in the Configuration section (or leave empty for local servers)
 3. Add or select a **Model** in the Configuration section
 

@@ -103,11 +103,11 @@ export function SettingsPanel() {
           {activeTab === 'security' && <SecuritySettings />}
         </div>
 
-        <section className="mt-8 pt-6 border-t border-border/50 text-center opacity-40 flex flex-col gap-1.5">
+        <section className="mt-8 pt-6 border-t border-border/50 text-center flex flex-col gap-1.5">
           <p className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">
             BraceKit v{chrome.runtime.getManifest().version}
           </p>
-          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-muted-foreground/60">
+          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-muted-foreground">
             Part of Nexifle Labs
           </p>
         </section>

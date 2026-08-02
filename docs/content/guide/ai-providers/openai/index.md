@@ -10,7 +10,7 @@ category = "AI Providers"
 
 # OpenAI
 
-OpenAI provides GPT models for general tasks and o-series models for complex reasoning. The GPT-5 series offers the latest capabilities with improved agentic performance.
+OpenAI provides GPT models with configurable reasoning levels. The GPT-5.6 family (Sol, Terra, Luna) offers the latest capabilities with improved agentic performance and tool use.
 
 ## Setup
 
@@ -25,7 +25,7 @@ OpenAI provides GPT models for general tasks and o-series models for complex rea
 
 1. Open **Settings**
 2. Select **AI Provider** tab
-3. Click **OpenAI** in the provider grid
+3. Select **OpenAI** from the provider dropdown
 4. Paste your API key in the API Key field
 5. Select a model from the dropdown
 
@@ -35,57 +35,41 @@ Settings are saved automatically when you make changes.
 
 ## Available Models
 
-### GPT-5 Series (Recommended)
+### GPT-5.6 Family (Recommended)
 
-The latest generation with improved reasoning and agentic capabilities.
-
-| Model | Best For | Context | Notes |
-|-------|----------|---------|-------|
-| **gpt-5** | General purpose, coding, agentic tasks | 400K | Balanced performance |
-| **gpt-5-mini** | Fast, cost-efficient for well-defined tasks | 400K | Cheaper, faster |
-| **gpt-5-nano** | Simple tasks, high volume | 128K | Fastest, cheapest |
-| **gpt-5.1** | Enhanced reasoning with configurable effort | 400K | Higher reasoning |
-| **gpt-5.2** | Best for coding and agentic tasks | 400K | Latest capabilities |
-| **gpt-5.2-pro** | Maximum precision and reasoning | 400K | Slowest, most expensive |
-
-### GPT-4.1 Series
-
-Improved GPT-4 with better performance.
+The latest generation. The `gpt-5.6` alias routes to `gpt-5.6-sol`.
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **gpt-4.1** | General purpose, reliable | 128K | Improved GPT-4 |
-| **gpt-4.1-mini** | Fast, affordable alternative | 128K | Cheaper than GPT-5 |
+| **gpt-5.6-sol** | Complex professional work | 1.05M | Frontier model, all reasoning levels |
+| **gpt-5.6-terra** | Balanced intelligence & cost | 1.05M | Strong middle tier |
+| **gpt-5.6-luna** | Cost-sensitive, high volume | 1.05M | Fastest, cheapest |
 
-### GPT-4o Series
-
-Multimodal models with vision support.
-
-| Model | Best For | Context | Notes |
-|-------|----------|---------|-------|
-| **gpt-4o** | Multimodal (text + images) | 128K | Vision support |
-| **gpt-4o-mini** | Fast multimodal tasks | 128K | Cheaper vision |
-
-### Reasoning Models (o-series)
-
-Models that show their thinking process for complex problems.
+### Previous Generation
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **o1** | Complex reasoning, math, coding | 200K | Shows reasoning |
-| **o1-pro** | Highest reasoning quality | 200K | Pro-level thinking |
-| **o3** | Advanced reasoning successor | 200K | Better than o1 |
-| **o3-mini** | Fast reasoning tasks | 200K | Cheaper reasoning |
-| **o3-pro** | Maximum reasoning depth | 200K | Best for hard problems |
-| **o4-mini** | Efficient reasoning | 200K | Latest mini reasoning |
+| **gpt-5.5** | General purpose | 400K | Previous flagship |
+| **gpt-5.4** | General purpose, coding | 1.05M | Prior generation, computer use |
+| **gpt-oss** | Open-weight models | 400K | Openly available weights |
 
-> **Note:** Model availability depends on your OpenAI account tier and API access. Some models (like o3-pro, gpt-5.2-pro) may require higher tier access.
+### Reasoning (Effort Levels)
+
+GPT-5.x models support configurable reasoning effort: `minimal`, `low`, `medium`, and `high`. The `gpt-5.6` alias routes to `gpt-5.6-sol`.
+
+| Model | Reasoning Levels | Best For |
+|-------|------------------|----------|
+| **gpt-5.6-sol** | minimal → high | Complex professional work |
+| **gpt-5.6-terra** | minimal → high | Balanced intelligence & cost |
+| **gpt-5.6-luna** | minimal → high | Cost-sensitive, high volume |
+
+> **Note:** Model availability depends on your OpenAI account tier and API access. Some models may require higher tier access.
 
 ## Features
 
-### Reasoning Models (o-series)
+### Reasoning (Effort Levels)
 
-The o-series models (o1, o3, o4) show their reasoning process:
+The GPT-5.6 family shows its reasoning process:
 
 ```
 ┌─────────────────────────────────────┐
@@ -98,14 +82,14 @@ The o-series models (o1, o3, o4) show their reasoning process:
 Based on my analysis...
 ```
 
-This happens automatically with all o-series models. The thinking process helps with:
+This happens automatically when a reasoning level above `none` is set. The thinking process helps with:
 - Complex math and logic problems
 - Multi-step coding tasks
 - Detailed analysis and planning
 
 ### Vision (Image Input)
 
-All GPT-4o and GPT-5 models support image analysis:
+All GPT-5.6, GPT-5.5 and GPT-5.4 models support image analysis:
 
 1. Attach an image to your message
 2. Ask a question about it
@@ -162,9 +146,9 @@ OpenAI charges per token. Check [OpenAI pricing](https://developers.openai.com/a
 
 ### Slow responses
 
-- **o-series models** (o1, o3, o4) are slower by design — they "think" before responding
-- **Pro models** (o3-pro, gpt-5.2-pro) take even longer for deeper reasoning
-- For faster responses, use **gpt-4o**, **gpt-5-mini**, or **gpt-4o-mini**
+- **Higher reasoning levels** (xhigh, max) are slower by design — they "think" before responding
+- **Flagship models** (gpt-5.6-sol) take longer for deep reasoning
+- For faster responses, use **gpt-5.6-luna** or **gpt-5.6-terra** with a low reasoning level
 
 ## Related
 

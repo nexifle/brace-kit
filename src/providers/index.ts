@@ -41,6 +41,8 @@ export type {
 // Presets and constants
 export {
   PROVIDER_PRESETS,
+  FORMAT_LABELS,
+  FORMAT_PLACEHOLDERS,
   GEMINI_NO_TOOLS_MODELS,
   GEMINI_SEARCH_ONLY_MODELS,
   GEMINI_IMAGE_MODELS,
@@ -62,7 +64,11 @@ export { isOllamaLocalhost } from '../utils/providerUtils.ts';
 export { formatOpenAI, parseOpenAIStream, fetchOpenAIModels } from './formats/openai.ts';
 
 // Anthropic format
-export { formatAnthropic, parseAnthropicStream } from './formats/anthropic.ts';
+export {
+  formatAnthropic,
+  parseAnthropicStream,
+  fetchAnthropicModels,
+} from './formats/anthropic.ts';
 
 // Gemini format
 export { formatGemini, parseGeminiStream, fetchGeminiModels } from './formats/gemini.ts';
@@ -77,10 +83,10 @@ export { formatOllama, parseOllamaStream, fetchOllamaModels } from './formats/ol
 
 import type { ProviderPreset, MCPTool, Message } from '../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, ModelFetchResult } from './types.ts';
-import { PROVIDER_PRESETS, XAI_IMAGE_MODELS } from './presets.ts';
+import { XAI_IMAGE_MODELS } from './presets.ts';
 import { isOllamaLocalhost } from '../utils/providerUtils.ts';
 import { formatOpenAI } from './formats/openai.ts';
-import { formatAnthropic } from './formats/anthropic.ts';
+import { formatAnthropic, fetchAnthropicModels } from './formats/anthropic.ts';
 import { formatGemini } from './formats/gemini.ts';
 import { formatXAIImageRequest } from './formats/xai.ts';
 import { formatOllama } from './formats/ollama.ts';
@@ -179,7 +185,7 @@ export async function* parseStream(
  *
  * Automatically selects the correct fetcher based on provider format:
  * - openai: OpenAI /models endpoint
- * - anthropic: Returns static model list
+ * - anthropic: live /v1/models for the official preset, empty for custom
  * - gemini: Gemini /models endpoint
  *
  * @param provider - Provider configuration with API key
@@ -200,12 +206,12 @@ export async function fetchModels(
       case 'openai':
         return await fetchOpenAIModels(apiUrl, apiKey || '');
       case 'anthropic':
-        // Only return the built-in static list for the official Anthropic preset.
+        // Only fetch models from the live API for the official Anthropic preset.
         // Custom providers using the anthropic format have their own model lists
         // managed by the user, so we return empty here to avoid contaminating
         // their fetchedModels cache with Anthropic's model names.
         if (provider.id === 'anthropic') {
-          return { models: PROVIDER_PRESETS.anthropic.staticModels || [] };
+          return await fetchAnthropicModels(apiUrl, apiKey || '');
         }
         return { models: [] };
       case 'gemini':

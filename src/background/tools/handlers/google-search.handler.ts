@@ -113,7 +113,8 @@ export async function handleGoogleSearch(
   }
 
   const geminiApiUrl = 'https://generativelanguage.googleapis.com/v1beta';
-  const model = 'gemini-2.5-flash-lite';
+  // Cost-efficient current model for search summarization
+  const model = 'gemini-3.5-flash-lite';
   const url = `${geminiApiUrl}/models/${model}:generateContent?key=${context.googleSearchApiKey}`;
 
   const body = {

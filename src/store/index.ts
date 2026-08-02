@@ -13,7 +13,11 @@ import type {
   CompactConfig,
   Preferences,
   ConversationStreamingState,
+  ReasoningLevel,
 } from '../types/index.ts';
+import {
+  isReasoningLevel,
+} from '../providers/utils/reasoning.ts';
 import {
   saveImagesForConversation,
   hydrateMessages,
@@ -45,6 +49,7 @@ interface StorageData {
   enableTools?: boolean;
   enableGoogleSearch?: boolean;
   enableReasoning?: boolean;
+  reasoningLevel?: ReasoningLevel;
   enableGoogleSearchTool?: boolean;
   googleSearchApiKey?: string;
   groqEnabledBuiltinTools?: string[];
@@ -115,6 +120,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Reasoning options
   enableReasoning: false,
+
+  // Thinking effort level (minimal/low/medium/high/max)
+  reasoningLevel: 'medium',
 
   // MCP options
   enableMCP: true,
@@ -574,6 +582,10 @@ export const useStore = create<AppState>((set, get) => ({
     set({ enableReasoning });
     get().saveToStorage();
   },
+  setReasoningLevel: (reasoningLevel) => {
+    set({ reasoningLevel });
+    get().saveToStorage();
+  },
   setEnableGoogleSearchTool: (enableGoogleSearchTool) => {
     set({ enableGoogleSearchTool });
     get().saveToStorage();
@@ -754,6 +766,7 @@ export const useStore = create<AppState>((set, get) => ({
         'enableTools',
         'enableGoogleSearch',
         'enableReasoning',
+        'reasoningLevel',
         'enableGoogleSearchTool',
         'googleSearchApiKey',
         'groqEnabledBuiltinTools',
@@ -871,6 +884,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.enableReasoning !== undefined) {
         updates.enableReasoning = data.enableReasoning;
+      }
+      if (data.reasoningLevel !== undefined && isReasoningLevel(data.reasoningLevel)) {
+        updates.reasoningLevel = data.reasoningLevel;
       }
       if (data.enableGoogleSearchTool !== undefined) {
         updates.enableGoogleSearchTool = data.enableGoogleSearchTool;
@@ -1050,6 +1066,7 @@ export const useStore = create<AppState>((set, get) => ({
         enableTools: state.enableTools,
         enableGoogleSearch: state.enableGoogleSearch,
         enableReasoning: state.enableReasoning,
+        reasoningLevel: state.reasoningLevel,
         enableGoogleSearchTool: state.enableGoogleSearchTool,
         googleSearchApiKey: encryptedGoogleSearchApiKey,
         groqEnabledBuiltinTools: state.groqEnabledBuiltinTools,

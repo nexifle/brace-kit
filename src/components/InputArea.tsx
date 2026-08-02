@@ -1,13 +1,14 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { useChat, useFileAttachments, usePageContext, useProvider, useMCP, useOmnibox } from '../hooks';
+import { useChat, useFileAttachments, usePageContext, useMCP, useOmnibox } from '../hooks';
 import { FilePreview } from './FilePreview.tsx';
 import { SelectionPreview } from './SelectionPreview.tsx';
 import { PageContextPreview } from './PageContextPreview.tsx';
-import { ProviderPopover } from './ProviderPopover.tsx';
+import { ComposerPicker } from './ComposerPicker.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
+import { ReasoningPopover } from './ReasoningPopover.tsx';
 import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
-import { GlobeIcon, PaperclipIcon, SquareTerminal, BrainIcon, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
+import { GlobeIcon, PaperclipIcon, SquareTerminal, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 
@@ -20,7 +21,6 @@ const SLASH_COMMANDS = [
 export function InputArea() {
   const [text, setText] = useState('');
   const [imageAspectRatio, setImageAspectRatio] = useState('auto');
-  const [showProviderPopover, setShowProviderPopover] = useState(false);
   const [showPreferencesPopover, setShowPreferencesPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -31,7 +31,6 @@ export function InputArea() {
   const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
   const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText, pageContext: hasPageContext } = usePageContext();
-  const { providerInfo } = useProvider();
   const { syncAndReconnect } = useMCP();
   useOmnibox(sendMessage);
   const currentModel = useStore((state) => state.providerConfig.model || '');
@@ -69,31 +68,29 @@ export function InputArea() {
     }
   }, [isGeminiImageModel, imageAspectRatio]);
 
-  // Close popover on click outside
+  // Close preferences popover on click outside
   useEffect(() => {
-    if (!showProviderPopover && !showPreferencesPopover) return;
+    if (!showPreferencesPopover) return;
     const handler = (e: MouseEvent) => {
       if (footerRef.current && !footerRef.current.contains(e.target as Node)) {
-        setShowProviderPopover(false);
         setShowPreferencesPopover(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showProviderPopover, showPreferencesPopover]);
+  }, [showPreferencesPopover]);
 
-  // Close popover on Escape
+  // Close preferences popover on Escape (combo selects handle their own Escape)
   useEffect(() => {
-    if (!showProviderPopover && !showPreferencesPopover) return;
+    if (!showPreferencesPopover) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowProviderPopover(false);
         setShowPreferencesPopover(false);
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [showProviderPopover, showPreferencesPopover]);
+  }, [showPreferencesPopover]);
 
   const placeholder = store.pageContext
     ? 'Ask about this page... (type \'/\' for commands)'
@@ -107,7 +104,6 @@ export function InputArea() {
 
   // Reasoning state from store
   const enableReasoning = useStore((state) => state.enableReasoning);
-  const setEnableReasoning = useStore((state) => state.setEnableReasoning);
 
   // Function calling (tools) master switch
   const enableTools = useStore((state) => state.enableTools);
@@ -267,7 +263,7 @@ export function InputArea() {
         {/* Image Options Row */}
         {isImageGenerationModel && (
           <div className="flex items-center gap-2 px-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
-            <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">Aspect Ratio</label>
+            <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">Aspect Ratio</label>
             <select
               className="text-xs bg-muted/40 border border-input rounded-md px-2 py-0.5 cursor-pointer outline-none transition-all hover:bg-muted/60 focus:ring-1 focus:ring-ring disabled:opacity-50 text-foreground"
               value={imageAspectRatio}
@@ -336,7 +332,7 @@ export function InputArea() {
               ref={textareaRef}
               className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
               placeholder={placeholder}
-              rows={3}
+              rows={2}
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
@@ -354,6 +350,7 @@ export function InputArea() {
           </div>
         </div>
 
+        {/* Bottom Toolbar — composer chips + actions in one row */}
         {/* Context usage indicator - own row above toolbar */}
         {compactEnabled && percentUntilCompact <= 15 && (
           <div className="flex justify-end p-2">
@@ -371,48 +368,22 @@ export function InputArea() {
           </div>
         )}
 
-        {/* Bottom Toolbar */}
-        <div className="flex items-center gap-1.5 px-3 pb-3 pt-2 border-t border-border/50" ref={footerRef}>
-          <ProviderPopover isOpen={showProviderPopover} onClose={() => setShowProviderPopover(false)} />
+        {/* Bottom Toolbar — composer picker chip + actions in one row */}
+        <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-1.5 border-t border-border/50" ref={footerRef}>
           <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
-
-          {/* Provider + Model selector */}
-          <button
-            type="button"
-            className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-all duration-200 min-w-0 max-w-[40%] ${showProviderPopover
-              ? 'bg-primary/15 text-primary'
-              : 'text-foreground hover:bg-muted/50'
-              }`}
-            onClick={() => setShowProviderPopover(v => !v)}
-          >
-            <span className="text-sm font-semibold truncate shrink-0">
-              {providerInfo.isConfigured ? providerInfo.providerName : 'No Provider'}
-            </span>
-            {providerInfo.model && (
-              <span className="text-xs text-muted-foreground font-normal truncate min-w-0">
-                {providerInfo.model}
-              </span>
-            )}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted-foreground/70 shrink-0">
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
-
-          {/* Vertical divider */}
-          <div className="w-px h-4 bg-border/70 mx-0.5 shrink-0" />
 
           {/* Page context - pill with label */}
           <Tooltip>
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={handleAttachClick}
               >
-                <GlobeIcon size={12} />
+                <GlobeIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Add current page to context</TooltipContent>
@@ -423,10 +394,10 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className="flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground"
+                className="flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <PaperclipIcon size={12} />
+                <PaperclipIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Attach file (image, txt, csv, pdf)</TooltipContent>
@@ -437,47 +408,33 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${store.showSystemPromptEditor
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${store.showSystemPromptEditor
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => store.setShowSystemPromptEditor(!store.showSystemPromptEditor)}
               >
-                <SquareTerminal size={12} />
+                <SquareTerminal size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">System Prompt</TooltipContent>
           </Tooltip>
 
-          {/* Reasoning toggle */}
-          <Tooltip>
-            <TooltipTrigger>
-              <button
-                type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableReasoning
-                  ? 'bg-primary/15 text-primary border-primary/40'
-                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                onClick={() => setEnableReasoning(!enableReasoning)}
-              >
-                <BrainIcon size={12} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Enable extended thinking</TooltipContent>
-          </Tooltip>
+          {/* Reasoning toggle → popover with switch + effort level */}
+          <ReasoningPopover />
 
           {/* Function calling toggle */}
           <Tooltip>
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${enableTools
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${enableTools
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => setEnableTools(!enableTools)}
               >
-                <WrenchIcon size={12} />
+                <WrenchIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">
@@ -490,13 +447,13 @@ export function InputArea() {
             <TooltipTrigger>
               <button
                 type="button"
-                className={`flex items-center justify-center w-7 h-7 rounded-full border transition-all duration-200 shrink-0 ${preferences.toolMessageDisplay === 'compact'
+                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 max-[360px]:hidden ${preferences.toolMessageDisplay === 'compact'
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
                 onClick={() => setShowPreferencesPopover(true)}
               >
-                <SettingsIcon size={12} />
+                <SettingsIcon size={11} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Display preferences for tool messages</TooltipContent>
@@ -504,6 +461,9 @@ export function InputArea() {
 
           {/* Spacer */}
           <div className="flex-1 min-w-0" />
+
+          {/* Provider + Model — single trigger → popup with both selectors */}
+          <ComposerPicker />
 
           {/* Send/Stop button */}
           {store.isStreaming ? (

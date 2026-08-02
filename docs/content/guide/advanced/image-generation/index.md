@@ -17,10 +17,11 @@ Generate images directly in your conversation using Gemini or xAI models. Descri
 | Provider | Model | Notes |
 |----------|-------|-------|
 | **Google** | gemini-2.5-flash-image | Fast image generation |
-| **Google** | gemini-3-pro-image-preview | Preview model |
-| **xAI** | grok-2-image-1212 | xAI image generation |
+| **Google** | gemini-3-pro-image | High quality (Nano Banana Pro) |
+| **Google** | gemini-3.1-flash-image | Fast (Nano Banana 2) |
 | **xAI** | grok-imagine-image | Standard quality |
 | **xAI** | grok-imagine-image-pro | Higher quality |
+| **xAI** | grok-imagine-image-quality | Quality-tuned |
 
 ## Quick Start
 

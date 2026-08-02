@@ -57,7 +57,7 @@ describe('useTools Logic', () => {
       // Test the imported utility function
       expect(supportsFunctionCallingUtil('gemini-2.0-flash')).toBe(true);
       expect(supportsFunctionCallingUtil('gemini-2.5-flash-image')).toBe(false);
-      expect(supportsFunctionCallingUtil('gemini-3-pro-image-preview')).toBe(false);
+      expect(supportsFunctionCallingUtil('gemini-3.1-flash-image')).toBe(false);
     });
   });
 
@@ -67,16 +67,17 @@ describe('useTools Logic', () => {
         expect(GEMINI_IMAGE_MODELS.includes(model)).toBe(true);
       }
       expect(GEMINI_IMAGE_MODELS).toContain('gemini-2.5-flash-image');
-      expect(GEMINI_IMAGE_MODELS).toContain('gemini-3-pro-image-preview');
+      expect(GEMINI_IMAGE_MODELS).toContain('gemini-3-pro-image');
+      expect(GEMINI_IMAGE_MODELS).toContain('gemini-3.1-flash-image');
     });
 
     it('should identify xAI image models', () => {
       for (const model of XAI_IMAGE_MODELS) {
         expect(XAI_IMAGE_MODELS.includes(model)).toBe(true);
       }
-      expect(XAI_IMAGE_MODELS).toContain('grok-2-image-1212');
       expect(XAI_IMAGE_MODELS).toContain('grok-imagine-image');
       expect(XAI_IMAGE_MODELS).toContain('grok-imagine-image-pro');
+      expect(XAI_IMAGE_MODELS).toContain('grok-imagine-image-quality');
     });
 
     it('should not identify regular models as image models', () => {

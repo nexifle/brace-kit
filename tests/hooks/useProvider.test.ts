@@ -140,7 +140,7 @@ describe('providerUtils', () => {
 describe('getAvailableModels logic', () => {
   // ── Built-in providers ──────────────────────────────────────────────────
 
-  describe('built-in provider: Anthropic (staticModels, supportsModelFetch=false)', () => {
+  describe('built-in provider: Anthropic (staticModels fallback)', () => {
     it('returns staticModels when there is no fetchedModels cache', () => {
       const result = getAvailableModelsLogic('anthropic', [], {});
       expect(result).toEqual(PROVIDER_PRESETS.anthropic.staticModels);
@@ -161,9 +161,10 @@ describe('getAvailableModels logic', () => {
       expect(result).toEqual(['gpt-4o', 'gpt-4-turbo']);
     });
 
-    it('returns empty array when no cache and no staticModels', () => {
+    it('returns staticModels as fallback when no cache exists', () => {
       const result = getAvailableModelsLogic('openai', [], {});
-      expect(result).toEqual([]);
+      expect(result).toEqual(PROVIDER_PRESETS.openai.staticModels);
+      expect(result).toContain('gpt-5.6-sol');
     });
   });
 

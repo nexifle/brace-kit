@@ -9,6 +9,11 @@ import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
+import {
+  deepseekReasoningEffort,
+  openaiReasoningEffort,
+  xaiReasoningEffort,
+} from '../utils/reasoning.ts';
 
 // ==================== Request Formatting ====================
 
@@ -23,17 +28,27 @@ import { createThinkTagParser } from '../utils/thinkTagParser.ts';
  * @param provider - Provider configuration with API key and model
  * @param messages - Conversation messages
  * @param tools - Available MCP tools
- * @param _options - Chat options (unused for OpenAI)
+ * @param options - Chat options (thinking params, stream, model parameters, …)
  * @returns Request configuration with URL and fetch options
  */
 export function formatOpenAI(
-  provider: { apiUrl: string; apiKey?: string; model?: string; defaultModel: string; supportsReasoningContent?: boolean },
+  provider: {
+    apiUrl: string;
+    apiKey?: string;
+    model?: string;
+    defaultModel: string;
+    supportsReasoningContent?: boolean;
+    /** Provider preset id (openai, xai, deepseek, groq, custom, …) */
+    id?: string;
+  },
   messages: Message[],
   tools: MCPTool[],
-  _options: ChatOptions
+  options: ChatOptions
 ): RequestConfig {
   const model = provider.model || provider.defaultModel;
   const supportsReasoningContent = provider.supportsReasoningContent === true;
+  const providerId = provider.id ?? '';
+  const shouldEnableReasoning = !!options.enableReasoning;
 
   // Transform messages to OpenAI format
   const processedMessages = messages.map((msg) => {
@@ -88,14 +103,38 @@ export function formatOpenAI(
   const body: Record<string, unknown> = {
     model,
     messages: processedMessages,
-    stream: _options.stream !== false,
+    stream: options.stream !== false,
   };
 
   // Apply optional generation parameters (only if set by user)
-  const p = _options.modelParameters;
+  const p = options.modelParameters;
   if (p?.temperature !== undefined) body.temperature = p.temperature;
   if (p?.maxTokens !== undefined) body.max_tokens = p.maxTokens;
   if (p?.topP !== undefined) body.top_p = p.topP;
+
+  // Thinking / reasoning parameters.
+  // OpenAI-compatible reasoning models take `reasoning_effort`. DeepSeek V4
+  // also exposes a `thinking` toggle that defaults to ON server-side, so we
+  // explicitly disable it when the user has reasoning turned off. When
+  // omitThinkingParams is set (graceful-fallback retry) leave no thinking
+  // footprint at all — DeepSeek's disabled toggle included.
+  if (options.omitThinkingParams) {
+    // no thinking params
+  } else if (shouldEnableReasoning) {
+    const effort =
+      providerId === 'xai'
+        ? xaiReasoningEffort(options.reasoningLevel)
+        : providerId === 'deepseek'
+          ? deepseekReasoningEffort(options.reasoningLevel)
+          : openaiReasoningEffort(options.reasoningLevel);
+    if (effort) body.reasoning_effort = effort;
+    if (providerId === 'deepseek') {
+      body.thinking = { type: 'enabled' };
+    }
+  } else if (providerId === 'deepseek') {
+    // DeepSeek V4 thinks by default — honor the composer toggle.
+    body.thinking = { type: 'disabled' };
+  }
 
   // Add tools if available
   if (tools.length > 0) {
@@ -110,10 +149,10 @@ export function formatOpenAI(
   }
 
   // Groq built-in tools via compound_custom
-  if (_options.groqBuiltinTools && _options.groqBuiltinTools.length > 0) {
+  if (options.groqBuiltinTools && options.groqBuiltinTools.length > 0) {
     body.compound_custom = {
       tools: {
-        enabled_tools: _options.groqBuiltinTools,
+        enabled_tools: options.groqBuiltinTools,
       },
     };
   }
@@ -218,13 +257,23 @@ export async function* parseOpenAIStream(
 
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
-              yield {
-                type: 'tool_call',
-                id: tc.id,
-                index: tc.index,
-                name: tc.function?.name,
-                arguments: tc.function?.arguments,
-              };
+              const id = tc.id;
+              const index = tc.index;
+              const name = tc.function?.name;
+              const args = tc.function?.arguments;
+              if (name) {
+                // First delta for this tool call: start a fragment. Some
+                // providers send the complete arguments in this same chunk.
+                yield { type: 'tool_call_start', id, index, name };
+                if (args) yield { type: 'tool_call_delta', id, index, content: args };
+              } else if (args) {
+                // Continuation delta: partial JSON fragment for an in-flight
+                // call. Carry the index so the caller can route it to the
+                // right call when parallel tool calls interleave — the old
+                // single 'tool_call' emission dropped these entirely, so the
+                // MCP server received empty {} arguments.
+                yield { type: 'tool_call_delta', id, index, content: args };
+              }
             }
           }
         } catch {
@@ -293,8 +342,17 @@ export async function fetchOpenAIModels(
 
   const data = await response.json();
 
+  // Standard: {"data": [ … ]}. Some gateways wrap again (OpenRouter wrapped
+  // mode returns {"data": {"data": [ … ]}, "success": true}). Handle both.
+  const inner = data?.data;
+  const list: { id: string }[] | undefined = Array.isArray(inner)
+    ? (inner as { id: string }[])
+    : inner && typeof inner === 'object' && Array.isArray((inner as { data?: unknown }).data)
+      ? ((inner as { data: unknown }).data as { id: string }[])
+      : undefined;
+
   // Filter and sort models
-  const models = (data.data || [])
+  const models = (list || [])
     .map((m: { id: string }) => m.id)
     .filter((id: string) => !EXCLUDED_MODEL_PATTERNS.some((p) => p.test(id)))
     .sort((a: string, b: string) => a.localeCompare(b));

@@ -7,6 +7,50 @@
 import type { MCPTool, Message } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
+import { anthropicThinkingBlock } from '../utils/reasoning.ts';
+
+// ==================== Model Fetching ====================
+
+/**
+ * Fetch available models from the Anthropic /v1/models endpoint.
+ *
+ * @param apiUrl - Anthropic API base URL
+ * @param apiKey - Anthropic API key (x-api-key header)
+ * @returns Object with model id list
+ */
+export async function fetchAnthropicModels(
+  apiUrl: string,
+  apiKey: string
+): Promise<{ models: string[] }> {
+  const baseUrl = apiUrl.replace(/\/+$/, '');
+  const url = `${baseUrl}/models`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  // Anthropic returns { data: [{ type: 'model', id, display_name, created_at }] }
+  if (Array.isArray(data?.data)) {
+    const models = data.data
+      .map((m: { id?: string }) => m?.id)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+      .sort(); // stable alphabetical order, like the other fetchers
+    return { models };
+  }
+
+  return { models: [] };
+}
 
 // ==================== Request Formatting ====================
 
@@ -23,20 +67,20 @@ import { createThinkTagParser } from '../utils/thinkTagParser.ts';
  * @param provider - Provider configuration with API key and model
  * @param messages - Conversation messages
  * @param tools - Available MCP tools
- * @param _options - Chat options including enableReasoning
+ * @param options - Chat options including enableReasoning / reasoningLevel
  * @returns Request configuration with URL and fetch options
  */
 export function formatAnthropic(
   provider: { apiUrl: string; apiKey?: string; model?: string; defaultModel: string },
   messages: Message[],
   tools: MCPTool[],
-  _options: ChatOptions
+  options: ChatOptions
 ): RequestConfig {
   const model = provider.model || provider.defaultModel;
   let system = '';
   const filtered: Record<string, unknown>[] = [];
 
-  const shouldEnableReasoning = !!_options.enableReasoning;
+  const shouldEnableReasoning = !!options.enableReasoning;
 
   // First pass: batch consecutive tool results together
   // Anthropic expects all tool results in a single user message
@@ -183,12 +227,12 @@ export function formatAnthropic(
     }
   }
 
-  const p = _options.modelParameters;
+  const p = options.modelParameters;
 
   const body: Record<string, unknown> = {
     model,
     max_tokens: p?.maxTokens ?? 8192,
-    stream: _options.stream !== false,
+    stream: options.stream !== false,
     messages: filtered,
   };
 
@@ -200,13 +244,11 @@ export function formatAnthropic(
   }
   if (p?.topK !== undefined) body.top_k = p.topK;
 
-  // Add thinking parameter for Anthropic models when reasoning is enabled
+  // Add thinking parameter for Anthropic models when reasoning is enabled.
+  // Claude 4.6+ / 5.x use adaptive thinking (effort level); older models (≤4.5)
+  // use the legacy `enabled` + `budget_tokens` form.
   if (shouldEnableReasoning) {
-    body.thinking = {
-      type: 'enabled',
-      // Anthropic requires a minimum of 1024 tokens for thinking budget
-      budget_tokens: Math.max(1024, p?.thinkingBudget ?? 4096),
-    };
+    body.thinking = anthropicThinkingBlock(model, options.reasoningLevel, p?.thinkingBudget);
   }
 
   if (system) body.system = system;

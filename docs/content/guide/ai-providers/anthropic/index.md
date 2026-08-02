@@ -25,7 +25,7 @@ Anthropic's Claude models are known for nuanced understanding, careful reasoning
 
 1. Open **Settings**
 2. Select the **AI Provider** tab
-3. Click **Anthropic** in the provider grid
+3. Select **Anthropic** from the provider dropdown
 4. Paste your API key
 5. Select a model
 
@@ -35,14 +35,14 @@ Settings are saved automatically as you type.
 
 | Model | API ID | Best For | Context |
 |-------|--------|----------|---------|
-| **Claude Opus 4.6** | claude-opus-4-6 | Most complex tasks, coding | 200K / 1M |
-| **Claude Sonnet 4.6** | claude-sonnet-4-6 | Best balance of speed and intelligence | 200K / 1M |
-| **Claude Haiku 4.5** | claude-haiku-4-5-20251001 | Fast responses, high volume | 200K |
-| **Claude Sonnet 4** | claude-sonnet-4-20250514 | Previous generation | 200K |
-| **Claude 3.5 Sonnet** | claude-3-5-sonnet-20241022 | Legacy | 200K |
-| **Claude 3.5 Haiku** | claude-3-5-haiku-20241022 | Legacy, fast | 200K |
+| **Claude Fable 5** | claude-fable-5 | Long-running agents, frontier intelligence | 1M |
+| **Claude Opus 5** | claude-opus-5 | Complex agentic coding, enterprise work | 1M |
+| **Claude Sonnet 5** | claude-sonnet-5 | Best balance of speed and intelligence | 1M |
+| **Claude Haiku 4.5** | claude-haiku-4-5 | Fast responses, high volume | 200K |
+| **Claude Opus 4.8** | claude-opus-4-8 | Previous generation, most capable | 1M |
+| **Claude Sonnet 4.6** | claude-sonnet-4-6 | Previous generation, balanced | 200K / 1M |
 
-> **Note:** Claude 3 Opus was retired in January 2026. Use Claude Opus 4.6 instead.
+> **Note:** Models are fetched live from the Anthropic API when a key is entered. Older models (Opus 4/4.1, Sonnet 4, Claude 3.x) have been retired.
 
 ## Features
 
@@ -68,7 +68,7 @@ Claude supports extended thinking, which shows the model's reasoning process:
 Async/await is syntactic sugar...
 ```
 
-All current Claude models support extended thinking. Claude Opus 4.6 and Sonnet 4.6 also support adaptive thinking.
+All current Claude models support extended thinking. Claude Opus 5, Sonnet 5 and Fable 5 also support adaptive thinking.
 
 ### Vision
 

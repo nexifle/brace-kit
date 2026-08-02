@@ -42,6 +42,15 @@ describe("store - configuration toggles", () => {
     expect(chromeSetSpy).toHaveBeenCalled();
   });
 
+  it("defaults reasoningLevel to medium and persists changes", async () => {
+    const store = useStore.getState();
+    expect(store.reasoningLevel).toBe('medium');
+
+    store.setReasoningLevel('max');
+    expect(useStore.getState().reasoningLevel).toBe('max');
+    expect(globalThis.chrome.storage.local.set).toHaveBeenCalled();
+  });
+
   it("should toggle enableGoogleSearch and persist via saveToStorage", async () => {
     const store = useStore.getState();
     const chromeSetSpy = globalThis.chrome.storage.local.set;

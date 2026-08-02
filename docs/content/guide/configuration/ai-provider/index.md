@@ -20,15 +20,15 @@ Select from available AI providers:
 
 | Provider | Description |
 |----------|-------------|
-| **OpenAI** | GPT-4, GPT-4o, and other OpenAI models |
-| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus, etc. |
-| **Google Gemini** | Gemini 1.5 Pro, Gemini 1.5 Flash, etc. |
-| **xAI** | Grok models |
-| **DeepSeek** | DeepSeek Chat and Reasoner |
+| **OpenAI** | GPT-5.6 (Sol/Terra/Luna), GPT-5.5, GPT-5.4 |
+| **Anthropic** | Claude Opus 5, Sonnet 5, Haiku 4.5, Fable 5 |
+| **Google Gemini** | Gemini 3.6 Flash, 3.5 Flash, 3.1 Pro |
+| **xAI** | Grok 4.5, Grok 4.3, Grok 4.20 |
+| **DeepSeek** | DeepSeek V4 Flash and Pro |
 | **Ollama** | Local models via Ollama |
 | **Custom** | Your own OpenAI-compatible endpoints |
 
-Click a provider button in the grid to select it. The active provider is highlighted.
+Open the **provider dropdown** to select a provider — search for it, or use ↑↓ and Enter. The active provider is shown at the top of the list. Use the **+ Add** button for a custom provider.
 
 ---
 
@@ -78,7 +78,7 @@ Add your own API endpoints that are compatible with OpenAI, Anthropic, Gemini, o
 
 ### Adding a Custom Provider
 
-1. Click the **+ Add** button in the provider grid
+1. Click the **+ Add** button next to the provider dropdown
 2. Fill in the details:
    - **Name**: Display name for the provider
    - **Format**: API format (OpenAI, Anthropic, Gemini, or Ollama)

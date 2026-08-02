@@ -2,7 +2,7 @@
  * Tests for Providers Index Module (Unified Interfaces)
  */
 
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
 import {
   formatRequest,
   parseStream,
@@ -126,7 +126,7 @@ describe('Providers Index - Unified Interfaces', () => {
         const provider = {
           ...PROVIDER_PRESETS.xai,
           apiKey: 'test-key',
-          model: 'grok-2-image-1212',
+          model: 'grok-imagine-image',
         };
         const messages: Message[] = [{ role: 'user', content: 'A sunset' }];
 
@@ -296,7 +296,19 @@ describe('Providers Index - Unified Interfaces', () => {
       expect(result.models).toBeUndefined();
     });
 
-    it('should return static models for Anthropic', async () => {
+    it('should fetch live models for Anthropic /v1/models', async () => {
+      const apiModels = {
+        data: [
+          { type: 'model', id: 'claude-opus-5', display_name: 'Claude Opus 5' },
+          { type: 'model', id: 'claude-sonnet-5', display_name: 'Claude Sonnet 5' },
+          { type: 'model', id: 'claude-haiku-4-5', display_name: 'Claude Haiku 4.5' },
+        ],
+      };
+      globalThis.fetch = mock(async () => new Response(JSON.stringify(apiModels), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+
       const provider = {
         ...PROVIDER_PRESETS.anthropic,
         apiKey: 'test-key',
@@ -304,9 +316,11 @@ describe('Providers Index - Unified Interfaces', () => {
 
       const result = await fetchModels(provider);
 
-      expect(result.models).toBeDefined();
-      expect(result.models?.length).toBeGreaterThan(0);
-      expect(result.models).toContain('claude-3-5-sonnet-20241022');
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      const calledUrl = (globalThis.fetch as ReturnType<typeof mock>).mock.calls[0]?.[0];
+      expect(calledUrl).toContain('/models');
+      // fetchAnthropicModels sorts the ids alphabetically
+      expect(result.models).toEqual(['claude-haiku-4-5', 'claude-opus-5', 'claude-sonnet-5']);
     });
 
     // ── Regression tests ──────────────────────────────────────────────────
@@ -334,14 +348,19 @@ describe('Providers Index - Unified Interfaces', () => {
       expect(result.models).not.toContain('claude-3-5-sonnet-20241022');
     });
 
-    it('[REGRESSION] official Anthropic preset still returns its static models', async () => {
+    it('[REGRESSION] official Anthropic preset fetches its models from the live API', async () => {
       // Ensure the fix did not break the built-in Anthropic provider.
+      globalThis.fetch = mock(async () => new Response(JSON.stringify({
+        data: [{ type: 'model', id: 'claude-opus-5' }, { type: 'model', id: 'claude-sonnet-5' }],
+      }), { status: 200 }));
+
       const provider = { ...PROVIDER_PRESETS.anthropic, apiKey: 'sk-real-key' };
       const result = await fetchModels(provider);
 
       expect(result.models).toBeDefined();
       expect(result.models?.length).toBeGreaterThan(0);
-      expect(result.models).toContain('claude-sonnet-4-6');
+      expect(result.models).toContain('claude-opus-5');
+      expect(result.models).toContain('claude-sonnet-5');
     });
   });
 });

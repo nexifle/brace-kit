@@ -7,7 +7,7 @@
 
 import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
-import type { MCPTool } from '../../types/index.ts';
+import type { MCPTool, ReasoningLevel } from '../../types/index.ts';
 import {
   GEMINI_NO_TOOLS_MODELS,
   GEMINI_SEARCH_ONLY_MODELS,
@@ -206,7 +206,7 @@ export function useTools() {
    * Get chat options for current provider/model
    */
   const getChatOptions = useCallback(
-    (options?: { aspectRatio?: string; enableReasoning?: boolean }) => {
+    (options?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
       const state = useStore.getState();
       const currentModel = state.providerConfig.model || '';
       const isGemini = isGeminiProvider();
@@ -216,6 +216,7 @@ export function useTools() {
       const chatOptions: {
         enableGoogleSearch: boolean;
         enableReasoning?: boolean;
+        reasoningLevel?: ReasoningLevel;
         aspectRatio?: string;
         stream?: boolean;
         modelParameters?: typeof state.providerConfig.modelParameters;
@@ -226,6 +227,7 @@ export function useTools() {
           isGemini &&
           !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
         enableReasoning: options?.enableReasoning ?? state.enableReasoning,
+        reasoningLevel: options?.reasoningLevel ?? state.reasoningLevel,
         stream: state.enableStreaming,
         modelParameters: state.providerConfig.modelParameters,
       };

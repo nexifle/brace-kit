@@ -24,7 +24,7 @@ xAI's Grok models offer frontier-level reasoning with exceptional cost efficienc
 ### 2. Configure in BraceKit
 
 1. Open **Settings → AI Provider**
-2. Click **xAI** in the provider grid
+2. Select **xAI** from the provider dropdown
 3. Paste your API key
 4. Select a model
 
@@ -32,47 +32,41 @@ Settings are saved automatically as you type.
 
 ## Available Models
 
-### Grok 4.1 Series (Latest)
+### Current Flagship
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **grok-4-1-fast-reasoning** | Complex reasoning | 2M | Extended thinking, best quality |
-| **grok-4-1-fast-non-reasoning** | Fast responses | 2M | Quick, capable, cost-efficient |
+| **grok-4.5** | Coding, agentic tasks | 500K | Current flagship, configurable reasoning |
+| **grok-4.3** | Balanced workloads | 1M | Strong reasoning + tool use |
 
-### Grok 4 Series
-
-| Model | Best For | Context | Notes |
-|-------|----------|---------|-------|
-| **grok-4** | Complex tasks | 131K | Reasoning model |
-| **grok-4-fast-reasoning** | Reasoning | 2M | Faster reasoning variant |
-| **grok-4-fast-non-reasoning** | General use | 2M | Fast, no reasoning |
-
-### Grok 3 Series
+### Grok 4.20 Series
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **grok-3** | General use | 131K | Balanced performance |
-| **grok-3-mini** | Quick tasks | 131K | Faster, cheaper |
+| **grok-4.20-0309-reasoning** | Complex reasoning | 1M | Extended thinking (alias `grok-4.20`) |
+| **grok-4.20-0309-non-reasoning** | Fast responses | 1M | Quick, no reasoning (alias `grok-4.20-non-reasoning`) |
+| **grok-4.20-multi-agent-0309** | Multi-agent workflows | 1M | Coordinated agent runs |
 
-### Image Generation
+### Coding & Media
 
 | Model | Best For | Notes |
 |-------|----------|-------|
-| **grok-2-image-1212** | Image generation | Latest image model |
+| **grok-build-0.1** | Agentic coding | Code-first model |
 | **grok-imagine-image** | Image generation | Standard quality |
 | **grok-imagine-image-pro** | Image generation | Higher quality |
+| **grok-imagine-image-quality** | Image generation | Quality-tuned |
 
 ## Features
 
 ### Reasoning Mode
 
-Grok 4 and 4.1 models are reasoning models that show their thinking process:
+Grok 4.x models are reasoning models that show their thinking process:
 
 1. Click the brain icon (🧠) in the toolbar
 2. Send your message
 3. View the reasoning in a collapsible section
 
-> **Note:** Grok 4 and 4.1 always use reasoning — there's no non-reasoning mode for the base models. Use `grok-4-1-fast-non-reasoning` or `grok-4-fast-non-reasoning` for quick responses without extended thinking.
+> **Note:** Reasoning can be toggled per request. Use the `-non-reasoning` variants (e.g. `grok-4.20-0309-non-reasoning`) for quick responses without extended thinking.
 
 ### Image Generation
 
@@ -112,7 +106,7 @@ Configure in **Settings → AI Provider** under the **Advanced** section:
 | **Temperature** | 0-2 | Higher = more creative |
 | **Max Tokens** | 1-131K | Maximum response length |
 
-> **Note:** Reasoning models (Grok 4, Grok 4.1) don't support `presencePenalty`, `frequencyPenalty`, or `stop` parameters.
+> **Note:** Reasoning models (Grok 4.x) don't support `presencePenalty`, `frequencyPenalty`, or `stop` parameters.
 
 ## Image Generation Settings
 
@@ -131,10 +125,10 @@ xAI pricing (per 1M tokens):
 
 | Model | Input | Output | Context |
 |-------|-------|--------|---------|
-| grok-4-1-fast-reasoning | $0.20 | $0.50 | 2M |
-| grok-4-0709 | $3.00 | $15.00 | 131K |
-| grok-3 | $3.00 | $15.00 | 131K |
-| grok-3-mini | $0.30 | $0.50 | 131K |
+| grok-4.5 | $2.00 | $6.00 | 500K |
+| grok-4.3 | $1.25 | $2.50 | 1M |
+| grok-4.20-0309-reasoning | $1.25 | $2.50 | 1M |
+| grok-4.20-0309-non-reasoning | $1.25 | $2.50 | 1M |
 
 > **Note:** Check [xAI pricing](https://docs.x.ai/developers/models) for current rates. Image generation priced separately.
 

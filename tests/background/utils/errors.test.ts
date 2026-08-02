@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { getFriendlyErrorMessage } from '../../../src/background/utils/errors.js';
+import { getFriendlyErrorMessage, isThinkingParamError } from '../../../src/background/utils/errors.js';
 
 describe('Error Utilities', () => {
   describe('getFriendlyErrorMessage', () => {
@@ -135,6 +135,48 @@ describe('Error Utilities', () => {
 
       const result = await getFriendlyErrorMessage(mockResponse, 'Custom Prefix');
       expect(result).toContain('Custom Prefix (400)');
+    });
+  });
+
+  describe('isThinkingParamError', () => {
+    test('returns false for non-400 status', () => {
+      expect(isThinkingParamError(401, 'Unknown parameter: reasoning')).toBe(false);
+      expect(isThinkingParamError(429, 'thinking')).toBe(false);
+    });
+
+    test('detects unknown parameter errors from OpenAI-compatible endpoints', () => {
+      expect(
+        isThinkingParamError(400, 'Unknown parameter: \'reasoning\'.')
+      ).toBe(true);
+      expect(
+        isThinkingParamError(400, JSON.stringify({ error: { message: 'Unknown parameter: reasoning_effort' } }))
+      ).toBe(true);
+      expect(
+        isThinkingParamError(400, 'Invalid parameter: thinkingLevel')
+      ).toBe(true);
+      expect(
+        isThinkingParamError(400, 'Unsupported parameter: budget_tokens')
+      ).toBe(true);
+    });
+
+    test('detects Anthropic adaptive-thinking rejections', () => {
+      expect(
+        isThinkingParamError(400, 'This model does not support the thinking parameter with type adaptive')
+      ).toBe(true);
+      expect(
+        isThinkingParamError(400, 'thinking: type adaptive is not supported')
+      ).toBe(true);
+    });
+
+    test('detects DeepSeek thinking-mode errors', () => {
+      expect(
+        isThinkingParamError(400, 'The reasoning_content in the thinking mode must be passed back')
+      ).toBe(true);
+    });
+
+    test('ignores unrelated 400s', () => {
+      expect(isThinkingParamError(400, 'Invalid API key')).toBe(false);
+      expect(isThinkingParamError(400, 'context length exceeded')).toBe(false);
     });
   });
 });

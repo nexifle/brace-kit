@@ -4,26 +4,50 @@
  * Provider configurations, model constants, and feature detection utilities.
  */
 
-import type { ProviderPreset } from '../types/index.ts';
+import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
+
+// ==================== Provider Format Metadata ====================
+
+/**
+ * Human-readable label per provider format.
+ * Single source of truth used by the provider select, add-provider form,
+ * and settings UI — avoids drift between duplicated maps.
+ */
+export const FORMAT_LABELS: Record<ProviderFormat, string> = {
+  openai: 'OpenAI API',
+  anthropic: 'Anthropic API',
+  gemini: 'Gemini API',
+  ollama: 'Local · Ollama',
+};
+
+/**
+ * Example base URL placeholder per provider format (add-provider form).
+ */
+export const FORMAT_PLACEHOLDERS: Record<ProviderFormat, string> = {
+  openai: 'https://api.example.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  ollama: 'http://localhost:11434',
+};
 
 // ==================== Model Constants ====================
 
 /**
  * Gemini models that do not support function calling or Google Search
- * Pattern: models with "-image" in the name that are Flash-based
+ * Pattern: native image-generation models
  */
 export const GEMINI_NO_TOOLS_MODELS = [
   'gemini-2.5-flash-image',
-  'gemini-3-flash-image',
-  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image',
+  'gemini-3.1-flash-image',
+  'gemini-3.1-flash-lite-image',
 ];
 
 /**
  * Gemini models that support Google Search but not function calling
  */
-export const GEMINI_SEARCH_ONLY_MODELS = [
-  'gemini-3-pro-image-preview',
-  'gemini-3.1-pro-image-preview',
+export const GEMINI_SEARCH_ONLY_MODELS: string[] = [
+  // (none currently — native image models are covered by GEMINI_NO_TOOLS_MODELS)
 ];
 
 /**
@@ -32,16 +56,19 @@ export const GEMINI_SEARCH_ONLY_MODELS = [
  */
 export const GEMINI_IMAGE_MODELS = [
   'gemini-2.5-flash-image',
-  'gemini-3-flash-image',
-  'gemini-3-pro-image-preview',
-  'gemini-3.1-flash-image-preview',
-  'gemini-3.1-pro-image-preview',
+  'gemini-3-pro-image',
+  'gemini-3.1-flash-image',
+  'gemini-3.1-flash-lite-image',
 ];
 
 /**
  * xAI image generation models
  */
-export const XAI_IMAGE_MODELS = ['grok-2-image-1212', 'grok-imagine-image', 'grok-imagine-image-pro'];
+export const XAI_IMAGE_MODELS = [
+  'grok-imagine-image',
+  'grok-imagine-image-pro',
+  'grok-imagine-image-quality',
+];
 
 /**
  * Groq built-in provider tools available via compound_custom
@@ -120,66 +147,106 @@ export const GEMINI_IMAGE_SIZES = ['512', '1K', '2K', '4K'] as const;
 
 /**
  * Default provider configurations
+ *
+ * Model lists refreshed July 2026 from each provider's official docs/API:
+ * - staticModels: fallback list shown before a key is entered (and for
+ *   providers where live fetching is unavailable)
+ * - Live fetching (supportsModelFetch) refreshes the list automatically
+ *   when an API key is present.
  */
 export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
   openai: {
     id: 'openai',
     name: 'OpenAI',
     apiUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o',
+    defaultModel: 'gpt-5.6-sol',
     format: 'openai',
     models: [],
     supportsModelFetch: true,
+    staticModels: [
+      // GPT-5.6 family (aliases: gpt-5.6 → gpt-5.6-sol)
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      // Previous generation
+      'gpt-5.5',
+      'gpt-5.4',
+      // Open-weight
+      'gpt-oss',
+    ],
   },
   anthropic: {
     id: 'anthropic',
     name: 'Anthropic (Claude)',
     apiUrl: 'https://api.anthropic.com/v1',
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: 'claude-sonnet-5',
     format: 'anthropic',
     models: [],
-    supportsModelFetch: false,
+    supportsModelFetch: true,
     staticModels: [
+      // Current generation (aliases)
+      'claude-fable-5',
+      'claude-opus-5',
+      'claude-sonnet-5',
+      'claude-haiku-4-5',
+      // Previous generation (still available)
+      'claude-opus-4-8',
+      'claude-opus-4-7',
       'claude-opus-4-6',
       'claude-sonnet-4-6',
-      'claude-haiku-4-5-20251001',
-      'claude-sonnet-4-20250514',
-      'claude-3-5-sonnet-20241022',
-      'claude-3-5-haiku-20241022',
+      'claude-opus-4-5',
+      'claude-sonnet-4-5',
     ],
   },
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-3.6-flash',
     format: 'gemini',
     models: [],
     supportsModelFetch: true,
+    staticModels: [
+      // Gemini 3.x (stable)
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-pro',
+      'gemini-3.1-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-3-flash',
+      // Gemini 2.5 (available until Oct 2026)
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      // Native image models
+      'gemini-2.5-flash-image',
+      'gemini-3-pro-image',
+      'gemini-3.1-flash-image',
+      'gemini-3.1-flash-lite-image',
+    ],
   },
   xai: {
     id: 'xai',
     name: 'xAI (Grok)',
     apiUrl: 'https://api.x.ai/v1',
-    defaultModel: 'grok-4-1-fast-non-reasoning',
+    defaultModel: 'grok-4.5',
     format: 'openai',
     models: [],
     supportsModelFetch: true,
     staticModels: [
-      // Grok 4.1 Series (Latest)
-      'grok-4-1-fast-reasoning',
-      'grok-4-1-fast-non-reasoning',
-      // Grok 4 Series
-      'grok-4-0709',
-      'grok-4-fast-reasoning',
-      'grok-4-fast-non-reasoning',
-      // Grok 3 Series
-      'grok-3',
-      'grok-3-mini',
-      // Image Generation
-      'grok-2-image-1212',
+      'grok-4.5',
+      'grok-4.3',
+      // Grok 4.20 (aliases: grok-4.20 → reasoning, grok-4.20-non-reasoning)
+      'grok-4.20-0309-reasoning',
+      'grok-4.20-0309-non-reasoning',
+      'grok-4.20-multi-agent-0309',
+      // Coding / agentic
+      'grok-build-0.1',
+      // Media generation
       'grok-imagine-image',
       'grok-imagine-image-pro',
+      'grok-imagine-image-quality',
     ],
   },
   groq: {
@@ -190,16 +257,28 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'openai',
     models: [],
     supportsModelFetch: true,
+    staticModels: [
+      // Groq compound models
+      'groq/compound',
+      'groq/compound-mini',
+      // Hosted open-weight models
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.6-27b',
+      'moonshotai/kimi-k2-instruct',
+      'minimaxai/minimax-m2.7',
+    ],
   },
   deepseek: {
     id: 'deepseek',
     name: 'DeepSeek',
     apiUrl: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
+    defaultModel: 'deepseek-v4-flash',
     format: 'openai',
     models: [],
     supportsModelFetch: true,
     supportsReasoningContent: true,
+    staticModels: ['deepseek-v4-flash', 'deepseek-v4-pro'],
   },
   ollama: {
     id: 'ollama',

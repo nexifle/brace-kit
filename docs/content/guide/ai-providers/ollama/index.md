@@ -55,7 +55,7 @@ ollama pull phi3
 ### 4. Configure in BraceKit
 
 1. Open **Settings → AI Provider**
-2. Click **Ollama** in the provider grid
+2. Select **Ollama** from the provider dropdown
 3. The Base URL should be `http://localhost:11434` (default)
 4. API key is not required for localhost
 5. Select your model from the dropdown

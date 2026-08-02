@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { ProviderFormat } from '../../types/index.ts';
+import { FORMAT_LABELS, FORMAT_PLACEHOLDERS } from '../../providers';
 
 interface AddProviderModalProps {
   isOpen: boolean;
@@ -14,13 +15,6 @@ interface AddProviderModalProps {
     supportsModelFetch: boolean;
   }) => void;
 }
-
-const FORMAT_PLACEHOLDERS: Record<ProviderFormat, string> = {
-  openai: 'https://api.example.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  gemini: 'https://generativelanguage.googleapis.com/v1beta',
-  ollama: 'http://localhost:11434',
-};
 
 export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModalProps) {
   const [name, setName] = useState('');
@@ -100,10 +94,9 @@ export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModal
               value={format}
               onChange={(e) => setFormat(e.target.value as ProviderFormat)}
             >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="gemini">Gemini</option>
-              <option value="ollama">Ollama</option>
+              {(Object.keys(FORMAT_LABELS) as ProviderFormat[]).map((f) => (
+                <option key={f} value={f}>{FORMAT_LABELS[f]}</option>
+              ))}
             </select>
           </div>
 
@@ -155,7 +148,7 @@ export function AddProviderModal({ isOpen, onClose, onSubmit }: AddProviderModal
             </label>
             <input
               className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
-              placeholder="e.g. gpt-4o"
+              placeholder="e.g. gpt-5.6-sol"
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />

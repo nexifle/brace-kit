@@ -15,6 +15,7 @@ import {
 } from '../presets.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 import { cleanSchema, convertToGeminiSchema } from '../utils/schema.ts';
+import { geminiThinkingBudget, geminiThinkingLevel } from '../utils/reasoning.ts';
 
 // ==================== Request Formatting ====================
 
@@ -173,16 +174,17 @@ export function formatGemini(
   if (p?.topK !== undefined) genConfig.topK = p.topK;
 
   // Add thinking config for Gemini thinking models when reasoning is enabled
-  // Gemini 3+ uses thinkingLevel, Gemini 2.5 uses thinkingBudget
+  // Gemini 3+ uses thinkingLevel, Gemini 2.5 uses thinkingBudget.
+  // Explicit modelParameters (settings) win; otherwise the composer reasoningLevel.
   if (shouldEnableReasoning) {
     if (isGemini3Model(model)) {
       genConfig.thinkingConfig = {
-        thinkingLevel: p?.thinkingLevel ?? 'high',
+        thinkingLevel: p?.thinkingLevel ?? geminiThinkingLevel(options.reasoningLevel) ?? 'high',
         includeThoughts: true,
       };
     } else {
       genConfig.thinkingConfig = {
-        thinkingBudget: p?.thinkingBudget ?? 24576,
+        thinkingBudget: p?.thinkingBudget ?? geminiThinkingBudget(options.reasoningLevel),
         includeThoughts: true,
       };
     }

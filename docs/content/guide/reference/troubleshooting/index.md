@@ -174,8 +174,8 @@ Solutions to common problems with BraceKit.
 **If the AI fails to generate an image:**
 
 1. **Check model support:** Only certain models support image generation:
-   - xAI: Grok-2-image
-   - Google: Imagen models
+   - xAI: grok-imagine-image, grok-imagine-image-pro
+   - Google: gemini-3-pro-image, gemini-3.1-flash-image
 2. **Check API access:** Image generation may require higher API access
 3. **Try a simpler prompt:** Complex prompts may fail
 

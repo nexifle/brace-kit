@@ -13,7 +13,7 @@ import {
 import { createThinkTagParser } from '../../providers/utils/thinkTagParser.ts';
 import type { Message, MCPTool, ProviderConfig, ToolCall, StreamingBufferEntry } from '../../types';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
-import { getFriendlyErrorMessage } from '../utils/errors';
+import { getFriendlyErrorMessage, isThinkingParamError } from '../utils/errors';
 import {
   createStreamingService,
   type StreamingService,
@@ -180,15 +180,44 @@ export function createChatService(): ChatService {
         }
 
         // Format and send request
-        const { url, options: fetchOptions } = formatRequest(
-          provider,
-          messages,
-          tools || [],
-          options || {}
-        );
-        fetchOptions.signal = abortController.signal;
+        const buildFetchOptions = (opts: ChatOptions) => {
+          const { url: u, options: o } = formatRequest(provider, messages, tools || [], opts);
+          o.signal = abortController.signal;
+          return { url: u, options: o };
+        };
 
-        const response = await fetch(url, fetchOptions);
+        let { url, options: fetchOptions } = buildFetchOptions(options || {});
+        let response = await fetch(url, fetchOptions);
+
+        // Graceful fallback: some OpenAI/Anthropic/Gemini-compatible endpoints
+        // reject thinking params (reasoning_effort, adaptive thinking,
+        // thinkingLevel/budget…). Retry once without them instead of failing.
+        // Reasoning display filtering still uses the ORIGINAL options, so the
+        // model's reasoning chunks (if any) keep showing.
+        if (!response.ok) {
+          let probeBody = '';
+          try {
+            probeBody = await response.clone().text();
+          } catch {
+            probeBody = '';
+          }
+          if (isThinkingParamError(response.status, probeBody)) {
+            const fallbackOptions: ChatOptions = {
+              ...(options || {}),
+              enableReasoning: false,
+              reasoningLevel: undefined,
+              // A clean retry: no thinking params at all, including provider
+              // defaults like DeepSeek's `thinking: {type:'disabled'}`.
+              omitThinkingParams: true,
+            };
+            const fb = buildFetchOptions(fallbackOptions);
+            const retry = await fetch(fb.url, fb.options);
+            if (retry.ok) {
+              response = retry;
+              console.info('[chat.service] Provider rejected thinking params — retried request without them.');
+            }
+          }
+        }
 
         if (!response.ok) {
           const error = await getFriendlyErrorMessage(response);
@@ -198,7 +227,13 @@ export function createChatService(): ChatService {
 
         // Handle non-streaming
         if (options?.stream === false) {
-          const data = (await response.json()) as Record<string, unknown>;
+          const raw = (await response.json()) as Record<string, unknown>;
+          // Some OpenAI-compatible gateways (OpenRouter wrapped mode) return
+          // {"data": {…}, "success": true} — unwrap before parsing.
+          const data =
+            raw && typeof raw === 'object' && raw.data && typeof raw.data === 'object'
+              ? (raw.data as Record<string, unknown>)
+              : raw;
           const result = streamingService.buildNonStreamingResponse(data, provider);
 
           // Convert tool_calls to ToolCall format if present
@@ -264,7 +299,7 @@ export function createChatService(): ChatService {
       const reasoningSignatureChunks: string[] = [];
       const toolCalls: ToolCallFragment[] = [];
       const images: Array<{ mimeType: string; data: string }> = [];
-      let currentToolCall: ToolCallFragment | null = null;
+      let currentToolCall: ToolCallFragment | undefined = undefined;
       let groundingMetadata: unknown = null;
       let tokenUsage: TokenUsage | undefined;
       // Track whether any content chunks have been sent to the frontend.
@@ -333,6 +368,7 @@ export function createChatService(): ChatService {
             if (chunk.type === 'tool_call_start') {
               currentToolCall = {
                 id: chunk.id,
+                index: chunk.index,
                 name: chunk.name,
                 arguments: '',
               };
@@ -340,13 +376,23 @@ export function createChatService(): ChatService {
             } else if (chunk.name) {
               currentToolCall = {
                 id: chunk.id || `tc_${Date.now()}`,
+                index: chunk.index,
                 name: chunk.name,
                 arguments: chunk.arguments || '',
               };
               toolCalls.push(currentToolCall);
             }
-          } else if (chunk.type === 'tool_call_delta' && currentToolCall) {
-            currentToolCall.arguments += chunk.content || '';
+          } else if (chunk.type === 'tool_call_delta') {
+            // Route argument fragments to the right in-flight call. OpenAI-
+            // compatible streams interleave deltas for parallel tool calls, so
+            // match by id first, then by index (continuation deltas only carry
+            // an index); fall back to the last-started call.
+            let dest = chunk.id ? toolCalls.find((t) => t.id === chunk.id) : undefined;
+            if (!dest && chunk.index !== undefined) {
+              dest = [...toolCalls].reverse().find((t) => t.index === chunk.index);
+            }
+            if (!dest) dest = currentToolCall;
+            if (dest) dest.arguments += chunk.content || '';
           } else if (chunk.type === 'grounding_metadata') {
             groundingMetadata = chunk.groundingMetadata;
           } else if (chunk.type === 'usage') {

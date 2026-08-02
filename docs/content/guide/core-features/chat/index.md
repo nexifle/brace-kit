@@ -89,11 +89,29 @@ Click the header to expand/collapse the reasoning section.
 
 ### Enabling Reasoning Mode
 
-1. Click the brain icon (🧠) in the toolbar
-2. Send your message
-3. The model will show its thinking process
+1. Click the brain icon (🧠) in the toolbar — this opens the **Thinking & Reasoning** popover
+2. Toggle **Extended thinking** on with the switch
+3. (Optional) Pick an **effort level** — Minimal / Low / Medium / High / Max (the available levels depend on the provider/model)
+4. Send your message
+5. The model will show its thinking process
 
-> **Note:** Reasoning mode only works with supported models (Claude with thinking, DeepSeek R1, Gemini thinking models, Ollama with think mode).
+The effort level maps per provider:
+
+| Provider | Parameter | Levels |
+|----------|-----------|--------|
+| OpenAI (gpt-5.x) | `reasoning_effort` | minimal / low / medium / high |
+| Anthropic (Claude 4.6+, 5.x) | `thinking.type: "adaptive"` + `effort` | low / medium / high (max on Opus) |
+| Anthropic (Claude ≤4.5) | `thinking.type: "enabled"` + `budget_tokens` | level → token budget |
+| Gemini 3+ | `thinkingConfig.thinkingLevel` | minimal / low / medium / high |
+| Gemini 2.5 | `thinkingConfig.thinkingBudget` | level → token budget |
+| xAI (Grok 4.x) | `reasoning_effort` | low / medium / high |
+| DeepSeek (V4) | `thinking` + `reasoning_effort` | low / medium / high / max |
+| Groq (gpt-oss, kimi-k2) | `reasoning_effort` | minimal / low / medium / high |
+| Ollama | `think: true` | on / off only |
+
+> **Note:** Reasoning mode only works with supported models (Claude with thinking, DeepSeek V4, Gemini thinking models, Ollama with think mode).
+>
+> **Graceful fallback:** OpenAI/Anthropic/Gemini-compatible custom endpoints that reject thinking parameters (e.g. a proxy that doesn't understand `reasoning_effort`) get an automatic retry without them, so your request still succeeds.
 
 ## Message Actions
 

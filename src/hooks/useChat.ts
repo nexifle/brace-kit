@@ -8,9 +8,10 @@
 
 import { useCallback, useRef } from 'react';
 import { useStore } from '../store/index.ts';
-import type { Message, Attachment, APIMessage, PageContext, SelectedText, ToolCall } from '../types/index.ts';
+import type { Message, Attachment, APIMessage, PageContext, SelectedText, ToolCall, ReasoningLevel } from '../types/index.ts';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import { saveConversationMessages } from '../utils/conversationDB.ts';
+import { isGeminiImageModel, isXAIImageModel } from '../providers';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
@@ -60,14 +61,16 @@ export async function generateConversationTitle(targetConvId?: string, silent = 
 
   try {
     const currentModel = currentState.providerConfig.model || '';
-    const isGeminiImg = currentModel.startsWith('gemini-2.0-flash-exp-image');
+    const isGeminiImg = isGeminiImageModel(currentModel);
     const isXAIImg =
-      currentState.providerConfig.providerId === 'xai' && currentModel.startsWith('grok-2-image');
+      currentState.providerConfig.providerId === 'xai' && isXAIImageModel(currentModel);
 
+    // Image-generation models can't be used for title generation, so fall back
+    // to a current text-capable model from the same provider.
     const titleProviderConfig = isGeminiImg
-      ? { ...currentState.providerConfig, model: 'gemini-2.5-flash-lite' }
+      ? { ...currentState.providerConfig, model: 'gemini-3.6-flash' }
       : isXAIImg
-        ? { ...currentState.providerConfig, model: 'grok-4-1-fast-non-reasoning' }
+        ? { ...currentState.providerConfig, model: 'grok-4.5' }
         : currentState.providerConfig;
 
     const response = await chrome.runtime.sendMessage({
@@ -116,7 +119,7 @@ export function useChat() {
 
   const dispatchChatRequest = useCallback(async (
     apiMessages: APIMessage[],
-    opts?: { aspectRatio?: string; enableReasoning?: boolean }
+    opts?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }
   ) => {
     const currentState = useStore.getState();
     currentState.setIsStreaming(true);
@@ -142,6 +145,7 @@ export function useChat() {
     const chatOptions = getChatOptions({
       aspectRatio: (isXAIImg || isGeminiImg) ? opts?.aspectRatio : undefined,
       enableReasoning: opts?.enableReasoning,
+      reasoningLevel: opts?.reasoningLevel,
     });
 
     try {
@@ -193,7 +197,7 @@ export function useChat() {
     }
   }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions]);
 
-  const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean }) => {
+  const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
     const currentState = useStore.getState();
     const convId = currentState.activeConversationId;
     const isConvStreaming = convId ? !!currentState.streamingConversations[convId] : false;

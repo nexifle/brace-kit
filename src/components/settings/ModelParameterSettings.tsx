@@ -2,6 +2,7 @@ import { HelpCircleIcon } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { SUPPORTED_PARAMETERS } from '../../types/index.ts';
 import type { ModelParameters } from '../../types/index.ts';
+import { isAnthropicAdaptiveModel } from '../../providers/utils/reasoning.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/index.ts';
 
 // ==================== Helpers ====================
@@ -120,11 +121,16 @@ function NumberRow({
 export function ModelParameterSettings() {
   const store = useStore();
   const format = store.providerConfig.format;
+  const model = store.providerConfig.model || '';
   const params = store.providerConfig.modelParameters ?? {};
   const enableReasoning = store.enableReasoning;
   const supported = SUPPORTED_PARAMETERS[format];
 
   const isSupported = (key: keyof ModelParameters) => supported.includes(key);
+
+  // Claude 4.6+/5.x use adaptive thinking (effort), where a token budget has
+  // no effect — only offer the budget control for legacy (≤4.5) models.
+  const showThinkingBudget = isSupported('thinkingBudget') && !isAnthropicAdaptiveModel(model);
 
   // Update state immediately, save only when interaction ends (pointer up) to
   // avoid excessive chrome.storage writes during continuous slider drags.
@@ -145,7 +151,7 @@ export function ModelParameterSettings() {
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 px-0.5 py-4">
         <div className="h-px bg-border/40 flex-1" />
-        <span className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Model Parameters</span>
+        <span className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">Model Parameters</span>
         <div className="h-px bg-border/40 flex-1" />
       </div>
 
@@ -259,8 +265,9 @@ export function ModelParameterSettings() {
         </div>
       )}
 
-      {/* Thinking Budget — only when reasoning is enabled */}
-      {isSupported('thinkingBudget') && enableReasoning && (
+      {/* Thinking Budget — only when reasoning is enabled and the model
+          actually uses a token budget (not adaptive-effort models) */}
+      {showThinkingBudget && enableReasoning && (
         <div className="animate-in fade-in slide-in-from-top-1 duration-200">
           <NumberRow
             label="Thinking Budget (tokens)"

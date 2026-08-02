@@ -192,6 +192,16 @@ export interface ModelParameters {
 }
 
 /**
+ * Thinking/reasoning effort level picked from the composer reasoning popover.
+ * Provider-specific mapping: OpenAI `reasoning_effort`, Anthropic adaptive `effort`
+ * (or a budget for ≤4.5 models), Gemini `thinkingConfig.thinkingLevel`/budget,
+ * xAI/Groq `reasoning_effort`, DeepSeek `reasoning_effort` + `thinking`.
+ * 'max' is only natively supported by some providers (DeepSeek, Claude Opus) —
+ * others clamp it to 'high'.
+ */
+export type ReasoningLevel = 'minimal' | 'low' | 'medium' | 'high' | 'max';
+
+/**
  * Which ModelParameters are supported by each provider format.
  * Used by UI to conditionally render controls.
  */
@@ -316,6 +326,12 @@ export interface FileAttachment {
 export interface FetchedModelsCache {
   models: string[];
   fetchedAt: number;
+  /**
+   * Set when the last fetch attempt failed (e.g. the /models endpoint is not
+   * supported and returns 404). Used to back off instead of repeatedly
+   * hammering the endpoint. Cleared on the next successful fetch.
+   */
+  failedAt?: number;
 }
 
 // ==================== Security Settings ====================
@@ -403,6 +419,9 @@ export interface AppState {
 
   // Reasoning options
   enableReasoning: boolean;
+
+  // Thinking effort level (minimal/low/medium/high/max)
+  reasoningLevel: ReasoningLevel;
 
   // MCP options
   enableMCP: boolean;
@@ -505,6 +524,7 @@ export interface AppState {
   setEnableTools: (enabled: boolean) => void;
   setEnableGoogleSearch: (enabled: boolean) => void;
   setEnableReasoning: (enabled: boolean) => void;
+  setReasoningLevel: (level: ReasoningLevel) => void;
   setEnableGoogleSearchTool: (enabled: boolean) => void;
   setGoogleSearchApiKey: (key: string) => void;
   setGroqEnabledBuiltinTools: (tools: string[]) => void;
