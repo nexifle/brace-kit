@@ -55,6 +55,8 @@ export interface ToolbarState {
     highlightIndex: number;
     /** Flip the popover right-aligned when the toolbar sits near the viewport edge. */
     menuAlignRight: boolean;
+    /** Render the popover above the toolbar when it would overflow the bottom. */
+    menuAbove: boolean;
   };
   actions: QuickAction[];
 }
@@ -75,6 +77,7 @@ export interface ToolbarCallbacks {
   onProviderToggle: (e: Event, providerId: string) => void;
   onProviderMenuKeydown: (e: Event) => void;
   onProviderMenuHover: (rowIndex: number) => void;
+  onProviderMenuFocus: (rowIndex: number) => void;
   onModelSelect: (e: Event, providerId: string, model: string) => void;
 }
 
@@ -327,7 +330,7 @@ function providerSelectorTemplate(
       class="bk-action-btn bk-model-selector-btn"
       aria-label="Select AI Model"
       aria-expanded=${state.providerState.isOpen}
-      aria-haspopup="menu"
+      aria-haspopup="dialog"
       title="${displayText}"
       @click=${callbacks.onProviderMenuToggle}
     >
@@ -496,9 +499,9 @@ function providerMenuOverlayTemplate(
     <div class="bk-menu-overlay" @click=${callbacks.onProviderMenuClose} aria-hidden="true"></div>
     <div
       class="bk-menu bk-provider-menu"
-      role="menu"
+      role="dialog"
       aria-label="Select model"
-      style="top: 36px; ${ps.menuAlignRight ? 'right: 0; left: auto;' : 'left: 0;'}"
+      style="${ps.menuAbove ? 'bottom: 38px; top: auto;' : 'top: 36px;'} ${ps.menuAlignRight ? 'right: 0; left: auto;' : 'left: 0;'}"
       @click=${(e: Event) => e.stopPropagation()}
     >
       <div class="bk-provider-menu-head">
@@ -571,7 +574,7 @@ function providerSectionTemplate(
       <button
         class="bk-provider-header"
         aria-expanded=${isExpanded}
-        aria-label="${provider.name} — ${provider.models.length} models"
+        aria-label="${provider.name} — ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}"
         @click=${(e: Event) => {
       e.stopPropagation();
       callbacks.onProviderToggle(e, provider.id);
@@ -641,7 +644,7 @@ function modelRowTemplate(
   return html`
     <button
       class="bk-menu-item bk-model-item ${isCurrent ? 'bk-model-item--active' : ''} ${isHighlight ? 'bk-model-item--highlight' : ''}"
-      role="menuitem"
+      aria-current=${isCurrent ? 'true' : 'false'}
       data-row-index=${rowIndex}
       title="${model}"
       aria-label="${model}"
@@ -653,6 +656,11 @@ function modelRowTemplate(
       if (isHighlight) return;
       e.stopPropagation();
       callbacks.onProviderMenuHover(rowIndex);
+    }}
+      @focus=${(e: Event) => {
+      if (isHighlight) return;
+      e.stopPropagation();
+      callbacks.onProviderMenuFocus(rowIndex);
     }}
     >
       <span class="bk-menu-item-icon" aria-hidden="true">${isCurrent ? icons.check : ''}</span>

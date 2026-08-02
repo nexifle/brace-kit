@@ -29,6 +29,7 @@ function makeState(overrides: Partial<ToolbarState['providerState']> = {}): Tool
       expandedProviderId: 'openai',
       highlightIndex: 0,
       menuAlignRight: false,
+      menuAbove: false,
       ...overrides,
     },
     actions: [],

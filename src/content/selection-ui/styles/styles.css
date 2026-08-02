@@ -1080,6 +1080,17 @@
   color: var(--bk-primary);
 }
 
+/* Light theme: --bk-primary on --bk-accent measures ~4.4:1, just under AA.
+   Darken the text slightly (oklch mix toward black) to clear 4.5:1.
+   Dark theme already passes and stays untouched. */
+:host([data-bk-theme="light"]) .bk-model-item--highlight {
+  color: color-mix(in oklab, var(--bk-primary) 88%, black);
+}
+
+:host([data-bk-theme="light"]) .bk-model-item--highlight .bk-menu-item-icon {
+  color: color-mix(in oklab, var(--bk-primary) 88%, black);
+}
+
 .bk-fuzzy-hl {
   /* Tight highlight: no horizontal padding, otherwise each marked character
      gains extra space and the run reads as wide letter-spacing. */
@@ -1087,6 +1098,10 @@
   color: var(--bk-primary);
   border-radius: 1px;
   font-weight: 700;
+}
+
+:host([data-bk-theme="light"]) .bk-fuzzy-hl {
+  color: color-mix(in oklab, var(--bk-primary) 88%, black);
 }
 
 /* Empty search state */

@@ -61,6 +61,7 @@ export function createFloatingToolbar(
       expandedProviderId: null,
       highlightIndex: 0,
       menuAlignRight: false,
+      menuAbove: false,
     },
     actions: [...QUICK_ACTIONS],
   };
@@ -262,7 +263,7 @@ export function createFloatingToolbar(
       state = {
         ...state,
         menuState: { isOpen: false, selectedCategory: null },
-        providerState: { ...state.providerState, isOpen: false }
+        providerState: closedProviderState()
       };
       onActionClick(actionId);
     },
@@ -297,7 +298,7 @@ export function createFloatingToolbar(
           ...state.menuState,
           isOpen: !state.menuState.isOpen,
         },
-        providerState: { ...state.providerState, isOpen: false },
+        providerState: closedProviderState(),
       };
       renderToolbar();
     },
@@ -315,13 +316,16 @@ export function createFloatingToolbar(
       e.stopPropagation();
       const opening = !state.providerState.isOpen;
       let menuAlignRight = state.providerState.menuAlignRight;
+      let menuAbove = state.providerState.menuAbove;
       if (opening) {
         // Flip the popover right-aligned when the toolbar sits near the right
-        // edge of the viewport (320px-wide menu would otherwise overflow).
+        // edge of the viewport, and above the toolbar when it would overflow
+        // the bottom (320px-wide, ~430px-tall menu).
         const headerEl = container.querySelector('.bk-toolbar-header') as HTMLElement | null;
         const rect = headerEl?.getBoundingClientRect();
-        if (rect && rect.left + 340 > window.innerWidth - 16) {
-          menuAlignRight = true;
+        if (rect) {
+          if (rect.left + 340 > window.innerWidth - 16) menuAlignRight = true;
+          if (rect.top + 470 > window.innerHeight - 12) menuAbove = true;
         }
       }
       state = {
@@ -333,26 +337,24 @@ export function createFloatingToolbar(
           expandedProviderId: opening ? state.providerState.currentProvider : state.providerState.expandedProviderId,
           highlightIndex: 0,
           menuAlignRight,
+          menuAbove,
         },
         menuState: { isOpen: false, selectedCategory: null },
         isTranslateMode: false, // Close translate mode too if open
       };
       renderToolbar();
       if (opening) focusProviderSearch();
+      else focusProviderTrigger();
     },
 
     onProviderMenuClose: (e?: Event) => {
       e?.stopPropagation();
       state = {
         ...state,
-        providerState: {
-          ...state.providerState,
-          isOpen: false,
-          search: '',
-          highlightIndex: 0,
-        },
+        providerState: closedProviderState(),
       };
       renderToolbar();
+      focusProviderTrigger();
     },
 
     onProviderSearchInput: (e: Event) => {
@@ -433,6 +435,17 @@ export function createFloatingToolbar(
       renderToolbar();
     },
 
+    // Sync the keyboard cursor with the focused row so Tab + Enter selects
+    // the same model as Space (native button activation).
+    onProviderMenuFocus: (rowIndex: number) => {
+      if (rowIndex === state.providerState.highlightIndex) return;
+      state = {
+        ...state,
+        providerState: { ...state.providerState, highlightIndex: rowIndex },
+      };
+      renderToolbar();
+    },
+
     onModelSelect: async (e: Event, providerId: string, model: string) => {
       e.stopPropagation();
 
@@ -440,13 +453,13 @@ export function createFloatingToolbar(
       state = {
         ...state,
         providerState: {
-          ...state.providerState,
-          isOpen: false,
+          ...closedProviderState(),
           currentProvider: providerId,
           currentModel: model,
         },
       };
       renderToolbar();
+      focusProviderTrigger();
 
       // Save global provider selection to chrome.storage.local
       try {
@@ -523,6 +536,21 @@ export function createFloatingToolbar(
     });
   }
 
+  // Return keyboard focus to the model-selector trigger after the menu closes.
+  function focusProviderTrigger() {
+    queueMicrotask(() => {
+      const trigger = container.querySelector<HTMLElement>('.bk-model-selector-btn');
+      if (trigger && document.activeElement !== trigger) trigger.focus();
+    });
+  }
+
+  // Closed provider-menu state: every close path resets search + cursor so the
+  // next open starts clean (open itself also resets them, this keeps the state
+  // consistent between close and open).
+  function closedProviderState(): ToolbarState['providerState'] {
+    return { ...state.providerState, isOpen: false, search: '', highlightIndex: 0 };
+  }
+
   // Keep the keyboard cursor visible inside the scrollable list.
   function scrollHighlightedRowIntoView() {
     queueMicrotask(() => {
@@ -563,7 +591,7 @@ export function createFloatingToolbar(
       state = {
         ...state,
         menuState: { isOpen: false, selectedCategory: null },
-        providerState: { ...state.providerState, isOpen: false }
+        providerState: closedProviderState()
       };
       renderToolbar();
       return;
@@ -598,7 +626,7 @@ export function createFloatingToolbar(
         state = {
           ...state,
           menuState: { isOpen: false, selectedCategory: null },
-          providerState: { ...state.providerState, isOpen: false }
+          providerState: closedProviderState()
         };
         renderToolbar();
         return;
