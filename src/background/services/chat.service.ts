@@ -206,6 +206,9 @@ export function createChatService(): ChatService {
               ...(options || {}),
               enableReasoning: false,
               reasoningLevel: undefined,
+              // A clean retry: no thinking params at all, including provider
+              // defaults like DeepSeek's `thinking: {type:'disabled'}`.
+              omitThinkingParams: true,
             };
             const fb = buildFetchOptions(fallbackOptions);
             const retry = await fetch(fb.url, fb.options);
@@ -290,7 +293,7 @@ export function createChatService(): ChatService {
       const reasoningSignatureChunks: string[] = [];
       const toolCalls: ToolCallFragment[] = [];
       const images: Array<{ mimeType: string; data: string }> = [];
-      let currentToolCall: ToolCallFragment | null = null;
+      let currentToolCall: ToolCallFragment | undefined = undefined;
       let groundingMetadata: unknown = null;
       let tokenUsage: TokenUsage | undefined;
       // Track whether any content chunks have been sent to the frontend.
@@ -359,6 +362,7 @@ export function createChatService(): ChatService {
             if (chunk.type === 'tool_call_start') {
               currentToolCall = {
                 id: chunk.id,
+                index: chunk.index,
                 name: chunk.name,
                 arguments: '',
               };
@@ -366,6 +370,7 @@ export function createChatService(): ChatService {
             } else if (chunk.name) {
               currentToolCall = {
                 id: chunk.id || `tc_${Date.now()}`,
+                index: chunk.index,
                 name: chunk.name,
                 arguments: chunk.arguments || '',
               };
@@ -374,11 +379,13 @@ export function createChatService(): ChatService {
           } else if (chunk.type === 'tool_call_delta') {
             // Route argument fragments to the right in-flight call. OpenAI-
             // compatible streams interleave deltas for parallel tool calls, so
-            // match by id when present; fall back to the last-started call.
-            const target = chunk.id
-              ? toolCalls.find((t) => t.id === chunk.id)
-              : undefined;
-            const dest = target ?? currentToolCall;
+            // match by id first, then by index (continuation deltas only carry
+            // an index); fall back to the last-started call.
+            let dest = chunk.id ? toolCalls.find((t) => t.id === chunk.id) : undefined;
+            if (!dest && chunk.index !== undefined) {
+              dest = [...toolCalls].reverse().find((t) => t.index === chunk.index);
+            }
+            if (!dest) dest = currentToolCall;
             if (dest) dest.arguments += chunk.content || '';
           } else if (chunk.type === 'grounding_metadata') {
             groundingMetadata = chunk.groundingMetadata;

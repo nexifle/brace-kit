@@ -55,7 +55,6 @@ Settings are saved automatically as you type.
 | **grok-imagine-image** | Image generation | Standard quality |
 | **grok-imagine-image-pro** | Image generation | Higher quality |
 | **grok-imagine-image-quality** | Image generation | Quality-tuned |
-| **grok-imagine-video-1.5** | Video generation | Latest video model |
 
 ## Features
 

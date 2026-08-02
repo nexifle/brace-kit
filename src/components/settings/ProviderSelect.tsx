@@ -16,7 +16,7 @@ interface ProviderSelectProps {
 }
 
 // Placement helpers live in src/utils/popover.ts (shared with the chat
-// ComboPopover) — re-exported here so existing imports/tests keep working.
+// composer picker) — re-exported here so existing imports/tests keep working.
 import {
   computePopoverPlacement,
   POPOVER_MIN_HEIGHT,
@@ -239,7 +239,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
             <span className={`text-sm font-medium truncate leading-tight ${isActive ? 'text-primary' : 'text-foreground'}`}>
               {p.name}
             </span>
-            <span className="text-2xs text-muted-foreground/70 truncate">
+            <span className="text-2xs text-muted-foreground truncate">
               {isActive && providerConfig.model
                 ? `Using ${providerConfig.model}`
                 : FORMAT_LABELS[p.format]}
@@ -298,7 +298,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
           aria-controls="provider-select-listbox"
           className={`group flex-1 flex items-center gap-2.5 h-12 px-3 rounded-md border text-left transition-all duration-200 select-none
             ${open
-              ? 'border-primary/50 bg-card shadow-[0_0_0_3px_theme(colors.primary/12%)]'
+              ? 'border-primary/50 bg-card ring-2 ring-primary/15'
               : 'border-border bg-card hover:border-primary/30 hover:shadow-md hover:-translate-y-px'
             } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 active:scale-[0.995]`}
           title={current ? `Switch provider — currently ${current.name}` : 'Select a provider'}
@@ -309,7 +309,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
             <span className="text-sm font-semibold text-foreground truncate leading-tight">
               {current?.name ?? 'Select a provider'}
             </span>
-            <span className="text-2xs uppercase tracking-wider text-muted-foreground/70 truncate">
+            <span className="text-2xs uppercase tracking-wider text-muted-foreground truncate">
               {current ? FORMAT_LABELS[current.format] : 'No provider selected'}
             </span>
           </span>
@@ -395,7 +395,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-2 mt-2 px-1.5 text-2xs text-muted-foreground/40">
+                <div className="flex items-center gap-2 mt-2 px-1.5 text-2xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Kbd>↑</Kbd>
                     <Kbd>↓</Kbd>
@@ -421,7 +421,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
                     <SearchXIcon size={20} className="text-muted-foreground/40" />
                     <div className="flex flex-col gap-0.5">
                       <p className="text-sm font-medium text-foreground">No providers found</p>
-                      <p className="text-2xs text-muted-foreground/60">
+                      <p className="text-2xs text-muted-foreground">
                         Try a different search, or add your own provider
                       </p>
                     </div>

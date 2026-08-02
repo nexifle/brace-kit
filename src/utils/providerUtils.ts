@@ -45,6 +45,10 @@ export function isModelFetchCacheFresh(
   failureTtl = 300000
 ): boolean {
   if (force || !cached) return false;
-  const age = now - cached.fetchedAt;
+  // Age from the most recent event (a failure must reset the clock even if a
+  // previous success left an old fetchedAt behind).
+  const age = now - (cached.failedAt !== undefined
+    ? Math.max(cached.fetchedAt, cached.failedAt)
+    : cached.fetchedAt);
   return age < (cached.failedAt !== undefined ? failureTtl : successTtl);
 }

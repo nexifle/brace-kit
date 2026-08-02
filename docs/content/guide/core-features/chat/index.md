@@ -91,7 +91,7 @@ Click the header to expand/collapse the reasoning section.
 
 1. Click the brain icon (🧠) in the toolbar — this opens the **Thinking & Reasoning** popover
 2. Toggle **Extended thinking** on with the switch
-3. (Optional) Pick an **effort level** — Minimal / Low / Medium / High / Max. The popover shows exactly which API parameter will be sent (e.g. `reasoning_effort`, `thinking: { type: "adaptive", effort }`, `thinkingConfig.thinkingLevel`, `budget_tokens`)
+3. (Optional) Pick an **effort level** — Minimal / Low / Medium / High / Max (the available levels depend on the provider/model)
 4. Send your message
 5. The model will show its thinking process
 

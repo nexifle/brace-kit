@@ -263,7 +263,7 @@ export function InputArea() {
         {/* Image Options Row */}
         {isImageGenerationModel && (
           <div className="flex items-center gap-2 px-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
-            <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">Aspect Ratio</label>
+            <label className="text-2xs font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">Aspect Ratio</label>
             <select
               className="text-xs bg-muted/40 border border-input rounded-md px-2 py-0.5 cursor-pointer outline-none transition-all hover:bg-muted/60 focus:ring-1 focus:ring-ring disabled:opacity-50 text-foreground"
               value={imageAspectRatio}

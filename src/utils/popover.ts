@@ -1,6 +1,6 @@
 /**
  * Popover placement helpers — shared by the settings ProviderSelect and the
- * chat composer selects (ComboPopover). Pure math, unit-tested.
+ * chat composer picker (ComposerPicker). Pure math, unit-tested.
  */
 
 /** Minimum usable popover height before we flip to the other side */

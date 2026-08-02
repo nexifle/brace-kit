@@ -67,20 +67,20 @@ export async function fetchAnthropicModels(
  * @param provider - Provider configuration with API key and model
  * @param messages - Conversation messages
  * @param tools - Available MCP tools
- * @param _options - Chat options including enableReasoning
+ * @param options - Chat options including enableReasoning / reasoningLevel
  * @returns Request configuration with URL and fetch options
  */
 export function formatAnthropic(
   provider: { apiUrl: string; apiKey?: string; model?: string; defaultModel: string },
   messages: Message[],
   tools: MCPTool[],
-  _options: ChatOptions
+  options: ChatOptions
 ): RequestConfig {
   const model = provider.model || provider.defaultModel;
   let system = '';
   const filtered: Record<string, unknown>[] = [];
 
-  const shouldEnableReasoning = !!_options.enableReasoning;
+  const shouldEnableReasoning = !!options.enableReasoning;
 
   // First pass: batch consecutive tool results together
   // Anthropic expects all tool results in a single user message
@@ -227,12 +227,12 @@ export function formatAnthropic(
     }
   }
 
-  const p = _options.modelParameters;
+  const p = options.modelParameters;
 
   const body: Record<string, unknown> = {
     model,
     max_tokens: p?.maxTokens ?? 8192,
-    stream: _options.stream !== false,
+    stream: options.stream !== false,
     messages: filtered,
   };
 
@@ -248,7 +248,7 @@ export function formatAnthropic(
   // Claude 4.6+ / 5.x use adaptive thinking (effort level); older models (≤4.5)
   // use the legacy `enabled` + `budget_tokens` form.
   if (shouldEnableReasoning) {
-    body.thinking = anthropicThinkingBlock(model, _options.reasoningLevel, p?.thinkingBudget);
+    body.thinking = anthropicThinkingBlock(model, options.reasoningLevel, p?.thinkingBudget);
   }
 
   if (system) body.system = system;

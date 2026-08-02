@@ -185,7 +185,7 @@ export async function* parseStream(
  *
  * Automatically selects the correct fetcher based on provider format:
  * - openai: OpenAI /models endpoint
- * - anthropic: Returns static model list
+ * - anthropic: live /v1/models for the official preset, empty for custom
  * - gemini: Gemini /models endpoint
  *
  * @param provider - Provider configuration with API key

@@ -29,6 +29,13 @@ export interface ChatOptions {
    * Unsupported by the endpoint → the background service retries without it.
    */
   reasoningLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'max';
+  /**
+   * Suppress every thinking-related request parameter, even provider defaults
+   * (e.g. DeepSeek's `thinking: {type:'disabled'}`). Used by the graceful
+   * fallback retry when an endpoint rejected the thinking params — the retry
+   * must be a clean request with no thinking footprint at all.
+   */
+  omitThinkingParams?: boolean;
   /** Model generation parameters forwarded from ProviderConfig */
   modelParameters?: ModelParameters;
   /** Context window size (Ollama-specific) */

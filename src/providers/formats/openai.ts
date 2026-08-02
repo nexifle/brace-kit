@@ -28,7 +28,7 @@ import {
  * @param provider - Provider configuration with API key and model
  * @param messages - Conversation messages
  * @param tools - Available MCP tools
- * @param _options - Chat options (unused for OpenAI)
+ * @param options - Chat options (thinking params, stream, model parameters, …)
  * @returns Request configuration with URL and fetch options
  */
 export function formatOpenAI(
@@ -43,12 +43,12 @@ export function formatOpenAI(
   },
   messages: Message[],
   tools: MCPTool[],
-  _options: ChatOptions
+  options: ChatOptions
 ): RequestConfig {
   const model = provider.model || provider.defaultModel;
   const supportsReasoningContent = provider.supportsReasoningContent === true;
   const providerId = provider.id ?? '';
-  const shouldEnableReasoning = !!_options.enableReasoning;
+  const shouldEnableReasoning = !!options.enableReasoning;
 
   // Transform messages to OpenAI format
   const processedMessages = messages.map((msg) => {
@@ -103,11 +103,11 @@ export function formatOpenAI(
   const body: Record<string, unknown> = {
     model,
     messages: processedMessages,
-    stream: _options.stream !== false,
+    stream: options.stream !== false,
   };
 
   // Apply optional generation parameters (only if set by user)
-  const p = _options.modelParameters;
+  const p = options.modelParameters;
   if (p?.temperature !== undefined) body.temperature = p.temperature;
   if (p?.maxTokens !== undefined) body.max_tokens = p.maxTokens;
   if (p?.topP !== undefined) body.top_p = p.topP;
@@ -115,14 +115,18 @@ export function formatOpenAI(
   // Thinking / reasoning parameters.
   // OpenAI-compatible reasoning models take `reasoning_effort`. DeepSeek V4
   // also exposes a `thinking` toggle that defaults to ON server-side, so we
-  // explicitly disable it when the user has reasoning turned off.
-  if (shouldEnableReasoning) {
+  // explicitly disable it when the user has reasoning turned off. When
+  // omitThinkingParams is set (graceful-fallback retry) leave no thinking
+  // footprint at all — DeepSeek's disabled toggle included.
+  if (options.omitThinkingParams) {
+    // no thinking params
+  } else if (shouldEnableReasoning) {
     const effort =
       providerId === 'xai'
-        ? xaiReasoningEffort(_options.reasoningLevel)
+        ? xaiReasoningEffort(options.reasoningLevel)
         : providerId === 'deepseek'
-          ? deepseekReasoningEffort(_options.reasoningLevel)
-          : openaiReasoningEffort(_options.reasoningLevel);
+          ? deepseekReasoningEffort(options.reasoningLevel)
+          : openaiReasoningEffort(options.reasoningLevel);
     if (effort) body.reasoning_effort = effort;
     if (providerId === 'deepseek') {
       body.thinking = { type: 'enabled' };
@@ -145,10 +149,10 @@ export function formatOpenAI(
   }
 
   // Groq built-in tools via compound_custom
-  if (_options.groqBuiltinTools && _options.groqBuiltinTools.length > 0) {
+  if (options.groqBuiltinTools && options.groqBuiltinTools.length > 0) {
     body.compound_custom = {
       tools: {
-        enabled_tools: _options.groqBuiltinTools,
+        enabled_tools: options.groqBuiltinTools,
       },
     };
   }
@@ -254,19 +258,21 @@ export async function* parseOpenAIStream(
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const id = tc.id;
+              const index = tc.index;
               const name = tc.function?.name;
               const args = tc.function?.arguments;
               if (name) {
                 // First delta for this tool call: start a fragment. Some
                 // providers send the complete arguments in this same chunk.
-                yield { type: 'tool_call_start', id, name };
-                if (args) yield { type: 'tool_call_delta', id, content: args };
+                yield { type: 'tool_call_start', id, index, name };
+                if (args) yield { type: 'tool_call_delta', id, index, content: args };
               } else if (args) {
                 // Continuation delta: partial JSON fragment for an in-flight
-                // call. Must be routed to the right fragment by id — the old
+                // call. Carry the index so the caller can route it to the
+                // right call when parallel tool calls interleave — the old
                 // single 'tool_call' emission dropped these entirely, so the
                 // MCP server received empty {} arguments.
-                yield { type: 'tool_call_delta', id, content: args };
+                yield { type: 'tool_call_delta', id, index, content: args };
               }
             }
           }

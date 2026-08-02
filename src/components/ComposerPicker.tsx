@@ -137,7 +137,7 @@ export function ComposerPicker() {
               <span className={`text-sm font-medium truncate leading-tight ${isActive ? 'text-primary' : 'text-foreground'}`}>
                 {p.name}
               </span>
-              <span className="text-2xs text-muted-foreground/70 truncate leading-tight">
+              <span className="text-2xs text-muted-foreground truncate leading-tight">
                 {isActive && providerConfig.model ? `Using ${providerConfig.model}` : FORMAT_LABELS[p.format]}
               </span>
             </span>
@@ -189,8 +189,8 @@ export function ComposerPicker() {
         selectable: false,
         render: () => (
           <div className="flex items-center gap-2 px-2 pt-2 pb-0.5">
-            <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/50">Built-in</span>
-            <span className="text-2xs tabular-nums text-muted-foreground/30">{restBuiltIns.length}</span>
+            <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground">Built-in</span>
+            <span className="text-2xs tabular-nums text-muted-foreground">{restBuiltIns.length}</span>
             <span className="flex-1 h-px bg-border/50" />
           </div>
         ),
@@ -205,8 +205,8 @@ export function ComposerPicker() {
         selectable: false,
         render: () => (
           <div className="flex items-center gap-2 px-2 pt-2 pb-0.5">
-            <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/50">Custom</span>
-            <span className="text-2xs tabular-nums text-muted-foreground/30">{restCustoms.length}</span>
+            <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground">Custom</span>
+            <span className="text-2xs tabular-nums text-muted-foreground">{restCustoms.length}</span>
             <span className="flex-1 h-px bg-border/50" />
           </div>
         ),
@@ -316,7 +316,7 @@ export function ComposerPicker() {
             <span className="shrink-0 text-muted-foreground/40">·</span>
             <span
               className={`min-w-0 truncate text-[11px] leading-tight ${
-                currentModel ? 'font-mono text-muted-foreground' : 'italic text-muted-foreground/60'
+                currentModel ? 'font-mono text-muted-foreground' : 'italic text-muted-foreground'
               }`}
             >
               {currentModel || 'select model'}

@@ -103,7 +103,9 @@ export function useProvider() {
         console.warn('[models] fetch failed, backing off:', result.error);
         state.setFetchedModels(providerId, {
           models: cached?.models ?? [],
-          fetchedAt: cached?.fetchedAt ?? now,
+          // Reset fetchedAt too: a failure after a prior success must still
+          // start the backoff clock (age is measured from the later event).
+          fetchedAt: now,
           failedAt: now,
         });
         return;
@@ -131,7 +133,7 @@ export function useProvider() {
       console.warn('Failed to fetch models:', e);
       state.setFetchedModels(providerId, {
         models: cached?.models ?? [],
-        fetchedAt: cached?.fetchedAt ?? now,
+        fetchedAt: now,
         failedAt: now,
       });
     } finally {

@@ -55,13 +55,13 @@ The latest generation. The `gpt-5.6` alias routes to `gpt-5.6-sol`.
 
 ### Reasoning (Effort Levels)
 
-GPT-5.6 models support configurable reasoning effort: `none`, `low`, `medium`, `high`, `xhigh`, and `max`. The `gpt-5.6` alias routes to `gpt-5.6-sol`.
+GPT-5.x models support configurable reasoning effort: `minimal`, `low`, `medium`, and `high`. The `gpt-5.6` alias routes to `gpt-5.6-sol`.
 
 | Model | Reasoning Levels | Best For |
 |-------|------------------|----------|
-| **gpt-5.6-sol** | none → max | Complex professional work |
-| **gpt-5.6-terra** | none → max | Balanced intelligence & cost |
-| **gpt-5.6-luna** | none → max | Cost-sensitive, high volume |
+| **gpt-5.6-sol** | minimal → high | Complex professional work |
+| **gpt-5.6-terra** | minimal → high | Balanced intelligence & cost |
+| **gpt-5.6-luna** | minimal → high | Cost-sensitive, high volume |
 
 > **Note:** Model availability depends on your OpenAI account tier and API access. Some models may require higher tier access.
 

@@ -224,11 +224,13 @@ describe('OpenAI Format', () => {
       expect(results[0]).toEqual({
         type: 'tool_call_start',
         id: 'call_123',
+        index: 0,
         name: 'search',
       });
       expect(results[1]).toEqual({
         type: 'tool_call_delta',
         id: 'call_123',
+        index: 0,
         content: '{"query":"hello"}',
       });
     });
@@ -252,9 +254,9 @@ describe('OpenAI Format', () => {
       }
 
       expect(results).toHaveLength(3);
-      expect(results[0]).toEqual({ type: 'tool_call_start', id: 'call_1', name: 'tavily_search' });
-      expect(results[1]).toEqual({ type: 'tool_call_delta', id: 'call_1', content: '{"query":"bracekit"' });
-      expect(results[2]).toEqual({ type: 'tool_call_delta', id: 'call_1', content: '}' });
+      expect(results[0]).toEqual({ type: 'tool_call_start', id: 'call_1', index: 0, name: 'tavily_search' });
+      expect(results[1]).toEqual({ type: 'tool_call_delta', id: 'call_1', index: 0, content: '{"query":"bracekit"' });
+      expect(results[2]).toEqual({ type: 'tool_call_delta', id: 'call_1', index: 0, content: '}' });
 
       // Simulate the caller's merge: start + deltas concatenated → valid JSON
       const merged = (results[1].content as string) + (results[2].content as string);
@@ -494,6 +496,17 @@ describe('OpenAI Format', () => {
       const config = formatOpenAI(ds, [], [], { enableReasoning: false });
       const body = JSON.parse(config.options.body as string);
       expect(body.thinking).toEqual({ type: 'disabled' });
+    });
+
+    it('omitThinkingParams leaves no thinking footprint for DeepSeek (graceful-fallback retry)', () => {
+      const ds = { ...base, id: 'deepseek', model: 'deepseek-v4-pro', defaultModel: 'deepseek-v4-pro' };
+      const config = formatOpenAI(ds, [], [], {
+        enableReasoning: false,
+        omitThinkingParams: true,
+      });
+      const body = JSON.parse(config.options.body as string);
+      expect(body.thinking).toBeUndefined();
+      expect(body.reasoning_effort).toBeUndefined();
     });
 
     it('sends reasoning_effort for Groq and custom endpoints', () => {

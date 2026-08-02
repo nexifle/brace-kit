@@ -1,6 +1,4 @@
 import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-import { computePopoverPlacement } from '../../utils/popover.ts';
 import { cn } from '../../utils/cn.ts';
 import { SearchIcon, XIcon, SearchXIcon } from 'lucide-react';
 
@@ -10,7 +8,7 @@ import { SearchIcon, XIcon, SearchXIcon } from 'lucide-react';
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="min-w-4.5 h-4 px-1 inline-flex items-center justify-center rounded-sm border border-border bg-muted/70 font-mono text-[10px] leading-none text-muted-foreground/70 shadow-[0_1px_0_theme(colors.border)]">
+    <kbd className="min-w-4.5 h-4 px-1 inline-flex items-center justify-center rounded-sm border border-border bg-muted/70 font-mono text-[10px] leading-none text-muted-foreground">
       {children}
     </kbd>
   );
@@ -19,8 +17,8 @@ export function Kbd({ children }: { children: ReactNode }) {
 export function SectionLabel({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex items-center gap-2 px-2 pt-2 pb-0.5">
-      <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/50">{label}</span>
-      <span className="text-2xs tabular-nums text-muted-foreground/30">{count}</span>
+      <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="text-2xs tabular-nums text-muted-foreground">{count}</span>
       <span className="flex-1 h-px bg-border/50" />
     </div>
   );
@@ -158,7 +156,7 @@ export function ComboList<T>({
           )}
         </div>
         {showHints && (
-          <div className="flex items-center gap-2 mt-2 px-1.5 text-2xs text-muted-foreground/40">
+          <div className="flex items-center gap-2 mt-2 px-1.5 text-2xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>
@@ -183,7 +181,8 @@ export function ComboList<T>({
         id={listboxId}
         role="listbox"
         aria-label={ariaLabel}
-        className={cn('shrink basis-auto min-h-0 overflow-y-auto p-1.5', maxHeight && `max-h-[${maxHeight}px]`)}
+        style={maxHeight ? { maxHeight } : undefined}
+        className={cn('shrink basis-auto min-h-0 overflow-y-auto p-1.5')}
       >
         {!hasSelectable ? (
           emptyState ?? (
@@ -191,7 +190,7 @@ export function ComboList<T>({
               <SearchXIcon size={20} className="text-muted-foreground/40" />
               <div className="flex flex-col gap-0.5">
                 <p className="text-sm font-medium text-foreground">Nothing found</p>
-                <p className="text-2xs text-muted-foreground/60">Try a different search</p>
+                <p className="text-2xs text-muted-foreground">Try a different search</p>
               </div>
             </div>
           )
@@ -220,164 +219,5 @@ export function ComboList<T>({
         )}
       </div>
     </div>
-  );
-}
-
-// =============================================================================
-// ComboPopover — generic "select + search" popover shell (single trigger)
-// =============================================================================
-
-interface ComboPopoverProps<T> {
-  /** trigger element; receives open state + a11y attrs + toggle */
-  trigger: (ctx: {
-    open: boolean;
-    toggle: () => void;
-    a11y: { 'aria-haspopup': 'listbox'; 'aria-expanded': boolean; 'aria-controls': string };
-  }) => ReactNode;
-  rows: ComboRow<T>[];
-  placeholder: string;
-  ariaLabel: string;
-  listboxId: string;
-  emptyState?: ReactNode;
-  /** footer content; always visible, never scrolled away. Receives close(). */
-  footer?: (actions: { close: () => void }) => ReactNode;
-  /** fired every time the popover opens (e.g. auto-fetch models) */
-  onOpen?: () => void;
-  /** fired when a row is chosen via Enter or click — the popover is already closed */
-  onSelect: (row: ComboRow<T>) => void;
-  minWidth?: number;
-  wrapperClassName?: string;
-}
-
-export function ComboPopover<T>({
-  trigger,
-  rows,
-  placeholder,
-  ariaLabel,
-  listboxId,
-  emptyState,
-  footer,
-  onOpen,
-  onSelect,
-  minWidth = 0,
-  wrapperClassName,
-}: ComboPopoverProps<T>) {
-  const [open, setOpen] = useState(false);
-  const [abovePlaced, setAbovePlaced] = useState(false);
-  const [pos, setPos] = useState<
-    | { top?: number; bottom?: number; left: number; width: number; maxHeight: number }
-    | null
-  >(null);
-
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  const close = useCallback(() => setOpen(false), []);
-
-  const openPopover = useCallback(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const { top, bottom, maxHeight, flipAbove } = computePopoverPlacement(rect, window.innerHeight);
-    const width = Math.max(rect.width, minWidth);
-    const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8));
-    // When flipped above, anchor by the BOTTOM edge at the trigger's top so a
-    // short popover hugs the trigger instead of floating at the viewport top.
-    setPos(flipAbove ? { bottom, left, width, maxHeight } : { top, left, width, maxHeight });
-    setAbovePlaced(flipAbove);
-    setOpen(true);
-  }, [minWidth]);
-
-  const toggle = useCallback(() => (open ? close() : openPopover()), [open, close, openPopover]);
-
-  // onOpen hook
-  useEffect(() => {
-    if (open) onOpen?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  // Close on outside pointer down, scroll (outside the popover), or resize
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      const t = e.target as Node | null;
-      if (t instanceof Node && (popoverRef.current?.contains(t) || wrapperRef.current?.contains(t))) return;
-      close();
-    };
-    const onScroll = (e: Event) => {
-      const target = e.target;
-      // e.target is the window for resize (and window is not a Node, so
-      // contains() would throw) — only let events originating inside the
-      // popover (e.g. scrolling the list) pass through.
-      if (target instanceof Node && popoverRef.current?.contains(target)) return;
-      close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('touchstart', onPointerDown);
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onScroll);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('touchstart', onPointerDown);
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onScroll);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
-
-  return (
-    <>
-      <div ref={wrapperRef} className={cn('relative', wrapperClassName)}>
-        {trigger({
-          open,
-          toggle,
-          a11y: { 'aria-haspopup': 'listbox', 'aria-expanded': open, 'aria-controls': listboxId },
-        })}
-      </div>
-
-      {open &&
-        pos &&
-        createPortal(
-          <div
-            ref={popoverRef}
-            style={{
-              ...(abovePlaced ? { bottom: window.innerHeight - (pos.bottom ?? 0) } : { top: pos.top }),
-              left: pos.left,
-              width: pos.width,
-            }}
-            className={`fixed z-[70] animate-in fade-in zoom-in-95 duration-200 ${
-              abovePlaced ? 'origin-bottom slide-in-from-bottom-2' : 'origin-top slide-in-from-top-2'
-            }`}
-          >
-            <div
-              style={{ maxHeight: pos.maxHeight }}
-              className="bg-popover/95 backdrop-blur-xl border border-border rounded-md shadow-2xl shadow-black/15 overflow-hidden flex flex-col"
-            >
-              <ComboList<T>
-                rows={rows}
-                onSelect={(row) => {
-                  close();
-                  onSelect(row);
-                }}
-                placeholder={placeholder}
-                ariaLabel={ariaLabel}
-                listboxId={listboxId}
-                emptyState={emptyState}
-                autoFocus
-                showHints
-                onRequestClose={close}
-              />
-
-              {/* Footer — always visible, never scrolled away */}
-              {footer && <div className="p-1 border-t border-border/60 bg-muted/20 shrink-0">{footer({ close })}</div>}
-            </div>
-          </div>,
-          document.body
-        )}
-    </>
   );
 }
