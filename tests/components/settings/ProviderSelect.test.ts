@@ -104,6 +104,16 @@ describe('computePopoverPlacement', () => {
     expect(p.top + p.maxHeight).toBe(p.bottom);
   });
 
+  // Even when the content fills all available space, the popover keeps a
+  // breathing gap at the viewport top instead of touching it.
+  it('keeps a breathing gap at the viewport top when space is full', () => {
+    const rect = { top: 326, bottom: 362 };
+    const p = computePopoverPlacement(rect, 433);
+    expect(p.flipAbove).toBe(true);
+    expect(p.top).toBe(POPOVER_GAP);
+    expect(p.bottom).toBe(rect.top - POPOVER_GAP);
+  });
+
   // Neither side fits → pick the larger side and clamp to the viewport
   it('clamps height to the viewport on very small displays', () => {
     const rect = { top: 60, bottom: 108 };

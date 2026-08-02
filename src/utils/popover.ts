@@ -43,17 +43,18 @@ export function computePopoverPlacement(
   }
 
   // Plenty of room above — anchor the bottom edge at the trigger's top.
+  // Keep a breathing gap at the viewport top so the popover never touches it.
   if (availAbove >= minHeight) {
     const bottom = Math.min(rect.top - gap, viewportHeight - gap);
-    const maxHeight = Math.min(availAbove, viewportHeight - gap);
-    return { top: Math.max(0, bottom - maxHeight), bottom, maxHeight, flipAbove: true };
+    const maxHeight = Math.min(availAbove, viewportHeight - gap, bottom - gap);
+    return { top: bottom - maxHeight, bottom, maxHeight, flipAbove: true };
   }
 
   // Neither side fits — pick the side with more room and fill as much of it
   // as possible without leaving the viewport.
   if (availAbove > availBelow) {
-    const maxHeight = Math.min(Math.max(120, availAbove), viewportHeight - gap);
     const bottom = Math.min(rect.top - gap, viewportHeight - gap);
+    const maxHeight = Math.min(Math.max(120, availAbove), viewportHeight - gap, bottom - gap);
     return { top: Math.max(gap, bottom - maxHeight), bottom, maxHeight, flipAbove: true };
   }
 

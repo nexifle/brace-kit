@@ -18,7 +18,7 @@ export function Kbd({ children }: { children: ReactNode }) {
 
 export function SectionLabel({ label, count }: { label: string; count: number }) {
   return (
-    <div className="flex items-center gap-2 px-2.5 pt-2.5 pb-1">
+    <div className="flex items-center gap-2 px-2 pt-2 pb-0.5">
       <span className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/50">{label}</span>
       <span className="text-2xs tabular-nums text-muted-foreground/30">{count}</span>
       <span className="flex-1 h-px bg-border/50" />
@@ -316,7 +316,7 @@ export function ComboPopover<T>({
               </div>
 
               {/* Footer — always visible, never scrolled away */}
-              {footer && <div className="p-1.5 border-t border-border/60 bg-muted/20 shrink-0">{footer({ close })}</div>}
+              {footer && <div className="p-1 border-t border-border/60 bg-muted/20 shrink-0">{footer({ close })}</div>}
             </div>
           </div>,
           document.body

@@ -59,7 +59,7 @@ export function ChatProviderSelect() {
           <div
             role="option"
             aria-selected={isActive}
-            className={`group w-full flex items-center gap-2.5 pl-2.5 pr-2 py-2 rounded-md text-left transition-all duration-150 border ${
+            className={`group w-full flex items-center gap-2 pl-2 pr-1.5 py-1.5 rounded-md text-left transition-all duration-150 border ${
               isActive
                 ? 'bg-primary/10 border-primary/25'
                 : highlighted
@@ -67,24 +67,24 @@ export function ChatProviderSelect() {
                   : 'bg-transparent border-transparent hover:bg-accent/50'
             }`}
           >
-            <ProviderMark id={p.id} name={p.name} size={30} />
+            <ProviderMark id={p.id} name={p.name} size={24} />
 
-            <span className="flex-1 min-w-0 flex flex-col gap-0.5">
+            <span className="flex-1 min-w-0 flex flex-col gap-0">
               <span className={`text-sm font-medium truncate leading-tight ${isActive ? 'text-primary' : 'text-foreground'}`}>
                 {p.name}
               </span>
-              <span className="text-2xs text-muted-foreground/70 truncate">
+              <span className="text-2xs text-muted-foreground/70 truncate leading-tight">
                 {isActive && providerConfig.model ? `Using ${providerConfig.model}` : FORMAT_LABELS[p.format]}
               </span>
             </span>
 
             {isActive ? (
               <span className="shrink-0 flex items-center gap-1.5">
-                <span className="text-2xs font-bold uppercase tracking-wide text-primary bg-primary/15 rounded-full px-2 py-0.5">
+                <span className="text-2xs font-bold uppercase tracking-wide text-primary bg-primary/15 rounded-full px-1.5 py-0.5">
                   Active
                 </span>
-                <span className="w-4.5 h-4.5 flex items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <CheckIcon size={10} strokeWidth={3.5} />
+                <span className="w-3.5 h-3.5 flex items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <CheckIcon size={8} strokeWidth={3.5} />
                 </span>
               </span>
             ) : (
@@ -105,11 +105,11 @@ export function ChatProviderSelect() {
                   close();
                   setToRemove({ id: p.id, name: p.name });
                 }}
-                className="shrink-0 -mr-0.5 h-7 w-7 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
+                className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-destructive dark:text-red-400 opacity-0 translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 dark:hover:bg-red-400/10 hover:text-destructive dark:hover:text-red-300 active:scale-90"
                 title="Remove provider"
                 aria-label={`Remove ${p.name}`}
               >
-                <Trash2Icon size={13} />
+                <Trash2Icon size={12} />
               </button>
             )}
           </div>
