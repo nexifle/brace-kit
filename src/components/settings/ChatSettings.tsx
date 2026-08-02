@@ -95,7 +95,7 @@ export function ChatSettings() {
                 store.saveToStorage();
               }}
             />
-            <p className="text-sm text-muted-foreground/60 leading-tight">
+            <p className="text-sm text-muted-foreground leading-tight">
               Defines the assistant's role, tone, and behavior for every conversation.
             </p>
           </div>

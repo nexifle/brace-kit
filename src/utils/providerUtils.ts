@@ -27,3 +27,24 @@ export function isOllamaLocalhost(format: string | undefined, apiUrl: string | u
   if (format !== 'ollama' || !apiUrl) return false;
   return apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
 }
+
+/**
+ * Whether a cached /models fetch result should be reused instead of fetching again.
+ *
+ * - Successful fetch: fresh for `successTtl` (default 1h).
+ * - Failed attempt (e.g. the endpoint returned 404): backs off for `failureTtl`
+ *   (default 5 min) so an unsupported /models endpoint is not hammered on every
+ *   render or popup open. `force` bypasses the cache entirely (manual refresh,
+ *   endpoint URL changed).
+ */
+export function isModelFetchCacheFresh(
+  cached: { fetchedAt: number; failedAt?: number } | undefined,
+  now: number,
+  force?: boolean,
+  successTtl = 3600000,
+  failureTtl = 300000
+): boolean {
+  if (force || !cached) return false;
+  const age = now - cached.fetchedAt;
+  return age < (cached.failedAt !== undefined ? failureTtl : successTtl);
+}

@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
 import { PROVIDER_PRESETS, fetchModels } from '../providers';
 import type { ProviderPreset, CustomProvider, ProviderFormat } from '../types/index.ts';
-import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil, isOllamaLocalhost } from '../utils/providerUtils.ts';
+import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil, isOllamaLocalhost, isModelFetchCacheFresh } from '../utils/providerUtils.ts';
 
 function normalizeModelList(models?: string[]): string[] {
   if (!models?.length) return [];
@@ -43,15 +43,9 @@ export function useProvider() {
     const provider = getProvider(providerId);
 
     if (isCustomProvider(providerId)) {
-      const cp = provider as CustomProvider;
-
-      // If custom provider supports model fetch, prefer fetched cache
-      if (cp.supportsModelFetch) {
-        const cached = store.fetchedModels[providerId];
-        if (cached?.models?.length) return normalizeModelList(cached.models);
-      }
-
-      return normalizeModelList(cp.models);
+      // Custom providers are user-managed: the merged list (manual + fetched)
+      // lives in the provider's models array.
+      return normalizeModelList((provider as CustomProvider).models);
     }
 
     const providerPreset = provider as ProviderPreset;
@@ -68,24 +62,25 @@ export function useProvider() {
     return [];
   }, [store.fetchedModels, getProvider, isCustomProvider]);
 
-  const fetchAndCacheModels = useCallback(async (providerId: string) => {
-    const initialState = getState();
-    if (initialState.fetchingModels) return;
+  const fetchAndCacheModels = useCallback(async (providerId: string, opts?: { force?: boolean }) => {
+    const state = useStore.getState();
+    if (state.fetchingModels) return;
 
-    // Check if we have a valid cache (less than 1 hour old)
-    const cached = initialState.fetchedModels[providerId];
-    if (cached && Date.now() - cached.fetchedAt < 3600000) {
-      return;
-    }
+    const cached = state.fetchedModels[providerId];
+    const now = Date.now();
 
-    const provider = getProviderUtil(providerId, initialState.customProviders);
-    const isCustom = isCustomProviderUtil(providerId, initialState.customProviders);
+    // Fresh success cache: 1h. Failed attempt: 5 min backoff so an unsupported
+    // /models endpoint (404) is not hammered on every render/popup-open.
+    if (isModelFetchCacheFresh(cached, now, opts?.force)) return;
+
+    const provider = getProviderUtil(providerId, state.customProviders);
+    const isCustom = isCustomProviderUtil(providerId, state.customProviders);
 
     // Use the stored API key for this specific provider, fallback to the
     // active config if it's the same provider, or the custom provider entry
     // if the provider has just been added and providerKeys has not been synced yet.
-    const apiKey = initialState.providerKeys[providerId]?.apiKey
-      || (providerId === initialState.providerConfig.providerId ? initialState.providerConfig.apiKey : '')
+    const apiKey = state.providerKeys[providerId]?.apiKey
+      || (providerId === state.providerConfig.providerId ? state.providerConfig.apiKey : '')
       || (isCustom ? (provider as CustomProvider).apiKey : '');
 
     const isLocalhost = isOllamaLocalhost(provider?.format, provider?.apiUrl);
@@ -93,7 +88,7 @@ export function useProvider() {
     // Skip if no API key and not Ollama localhost
     if (!apiKey && !isLocalhost) return;
 
-    store.setFetchingModels(true);
+    state.setFetchingModels(true);
 
     try {
       const result = await fetchModels({
@@ -101,26 +96,48 @@ export function useProvider() {
         apiKey,
       });
 
+      if (result?.error) {
+        // Endpoint rejected the /models request (e.g. 404 — not supported).
+        // Record the failure so we back off instead of spamming the endpoint,
+        // but keep any previously fetched models intact.
+        console.warn('[models] fetch failed, backing off:', result.error);
+        state.setFetchedModels(providerId, {
+          models: cached?.models ?? [],
+          fetchedAt: cached?.fetchedAt ?? now,
+          failedAt: now,
+        });
+        return;
+      }
+
       if (result?.models && result.models.length > 0) {
         const models = normalizeModelList(result.models);
         if (models.length === 0) return;
 
-        store.setFetchedModels(providerId, {
+        state.setFetchedModels(providerId, {
           models,
-          fetchedAt: Date.now(),
+          fetchedAt: now,
         });
 
-        // Persist fetched models to the custom provider's models array
+        // Merge fetched models into the custom provider's managed list so
+        // manual entries are never wiped out by a successful fetch.
         if (isCustom) {
-          store.updateCustomProvider(providerId, { models: models.slice() });
+          const existing = (provider as CustomProvider).models ?? [];
+          state.updateCustomProvider(providerId, {
+            models: normalizeModelList([...existing, ...models]),
+          });
         }
       }
     } catch (e) {
       console.warn('Failed to fetch models:', e);
+      state.setFetchedModels(providerId, {
+        models: cached?.models ?? [],
+        fetchedAt: cached?.fetchedAt ?? now,
+        failedAt: now,
+      });
     } finally {
-      store.setFetchingModels(false);
+      state.setFetchingModels(false);
     }
-  }, [store, getState]);
+  }, []);
 
   const switchProvider = useCallback((newId: string, modelOverride?: string) => {
     const state = getState();
@@ -252,9 +269,10 @@ export function useProvider() {
             const firstModel = models[0];
             if (!firstModel) return;
 
-            // Persist fetched models to provider's models array
+            // Persist fetched models to provider's models array, MERGED with any
+            // models the user entered manually (never wipe manual entries).
             store.updateCustomProvider(id, {
-              models,
+              models: normalizeModelList([...initialModels, ...models]),
               supportsModelFetch: true,
             });
 

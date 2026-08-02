@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useProvider } from '../../hooks/useProvider.ts';
 import { GROQ_BUILTIN_TOOLS, FORMAT_LABELS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
-import type { ProviderFormat, ProviderPreset, CustomProvider } from '../../types/index.ts';
+import type { ProviderFormat, ProviderPreset } from '../../types/index.ts';
 import { PlusIcon, XIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
 import { ModelParameterSettings } from './ModelParameterSettings.tsx';
@@ -68,8 +68,11 @@ export function ProviderSettings() {
   const hasModel = !!providerConfig.model;
   const isReady = hasApiKey && hasModel;
 
+  // Track the last URL we fetched against, so edits to the endpoint force a
+  // refresh while unrelated re-renders stay throttled.
+  const prevFetchUrl = useRef<string | undefined>(undefined);
+
   // Whether custom provider uses fetched dropdown instead of chip UI
-  const customUsesDropdown = isCustom && !!(currentProvider as CustomProvider)?.supportsModelFetch;
   const availableModels = useMemo(
     () => getAvailableModels(providerConfig.providerId),
     [providerConfig.providerId, getAvailableModels]
@@ -78,16 +81,20 @@ export function ProviderSettings() {
   useEffect(() => {
     const isLocalhost = isOllamaLocalhost(currentProvider?.format, providerConfig.apiUrl);
     if (currentProvider?.supportsModelFetch && (providerConfig.apiKey || isLocalhost)) {
-      fetchAndCacheModels(providerConfig.providerId);
+      // Force a re-fetch when the user changes the endpoint URL (a failed
+      // attempt otherwise backs off for a few minutes). API-key edits and
+      // unrelated re-renders stay throttled by the cache.
+      const urlChanged =
+        prevFetchUrl.current !== undefined && prevFetchUrl.current !== providerConfig.apiUrl;
+      prevFetchUrl.current = providerConfig.apiUrl;
+      fetchAndCacheModels(providerConfig.providerId, { force: urlChanged });
     }
   }, [providerConfig.providerId, providerConfig.apiKey, providerConfig.apiUrl, currentProvider?.supportsModelFetch, currentProvider?.format, fetchAndCacheModels]);
 
   const handleApiKeyChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    // The fetch-on-change effect above handles model refresh (throttled).
     updateProviderConfig({ apiKey: e.target.value });
-    if (currentProvider?.supportsModelFetch) {
-      fetchAndCacheModels(providerConfig.providerId);
-    }
-  }, [updateProviderConfig, currentProvider?.supportsModelFetch, providerConfig.providerId, fetchAndCacheModels]);
+  }, [updateProviderConfig]);
 
   const handleAddModel = useCallback(() => {
     const model = newModelInput.trim();
@@ -130,7 +137,7 @@ export function ProviderSettings() {
               onAddClick={() => setShowAddModal(true)}
               onRequestRemove={(p) => setProviderToDelete(p)}
             />
-            <p className="text-2xs text-muted-foreground/50 leading-relaxed px-0.5">
+            <p className="text-2xs text-muted-foreground leading-relaxed px-0.5">
               Pick a provider to chat with — search, then hit{' '}
               <span className="font-mono">Enter</span>. Add your own service with the{' '}
               <span className="font-semibold">+ Add</span> button.
@@ -226,55 +233,62 @@ export function ProviderSettings() {
               </div>
             )}
 
-            {/* Model */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Model</label>
-              {customUsesDropdown && availableModels.length > 0 ? (
-                // Custom provider with auto-fetch: dropdown (same as preset)
-                <select
-                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
-                  value={providerConfig.model}
-                  onChange={(e) => updateProviderConfig({ model: e.target.value })}
-                >
-                  {availableModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              ) : isCustom ? (
-                // Custom providers without fetch: chip-based selector + add model
-                <div className="flex flex-col gap-2">
-                  {availableModels.length === 0 ? (
-                    <p className="text-sm text-muted-foreground/60 py-1">
-                      No models added yet. Type a model name below to add one.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableModels.map(m => (
-                        <div
-                          key={m}
-                          className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-medium border cursor-pointer transition-all select-none
-                            ${m === providerConfig.model
-                              ? 'bg-primary/15 border-primary/40 text-primary'
-                              : 'bg-muted/30 border-border/40 text-muted-foreground hover:bg-muted/50 hover:text-foreground hover:border-border'}`}
-                          onClick={() => updateProviderConfig({ model: m })}
-                        >
-                          {m === providerConfig.model && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                          )}
-                          <span className="truncate max-w-30">{m}</span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRemoveModel(m); }}
-                            className="text-muted-foreground/40 hover:text-destructive transition-colors shrink-0 ml-0.5"
-                            title="Remove model"
-                          >
-                            <XIcon size={10} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {/* Model — custom providers are user-managed: chips + add input.
+                  Preset providers use a fetched dropdown or free-text input. */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Model</label>
+                {isCustom ? (
+                  // Custom providers: user-managed model list — full-width rows,
+                  // full names (wrap, never truncate), add/remove.
+                  <div className="flex flex-col gap-2">
+                    {availableModels.length === 0 ? (
+                      <p className="text-sm text-muted-foreground/60 py-1">
+                        No models added yet. Type a model name below to add one.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {availableModels.map((m) => {
+                          const active = m === providerConfig.model;
+                          return (
+                            <div
+                              key={m}
+                              onClick={() => updateProviderConfig({ model: m })}
+                              className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all select-none ${
+                                active
+                                  ? 'bg-primary/10 border-primary/30'
+                                  : 'border-transparent hover:bg-muted/40 hover:border-border/60'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 shrink-0 rounded-full transition-colors ${
+                                  active ? 'bg-primary' : 'bg-muted-foreground/25 group-hover:bg-muted-foreground/45'
+                                }`}
+                              />
+                              <span
+                                className={`min-w-0 flex-1 break-all text-sm leading-snug ${
+                                  active
+                                    ? 'text-primary font-medium'
+                                    : 'text-muted-foreground group-hover:text-foreground'
+                                }`}
+                              >
+                                {m}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleRemoveModel(m); }}
+                                className="shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors p-1 -mr-0.5"
+                                title="Remove model"
+                                aria-label={`Remove ${m}`}
+                              >
+                                <XIcon size={12} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                  <div className="flex gap-2">
+                    <div className="flex gap-2">
                     <input
                       className="flex-1 h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
                       placeholder="Add model name…"

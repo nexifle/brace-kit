@@ -145,7 +145,7 @@ export function ModelParameterSettings() {
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 px-0.5 py-4">
         <div className="h-px bg-border/40 flex-1" />
-        <span className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Model Parameters</span>
+        <span className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">Model Parameters</span>
         <div className="h-px bg-border/40 flex-1" />
       </div>
 

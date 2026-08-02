@@ -223,7 +223,7 @@ export function DataSettings() {
                         <DownloadIcon size={12} className="text-muted-foreground shrink-0" />
                         <span className="text-sm font-semibold text-foreground flex-1">Export Backup</span>
                         {includeApiKeys && (
-                            <span className="text-sm text-amber-500 font-medium animate-in fade-in duration-200">+API keys</span>
+                            <span className="text-sm text-amber-700 dark:text-amber-400 font-medium animate-in fade-in duration-200">+API keys</span>
                         )}
                     </div>
 
@@ -231,7 +231,7 @@ export function DataSettings() {
                         {/* API Keys Toggle */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                                <KeyRoundIcon size={11} className={`transition-colors duration-200 ${includeApiKeys ? 'text-amber-500' : 'text-muted-foreground'}`} />
+                                <KeyRoundIcon size={11} className={`transition-colors duration-200 ${includeApiKeys ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`} />
                                 <span className="text-sm text-foreground">Include API Keys</span>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -255,7 +255,7 @@ export function DataSettings() {
                                 <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
                                     Password
                                 </label>
-                                <span className={`text-sm transition-colors duration-200 ${includeApiKeys ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                                <span className={`text-sm transition-colors duration-200 ${includeApiKeys ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
                                     {includeApiKeys ? 'required' : 'optional'}
                                 </span>
                             </div>
@@ -271,7 +271,7 @@ export function DataSettings() {
                                     ${includeApiKeys && !exportPassword ? 'border-amber-500/40' : 'border-input'}`}
                             />
                             {exportPassword && (
-                                <p className="text-sm text-amber-500/80 leading-tight">
+                                <p className="text-sm text-amber-700 dark:text-amber-400 leading-tight">
                                     Remember this password — required to restore.
                                 </p>
                             )}
@@ -321,7 +321,7 @@ export function DataSettings() {
                                             </span>
                                         )}
                                         {backupInfo.hasApiKeys && (
-                                            <span className="text-sm text-amber-500 flex items-center gap-0.5">
+                                            <span className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-0.5">
                                                 <KeyRoundIcon size={10} />
                                                 Contains API keys
                                             </span>
@@ -417,7 +417,7 @@ export function DataSettings() {
                             </p>
                         )}
 
-                        <p className="text-sm text-amber-500/70 leading-tight">
+                        <p className="text-sm text-amber-700 dark:text-amber-400 leading-tight">
                             Restoring will overwrite all current settings and history.
                         </p>
                     </div>

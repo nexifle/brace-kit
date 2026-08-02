@@ -326,6 +326,12 @@ export interface FileAttachment {
 export interface FetchedModelsCache {
   models: string[];
   fetchedAt: number;
+  /**
+   * Set when the last fetch attempt failed (e.g. the /models endpoint is not
+   * supported and returns 404). Used to back off instead of repeatedly
+   * hammering the endpoint. Cleared on the next successful fetch.
+   */
+  failedAt?: number;
 }
 
 // ==================== Security Settings ====================

@@ -87,13 +87,13 @@ export function WelcomeScreen() {
             role="alert"
           >
             <div className="flex items-start gap-3 px-4 py-3">
-              <AlertCircleIcon size={16} className="text-rose-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs font-medium text-rose-200 leading-relaxed flex-1 min-w-0 break-words">
+              <AlertCircleIcon size={16} className="text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs font-medium text-rose-700 dark:text-rose-200 leading-relaxed flex-1 min-w-0 break-words">
                 {error}
               </p>
               <button
                 onClick={() => setError(null)}
-                className="flex-shrink-0 p-0.5 rounded-md text-rose-400/60 hover:text-rose-300 hover:bg-rose-500/20 transition-colors"
+                className="flex-shrink-0 p-0.5 rounded-md text-rose-600/70 dark:text-rose-400/60 hover:text-rose-500 dark:hover:text-rose-300 hover:bg-rose-500/20 transition-colors"
                 aria-label="Dismiss error"
               >
                 <XIcon size={14} />
@@ -111,8 +111,8 @@ export function WelcomeScreen() {
         >
           <div className="absolute inset-0 bg-linear-to-r from-rose-500/20 via-pink-500/20 to-orange-500/20 rounded-lg blur-sm group-hover:blur-md transition-all" />
           <div className="relative flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-linear-to-r from-rose-500/10 via-pink-500/10 to-orange-500/10 border border-rose-500/20 group-hover:border-rose-500/40 group-hover:from-rose-500/20 group-hover:via-pink-500/20 group-hover:to-orange-500/20 transition-all">
-            <HeartIcon size={14} className="text-rose-400 group-hover:text-rose-300 group-hover:scale-110 transition-all" />
-            <span className="text-xs font-bold uppercase tracking-widest text-rose-300 group-hover:text-rose-200">
+            <HeartIcon size={14} className="text-rose-600 group-hover:text-rose-500 dark:text-rose-400 dark:group-hover:text-rose-300 group-hover:scale-110 transition-all" />
+            <span className="text-xs font-bold uppercase tracking-widest text-rose-700 group-hover:text-rose-600 dark:text-rose-300 dark:group-hover:text-rose-200">
               Support Development
             </span>
           </div>

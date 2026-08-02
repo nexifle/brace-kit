@@ -249,7 +249,7 @@ export function ComposerPicker() {
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
-              <span className={`flex-1 min-w-0 truncate font-mono text-xs ${isActive ? 'text-primary font-semibold' : 'text-foreground'}`}>
+              <span className={`flex-1 min-w-0 break-all font-mono text-xs leading-snug ${isActive ? 'text-primary font-semibold' : 'text-foreground'}`}>
                 {model}
               </span>
               {isActive && (
