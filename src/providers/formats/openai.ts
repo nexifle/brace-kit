@@ -253,13 +253,21 @@ export async function* parseOpenAIStream(
 
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
-              yield {
-                type: 'tool_call',
-                id: tc.id,
-                index: tc.index,
-                name: tc.function?.name,
-                arguments: tc.function?.arguments,
-              };
+              const id = tc.id;
+              const name = tc.function?.name;
+              const args = tc.function?.arguments;
+              if (name) {
+                // First delta for this tool call: start a fragment. Some
+                // providers send the complete arguments in this same chunk.
+                yield { type: 'tool_call_start', id, name };
+                if (args) yield { type: 'tool_call_delta', id, content: args };
+              } else if (args) {
+                // Continuation delta: partial JSON fragment for an in-flight
+                // call. Must be routed to the right fragment by id — the old
+                // single 'tool_call' emission dropped these entirely, so the
+                // MCP server received empty {} arguments.
+                yield { type: 'tool_call_delta', id, content: args };
+              }
             }
           }
         } catch {

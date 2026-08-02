@@ -209,7 +209,7 @@ describe('OpenAI Format', () => {
 
     it('should parse tool calls', async () => {
       const chunks = [
-        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call_123","index":0,"function":{"name":"search","arguments":"{\\"query\\""}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call_123","index":0,"function":{"name":"search","arguments":"{\\"query\\":\\"hello\\"}"}}]}}]}\n\n',
         'data: [DONE]\n\n',
       ];
 
@@ -220,10 +220,45 @@ describe('OpenAI Format', () => {
         results.push(chunk);
       }
 
-      expect(results).toHaveLength(1);
-      expect(results[0].type).toBe('tool_call');
-      expect(results[0].id).toBe('call_123');
-      expect(results[0].name).toBe('search');
+      // First delta with a name → tool_call_start (with its arguments)
+      expect(results[0]).toEqual({
+        type: 'tool_call_start',
+        id: 'call_123',
+        name: 'search',
+      });
+      expect(results[1]).toEqual({
+        type: 'tool_call_delta',
+        id: 'call_123',
+        content: '{"query":"hello"}',
+      });
+    });
+
+    it('[REGRESSION] streams multi-part tool-call arguments without dropping them', async () => {
+      // Real OpenAI/Groq/xAI streams split arguments across deltas: the first
+      // delta carries the name, later deltas carry only JSON fragments. These
+      // fragments must surface as tool_call_delta so the caller can merge them.
+      const chunks = [
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call_1","index":0,"function":{"name":"tavily_search","arguments":""}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call_1","index":0,"function":{"arguments":"{\\"query\\":\\"bracekit\\""}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call_1","index":0,"function":{"arguments":"}"}}]}}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      const response = createMockStreamResponse(chunks);
+      const results = [];
+
+      for await (const chunk of parseOpenAIStream(response)) {
+        results.push(chunk);
+      }
+
+      expect(results).toHaveLength(3);
+      expect(results[0]).toEqual({ type: 'tool_call_start', id: 'call_1', name: 'tavily_search' });
+      expect(results[1]).toEqual({ type: 'tool_call_delta', id: 'call_1', content: '{"query":"bracekit"' });
+      expect(results[2]).toEqual({ type: 'tool_call_delta', id: 'call_1', content: '}' });
+
+      // Simulate the caller's merge: start + deltas concatenated → valid JSON
+      const merged = (results[1].content as string) + (results[2].content as string);
+      expect(JSON.parse(merged)).toEqual({ query: 'bracekit' });
     });
 
     it('should handle [DONE] message', async () => {

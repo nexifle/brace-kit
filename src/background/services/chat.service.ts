@@ -371,8 +371,15 @@ export function createChatService(): ChatService {
               };
               toolCalls.push(currentToolCall);
             }
-          } else if (chunk.type === 'tool_call_delta' && currentToolCall) {
-            currentToolCall.arguments += chunk.content || '';
+          } else if (chunk.type === 'tool_call_delta') {
+            // Route argument fragments to the right in-flight call. OpenAI-
+            // compatible streams interleave deltas for parallel tool calls, so
+            // match by id when present; fall back to the last-started call.
+            const target = chunk.id
+              ? toolCalls.find((t) => t.id === chunk.id)
+              : undefined;
+            const dest = target ?? currentToolCall;
+            if (dest) dest.arguments += chunk.content || '';
           } else if (chunk.type === 'grounding_metadata') {
             groundingMetadata = chunk.groundingMetadata;
           } else if (chunk.type === 'usage') {
