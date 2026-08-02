@@ -8,7 +8,7 @@ import fuzzysort from 'fuzzysort';
 import type { QuickAction, SelectionPosition, MenuState } from '../types.ts';
 import { TRANSLATION_TARGETS, ACTION_CATEGORIES } from '../constants.ts';
 import { logoSvgTemplate, icons } from './shared.ts';
-import { PROVIDER_BRANDS, CUSTOM_BRAND } from '../../../components/settings/providerBrands.ts';
+import { resolveProviderBrand } from '../../../components/settings/providerBrands.ts';
 import { fuzzyFilter } from '../../../utils/fuzzySearch.ts';
 
 // === Types ===
@@ -124,7 +124,7 @@ function groupActionsByCategory(actions: QuickAction[]): Map<string, QuickAction
 // === Provider & Model Selection ===
 
 function providerBrand(providerId: string): { color: string; fg: string } {
-  return PROVIDER_BRANDS[providerId] ?? CUSTOM_BRAND;
+  return resolveProviderBrand(providerId);
 }
 
 function providerMonogram(name: string): string {
