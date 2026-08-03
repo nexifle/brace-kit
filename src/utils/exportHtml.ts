@@ -689,13 +689,18 @@ const CSS_TEMPLATE = `
     font-size: 0.82rem;
     line-height: 1.6;
   }
-  .bk-md table {
-    width: 100%;
+  .bk-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
     margin: 0.8rem 0;
+    border-radius: 0.375rem;
+  }
+  .bk-md table {
+    width: max-content;
+    min-width: 100%;
     border-collapse: collapse;
     font-size: 0.88rem;
-    overflow: hidden;
-    border-radius: 0.375rem;
   }
   .bk-md th, .bk-md td {
     padding: 0.5rem 0.75rem;
@@ -704,6 +709,7 @@ const CSS_TEMPLATE = `
     vertical-align: top;
   }
   .bk-md th { background: var(--bk-table-head-bg); font-weight: 700; }
+  .bk-table-wrap table { border-radius: 0.375rem; overflow: hidden; }
   .bk-md img { max-width: 100%; border-radius: 0.375rem; }
   .bk-md .bk-img-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem; margin: 0.8rem 0; }
   .bk-md .bk-img-row img { width: 100%; cursor: zoom-in; }
@@ -871,7 +877,11 @@ const RENDER_JS_TEMPLATE = `
 
   function renderMd(text) {
     if (!text) return '';
-    return marked.parse(text);
+    var html = marked.parse(text);
+    // Wrap tables in a scroll container so wide tables stay responsive
+    // (table elements ignore overflow-x, so a wrapper div is required).
+    html = html.replace(/<table>([\\s\\S]*?)<\\/table>/g, '<div class="bk-table-wrap"><table>$1</table></div>');
+    return html;
   }
 
   // ---------- message rendering ----------

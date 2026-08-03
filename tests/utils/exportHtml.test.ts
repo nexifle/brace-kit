@@ -104,4 +104,13 @@ describe('exportHtml', () => {
     expect(__exportHtmlTemplates.js).toContain('bk-session-data');
     expect(__exportHtmlTemplates.js).toContain('marked.use');
   });
+
+  test('renderer wraps tables in a scrollable container for responsiveness', () => {
+    // The embedded renderer must wrap <table> in .bk-table-wrap so wide
+    // tables scroll horizontally on small screens instead of overflowing.
+    expect(__exportHtmlTemplates.js).toContain('bk-table-wrap');
+    expect(__exportHtmlTemplates.js).toContain('html.replace(/<table>');
+    expect(__exportHtmlTemplates.css).toContain('.bk-table-wrap');
+    expect(__exportHtmlTemplates.css).toContain('overflow-x: auto');
+  });
 });
