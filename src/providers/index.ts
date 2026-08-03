@@ -58,6 +58,8 @@ export {
 
 // Utilities
 export { cleanSchema, convertToGeminiSchema } from './utils/schema.ts';
+
+export { extractGeminiText, extractGeminiReasoning } from './formats/gemini.ts';
 export { isOllamaLocalhost } from '../utils/providerUtils.ts';
 
 // OpenAI format (also used by xAI chat, DeepSeek, and custom OpenAI-compatible endpoints)

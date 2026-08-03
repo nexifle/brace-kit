@@ -6,6 +6,7 @@
 import {
   PROVIDER_PRESETS,
   formatRequest,
+  extractGeminiText,
   type ProviderWithConfig,
 } from '../../providers';
 import type { Message, ProviderConfig } from '../../types';
@@ -127,8 +128,7 @@ export async function handleTitleGenerate(
       title = content?.map((c) => c.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'gemini') {
       const candidates = payload.candidates as GeminiCandidate[] | undefined;
-      title =
-        candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
+      title = extractGeminiText(candidates?.[0]?.content?.parts);
     } else if (provider.format === 'ollama') {
       const msg = payload.message as { content?: string } | undefined;
       title = msg?.content || '';

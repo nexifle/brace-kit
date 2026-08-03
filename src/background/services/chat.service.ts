@@ -71,6 +71,7 @@ export interface ChatServiceResponse {
   started?: boolean;
   content?: string;
   reasoning_content?: string;
+  reasoning_signature?: string;
   toolCalls?: ToolCall[];
 }
 
@@ -245,13 +246,27 @@ export function createChatService(): ChatService {
 
           const thinkParser = createThinkTagParser();
 
-          if (result.content) {
-            result.content = thinkParser.nonStreamingProcess(result.content);
+          // Split embedded think tags: keep reasoning instead of dropping it
+          // (the stream path surfaces it as reasoning chunks). Guard against a
+          // non-string content (some gateways echo multimodal content as arrays).
+          let content = typeof result.content === 'string' ? result.content : '';
+          let reasoning = typeof result.reasoning_content === 'string' ? result.reasoning_content : '';
+          if (content) {
+            const parsed = thinkParser.nonStreamingParse(content);
+            content = parsed.content;
+            if (parsed.reasoning) {
+              reasoning = [reasoning, parsed.reasoning].filter(Boolean).join('\n');
+            }
+          }
+          // Match the stream path: drop reasoning when the user disabled it.
+          if (message.options?.enableReasoning === false) {
+            reasoning = '';
           }
 
           sendResponse({
-            content: result.content,
-            reasoning_content: result.reasoning_content,
+            content,
+            reasoning_content: reasoning || undefined,
+            reasoning_signature: result.reasoning_signature,
             toolCalls: toolCalls?.length ? toolCalls : undefined,
           });
           return;

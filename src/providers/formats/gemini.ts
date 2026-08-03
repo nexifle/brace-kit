@@ -17,6 +17,39 @@ import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 import { cleanSchema, convertToGeminiSchema } from '../utils/schema.ts';
 import { geminiThinkingBudget, geminiThinkingLevel } from '../utils/reasoning.ts';
 
+// ==================== Response Extraction Helpers ====================
+
+/**
+ * Extract the visible text from Gemini parts, skipping thought parts.
+ * With includeThoughts enabled, Gemini returns thinking content in the SAME
+ * parts array tagged "thought": true — those must not leak into the visible
+ * message text.
+ */
+export function extractGeminiText(
+  parts: Array<Pick<GeminiPart, 'text' | 'thought'>> | undefined
+): string {
+  return (
+    parts
+      ?.filter((p) => p.text && !p.thought)
+      .map((p) => p.text)
+      .filter(Boolean)
+      .join('') || ''
+  );
+}
+
+/** Extract reasoning/thinking content from Gemini thought parts (if any). */
+export function extractGeminiReasoning(
+  parts: Array<Pick<GeminiPart, 'text' | 'thought'>> | undefined
+): string {
+  return (
+    parts
+      ?.filter((p) => p.thought)
+      .map((p) => (typeof p.thought === 'string' ? p.thought : p.text))
+      .filter(Boolean)
+      .join('') || ''
+  );
+}
+
 // ==================== Request Formatting ====================
 
 /**

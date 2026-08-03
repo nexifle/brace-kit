@@ -7,6 +7,8 @@ import {
   parseStream,
   parseXAIImageResponse,
   XAI_IMAGE_MODELS,
+  extractGeminiText,
+  extractGeminiReasoning,
 } from '../../providers';
 import type { StreamChunk, ProviderWithConfig } from '../../providers';
 
@@ -27,7 +29,30 @@ export interface StreamingService {
   buildNonStreamingResponse: (
     data: Record<string, unknown>,
     provider: ProviderWithConfig
-  ) => { content: string; reasoning_content: string; tool_calls?: ToolCallFragment[] };
+  ) => {
+    content: string;
+    reasoning_content: string;
+    reasoning_signature?: string;
+    tool_calls?: ToolCallFragment[];
+  };
+}
+
+/**
+ * Join the aggregated reasoning details array some OpenAI-compatible gateways
+ * return in non-streaming responses (e.g. OpenRouter: reasoning_details =
+ * [{ text, type: 'reasoning.text', index, format }, ...]).
+ */
+function extractReasoningDetails(details: unknown): string {
+  if (!Array.isArray(details)) return '';
+  return (
+    details
+      .map((d) => {
+        const text = (d as { text?: unknown })?.text;
+        return typeof text === 'string' ? text : '';
+      })
+      .filter(Boolean)
+      .join('') || ''
+  );
 }
 
 /**
@@ -87,21 +112,35 @@ export function createStreamingService(): StreamingService {
      * Build response object from non-streaming API response
      * @param data - Parsed JSON response
      * @param provider - Provider configuration
-     * @returns Response with content, reasoning_content, and tool_calls
+     * @returns Response with content, reasoning_content, reasoning_signature, and tool_calls
      */
     buildNonStreamingResponse(
       data: Record<string, unknown>,
       provider: ProviderWithConfig
-    ): { content: string; reasoning_content: string; tool_calls?: ToolCallFragment[] } {
+    ): {
+      content: string;
+      reasoning_content: string;
+      reasoning_signature?: string;
+      tool_calls?: ToolCallFragment[];
+    } {
       let text = '';
       let reasoning = '';
+      let reasoningSignature: string | undefined;
       let toolCalls: ToolCallFragment[] | undefined;
 
       if (provider.format === 'openai') {
         const choices = data.choices as Array<Record<string, unknown>> | undefined;
         const message = choices?.[0]?.message as Record<string, unknown> | undefined;
         text = (message?.content as string) || '';
-        reasoning = (message?.reasoning_content as string) || '';
+        // Reasoning appears under different field names depending on the gateway:
+        //   - reasoning_content  (DeepSeek, OpenAI o1/o3)
+        //   - reasoning         (Groq, OpenRouter/other OpenAI-compatible gateways)
+        //   - reasoning_details  (OpenRouter aggregated array of { text, type, ... })
+        reasoning =
+          (message?.reasoning_content as string) ||
+          (message?.reasoning as string) ||
+          extractReasoningDetails(message?.reasoning_details) ||
+          '';
 
         // Extract tool calls from OpenAI format
         const rawToolCalls = message?.tool_calls as Array<{
@@ -125,11 +164,35 @@ export function createStreamingService(): StreamingService {
           id?: string;
           name?: string;
           input?: Record<string, unknown>;
+          thinking?: string;
+          reasoning_content?: string;
+          signature?: string;
         }> | undefined;
 
         // Anthropic content blocks: filter text blocks (backward compatible with test data that lacks 'type')
         const textBlocks = content?.filter((c) => !c.type || c.type === 'text');
         text = textBlocks?.map((c) => c.text).filter(Boolean).join('') || '';
+
+        // Extended thinking blocks → reasoning. Some Anthropic-compatible models
+        // (k2.5/Kimi) use reasoning_content on the block or a top-level field.
+        // redacted_thinking blocks carry a signature but no text (budget
+        // exceeded) — handled below for the signature, never as reasoning.
+        const thinkingBlocks = content?.filter((c) => c.type === 'thinking');
+        reasoning =
+          thinkingBlocks
+            ?.map((c) => c.thinking ?? c.reasoning_content)
+            .filter(Boolean)
+            .join('') ||
+          (data.reasoning_content as string) ||
+          '';
+        // Thinking block signature — required for conversation history replay.
+        // Both thinking and redacted_thinking blocks carry one (the stream path
+        // receives it via signature_delta regardless of block type).
+        reasoningSignature =
+          content?.find((c) => c.type === 'thinking' || c.type === 'redacted_thinking')
+            ?.signature ??
+          (data.reasoning_signature as string) ??
+          undefined;
 
         // Extract tool calls from Anthropic format (tool_use blocks)
         const toolUseBlocks = content?.filter((c) => c.type === 'tool_use');
@@ -146,15 +209,17 @@ export function createStreamingService(): StreamingService {
         const parts = candidates?.[0]?.content as Record<string, unknown> | undefined;
         const partsArray = parts?.parts as Array<{
           text?: string;
+          thought?: boolean | string;
+          thoughtSignature?: string;
           functionCall?: { name?: string; args?: Record<string, unknown> };
         }> | undefined;
 
-        text =
-          partsArray
-            ?.filter((p) => p.text)
-            ?.map((p) => p.text)
-            .filter(Boolean)
-            .join('') || '';
+        // Skip thought parts (includeThoughts) so reasoning never leaks into the
+        // visible message; surface it separately as reasoning.
+        text = extractGeminiText(partsArray);
+        reasoning = extractGeminiReasoning(partsArray);
+        // Thought signature — required for Gemini 3+ multi-turn replay.
+        reasoningSignature = partsArray?.find((p) => p.thoughtSignature)?.thoughtSignature;
 
         // Extract tool calls from Gemini format (functionCall)
         const functionCalls = partsArray?.filter((p) => p.functionCall);
@@ -194,7 +259,12 @@ export function createStreamingService(): StreamingService {
         }
       }
 
-      return { content: text, reasoning_content: reasoning, tool_calls: toolCalls };
+      return {
+        content: text,
+        reasoning_content: reasoning,
+        reasoning_signature: reasoningSignature,
+        tool_calls: toolCalls,
+      };
     },
   };
 }

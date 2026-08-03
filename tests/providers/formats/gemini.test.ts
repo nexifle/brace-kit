@@ -3,11 +3,39 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { formatGemini, parseGeminiStream } from '../../../src/providers/formats/gemini.ts';
+import { formatGemini, parseGeminiStream, extractGeminiText, extractGeminiReasoning } from '../../../src/providers/formats/gemini.ts';
 import type { Message, MCPTool } from '../../../src/types/index.ts';
 import { createMockStreamResponse, createGeminiUsageChunks } from '../../helpers/stream-mock';
 
 describe('Gemini Format', () => {
+  describe('extractGeminiText / extractGeminiReasoning', () => {
+    const parts = [
+      { text: '**Defining My Identity** reason text', thought: true },
+      { text: 'Saya adalah model bahasa besar.' },
+      { text: 'extra thought', thought: 'string thought' },
+      { text: 'second visible line' },
+    ];
+
+    it('keeps only non-thought parts as visible text', () => {
+      expect(extractGeminiText(parts)).toBe(
+        'Saya adalah model bahasa besar.second visible line'
+      );
+    });
+
+    it('extracts thought parts as reasoning (boolean or string form)', () => {
+      // String thought values take priority (matches the stream parser);
+      // boolean thought parts fall back to their text.
+      expect(extractGeminiReasoning(parts)).toBe(
+        '**Defining My Identity** reason textstring thought'
+      );
+    });
+
+    it('returns empty for undefined/empty parts', () => {
+      expect(extractGeminiText(undefined)).toBe('');
+      expect(extractGeminiReasoning([])).toBe('');
+    });
+  });
+
   describe('formatGemini', () => {
     const provider = {
       apiUrl: 'https://generativelanguage.googleapis.com/v1beta',
