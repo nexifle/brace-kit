@@ -12,10 +12,9 @@ import {
   HistoryIcon,
   GitBranchIcon,
   ExternalLinkIcon,
-  DownloadIcon
 } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
-import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
+import { ExportMenu } from './ExportMenu.tsx';
 
 interface ConversationWithMessages {
   id: string;
@@ -96,6 +95,8 @@ export function HistoryDrawer() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  // Which conversation's export menu is open (keeps its row visible while open)
+  const [exportMenuFor, setExportMenuFor] = useState<string | null>(null);
 
   // Cache: store messages + pre-built searchable strings, survive across search changes
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
@@ -159,18 +160,6 @@ export function HistoryDrawer() {
     if (parentId) store.switchConversation(parentId);
     setTimeout(() => setHighlightedIds(new Set()), 2000);
   }, [branchRelations, store]);
-
-  const handleExport = useCallback(async (conv: ConversationWithMessages, e: React.MouseEvent) => {
-    e.stopPropagation();
-    let messages = conv.messages;
-    if (messages.length === 0) {
-      const loaded = await getConversationMessages(conv.id);
-      messages = loaded || [];
-    }
-    const markdown = exportConversationToMarkdown(conv, messages);
-    const filename = `${conv.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.md`;
-    downloadMarkdown(filename, markdown);
-  }, []);
 
   useEffect(() => {
     if (store.historyDrawerOpen) {
@@ -356,7 +345,7 @@ export function HistoryDrawer() {
           )}
         </div>
 
-        <div className="absolute -right-px top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/item:opacity-100 transition-all duration-200 bg-gradient-to-l from-card via-card/95 to-transparent from-0% via-60% to-100% pl-10 pr-3 py-1">
+        <div className={`absolute -right-px top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-gradient-to-l from-card via-card/95 to-transparent from-0% via-60% to-100% pl-10 pr-3 py-1 transition-all duration-200 ${exportMenuFor === conv.id ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100'}`}>
           <Btn
             variant="ghost"
             size="icon-sm"
@@ -383,15 +372,12 @@ export function HistoryDrawer() {
               <ExternalLinkIcon size={12} />
             </Btn>
           )}
-          <Btn
-            variant="ghost"
-            size="icon-sm"
-            className="h-6 w-6 text-muted-foreground hover:text-primary"
-            title="Export to Markdown"
-            onClick={(e) => handleExport(conv, e)}
-          >
-            <DownloadIcon size={12} />
-          </Btn>
+          <ExportMenu
+            conversation={conv}
+            messages={conv.messages}
+            open={exportMenuFor === conv.id}
+            onOpenChange={(o) => setExportMenuFor(o ? conv.id : null)}
+          />
           <Btn
             variant="ghost"
             size="icon-sm"

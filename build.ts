@@ -58,6 +58,16 @@ if (result.success) {
     }
   }
 
+  // Bundle marked's UMD build into dist/lib for the HTML export feature
+  // (fetched at export time so the sidebar bundle stays lean).
+  {
+    const from = join('./node_modules/marked/lib/marked.umd.js');
+    const to = join(libDir, 'marked.umd.js');
+    if (existsSync(from)) {
+      filesToCopy.push({ from, to });
+    }
+  }
+
 
   // Copy icons if they exist
   const iconsDir = './icons';
