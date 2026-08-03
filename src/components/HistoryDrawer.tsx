@@ -12,14 +12,9 @@ import {
   HistoryIcon,
   GitBranchIcon,
   ExternalLinkIcon,
-  DownloadIcon,
-  FileTextIcon,
-  FileCode2Icon,
-  Loader2Icon,
 } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
-import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
-import { exportConversationToHtml, downloadHtml, makeExportBasename } from '../utils/exportHtml.ts';
+import { ExportMenu } from './ExportMenu.tsx';
 
 interface ConversationWithMessages {
   id: string;
@@ -100,10 +95,8 @@ export function HistoryDrawer() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
-  // Export menu state: which conversation has its menu open + which export is busy
+  // Which conversation's export menu is open (keeps its row visible while open)
   const [exportMenuFor, setExportMenuFor] = useState<string | null>(null);
-  const [exporting, setExporting] = useState<{ id: string; format: 'markdown' | 'html' } | null>(null);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Cache: store messages + pre-built searchable strings, survive across search changes
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
@@ -167,48 +160,6 @@ export function HistoryDrawer() {
     if (parentId) store.switchConversation(parentId);
     setTimeout(() => setHighlightedIds(new Set()), 2000);
   }, [branchRelations, store]);
-
-  const handleExport = useCallback(async (conv: ConversationWithMessages, format: 'markdown' | 'html') => {
-    setExportMenuFor(null);
-    setExporting({ id: conv.id, format });
-    try {
-      let messages = conv.messages;
-      if (messages.length === 0) {
-        const loaded = await getConversationMessages(conv.id);
-        messages = loaded || [];
-      }
-      const base = makeExportBasename(conv);
-      if (format === 'markdown') {
-        downloadMarkdown(`${base}.md`, exportConversationToMarkdown(conv, messages));
-      } else {
-        const html = await exportConversationToHtml(conv, messages);
-        downloadHtml(`${base}.html`, html);
-      }
-    } catch (err) {
-      console.error('[HistoryDrawer] Export failed:', err);
-    } finally {
-      setExporting(null);
-    }
-  }, []);
-
-  // Close the export menu on outside click or Escape.
-  useEffect(() => {
-    if (!exportMenuFor) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
-        setExportMenuFor(null);
-      }
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setExportMenuFor(null);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [exportMenuFor]);
 
   useEffect(() => {
     if (store.historyDrawerOpen) {
@@ -421,54 +372,12 @@ export function HistoryDrawer() {
               <ExternalLinkIcon size={12} />
             </Btn>
           )}
-          <div ref={exportMenuRef} className="relative">
-            <Btn
-              variant="ghost"
-              size="icon-sm"
-              className={`h-6 w-6 text-muted-foreground hover:text-primary ${exportMenuFor === conv.id ? 'text-primary bg-primary/10' : ''}`}
-              title="Export conversation"
-              onClick={(e) => {
-                e.stopPropagation();
-                setExportMenuFor((cur) => (cur === conv.id ? null : conv.id));
-              }}
-            >
-              {exporting?.id === conv.id ? (
-                <Loader2Icon size={12} className="animate-spin" />
-              ) : (
-                <DownloadIcon size={12} />
-              )}
-            </Btn>
-            {exportMenuFor === conv.id && (
-              <div
-                className="absolute right-0 bottom-full mb-1.5 w-48 z-50 bg-popover border border-border rounded-lg shadow-xl overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors"
-                  onClick={() => handleExport(conv, 'markdown')}
-                >
-                  <FileTextIcon size={15} className="mt-0.5 text-muted-foreground shrink-0" />
-                  <span className="flex flex-col gap-0.5 min-w-0">
-                    <span className="text-xs font-semibold text-foreground">Markdown</span>
-                    <span className="text-2xs text-muted-foreground leading-snug">Plain-text transcript (.md)</span>
-                  </span>
-                </button>
-                <div className="h-px bg-border/60 mx-3" />
-                <button
-                  type="button"
-                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors"
-                  onClick={() => handleExport(conv, 'html')}
-                >
-                  <FileCode2Icon size={15} className="mt-0.5 text-muted-foreground shrink-0" />
-                  <span className="flex flex-col gap-0.5 min-w-0">
-                    <span className="text-xs font-semibold text-foreground">HTML</span>
-                    <span className="text-2xs text-muted-foreground leading-snug">Polished interactive page (.html)</span>
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
+          <ExportMenu
+            conversation={conv}
+            messages={conv.messages}
+            open={exportMenuFor === conv.id}
+            onOpenChange={(o) => setExportMenuFor(o ? conv.id : null)}
+          />
           <Btn
             variant="ghost"
             size="icon-sm"

@@ -6,8 +6,8 @@ import { InputArea } from './InputArea.tsx';
 import { SystemPromptEditor } from './SystemPromptEditor.tsx';
 import { TextInput } from './ui/TextInput.tsx';
 import { Btn } from './ui/Btn.tsx';
-import { SquarePenIcon, DownloadIcon } from 'lucide-react';
-import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
+import { SquarePenIcon } from 'lucide-react';
+import { ExportMenu } from './ExportMenu.tsx';
 
 function ConversationTitleBar() {
   const activeConversationId = useStore((state) => state.activeConversationId);
@@ -39,13 +39,6 @@ function ConversationTitleBar() {
     setIsEditing(false);
   }, []);
 
-  const handleExport = useCallback(() => {
-    if (!activeConv) return;
-    const markdown = exportConversationToMarkdown(activeConv, messages);
-    const filename = `${activeConv.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.md`;
-    downloadMarkdown(filename, markdown);
-  }, [activeConv, messages]);
-
   if (!activeConv) return null;
 
   return (
@@ -72,15 +65,12 @@ function ConversationTitleBar() {
             {activeConv.title}
           </span>
           <div className="flex items-center gap-1">
-            <Btn
-              size="icon-sm"
-              variant="ghost"
-              className="h-6 w-6 opacity-60 hover:opacity-100"
-              title="Export to Markdown"
-              onClick={handleExport}
-            >
-              <DownloadIcon size={14} />
-            </Btn>
+            <ExportMenu
+              conversation={activeConv}
+              messages={messages}
+              className="opacity-60 hover:opacity-100"
+              iconSize={14}
+            />
             <Btn
               size="icon-sm"
               variant="ghost"

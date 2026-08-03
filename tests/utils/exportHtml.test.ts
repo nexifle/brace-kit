@@ -113,4 +113,29 @@ describe('exportHtml', () => {
     expect(__exportHtmlTemplates.css).toContain('.bk-table-wrap');
     expect(__exportHtmlTemplates.css).toContain('overflow-x: auto');
   });
+
+  test('minifies the embedded CSS and JS in the generated document', async () => {
+    const html = await exportConversationToHtml(makeConversation(), makeMessages(), {
+      markedSource: 'x',
+      hljsSource: 'y',
+    });
+
+    // The <style> block must have no leading indentation or blank lines (minified).
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).not.toBeNull();
+    const style = styleMatch![1];
+    expect(style).not.toMatch(/^\s{2,}/m); // no indented lines
+    expect(style).not.toContain('\n\n'); // no blank lines
+
+    // The render script must strip its leading indentation and full-line comments.
+    const renderMatch = html.match(/<script>\n?([\s\S]*?)<\/script>/g);
+    const renderJs = renderMatch
+      ? renderMatch.map((s) => s.replace(/<script>\n?/, '').replace(/<\/script>/, '')).find((s) => s.includes('renderMessage'))
+      : '';
+    expect(renderJs).toBeTruthy();
+    expect(renderJs).not.toContain('// ----------'); // section comments stripped
+    // No leading indentation on any render-JS line (trailing shell whitespace trimmed).
+    const lines = renderJs.trim().split('\n');
+    expect(lines.some((l) => /^\s{2,}/.test(l))).toBe(false);
+  });
 });

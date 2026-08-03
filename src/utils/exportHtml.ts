@@ -37,6 +37,40 @@ function utf8ToBase64(str: string): string {
   return btoa(binary);
 }
 
+/**
+ * Minimal, semantics-preserving minifier for the embedded render JS.
+ * Strips per-line indentation/trailing space and blank lines. Safe because
+ * the render script uses no template literals, no multi-line regexes, and no
+ * strings that begin a line with `//` (so line comments can be dropped).
+ */
+function minifyJS(code: string): string {
+  return code
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => {
+      if (!l) return false;
+      if (l.startsWith('//')) return false; // full-line comment
+      return true;
+    })
+    .join('\n');
+}
+
+/**
+ * Minimal, safe minifier for the embedded CSS: strips comments and collapses
+ * inter-token whitespace. Safe here because the design CSS has no `content:`
+ * strings with meaningful whitespace or braces.
+ */
+function minifyCSS(code: string): string {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, '') // strip comments
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .join('')
+    .replace(/\s*([{}:;,>])\s*/g, '$1')
+    .replace(/\s{2,}/g, ' ');
+}
+
 async function fetchDistAsset(relativePath: string): Promise<string> {
   let url: string;
   if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
@@ -106,8 +140,8 @@ export async function exportConversationToHtml(
     .replace(/&/g, '\\u0026');
   const dataBase64 = utf8ToBase64(dataJson);
 
-  const css = CSS_TEMPLATE.trim();
-  const renderJs = RENDER_JS_TEMPLATE.trim();
+  const css = minifyCSS(CSS_TEMPLATE);
+  const renderJs = minifyJS(RENDER_JS_TEMPLATE);
 
   return `<!DOCTYPE html>
 <html lang="en" data-bk-export="bracekit">
