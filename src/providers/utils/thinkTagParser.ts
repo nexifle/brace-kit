@@ -1,9 +1,9 @@
 /**
  * Think Tag Parser
  *
- * Parses <think>...</think> blocks embedded in streaming text content.
- * Used by OpenAI-compatible, Anthropic-compatible, and Gemini-compatible
- * endpoints that embed reasoning inline (e.g. Qwen3, some Ollama models).
+ * Parses <space>think<space>...<space>response blocks embedded in text
+ * content (Qwen3 / QwQ style). Used by OpenAI-compatible, Anthropic-compatible,
+ * and Gemini-compatible endpoints that embed reasoning inline.
  *
  * Usage:
  *   const parser = createThinkTagParser();
@@ -16,12 +16,16 @@ export interface ThinkChunk {
   content: string;
 }
 
-const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/gi;
+// Matches the tags used by process(): " thinking ...  response" (space style).
+const THINK_TAG_REGEX = / thinking([\s\S]*?) response/gi;
 
 export interface ThinkTagParser {
   /** Process a content delta, yielding text/reasoning chunks. */
   process(content: string): Generator<ThinkChunk>;
-  nonStreamingProcess(content: string): string; // Optional non-streaming version for static content
+  /** Strip think tags from static content (backwards-compatible). */
+  nonStreamingProcess(content: string): string;
+  /** Split static content into text + reasoning, keeping the reasoning. */
+  nonStreamingParse(content: string): { content: string; reasoning: string };
   /** Flush any buffered content when the stream ends. Returns null if nothing buffered. */
   flush(): ThinkChunk | null;
 }
@@ -42,35 +46,43 @@ export function createThinkTagParser(): ThinkTagParser {
     nonStreamingProcess(content: string): string {
       return content.replace(THINK_TAG_REGEX, '').trim();
     },
+    nonStreamingParse(content: string): { content: string; reasoning: string } {
+      let reasoning = '';
+      const text = content.replace(THINK_TAG_REGEX, (_match, inner: string) => {
+        reasoning += (reasoning ? '\n' : '') + inner.trim();
+        return '';
+      }).trim();
+      return { content: text, reasoning };
+    },
     *process(content: string): Generator<ThinkChunk> {
       buffer += content;
 
       let processing = true;
       while (processing && buffer.length > 0) {
         if (!inThinkBlock) {
-          const startIdx = buffer.indexOf('<think>');
+          const startIdx = buffer.indexOf(' thinking');
           if (startIdx === -1) {
-            const partial = trailingPartialMatch(buffer, '<think>');
+            const partial = trailingPartialMatch(buffer, ' thinking');
             const safe = buffer.slice(0, buffer.length - partial);
             if (safe) yield { type: 'text', content: safe };
             buffer = partial > 0 ? buffer.slice(-partial) : '';
             processing = false;
           } else {
             if (startIdx > 0) yield { type: 'text', content: buffer.slice(0, startIdx) };
-            buffer = buffer.slice(startIdx + '<think>'.length);
+            buffer = buffer.slice(startIdx + ' thinking'.length);
             inThinkBlock = true;
           }
         } else {
-          const endIdx = buffer.indexOf('</think>');
+          const endIdx = buffer.indexOf(' response');
           if (endIdx === -1) {
-            const partial = trailingPartialMatch(buffer, '</think>');
+            const partial = trailingPartialMatch(buffer, ' response');
             const safe = buffer.slice(0, buffer.length - partial);
             if (safe) yield { type: 'reasoning', content: safe };
             buffer = partial > 0 ? buffer.slice(-partial) : '';
             processing = false;
           } else {
             if (endIdx > 0) yield { type: 'reasoning', content: buffer.slice(0, endIdx) };
-            buffer = buffer.slice(endIdx + '</think>'.length);
+            buffer = buffer.slice(endIdx + ' response'.length);
             inThinkBlock = false;
           }
         }

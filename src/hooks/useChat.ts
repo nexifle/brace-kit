@@ -170,6 +170,7 @@ export function useChat() {
           role: 'assistant',
           content: response.content || '',
           ...(response.reasoning_content && { reasoningContent: response.reasoning_content }),
+          ...(response.reasoning_signature && { reasoningSignature: response.reasoning_signature }),
           ...(toolCalls.length && { toolCalls }),
         };
         currentState.addMessage(assistantMsg);

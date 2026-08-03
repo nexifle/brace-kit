@@ -3,6 +3,8 @@
  * Executes Google search using Gemini's grounding feature
  */
 
+import { extractGeminiText } from '../../../providers';
+
 export interface ToolExecutionContext {
   googleSearchApiKey?: string;
 }
@@ -25,7 +27,7 @@ interface GeminiGroundingChunk {
 
 interface GeminiCandidate {
   content?: {
-    parts?: Array<{ text?: string }>;
+    parts?: Array<{ text?: string; thought?: boolean | string }>;
   };
   groundingMetadata?: {
     groundingChunks?: GeminiGroundingChunk[];
@@ -136,8 +138,7 @@ export async function handleGoogleSearch(
 
     const data = (await response.json()) as GeminiResponse;
     const candidate = data.candidates?.[0];
-    const text =
-      candidate?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
+    const text = extractGeminiText(candidate?.content?.parts);
     const groundingMetadata = candidate?.groundingMetadata;
 
     let result = text;

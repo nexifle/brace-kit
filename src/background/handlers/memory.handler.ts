@@ -6,6 +6,7 @@
 import {
   PROVIDER_PRESETS,
   formatRequest,
+  extractGeminiText,
   type ProviderWithConfig,
 } from '../../providers';
 import type { Message, ProviderConfig } from '../../types';
@@ -103,9 +104,7 @@ export async function handleMemoryExtract(
       text = content?.map((c) => c.text).filter(Boolean).join('') || '';
     } else if (provider.format === 'gemini') {
       const candidates = data.candidates as GeminiCandidate[] | undefined;
-      text =
-        candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') ||
-        '';
+      text = extractGeminiText(candidates?.[0]?.content?.parts);
     }
 
     // Parse JSON from response

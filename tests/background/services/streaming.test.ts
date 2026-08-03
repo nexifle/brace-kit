@@ -70,6 +70,42 @@ describe('Streaming Service', () => {
       expect(result.reasoning_content).toBe('Thinking...');
     });
 
+    test('should extract reasoning from message.reasoning (OpenRouter-style gateways)', () => {
+      const data = {
+        choices: [{
+          message: {
+            content: 'Halo!',
+            reasoning: 'The user greeted me. Respond in Indonesian.',
+          },
+        }],
+      };
+      const provider = { format: 'openai' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.content).toBe('Halo!');
+      expect(result.reasoning_content).toBe('The user greeted me. Respond in Indonesian.');
+    });
+
+    test('should extract reasoning from reasoning_details array when reasoning is absent', () => {
+      const data = {
+        choices: [{
+          message: {
+            content: 'Halo!',
+            reasoning_details: [
+              { type: 'reasoning.text', index: 0, text: 'First thought.' },
+              { type: 'reasoning.text', index: 1, text: 'Second thought.' },
+            ],
+          },
+        }],
+      };
+      const provider = { format: 'openai' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.reasoning_content).toBe('First thought.Second thought.');
+    });
+
     test('should build Anthropic format response', () => {
       const data = {
         content: [
@@ -83,6 +119,34 @@ describe('Streaming Service', () => {
 
       expect(result.content).toBe('Hello world');
       expect(result.reasoning_content).toBe('');
+    });
+
+    test('should extract Anthropic thinking blocks as reasoning with signature', () => {
+      const data = {
+        content: [
+          { type: 'thinking', thinking: 'Let me reason about this.', signature: 'sig-abc' },
+          { type: 'text', text: 'Final answer.' },
+        ],
+      };
+      const provider = { format: 'anthropic' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.content).toBe('Final answer.');
+      expect(result.reasoning_content).toBe('Let me reason about this.');
+      expect(result.reasoning_signature).toBe('sig-abc');
+    });
+
+    test('should fall back to top-level reasoning_content for k2.5/Kimi-style providers', () => {
+      const data = {
+        content: [{ type: 'text', text: 'Final.' }],
+        reasoning_content: 'Top-level reasoning',
+      };
+      const provider = { format: 'anthropic' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.reasoning_content).toBe('Top-level reasoning');
     });
 
     test('should build Gemini format response', () => {
@@ -102,6 +166,45 @@ describe('Streaming Service', () => {
 
       expect(result.content).toBe('Hello world');
       expect(result.reasoning_content).toBe('');
+    });
+
+    test('should keep Gemini thought parts out of content and surface them as reasoning', () => {
+      const data = {
+        candidates: [{
+          content: {
+            parts: [
+              { text: '**Defining My Identity** reasoning', thought: true },
+              { text: 'Saya adalah model bahasa besar.' },
+            ],
+          },
+        }],
+      };
+      const provider = { format: 'gemini' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.content).toBe('Saya adalah model bahasa besar.');
+      expect(result.reasoning_content).toBe('**Defining My Identity** reasoning');
+    });
+
+    test('should capture Gemini thought signature for multi-turn replay', () => {
+      const data = {
+        candidates: [{
+          content: {
+            parts: [
+              { text: 'reasoning', thought: true, thoughtSignature: 'sig-xyz' },
+              { text: 'Answer.' },
+            ],
+          },
+        }],
+      };
+      const provider = { format: 'gemini' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.content).toBe('Answer.');
+      expect(result.reasoning_content).toBe('reasoning');
+      expect(result.reasoning_signature).toBe('sig-xyz');
     });
 
     test('should handle missing data gracefully', () => {
