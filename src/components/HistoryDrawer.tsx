@@ -12,10 +12,14 @@ import {
   HistoryIcon,
   GitBranchIcon,
   ExternalLinkIcon,
-  DownloadIcon
+  DownloadIcon,
+  FileTextIcon,
+  FileCode2Icon,
+  Loader2Icon,
 } from 'lucide-react';
 import { Btn } from './ui/Btn.tsx';
 import { exportConversationToMarkdown, downloadMarkdown } from '../utils/exportMarkdown.ts';
+import { exportConversationToHtml, downloadHtml, makeExportBasename } from '../utils/exportHtml.ts';
 
 interface ConversationWithMessages {
   id: string;
@@ -96,6 +100,10 @@ export function HistoryDrawer() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  // Export menu state: which conversation has its menu open + which export is busy
+  const [exportMenuFor, setExportMenuFor] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<{ id: string; format: 'markdown' | 'html' } | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Cache: store messages + pre-built searchable strings, survive across search changes
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
@@ -160,17 +168,47 @@ export function HistoryDrawer() {
     setTimeout(() => setHighlightedIds(new Set()), 2000);
   }, [branchRelations, store]);
 
-  const handleExport = useCallback(async (conv: ConversationWithMessages, e: React.MouseEvent) => {
-    e.stopPropagation();
-    let messages = conv.messages;
-    if (messages.length === 0) {
-      const loaded = await getConversationMessages(conv.id);
-      messages = loaded || [];
+  const handleExport = useCallback(async (conv: ConversationWithMessages, format: 'markdown' | 'html') => {
+    setExportMenuFor(null);
+    setExporting({ id: conv.id, format });
+    try {
+      let messages = conv.messages;
+      if (messages.length === 0) {
+        const loaded = await getConversationMessages(conv.id);
+        messages = loaded || [];
+      }
+      const base = makeExportBasename(conv);
+      if (format === 'markdown') {
+        downloadMarkdown(`${base}.md`, exportConversationToMarkdown(conv, messages));
+      } else {
+        const html = await exportConversationToHtml(conv, messages);
+        downloadHtml(`${base}.html`, html);
+      }
+    } catch (err) {
+      console.error('[HistoryDrawer] Export failed:', err);
+    } finally {
+      setExporting(null);
     }
-    const markdown = exportConversationToMarkdown(conv, messages);
-    const filename = `${conv.title.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.md`;
-    downloadMarkdown(filename, markdown);
   }, []);
+
+  // Close the export menu on outside click or Escape.
+  useEffect(() => {
+    if (!exportMenuFor) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuFor(null);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportMenuFor(null);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [exportMenuFor]);
 
   useEffect(() => {
     if (store.historyDrawerOpen) {
@@ -356,7 +394,7 @@ export function HistoryDrawer() {
           )}
         </div>
 
-        <div className="absolute -right-px top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/item:opacity-100 transition-all duration-200 bg-gradient-to-l from-card via-card/95 to-transparent from-0% via-60% to-100% pl-10 pr-3 py-1">
+        <div className={`absolute -right-px top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-gradient-to-l from-card via-card/95 to-transparent from-0% via-60% to-100% pl-10 pr-3 py-1 transition-all duration-200 ${exportMenuFor === conv.id ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100'}`}>
           <Btn
             variant="ghost"
             size="icon-sm"
@@ -383,15 +421,54 @@ export function HistoryDrawer() {
               <ExternalLinkIcon size={12} />
             </Btn>
           )}
-          <Btn
-            variant="ghost"
-            size="icon-sm"
-            className="h-6 w-6 text-muted-foreground hover:text-primary"
-            title="Export to Markdown"
-            onClick={(e) => handleExport(conv, e)}
-          >
-            <DownloadIcon size={12} />
-          </Btn>
+          <div ref={exportMenuRef} className="relative">
+            <Btn
+              variant="ghost"
+              size="icon-sm"
+              className={`h-6 w-6 text-muted-foreground hover:text-primary ${exportMenuFor === conv.id ? 'text-primary bg-primary/10' : ''}`}
+              title="Export conversation"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExportMenuFor((cur) => (cur === conv.id ? null : conv.id));
+              }}
+            >
+              {exporting?.id === conv.id ? (
+                <Loader2Icon size={12} className="animate-spin" />
+              ) : (
+                <DownloadIcon size={12} />
+              )}
+            </Btn>
+            {exportMenuFor === conv.id && (
+              <div
+                className="absolute right-0 bottom-full mb-1.5 w-48 z-50 bg-popover border border-border rounded-lg shadow-xl overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                  onClick={() => handleExport(conv, 'markdown')}
+                >
+                  <FileTextIcon size={15} className="mt-0.5 text-muted-foreground shrink-0" />
+                  <span className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-xs font-semibold text-foreground">Markdown</span>
+                    <span className="text-2xs text-muted-foreground leading-snug">Plain-text transcript (.md)</span>
+                  </span>
+                </button>
+                <div className="h-px bg-border/60 mx-3" />
+                <button
+                  type="button"
+                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent transition-colors"
+                  onClick={() => handleExport(conv, 'html')}
+                >
+                  <FileCode2Icon size={15} className="mt-0.5 text-muted-foreground shrink-0" />
+                  <span className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-xs font-semibold text-foreground">HTML</span>
+                    <span className="text-2xs text-muted-foreground leading-snug">Polished interactive page (.html)</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <Btn
             variant="ghost"
             size="icon-sm"
