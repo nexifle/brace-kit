@@ -112,7 +112,7 @@ export function createStreamingService(): StreamingService {
      * Build response object from non-streaming API response
      * @param data - Parsed JSON response
      * @param provider - Provider configuration
-     * @returns Response with content, reasoning_content, and tool_calls
+     * @returns Response with content, reasoning_content, reasoning_signature, and tool_calls
      */
     buildNonStreamingResponse(
       data: Record<string, unknown>,
@@ -175,6 +175,8 @@ export function createStreamingService(): StreamingService {
 
         // Extended thinking blocks → reasoning. Some Anthropic-compatible models
         // (k2.5/Kimi) use reasoning_content on the block or a top-level field.
+        // redacted_thinking blocks carry a signature but no text (budget
+        // exceeded) — handled below for the signature, never as reasoning.
         const thinkingBlocks = content?.filter((c) => c.type === 'thinking');
         reasoning =
           thinkingBlocks
@@ -184,8 +186,11 @@ export function createStreamingService(): StreamingService {
           (data.reasoning_content as string) ||
           '';
         // Thinking block signature — required for conversation history replay.
+        // Both thinking and redacted_thinking blocks carry one (the stream path
+        // receives it via signature_delta regardless of block type).
         reasoningSignature =
-          content?.find((c) => c.type === 'thinking')?.signature ??
+          content?.find((c) => c.type === 'thinking' || c.type === 'redacted_thinking')
+            ?.signature ??
           (data.reasoning_signature as string) ??
           undefined;
 

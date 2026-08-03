@@ -149,6 +149,23 @@ describe('Streaming Service', () => {
       expect(result.reasoning_content).toBe('Top-level reasoning');
     });
 
+    test('should capture the signature from redacted_thinking blocks (budget exceeded)', () => {
+      const data = {
+        content: [
+          { type: 'redacted_thinking', data: 'something', signature: 'sig-redacted' },
+          { type: 'text', text: 'Final answer.' },
+        ],
+      };
+      const provider = { format: 'anthropic' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      // redacted_thinking has no usable reasoning text, but its signature must
+      // survive for history replay — matching the stream path's signature_delta.
+      expect(result.reasoning_content).toBe('');
+      expect(result.reasoning_signature).toBe('sig-redacted');
+    });
+
     test('should build Gemini format response', () => {
       const data = {
         candidates: [{

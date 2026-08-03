@@ -9,10 +9,10 @@ const toArrays = (gen: Generator<{ type: string; content: string }>) => {
 };
 
 describe('thinkTagParser (streaming)', () => {
-  test('splits embedded think tags into reasoning chunks', () => {
+  test('splits line-anchored think tags into reasoning chunks', () => {
     const p = createThinkTagParser();
     const { text, reasoning } = toArrays(
-      p.process('Answer: thinkingI decide to say hi. responseHello!')
+      p.process('Answer:\n thinkingI decide to say hi.\n responseHello!')
     );
     expect(text).toBe('Answer:Hello!');
     expect(reasoning).toBe('I decide to say hi.');
@@ -20,12 +20,12 @@ describe('thinkTagParser (streaming)', () => {
 
   test('buffers partial tags across chunks', () => {
     const p = createThinkTagParser();
-    // ' thin' is a prefix of ' thinking' — held back, not emitted as text.
-    const first = toArrays(p.process('pre thin'));
+    // '\n thi' is a partial of the open tag — held back, not emitted.
+    const first = toArrays(p.process('pre\n thin'));
     expect(first.text).toBe('pre');
 
     // Completing the open tag; reasoning ends at the close tag, then text.
-    const second = toArrays(p.process('king secret stuff responseanext'));
+    const second = toArrays(p.process('king secret stuff\n responseanext'));
     expect(second.reasoning).toBe(' secret stuff');
     expect(second.text).toBe('anext');
     expect(p.flush()).toBeNull();
@@ -37,27 +37,45 @@ describe('thinkTagParser (streaming)', () => {
     expect(text).toBe('just plain text');
     expect(reasoning).toBe('');
   });
+
+  test('[REG] ordinary prose with "thinking"/"response" words is never split', () => {
+    const p = createThinkTagParser();
+    const { text, reasoning } = toArrays(
+      p.process('I was thinking about the correct response to give you.')
+    );
+    expect(text).toBe('I was thinking about the correct response to give you.');
+    expect(reasoning).toBe('');
+  });
 });
 
 describe('thinkTagParser (non-streaming)', () => {
   test('nonStreamingParse keeps reasoning instead of dropping it', () => {
     const p = createThinkTagParser();
     const { content, reasoning } = p.nonStreamingParse(
-      'Result: thinkingI searched the docs. responseFound it.'
+      'Result:\n thinkingI searched the docs.\n responseFound it.'
     );
-    expect(content).toBe('Result:Found it.');
+    expect(content).toBe('Result:\nFound it.');
     expect(reasoning).toBe('I searched the docs.');
   });
 
   test('nonStreamingProcess strips tags (backwards compatible)', () => {
     const p = createThinkTagParser();
-    expect(p.nonStreamingProcess('a thinkingsecret responseb')).toBe('ab');
+    expect(p.nonStreamingProcess('a\n thinkingsecret\n responseb')).toBe('a\nb');
   });
 
   test('nonStreamingParse with no tags returns content unchanged', () => {
     const p = createThinkTagParser();
     const { content, reasoning } = p.nonStreamingParse('plain');
     expect(content).toBe('plain');
+    expect(reasoning).toBe('');
+  });
+
+  test('[REG] non-streaming prose with "thinking"/"response" words is never split', () => {
+    const p = createThinkTagParser();
+    const { content, reasoning } = p.nonStreamingParse(
+      'I was thinking about the correct response to give you.'
+    );
+    expect(content).toBe('I was thinking about the correct response to give you.');
     expect(reasoning).toBe('');
   });
 });

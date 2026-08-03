@@ -247,9 +247,10 @@ export function createChatService(): ChatService {
           const thinkParser = createThinkTagParser();
 
           // Split embedded think tags: keep reasoning instead of dropping it
-          // (the stream path surfaces it as reasoning chunks).
-          let content = result.content || '';
-          let reasoning = result.reasoning_content || '';
+          // (the stream path surfaces it as reasoning chunks). Guard against a
+          // non-string content (some gateways echo multimodal content as arrays).
+          let content = typeof result.content === 'string' ? result.content : '';
+          let reasoning = typeof result.reasoning_content === 'string' ? result.reasoning_content : '';
           if (content) {
             const parsed = thinkParser.nonStreamingParse(content);
             content = parsed.content;

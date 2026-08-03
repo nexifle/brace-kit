@@ -23,8 +23,10 @@ describe('Gemini Format', () => {
     });
 
     it('extracts thought parts as reasoning (boolean or string form)', () => {
+      // String thought values take priority (matches the stream parser);
+      // boolean thought parts fall back to their text.
       expect(extractGeminiReasoning(parts)).toBe(
-        '**Defining My Identity** reason textextra thought'
+        '**Defining My Identity** reason textstring thought'
       );
     });
 

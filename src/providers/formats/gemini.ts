@@ -43,8 +43,8 @@ export function extractGeminiReasoning(
 ): string {
   return (
     parts
-      ?.filter((p) => p.thought && p.text)
-      .map((p) => p.text)
+      ?.filter((p) => p.thought)
+      .map((p) => (typeof p.thought === 'string' ? p.thought : p.text))
       .filter(Boolean)
       .join('') || ''
   );
