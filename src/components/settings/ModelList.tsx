@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SearchIcon, XIcon } from 'lucide-react';
+import { fuzzyFilter } from '../../utils/fuzzySearch.ts';
 
 interface ModelListProps {
   models: string[];
@@ -29,9 +30,9 @@ export function ModelList({
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return models;
-    return models.filter((m) => m.toLowerCase().includes(q));
+    // fuzzyFilter handles short-query includes fallback and typo-tolerant
+    // fuzzysort matching for longer queries.
+    return fuzzyFilter(models, query);
   }, [models, query]);
 
   return (
