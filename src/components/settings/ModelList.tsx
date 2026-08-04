@@ -32,8 +32,19 @@ export function ModelList({
   const filtered = useMemo(() => {
     // fuzzyFilter handles short-query includes fallback and typo-tolerant
     // fuzzysort matching for longer queries.
-    return fuzzyFilter(models, query);
-  }, [models, query]);
+    const result = fuzzyFilter(models, query);
+    // Pin the selected model at the top whenever it matches the current search.
+    if (activeModel) {
+      const idx = result.indexOf(activeModel);
+      if (idx > 0) {
+        const arr = result.slice();
+        arr.splice(idx, 1);
+        arr.unshift(activeModel);
+        return arr;
+      }
+    }
+    return result;
+  }, [models, query, activeModel]);
 
   return (
     <div className="flex flex-col gap-1.5">
