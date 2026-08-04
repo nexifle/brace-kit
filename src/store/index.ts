@@ -58,6 +58,7 @@ interface StorageData {
   compactConfig?: CompactConfig;
   theme?: 'light' | 'dark';
   preferences?: Preferences;
+  railCollapsed?: boolean;
   textSelectionEnabled?: boolean;
   textSelectionMinLength?: number;
   customQuickActions?: unknown[];
@@ -165,6 +166,8 @@ export const useStore = create<AppState>((set, get) => ({
   historyDrawerOpen: false,
   settingsSection: null,
   showSystemPromptEditor: false,
+  mode: 'sidebar',
+  railCollapsed: false,
 
   // Security
   security: {
@@ -624,6 +627,13 @@ export const useStore = create<AppState>((set, get) => ({
     get().saveToStorage();
   },
 
+  setMode: (mode) => set({ mode }),
+
+  setRailCollapsed: (railCollapsed) => {
+    set({ railCollapsed });
+    chrome.storage.local.set({ railCollapsed }).catch(() => {});
+  },
+
   setHistoryDrawerOpen: (historyDrawerOpen) => set({ historyDrawerOpen }),
 
   toggleHistoryDrawer: () =>
@@ -775,6 +785,7 @@ export const useStore = create<AppState>((set, get) => ({
         'compactConfig',
         'theme',
         'preferences',
+        'railCollapsed',
         'textSelectionEnabled',
         'textSelectionMinLength',
         'customQuickActions',
@@ -921,6 +932,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       if (data.preferences) {
         updates.preferences = data.preferences;
+      }
+      if (data.railCollapsed !== undefined) {
+        updates.railCollapsed = data.railCollapsed;
       }
       if (data.textSelectionEnabled !== undefined) {
         updates.textSelectionEnabled = data.textSelectionEnabled;

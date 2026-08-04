@@ -28,6 +28,7 @@ export function InputArea() {
   const footerRef = useRef<HTMLDivElement>(null);
   const lastCursorPosRef = useRef<number>(0);
   const store = useStore();
+  const mode = useStore((state) => state.mode);
   const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
   const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText, pageContext: hasPageContext } = usePageContext();
@@ -217,6 +218,7 @@ export function InputArea() {
 
   return (
     <div id="input-area" className="p-3 border-t bg-background">
+      <div className={`mx-auto w-full ${mode === 'tab' ? 'max-w-[900px]' : ''}`}>
       {/* Slash Command Processing Indicator */}
       {isProcessingCommand && (
         <div className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg bg-primary/10 border border-primary/20 animate-in fade-in slide-in-from-top-1 duration-200">
@@ -372,22 +374,24 @@ export function InputArea() {
         <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-1.5 border-t border-border/50" ref={footerRef}>
           <PreferencesPopover isOpen={showPreferencesPopover} onClose={() => setShowPreferencesPopover(false)} />
 
-          {/* Page context - pill with label */}
-          <Tooltip>
-            <TooltipTrigger>
-              <button
-                type="button"
-                className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
-                  ? 'bg-primary/15 text-primary border-primary/40'
-                  : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                onClick={handleAttachClick}
-              >
-                <GlobeIcon size={11} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Add current page to context</TooltipContent>
-          </Tooltip>
+          {/* Page context - pill with label (hidden in tab mode) */}
+          {mode !== 'tab' && (
+            <Tooltip>
+              <TooltipTrigger>
+                <button
+                  type="button"
+                  className={`flex items-center justify-center w-6 h-6 rounded-full border transition-all duration-200 shrink-0 ${store.pageContext
+                    ? 'bg-primary/15 text-primary border-primary/40'
+                    : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
+                    }`}
+                  onClick={handleAttachClick}
+                >
+                  <GlobeIcon size={11} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Add current page to context</TooltipContent>
+            </Tooltip>
+          )}
 
           {/* Attach - pill with label */}
           <Tooltip>
@@ -502,6 +506,7 @@ export function InputArea() {
           multiple
           onChange={(e) => handleFileSelect(e.target.files)}
         />
+      </div>
       </div>
     </div>
   );

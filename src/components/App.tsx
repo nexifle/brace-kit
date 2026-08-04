@@ -6,12 +6,13 @@ import { SettingsPanel } from './SettingsPanel.tsx';
 import { HistoryDrawer } from './HistoryDrawer.tsx';
 import { GalleryView } from './GalleryView.tsx';
 import { LockScreen } from './LockScreen.tsx';
+import { ConversationRail } from './ConversationRail.tsx';
 import { useStreaming } from '../hooks';
-// import { ToastProvider, Toaster } from './ui/toast/index.ts';
 
 export function App() {
   const store = useStore();
   const view = useStore((state) => state.view);
+  const mode = useStore((state) => state.mode);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load settings on mount
@@ -58,23 +59,37 @@ export function App() {
     return <LockScreen />;
   }
 
-  return (
-    <div id="app" className="relative flex flex-col h-screen overflow-hidden bg-background text-foreground">
-      {store.isCompacting && (
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center z-[1000] text-white gap-3 animate-in fade-in duration-300">
-          <div className="compacting-spinner"></div>
-          <div className="text-sm font-medium">Summarizing conversation...</div>
-        </div>
-      )}
+  const mainColumn = (
+    <>
       <Header />
       <main className="flex-1 relative overflow-hidden">
         {view === 'chat' && <ChatView />}
         {view === 'settings' && <SettingsPanel />}
         {view === 'gallery' && <GalleryView />}
       </main>
-      <HistoryDrawer />
+    </>
+  );
 
+  return (
+    <div
+      id="app"
+      className={`relative flex h-screen w-full overflow-hidden bg-background text-foreground ${mode === 'tab' ? 'flex-row' : 'flex-col'}`}
+    >
+      {store.isCompacting && (
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center z-[1000] text-white gap-3 animate-in fade-in duration-300">
+          <div className="compacting-spinner"></div>
+          <div className="text-sm font-medium">Summarizing conversation...</div>
+        </div>
+      )}
+      {mode === 'tab' && <ConversationRail />}
+      {mode === 'tab' ? (
+        <div className="relative flex-1 flex flex-col min-w-0 overflow-hidden">
+          {mainColumn}
+        </div>
+      ) : (
+        mainColumn
+      )}
+      {mode === 'sidebar' && <HistoryDrawer />}
     </div>
   );
 }
-
