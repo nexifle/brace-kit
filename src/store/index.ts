@@ -1128,6 +1128,11 @@ export const useStore = create<AppState>((set, get) => ({
 
       await saveConversationMessages(convId, messagesToSave);
 
+      // Persist which conversation is active so a sidebar reopen restores the
+      // right conversation even when no other saveToStorage() has run yet
+      // (e.g. closing right after the first message/reply).
+      await chrome.storage.local.set({ activeConversationId: convId });
+
       // Extract markdown images and update conversation metadata
       const MD_IMAGE_REGEX = /!\[.*?\]\((https?:\/\/[^)\s]+)\)/g;
       const mdImages = new Set<string>();

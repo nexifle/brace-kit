@@ -123,6 +123,144 @@ describe('abortRequest clears buffer', () => {
 });
 
 // ============================================================
+// clearStreamingBuffer — konsumsi stream menghapus buffer
+// ============================================================
+
+/**
+ * Seed a completed streaming buffer for a conversation by running a real
+ * (mock-SSE) stream through handleStreamingResponse.
+ */
+async function seedCompletedStream(
+  service: { handleStreamingResponse: Function },
+  convId: string,
+  requestId: string,
+  content: string
+): Promise<void> {
+  const body = [
+    `data: {"choices":[{"delta":{"content":"${content}"}}]}`,
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  const response = new Response(body, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
+  const activeRequest = { abortController: new AbortController(), aborted: false };
+  await service.handleStreamingResponse(
+    response,
+    { format: 'openai' },
+    {
+      messages: [{ role: 'user', content: 'hi' }],
+      providerConfig: {
+        providerId: 'openai', apiKey: 'test-key', model: 'gpt-4o',
+        apiUrl: 'https://example.com/v1', format: 'openai',
+      },
+      options: {},
+      requestId,
+      conversationId: convId,
+    } as never,
+    activeRequest,
+    mock(() => {})
+  );
+}
+
+describe('clearStreamingBuffer', () => {
+  test('menghapus buffer yang sudah dikonsumsi (match requestId + conversationId)', async () => {
+    const { createChatService, getActiveStreamingBuffers, clearStreamingBuffer } =
+      await import('../src/background/services/chat.service.js');
+    const service = createChatService();
+
+    await seedCompletedStream(service, 'conv-consumed', 'req-consumed', 'Hello ');
+
+    expect(getActiveStreamingBuffers()['conv-consumed']).toBeDefined();
+    clearStreamingBuffer('req-consumed', 'conv-consumed');
+    expect(getActiveStreamingBuffers()['conv-consumed']).toBeUndefined();
+  });
+
+  test('menghapus berdasarkan conversationId saja jika requestId tidak diberikan', async () => {
+    const { createChatService, getActiveStreamingBuffers, clearStreamingBuffer } =
+      await import('../src/background/services/chat.service.js');
+    const service = createChatService();
+
+    await seedCompletedStream(service, 'conv-only', 'req-only', 'Hello ');
+
+    clearStreamingBuffer(undefined, 'conv-only');
+    expect(getActiveStreamingBuffers()['conv-only']).toBeUndefined();
+  });
+
+  test('tidak menghapus buffer request yang lebih baru untuk konversasi yang sama', async () => {
+    const { createChatService, getActiveStreamingBuffers, clearStreamingBuffer } =
+      await import('../src/background/services/chat.service.js');
+    const service = createChatService();
+
+    // Seed stream lama (selesai) lalu stream baru untuk konversasi yang sama.
+    // createBufferEntry overwrites per conversation, jadi buffer berisi request baru.
+    await seedCompletedStream(service, 'conv-same', 'req-old', 'Old ');
+    await seedCompletedStream(service, 'conv-same', 'req-new', 'New ');
+
+    expect(getActiveStreamingBuffers()['conv-same']!.requestId).toBe('req-new');
+
+    // Clear dengan requestId lama tidak boleh menghapus entry yang masih relevan
+    clearStreamingBuffer('req-old', 'conv-same');
+    expect(getActiveStreamingBuffers()['conv-same']).toBeDefined();
+    expect(getActiveStreamingBuffers()['conv-same']!.requestId).toBe('req-new');
+  });
+
+  test('tidak crash dan tidak menghapus apa pun jika tidak ada match', async () => {
+    const { createChatService, getActiveStreamingBuffers, clearStreamingBuffer } =
+      await import('../src/background/services/chat.service.js');
+    const service = createChatService();
+
+    await seedCompletedStream(service, 'conv-nomatch', 'req-nomatch', 'Hello ');
+
+    clearStreamingBuffer('req-unknown', 'conv-other');
+    expect(getActiveStreamingBuffers()['conv-nomatch']).toBeDefined();
+  });
+});
+
+// ============================================================
+// handleStreamConsumed handler
+// ============================================================
+
+describe('handleStreamConsumed', () => {
+  test('menghapus buffer dan merespons success', async () => {
+    const { createChatService, getActiveStreamingBuffers } =
+      await import('../src/background/services/chat.service.js');
+    const { handleStreamConsumed } = await import('../src/background/handlers/chat.handler.js');
+    const service = createChatService();
+
+    await seedCompletedStream(service, 'conv-h', 'req-h', 'Hello ');
+
+    const result = handleStreamConsumed(
+      { type: 'STREAM_CONSUMED', requestId: 'req-h', conversationId: 'conv-h' },
+      mockSendResponse
+    );
+
+    expect(result).toBe(false);
+    expect(capturedSendResponseArgs[0]).toEqual({ success: true });
+    expect(getActiveStreamingBuffers()['conv-h']).toBeUndefined();
+  });
+
+  test('tidak mengganggu buffer lain saat satu konversasi dikonsumsi', async () => {
+    const { createChatService, getActiveStreamingBuffers } =
+      await import('../src/background/services/chat.service.js');
+    const { handleStreamConsumed } = await import('../src/background/handlers/chat.handler.js');
+    const service = createChatService();
+
+    await seedCompletedStream(service, 'conv-a', 'req-a', 'A ');
+    await seedCompletedStream(service, 'conv-b', 'req-b', 'B ');
+
+    handleStreamConsumed(
+      { type: 'STREAM_CONSUMED', requestId: 'req-a', conversationId: 'conv-a' },
+      mockSendResponse
+    );
+
+    expect(getActiveStreamingBuffers()['conv-a']).toBeUndefined();
+    expect(getActiveStreamingBuffers()['conv-b']).toBeDefined();
+  });
+});
+
+// ============================================================
 // StreamingBufferEntry type & structure
 // ============================================================
 

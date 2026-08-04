@@ -97,4 +97,29 @@ describe('Store - Static Metadata Timestamp', () => {
 
     expect(storedConv?.metadataTimestamp).toBe(timestamp);
   });
+
+  test('saveActiveConversation persists activeConversationId to storage', async () => {
+    const store = useStore.getState();
+    const conv = store.createConversation();
+
+    store.setMessages([{ role: 'user', content: 'Hi there!' }]);
+    await store.saveActiveConversation();
+
+    // @ts-ignore - chrome mock from top of file
+    const calls = global.chrome.storage.local.set.mock.calls;
+    const lastCall = calls[calls.length - 1][0];
+    expect(lastCall.activeConversationId).toBe(conv.id);
+  });
+
+  test('saveActiveConversation does not persist id for empty conversation', async () => {
+    const store = useStore.getState();
+    store.createConversation();
+
+    // @ts-ignore - chrome mock from top of file
+    const callsBefore = global.chrome.storage.local.set.mock.calls.length;
+    await store.saveActiveConversation();
+    // @ts-ignore - chrome mock from top of file
+    const callsAfter = global.chrome.storage.local.set.mock.calls.length;
+    expect(callsAfter).toBe(callsBefore);
+  });
 });

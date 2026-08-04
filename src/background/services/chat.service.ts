@@ -137,6 +137,20 @@ export function getActiveStreamingBuffers(): Record<string, StreamingBufferEntry
 }
 
 /**
+ * Remove a buffer entry once the sidebar has consumed it (stream done/error
+ * handled and persisted). Matching by requestId prevents clearing a newer
+ * in-progress buffer created for the same conversation (e.g. tool-call
+ * follow-ups), which would break recovery for that newer stream.
+ */
+export function clearStreamingBuffer(requestId?: string, conversationId?: string): void {
+  for (const [convId, entry] of streamingBuffers.entries()) {
+    if (requestId !== undefined && entry.requestId !== requestId) continue;
+    if (conversationId !== undefined && convId !== conversationId) continue;
+    streamingBuffers.delete(convId);
+  }
+}
+
+/**
  * Create a chat service instance
  * @returns Chat service with request execution methods
  */

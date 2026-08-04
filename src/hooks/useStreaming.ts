@@ -35,10 +35,27 @@ export function useStreaming() {
   const processedDoneRequestsRef = useRef<Set<string>>(new Set());
 
   /**
+   * Tell the background that a stream has been consumed and persisted, so it
+   * removes the buffer entry. Without this, recovery on the next sidebar open
+   * would re-process a completed/errored stream and append a duplicate message.
+   */
+  const notifyStreamConsumed = useCallback((requestId: string | null | undefined, conversationId: string | null | undefined) => {
+    if (!requestId && !conversationId) return;
+    chrome.runtime.sendMessage({
+      type: 'STREAM_CONSUMED',
+      requestId: requestId ?? undefined,
+      conversationId: conversationId ?? undefined,
+    }).catch(() => {
+      // Background mungkin belum siap — buffer auto-purge via TTL sebagai fallback
+    });
+  }, []);
+
+  /**
    * Save completed background stream to IndexedDB
    */
   const handleBackgroundStreamDone = useCallback(async (
     convId: string,
+    requestId: string | undefined,
     message: {
       fullContent?: string;
       reasoningContent?: string;
@@ -59,6 +76,9 @@ export function useStreaming() {
 
       await saveConversationMessages(convId, [...existingMsgs, assistantMsg]);
 
+      // Persisted — remove the buffer so reopen recovery doesn't re-append it
+      notifyStreamConsumed(requestId, convId);
+
       // Update conversation timestamp in store and IDB
       const freshState = useStore.getState();
       const convMeta = freshState.conversations.find(c => c.id === convId);
@@ -77,14 +97,15 @@ export function useStreaming() {
       console.warn('[useStreaming] handleBackgroundStreamDone failed:', e);
       useStore.getState().setConversationStreaming(convId, null);
     }
-  }, []);
+  }, [notifyStreamConsumed]);
 
   /**
    * Clear streaming state for a background conversation on error
    */
-  const handleBackgroundStreamError = useCallback((convId: string) => {
+  const handleBackgroundStreamError = useCallback((convId: string, requestId?: string) => {
+    notifyStreamConsumed(requestId, convId);
     useStore.getState().setConversationStreaming(convId, null);
-  }, []);
+  }, [notifyStreamConsumed]);
 
   /**
    * Handle MCP server disconnect detected during a tool call.
@@ -284,6 +305,11 @@ export function useStreaming() {
     ) => {
       const result = streamProcessor.getFinalResult(fullContent, reasoningContent);
 
+      // Capture request/conv identity before state is reset below
+      const preResetState = useStore.getState();
+      const requestId = preResetState.currentRequestId;
+      const activeConvId = preResetState.activeConversationId;
+
       // Add assistant message
       // Use toolCalls from parameter (sent by background via CHAT_STREAM_DONE) as primary source,
       // fall back to result.toolCalls from streamProcessor for client-side processed chunks.
@@ -317,13 +343,18 @@ export function useStreaming() {
       streamProcessor.reset();
       // Clear per-conversation streaming state (handleToolCalls will re-set it if needed)
       if (!toolCalls || toolCalls.length === 0) {
-        const activeConvId = useStore.getState().activeConversationId;
         if (activeConvId) store.setConversationStreaming(activeConvId, null);
       }
       store.setIsStreaming(false);
       store.setCurrentRequestId(null);
-      store.saveActiveConversation();
+      const savePromise = store.saveActiveConversation();
       store.updateConversationTimestamp();
+
+      // Once persisted, remove the background buffer so the recovery logic on a
+      // future sidebar reopen does not append this message a second time.
+      savePromise.then(() => {
+        notifyStreamConsumed(requestId, activeConvId);
+      });
 
       // Extract memories if no tool calls
       if (store.memoryEnabled && !toolCalls?.length) {
@@ -347,7 +378,7 @@ export function useStreaming() {
 
       return null;
     },
-    [store, streamProcessor, extractMemories, handleToolCalls]
+    [store, streamProcessor, extractMemories, handleToolCalls, notifyStreamConsumed]
   );
 
   /**
@@ -356,6 +387,7 @@ export function useStreaming() {
   const handleStreamError = useCallback((error: string) => {
     const state = useStore.getState();
     const activeConvId = state.activeConversationId;
+    const requestId = state.currentRequestId;
 
     // Preserve any partially streamed content before clearing state
     const partialContent = state.streamingContent;
@@ -372,12 +404,14 @@ export function useStreaming() {
 
     if (activeConvId) store.setConversationStreaming(activeConvId, null);
     store.addMessage({ role: 'error', content: error });
+    // Error surfaced — remove the buffer so reopen recovery doesn't show it again
+    notifyStreamConsumed(requestId, activeConvId);
     store.setIsStreaming(false);
     store.setCurrentRequestId(null);
     store.setStreamingContent('');
     store.setStreamingReasoningContent('');
     streamProcessor.reset();
-  }, [store, streamProcessor]);
+  }, [store, streamProcessor, notifyStreamConsumed]);
 
   // Recovery: query background untuk streaming yang berjalan saat sidebar tutup
   const hasRecoveredRef = useRef(false);
@@ -437,7 +471,7 @@ export function useStreaming() {
                 );
               } else {
                 // Background conv — save ke IDB
-                handleBackgroundStreamDone(convId, {
+                handleBackgroundStreamDone(convId, entry.requestId, {
                   fullContent: entry.fullContent || entry.chunks.join(''),
                   reasoningContent: entry.reasoningContent,
                   reasoningSignature: entry.reasoningSignature,
@@ -472,6 +506,8 @@ export function useStreaming() {
               } else {
                 currentState.setConversationStreaming(convId, null);
               }
+              // Error surfaced/cleared — remove the buffer so recovery doesn't repeat it
+              notifyStreamConsumed(entry.requestId, convId);
             }
           }
         })
@@ -494,7 +530,7 @@ export function useStreaming() {
       }
     });
     return () => unsub();
-  }, [finishStream, handleBackgroundStreamDone]);
+  }, [finishStream, handleBackgroundStreamDone, notifyStreamConsumed]);
 
   // Listen for stream messages
   useEffect(() => {
@@ -554,9 +590,9 @@ export function useStreaming() {
               if (!first.done) processedDoneRequestsRef.current.delete(first.value);
             }
           }
-          handleBackgroundStreamDone(bgConvId, message);
+          handleBackgroundStreamDone(bgConvId, message.requestId, message);
         } else if (message.type === 'CHAT_STREAM_ERROR') {
-          handleBackgroundStreamError(bgConvId);
+          handleBackgroundStreamError(bgConvId, message.requestId);
         }
         return;
       }
