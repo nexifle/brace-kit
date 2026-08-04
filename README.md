@@ -6,6 +6,9 @@ An AI-powered Chrome sidebar that reads the current page content and lets you ch
 
 > **Bring Your Own Key (BYOK)** — BraceKit is free to use. You supply your own API keys directly to your chosen providers. No subscriptions, no telemetry, no data sent to BraceKit servers.
 
+[![Chrome Web Store Version](https://img.shields.io/chrome-web-store/v/kdlbihnhbaeoghamncndigpgnjociehh?style=for-the-badge&logo=google-chrome&color=4285f4)](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
+[![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/kdlbihnhbaeoghamncndigpgnjociehh?style=for-the-badge&color=5f6368)](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
+
 **[Documentation](https://bracekit.nexifle.com/guide/)**
 
 ## Features
@@ -38,12 +41,18 @@ An AI-powered Chrome sidebar that reads the current page content and lets you ch
 
 ## Installation
 
-### Prerequisites
+### Chrome Web Store (Recommended)
+
+Install BraceKit directly from the [Chrome Web Store](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh). Updates are automatic.
+
+### Build from Source
+
+#### Prerequisites
 
 - [Bun](https://bun.sh/) installed on your system
 - Chrome browser
 
-### Build & Load
+#### Build & Load
 
 ```bash
 # Clone the repository

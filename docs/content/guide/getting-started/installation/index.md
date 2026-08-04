@@ -11,9 +11,32 @@ icon = "<svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='curr
 
 # Installation
 
-BraceKit is distributed as an unpacked Chrome extension. Installation takes under two minutes.
+BraceKit is available on the [Chrome Web Store](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh). Installation takes under two minutes.
 
-## Prerequisites
+## Option A: Install from the Chrome Web Store (Recommended)
+
+1. Open the [BraceKit page on the Chrome Web Store](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)
+2. Click **Add to Chrome**
+3. Confirm by clicking **Add extension** in the popup
+4. Click the BraceKit icon in your Chrome toolbar to open the sidebar
+
+Updates are installed automatically by Chrome. Your settings and conversation history are preserved.
+
+### Pin the Extension
+
+For quick access, pin BraceKit to your toolbar:
+
+1. Click the puzzle piece icon (Extensions menu)
+2. Find BraceKit
+3. Click the pin icon
+
+Then continue to [Configure Your API Key](#step-5-configure-your-api-key) below.
+
+## Option B: Build from Source
+
+Prefer to run the latest code yourself? Build from source:
+
+### Prerequisites
 
 Before you begin, ensure you have:
 
@@ -21,7 +44,7 @@ Before you begin, ensure you have:
 - **Bun** runtime installed ([bun.sh](https://bun.sh))
 - An **API key** from at least one supported provider
 
-## Step 1: Clone the Repository
+### Step 1: Clone the Repository
 
 ```bash
 git clone https://github.com/nexifle/brace-kit.git
@@ -68,14 +91,6 @@ You should see output like:
 
 The BraceKit icon will appear in your Chrome toolbar.
 
-### Pin the Extension
-
-For quick access, pin BraceKit to your toolbar:
-
-1. Click the puzzle piece icon (Extensions menu)
-2. Find BraceKit
-3. Click the pin icon
-
 ## Step 5: Configure Your API Key
 
 1. Click the BraceKit icon to open the sidebar
@@ -101,7 +116,9 @@ This starts a development server. Changes to source files will automatically reb
 
 ## Updating BraceKit
 
-To update to the latest version:
+Installed from the [Chrome Web Store](https://chromewebstore.google.com/detail/bracekit-ai-sidebar/kdlbihnhbaeoghamncndigpgnjociehh)? Updates are installed automatically by Chrome.
+
+For a manual (source) build, update to the latest version:
 
 ```bash
 git pull origin main
