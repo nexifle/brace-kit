@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SearchIcon, XIcon } from 'lucide-react';
-import { fuzzyFilter } from '../../utils/fuzzySearch.ts';
+import { fuzzyFilter, fuzzyHighlight } from '../../utils/fuzzySearch.ts';
 
 interface ModelListProps {
   models: string[];
@@ -79,6 +79,15 @@ export function ModelList({
         >
           {filtered.map((m) => {
             const active = m === activeModel;
+            const q = query.trim();
+            const highlighted = q
+              ? fuzzyHighlight(
+                  m,
+                  q,
+                  '<mark class="bg-primary/20 text-primary font-semibold rounded-xs px-0.5">',
+                  '</mark>'
+                )
+              : m;
             return (
               <div
                 key={m}
@@ -102,9 +111,8 @@ export function ModelList({
                       ? 'text-primary font-medium'
                       : 'text-muted-foreground group-hover:text-foreground'
                   }`}
-                >
-                  {m}
-                </span>
+                  dangerouslySetInnerHTML={{ __html: highlighted }}
+                />
                 {onRemove && (
                   <button
                     type="button"
