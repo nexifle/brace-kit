@@ -3,11 +3,12 @@ import { useProvider } from '../../hooks/useProvider.ts';
 import { GROQ_BUILTIN_TOOLS, FORMAT_LABELS } from '../../providers';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import type { ProviderFormat, ProviderPreset } from '../../types/index.ts';
-import { PlusIcon, XIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
+import { PlusIcon, LayersIcon, SlidersHorizontalIcon, Settings2Icon, WrenchIcon } from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog.tsx';
 import { ModelParameterSettings } from './ModelParameterSettings.tsx';
 import { AddProviderModal } from './AddProviderModal.tsx';
 import { ProviderSelect } from './ProviderSelect.tsx';
+import { ModelList } from './ModelList.tsx';
 import { useStore } from '../../store/index.ts';
 
 // =============================================================================
@@ -238,55 +239,16 @@ export function ProviderSettings() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Model</label>
                 {isCustom ? (
-                  // Custom providers: user-managed model list — full-width rows,
-                  // full names (wrap, never truncate), add/remove.
+                  // Custom providers: user-managed model list — searchable,
+                  // bounded (internal scroll), with add/remove.
                   <div className="flex flex-col gap-2">
-                    {availableModels.length === 0 ? (
-                      <p className="text-sm text-muted-foreground/60 py-1">
-                        No models added yet. Type a model name below to add one.
-                      </p>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        {availableModels.map((m) => {
-                          const active = m === providerConfig.model;
-                          return (
-                            <div
-                              key={m}
-                              onClick={() => updateProviderConfig({ model: m })}
-                              className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer transition-all select-none ${
-                                active
-                                  ? 'bg-primary/10 border-primary/30'
-                                  : 'border-transparent hover:bg-muted/40 hover:border-border/60'
-                              }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 shrink-0 rounded-full transition-colors ${
-                                  active ? 'bg-primary' : 'bg-muted-foreground/25 group-hover:bg-muted-foreground/45'
-                                }`}
-                              />
-                              <span
-                                className={`min-w-0 flex-1 break-all text-sm leading-snug ${
-                                  active
-                                    ? 'text-primary font-medium'
-                                    : 'text-muted-foreground group-hover:text-foreground'
-                                }`}
-                              >
-                                {m}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); handleRemoveModel(m); }}
-                                className="shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors p-1 -mr-0.5"
-                                title="Remove model"
-                                aria-label={`Remove ${m}`}
-                              >
-                                <XIcon size={12} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    <ModelList
+                      models={availableModels}
+                      activeModel={providerConfig.model}
+                      onSelect={(m) => updateProviderConfig({ model: m })}
+                      onRemove={handleRemoveModel}
+                      emptyText="No models added yet. Type a model name below to add one."
+                    />
 
                     <div className="flex gap-2">
                     <input
@@ -315,16 +277,14 @@ export function ProviderSettings() {
                   onChange={(e) => updateProviderConfig({ model: e.target.value })}
                 />
               ) : (
-                // Preset provider with fetched model list: dropdown
-                <select
-                  className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground cursor-pointer"
-                  value={providerConfig.model}
-                  onChange={(e) => updateProviderConfig({ model: e.target.value })}
-                >
-                  {availableModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                // Preset provider with fetched model list: same searchable,
+                // bounded list as custom providers for a consistent view.
+                <ModelList
+                  models={availableModels}
+                  activeModel={providerConfig.model}
+                  onSelect={(m) => updateProviderConfig({ model: m })}
+                  emptyText="No models detected yet."
+                />
               )}
             </div>
 
