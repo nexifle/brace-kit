@@ -312,7 +312,7 @@ export function ComposerPicker() {
             }`}
           >
             {current && <ProviderMark id={current.id} name={current.name} size={16} />}
-            <span className={`min-w-0 truncate text-xs font-semibold leading-tight ${open ? 'text-primary' : 'text-foreground'}`}>
+            <span className={`shrink-0 min-w-0 truncate text-xs font-semibold leading-tight ${open ? 'text-primary' : 'text-foreground'}`}>
               {current?.name ?? 'Provider'}
             </span>
             <span className="shrink-0 text-muted-foreground/40">·</span>
