@@ -56,6 +56,7 @@ async function getMarkdownImages(conversations: { id: string; updatedAt: number;
 
 export function GalleryView() {
   const store = useStore();
+  const mode = useStore((state) => state.mode);
   const [images, setImages] = useState<StoredImageRecord[]>([]);
   const [markdownImages, setMarkdownImages] = useState<MarkdownImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -306,7 +307,8 @@ export function GalleryView() {
           }
 
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className={`mx-auto w-full ${mode === 'tab' ? 'max-w-[1200px]' : ''}`}>
+              <div className={`grid gap-4 ${mode === 'tab' ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}>
               {sortedFilteredItems.map((item) => {
                 const isMd = isMarkdownImage(item);
                 const itemKey = getItemId(item);
@@ -355,6 +357,7 @@ export function GalleryView() {
                   </div>
                 );
               })}
+              </div>
             </div>
           );
         })()}

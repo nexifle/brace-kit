@@ -192,6 +192,7 @@ export function MessageBubble({
 
   const messages = useStore((state) => state.messages);
   const streamingReasoningContent = useStore((state) => state.streamingReasoningContent);
+  const mode = useStore((state) => state.mode);
 
   // Use extracted hooks
   const isImageGenerationModel = useImageGenerationCheck();
@@ -416,6 +417,10 @@ export function MessageBubble({
 
   const roleLabel = message.role === 'user' ? 'You' : message.role === 'error' ? 'Error' : 'AI';
 
+  // In standalone tab mode the thread is already constrained to a centered
+  // readable column, so bubbles can stretch to the full column width.
+  const bubbleWidthClass = mode === 'tab' ? 'max-w-full' : 'max-w-[92%]';
+
   // Rendered content memo
   const renderedContent = useMemo(() => {
     if (isEditing && message.role === 'user') {
@@ -506,7 +511,7 @@ export function MessageBubble({
 
     return (
       <div
-        className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
+        className={`group flex flex-col gap-1 ${bubbleWidthClass} ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
       >
         <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
           {roleLabel}
@@ -562,7 +567,7 @@ export function MessageBubble({
 
   return (
     <div
-      className={`group flex flex-col gap-1 max-w-[92%] ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
+      className={`group flex flex-col gap-1 ${bubbleWidthClass} ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
     >
       <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5">
         {!message.summary && roleLabel}

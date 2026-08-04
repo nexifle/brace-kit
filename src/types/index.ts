@@ -460,6 +460,11 @@ export interface AppState {
   settingsSection: string | null;
   showSystemPromptEditor: boolean;
 
+  // Layout mode: side panel (default) or standalone full tab
+  mode: 'sidebar' | 'tab';
+  /** Whether the left conversation rail is collapsed in tab mode (persisted) */
+  railCollapsed: boolean;
+
   // Security
   security: SecuritySettings;
   isAuthenticated: boolean;
@@ -538,6 +543,8 @@ export interface AppState {
 
   setView: (view: 'chat' | 'settings' | 'gallery') => void;
   setTheme: (theme: 'light' | 'dark') => void;
+  setMode: (mode: 'sidebar' | 'tab') => void;
+  setRailCollapsed: (collapsed: boolean) => void;
   setHistoryDrawerOpen: (open: boolean) => void;
   toggleHistoryDrawer: () => void;
   setShowSystemPromptEditor: (show: boolean) => void;

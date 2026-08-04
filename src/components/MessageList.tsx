@@ -10,6 +10,7 @@ export function MessageList() {
   const messages = useStore((state) => state.messages);
   const isStreaming = useStore((state) => state.isStreaming);
   const preferences = useStore((state) => state.preferences);
+  const mode = useStore((state) => state.mode);
   const { branchFrom, regenerateFrom, editMessage } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -244,11 +245,12 @@ export function MessageList() {
 
   return (
     <div
-      className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-2 scrollbar-thin not-dark:bg-muted"
+      className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin not-dark:bg-muted"
       ref={containerRef}
       onScroll={handleScroll}
     >
-      {processedMessages.map((item, idx) => {
+      <div className={`mx-auto w-full flex flex-col gap-2 ${mode === 'tab' ? 'max-w-[900px]' : ''}`}>
+        {processedMessages.map((item, idx) => {
         if (item.type === 'tool-group' && item.tools) {
           return (
             <ToolMessageGroup
@@ -301,8 +303,9 @@ export function MessageList() {
 
         return null;
       })}
-      {isStreaming && <StreamingBubble />}
-      <div ref={messagesEndRef} style={{ height: '20px' }} />
+        {isStreaming && <StreamingBubble />}
+        <div ref={messagesEndRef} style={{ height: '20px' }} />
+      </div>
     </div>
   );
 }

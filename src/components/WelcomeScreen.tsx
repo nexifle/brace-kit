@@ -1,11 +1,14 @@
 import { useCallback, useState } from 'react';
 import { AlertCircleIcon, BookOpenIcon, HeartIcon, MousePointer2Icon, SparklesIcon, XIcon } from 'lucide-react';
 import { usePageContext } from '../hooks';
+import { useStore } from '../store/index.ts';
 import { Btn } from './ui/Btn.tsx';
 
 export function WelcomeScreen() {
   const { attachPageContext, grabSelection } = usePageContext();
   const [error, setError] = useState<string | null>(null);
+  const mode = useStore((state) => state.mode);
+  const maxWidth = mode === 'tab' ? 'max-w-[460px]' : 'max-w-[280px]';
 
   const handleReadPage = useCallback(async () => {
     setError(null);
@@ -27,7 +30,7 @@ export function WelcomeScreen() {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-700">
-      <div className="w-full max-w-[280px] space-y-8">
+      <div className={`w-full ${maxWidth} space-y-8`}>
 
         {/* Branding Section */}
         <div className="flex flex-col items-center gap-4">
