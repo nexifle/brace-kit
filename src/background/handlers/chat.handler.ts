@@ -5,6 +5,7 @@
 
 import {
   createChatService,
+  clearStreamingBuffer,
   getActiveStreamingBuffers,
   type ChatService,
   type ChatRequestMessage,
@@ -91,6 +92,26 @@ export function handleGetActiveStreams(sendResponse: SendResponse): boolean {
   const streams = getActiveStreamingBuffers();
   const response: ActiveStreamsResponse = { streams };
   sendResponse(response);
+  return false;
+}
+
+interface StreamConsumedMessage {
+  type: 'STREAM_CONSUMED';
+  requestId?: string;
+  conversationId?: string;
+}
+
+/**
+ * Handle STREAM_CONSUMED — sidebar sudah mengkonsumsi dan mem-persist hasil
+ * stream (done/error). Hapus buffer agar recovery tidak meng-append duplikat
+ * saat sidebar dibuka kembali.
+ */
+export function handleStreamConsumed(
+  message: StreamConsumedMessage,
+  sendResponse: SendResponse
+): boolean {
+  clearStreamingBuffer(message.requestId, message.conversationId);
+  sendResponse({ success: true });
   return false;
 }
 
