@@ -113,9 +113,11 @@ export function ConversationList() {
   // Cache: store messages + pre-built searchable strings, survive across search changes
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
   const searchableRef = useRef<Map<string, SearchableItem>>(new Map());
-  const indexedIdsRef = useRef<Set<string>>(new Set());
   const indexingRunRef = useRef(0);
   const isIndexingRef = useRef(false);
+  // Set when a store change arrives while an indexing pass is running, so the
+  // finished pass re-checks for conversations it may have missed mid-run.
+  const reindexQueuedRef = useRef(false);
 
   // Debounced search query — prevents main-thread thrashing on every keystroke
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -195,7 +197,12 @@ export function ConversationList() {
   // responsive even with hundreds/thousands of conversations instead of
   // eagerly batch-loading all messages up front.
   const ensureSearchData = useCallback((conversations: Conversation[]) => {
-    if (isIndexingRef.current) return;
+    if (isIndexingRef.current) {
+      // A pass is already running — flag it so the completed pass re-checks
+      // with the freshest conversation list (changes may have arrived mid-run).
+      reindexQueuedRef.current = true;
+      return;
+    }
 
     const missing = conversations.filter((conv) => needsSearchRefresh(conv, searchableRef.current.get(conv.id)));
     if (missing.length === 0) {
@@ -207,7 +214,6 @@ export function ConversationList() {
     const runId = ++indexingRunRef.current;
     const cache = messagesCacheRef.current;
     const searchable = searchableRef.current;
-    const indexedIds = indexedIdsRef.current;
     let processedSinceNotify = 0;
     setIsLoading(true);
 
@@ -228,6 +234,12 @@ export function ConversationList() {
         setIsLoading(false);
         if (processedSinceNotify > 0) {
           setSearchIndexVersion((v) => v + 1);
+        }
+        if (reindexQueuedRef.current) {
+          reindexQueuedRef.current = false;
+          scheduleNext(() => {
+            ensureSearchData(useStore.getState().conversations);
+          });
         }
         return;
       }
@@ -250,7 +262,6 @@ export function ConversationList() {
         title: conv.title,
         content: buildSearchableContent(messages),
       });
-      indexedIds.add(conv.id);
       processedSinceNotify += 1;
 
       if (processedSinceNotify >= SEARCH_INDEX_NOTIFY_BATCH_SIZE || debouncedQuery.trim()) {
@@ -277,9 +288,9 @@ export function ConversationList() {
     return () => {
       messagesCacheRef.current.clear();
       searchableRef.current.clear();
-      indexedIdsRef.current.clear();
       indexingRunRef.current += 1;
       isIndexingRef.current = false;
+      reindexQueuedRef.current = false;
     };
   }, []);
 

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { SearchIcon, XIcon } from 'lucide-react';
-import { fuzzyFilter, fuzzyHighlight } from '../../utils/fuzzySearch.ts';
+import { fuzzyFilter } from '../../utils/fuzzySearch.ts';
+import fuzzysort from 'fuzzysort';
 
 interface ModelListProps {
   models: string[];
@@ -12,6 +13,53 @@ interface ModelListProps {
   emptyText: string;
   /** Max height of the scrollable list area (px). Keeps the card from growing the page. */
   maxHeight?: number;
+}
+
+const MARK_CLASS = 'bg-primary/20 text-primary font-semibold rounded-xs px-0.5';
+
+/**
+ * Render a model name with fuzzy-matched characters wrapped in <mark>.
+ * Uses React nodes (never dangerouslySetInnerHTML) so free-text model names
+ * cannot inject markup/scripts.
+ */
+function highlightModelName(name: string, query: string): ReactNode {
+  const q = query.trim();
+  if (!q) return name;
+  const result = fuzzysort.single(q, name);
+  if (!result || !result.indexes?.length) return name;
+
+  const indexes = new Set(result.indexes);
+  const nodes: ReactNode[] = [];
+  let buffer = '';
+  let inMark = false;
+
+  for (let i = 0; i < name.length; i++) {
+    const matched = indexes.has(i);
+    if (matched && !inMark) {
+      if (buffer) nodes.push(buffer);
+      buffer = '';
+      inMark = true;
+    } else if (!matched && inMark) {
+      nodes.push(
+        <mark key={nodes.length} className={MARK_CLASS}>
+          {buffer}
+        </mark>
+      );
+      buffer = '';
+      inMark = false;
+    }
+    buffer += name[i];
+  }
+  if (inMark) {
+    nodes.push(
+      <mark key={nodes.length} className={MARK_CLASS}>
+        {buffer}
+      </mark>
+    );
+  } else if (buffer) {
+    nodes.push(buffer);
+  }
+  return nodes;
 }
 
 /**
@@ -90,15 +138,6 @@ export function ModelList({
         >
           {filtered.map((m) => {
             const active = m === activeModel;
-            const q = query.trim();
-            const highlighted = q
-              ? fuzzyHighlight(
-                  m,
-                  q,
-                  '<mark class="bg-primary/20 text-primary font-semibold rounded-xs px-0.5">',
-                  '</mark>'
-                )
-              : m;
             return (
               <div
                 key={m}
@@ -122,8 +161,9 @@ export function ModelList({
                       ? 'text-primary font-medium'
                       : 'text-muted-foreground group-hover:text-foreground'
                   }`}
-                  dangerouslySetInnerHTML={{ __html: highlighted }}
-                />
+                >
+                  {highlightModelName(m, query)}
+                </span>
                 {onRemove && (
                   <button
                     type="button"
