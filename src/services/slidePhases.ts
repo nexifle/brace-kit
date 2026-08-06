@@ -68,7 +68,15 @@ export interface SlideToolOptions {
   /** Offer `google_search` to the session (injection replaces the default tools). */
   enableGoogleSearch?: boolean;
   /**
-   * Executes an external tool call (e.g. `google_search`) via the existing
+   * Filtered MCP tool schemas from the user's configured servers (US-029),
+   * fetched exactly like main chat and injected into the session's tool list
+   * for plan/build/edit. They are dispatched client-side via `externalTool`
+   * → `MCP_CALL_TOOL`; VFS mutation (`apply_patch`) and `ask` remain strictly
+   * client-side tools that never collide with these external tools.
+   */
+  mcpTools?: MCPTool[];
+  /**
+   * Executes an external tool call (e.g. `google_search`, MCP) via the existing
    * `MCP_CALL_TOOL` background path. When absent, external tools resolve with a
    * clear error instead of hanging (FR-14).
    */
@@ -249,7 +257,9 @@ function buildPlanSession(params: PlanPhaseParams) {
       case 'google_search':
         return dispatchExternal(params.toolOptions, toolCall);
       default:
-        return { content: `Error: Unknown plan-phase tool: ${toolCall.name}` };
+        // Any external/MCP tool (US-029) routes through the shared
+        // `MCP_CALL_TOOL` background path, mirroring main chat (FR-14).
+        return dispatchExternal(params.toolOptions, toolCall);
     }
   };
 
@@ -367,7 +377,8 @@ function buildBuildSession(params: BuildPhaseParams) {
       case 'google_search':
         return dispatchExternal(params.toolOptions, toolCall);
       default:
-        return { content: `Error: Unknown build-phase tool: ${toolCall.name}` };
+        // External/MCP tool (US-029) routed via the shared `MCP_CALL_TOOL` path.
+        return dispatchExternal(params.toolOptions, toolCall);
     }
   };
 
@@ -539,7 +550,8 @@ function buildEditSession(params: EditPhaseParams) {
       case 'google_search':
         return dispatchExternal(params.toolOptions, toolCall);
       default:
-        return { content: `Error: Unknown edit-phase tool: ${toolCall.name}` };
+        // External/MCP tool (US-029) routed via the shared `MCP_CALL_TOOL` path.
+        return dispatchExternal(params.toolOptions, toolCall);
     }
   };
 
@@ -652,15 +664,26 @@ function args<T>(toolCall: ToolCall): T {
 /**
  * Resolve a phase's tool list, injecting `google_search` on top when the
  * caller's `toolOptions.enableGoogleSearch` is set (plan, and build/edit when
- * opted in). A caller-provided `tools` override is always respected verbatim.
+ * opted in), plus any filtered MCP tools from `toolOptions.mcpTools` (US-029).
+ * A caller-provided `tools` override is always respected verbatim.
+ *
+ * MCP tools are appended AFTER the slide tools and any external tool whose name
+ * collides with the slide set (or `google_search`) is dropped — the slide
+ * handler wins so `apply_patch`/`ask`/`list_files`/`read_file` stay strictly
+ * client-side and the sole-VFS-mutator invariant holds.
  */
 function getToolsForPhaseWithOptions(
   phase: SlidePatchPhase,
   toolOptions: SlideToolOptions | undefined
 ): MCPTool[] {
-  return getToolsForPhase(phase, {
+  const base = getToolsForPhase(phase, {
     enableGoogleSearch: toolOptions?.enableGoogleSearch,
   });
+  const slideNames = new Set(base.map((t) => t.name));
+  const external = (toolOptions?.mcpTools ?? []).filter(
+    (tool) => !slideNames.has(tool.name)
+  );
+  return [...base, ...external];
 }
 
 /**

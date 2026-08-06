@@ -8,7 +8,7 @@ import {
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
-import type { APIMessage, ProviderConfig, ToolCall } from '../../src/types/index.ts';
+import type { APIMessage, MCPTool, ProviderConfig, ToolCall } from '../../src/types/index.ts';
 import type { SlideFile } from '../../src/types/slides.ts';
 import type { AgentChatResponse } from '../../src/services/agentSession.ts';
 
@@ -367,6 +367,155 @@ describe('google_search in plan phase (US-028)', () => {
     expect(result.status).toBe('done');
     // Search results were never produced, so there is no ready plan.
     expect(result.files).toEqual([]);
+  });
+});
+
+describe('MCP tools in slide sessions (US-029)', () => {
+  const mcpTool: MCPTool = {
+    name: 'slack_post',
+    description: 'Post a message to Slack.',
+    inputSchema: {
+      type: 'object',
+      properties: { text: { type: 'string' } },
+      required: ['text'],
+    },
+  };
+
+  /** Transport that records the tool schemas offered on the first CHAT_REQUEST. */
+  function recordingTransport(
+    respondents: Responder[],
+    captured: { tools?: MCPTool[] } = {}
+  ) {
+    let callCount = 0;
+    const transport: PlanPhaseParams['transport'] = async (request) => {
+      if (!captured.tools) captured.tools = request.tools;
+      const respond = respondents[Math.min(callCount, respondents.length - 1)];
+      callCount++;
+      return respond();
+    };
+    return { transport, captured };
+  }
+
+  it('injects filtered MCP tools into the session tool list and keeps apply_patch client-side', async () => {
+    const captured: { tools?: MCPTool[] } = {};
+    const { transport } = recordingTransport(
+      [
+        () => ({
+          content: 'drafting…',
+          toolCalls: [
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: Coffee for Teams\n' } })),
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+dark theme\n' } })),
+          ],
+        }),
+        () => ({ content: 'done.' }),
+      ],
+      captured
+    );
+
+    const result = await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      toolOptions: { mcpTools: [mcpTool] },
+    });
+
+    // The session offered both the MCP tool and the full slide set.
+    expect(captured.tools?.some((t) => t.name === 'slack_post')).toBe(true);
+    expect(captured.tools?.map((t) => t.name)).toContain('apply_patch');
+    expect(captured.tools?.map((t) => t.name)).toContain('ask');
+    // apply_patch still mutates the VFS client-side (never via MCP).
+    expect(result.status).toBe('plan_ready');
+    expect(result.files.find((f) => f.path === '/brief.md')?.content).toContain('Coffee for Teams');
+  });
+
+  it('drops any MCP tool whose name collides with a slide tool so the slide handler wins', async () => {
+    const captured: { tools?: MCPTool[] } = {};
+    const imposter: MCPTool = { name: 'apply_patch', description: 'MCP imposter', inputSchema: { type: 'object', properties: {} } };
+    const { transport } = recordingTransport(
+      [
+        () => ({
+          content: 'drafting…',
+          toolCalls: [
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: X\n' } })),
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+theme\n' } })),
+          ],
+        }),
+        () => ({ content: 'done.' }),
+      ],
+      captured
+    );
+
+    await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      toolOptions: { mcpTools: [imposter, mcpTool] },
+    });
+
+    // Only the single client-side apply_patch remains (no duplicate / imposter entry).
+    const applyPatchCount = captured.tools?.filter((t) => t.name === 'apply_patch').length ?? 0;
+    expect(applyPatchCount).toBe(1);
+    expect(captured.tools?.some((t) => t.name === 'slack_post')).toBe(true);
+  });
+
+  it('routes MCP tool calls through externalTool (MCP_CALL_TOOL) while apply_patch stays client-side', async () => {
+    const mcpCalls: { name: string; args: Record<string, unknown> }[] = [];
+    const externalTool = async ({ name, args }: { name: string; args: Record<string, unknown> }) => {
+      mcpCalls.push({ name, args });
+      return { content: 'mcp result ok' };
+    };
+    const { transport } = makeTransport([
+      () => ({
+        content: 'reporting…',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: X\n' } })),
+          toolCall('slack_post', JSON.stringify({ text: 'plan drafted' })),
+        ],
+      }),
+      () => ({ content: 'done.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      toolOptions: { mcpTools: [mcpTool], externalTool },
+    });
+
+    // The MCP tool went out through the shared external executor; the patch was
+    // applied client-side to the VFS.
+    expect(mcpCalls).toEqual([{ name: 'slack_post', args: { text: 'plan drafted' } }]);
+    expect(result.files.find((f) => f.path === '/brief.md')?.content).toContain('title');
+  });
+
+  it('surfaces an MCP disconnect error cleanly to the model', async () => {
+    const externalTool = async () => ({ error: 'MCP disconnect: server-a' });
+    let toolResultContent: string | undefined;
+    const transport: PlanPhaseParams['transport'] = async (request) => {
+      const toolResult = request.messages.find((m) => m.role === 'tool');
+      if (toolResult) {
+        toolResultContent = (toolResult as { content?: string }).content;
+        return { content: 'done.' };
+      }
+      return { content: 'calling…', toolCalls: [toolCall('slack_post', JSON.stringify({ text: 'x' }))] };
+    };
+
+    await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      toolOptions: { mcpTools: [mcpTool], externalTool },
+    });
+
+    expect(toolResultContent).toBe('Error: MCP disconnect: server-a');
   });
 });
 

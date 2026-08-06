@@ -157,9 +157,38 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(calls()).toBe(3);
   });
 
-  it('suspends with a pending ask on an ask tool call, then records the answer', async () => {
+  it('forwards deps.toolOptions.mcpTools into the plan session tool list (US-029)', async () => {
     const skills = makeSkillFetcher();
-    const { transport } = makeTransport([
+    const offeredNames: string[][] = [];
+    const transport = async (request: {
+      tools: { name: string }[];
+    }) => {
+      offeredNames.push(request.tools.map((t) => t.name));
+      return { content: 'done.' } as AgentChatResponse;
+    };
+
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      toolOptions: {
+        enableGoogleSearch: true,
+        mcpTools: [{ name: 'slack_post', description: 'x', inputSchema: { type: 'object', properties: {} } }],
+        externalTool: async () => ({ content: 'ok' }),
+      },
+    });
+
+    await agent.createFromPrompt('a deck');
+
+    const first = offeredNames[0];
+    expect(first).toContain('slack_post');
+    expect(first).toContain('apply_patch');
+    expect(first).toContain('google_search');
+  });
+
+  it('suspends with a pending ask on an ask tool call, then records the answer', async () => {
+    const skills = makeSkillFetcher();    const { transport } = makeTransport([
       () => ({
         toolCalls: [toolCall('ask', JSON.stringify({ question: 'Canvas?', options: ['16:9', '4:5'], field: 'canvas' }))],
       }),

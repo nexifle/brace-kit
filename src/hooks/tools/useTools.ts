@@ -29,9 +29,11 @@ export interface GetAllToolsOptions {
 
 /**
  * Filter raw MCP tool list against enabled servers and disabled tools in store.
- * Pure function — no closure over hook state, safe to call from anywhere.
+ * Pure function — no closure over hook state, safe to call from anywhere
+ * (including the Slide Creator agent hook, which reuses this so MCP filtering
+ * stays consistent with main chat).
  */
-function filterMCPTools(
+export function filterMCPTools(
   rawTools: (MCPTool & { _serverId?: string })[],
   enabledServers: { id: string; disabledTools?: string[] }[]
 ): MCPTool[] {
