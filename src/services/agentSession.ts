@@ -118,7 +118,18 @@ export interface AgentSessionParams {
   /** Resolves each model tool call client-side. `round` is the 1-based model turn. See {@link AgentToolDispatch}. */
   dispatchTool: (toolCall: ToolCall, round: number) => Promise<AgentToolDispatch>;
   /** Optional live-state hook (UI wiring). */
-  onUpdate?: (state: AgentSessionState) => void;  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
+  onUpdate?: (state: AgentSessionState) => void;
+  /**
+   * Called before each model CHAT_REQUEST turn begins (the 1-based round).
+   * Phase runners use this to emit a `model_round_started` activity row
+   * (Amendment A.5/A.8) so the feed shows a thinking spinner while streaming.
+   */
+  onRoundStart?: (round: number) => void;
+  /**
+   * Called when a model turn finishes — clean done, tool dispatch complete,
+   * ask suspend, error, or abort. Mirrors `onRoundStart` to close the row.
+   */
+  onRoundComplete?: (round: number) => void;  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
   transport?: AgentTransport;
   /** Abort in-flight request (injectable for tests). Defaults to STOP_STREAM. */
   abortRequest?: AgentAbortFn;
@@ -292,6 +303,7 @@ async function runLoop(
   try {
     for (let round = startRound; round <= maxRounds; round++) {
       if (signal?.aborted) return cancel(params, working, round);
+      params.onRoundStart?.(round);
 
       const requestId = `${prefix}_${round}_${Date.now().toString(36)}`;
       // Keep the requestId active across the (possibly streaming) model turn AND
@@ -306,9 +318,13 @@ async function runLoop(
         requestId,
       });
 
-      if (signal?.aborted) return cancel(params, working, round);
+      if (signal?.aborted) {
+        params.onRoundComplete?.(round);
+        return cancel(params, working, round);
+      }
 
       if (response?.error) {
+        params.onRoundComplete?.(round);
         return finish(params, working, round, {
           status: 'error',
           error: response.error,
@@ -329,6 +345,7 @@ async function runLoop(
 
       // No more tool calls → clean completion.
       if (!response.toolCalls?.length) {
+        params.onRoundComplete?.(round);
         return finish(params, working, round, {
           status: 'done',
           content: response.content ?? '',
@@ -337,13 +354,17 @@ async function runLoop(
 
       // Tool turn(s) — resolve each call client-side.
       for (const toolCall of response.toolCalls) {
-        if (signal?.aborted) return cancel(params, working, round);
+        if (signal?.aborted) {
+          params.onRoundComplete?.(round);
+          return cancel(params, working, round);
+        }
 
         activeRequestId = requestId;
         const dispatch = await params.dispatchTool(toolCall, round);
 
         if (dispatch.suspended) {
           activeRequestId = undefined;
+          params.onRoundComplete?.(round);
           return finish(params, working, round, {
             status: 'waiting_user',
             pendingAsk: dispatch.pendingAsk,
@@ -358,6 +379,7 @@ async function runLoop(
         });
       }
       activeRequestId = undefined;
+      params.onRoundComplete?.(round);
     }
   } finally {
     activeRequestId = undefined;

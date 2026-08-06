@@ -15,7 +15,13 @@ import type { SlideActivityEvent } from '../../src/types/slides.ts';
 import type { SlideActivitySink } from '../../src/services/slidePhases.ts';
 import {
   askStartedLabel,
+  connectingActivityLabel,
   listFilesLabel,
+  modelRoundLabel,
+  phaseCompletedLabel,
+  phaseFailedLabel,
+  phaseStartedLabel,
+  phaseStoppedLabel,
   readFileLabel,
 } from '../../src/utils/slideActivityLabels';
 
@@ -1067,5 +1073,235 @@ describe('activity events for tool calls (US-036)', () => {
     expect(deleted[0].path).toBe('/slides/01.html');
     expect(deleted[0].patchOp).toBe('delete_file');
     expect(deleted[0].phase).toBe('edit');
+  });
+});
+
+describe('phase lifecycle activity events (US-037)', () => {
+  it('plan success emits phase_started + connecting + model_round rows + phase_completed', async () => {
+    const { sink, events, pushed } = captureActivity();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'drafting',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: Coffee\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+dark\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('plan_ready');
+    // phase_started is the first row, already completed (a check), with A.5 label
+    expect(events[0].type).toBe('phase_started');
+    expect(events[0].status).toBe('completed');
+    expect(events[0].phase).toBe('plan');
+    expect(events[0].label).toBe(phaseStartedLabel('plan'));
+
+    // connecting row started running, completed once the first round sends a request
+    const connectingPush = pushed.find((e) => e.type === 'connecting');
+    expect(connectingPush).toBeTruthy();
+    expect(connectingPush!.status).toBe('running');
+    expect(connectingPush!.label).toBe(connectingActivityLabel());
+    expect(events.find((e) => e.type === 'connecting')?.status).toBe('completed');
+
+    // each model round: a running model_round_started snapshot → patched to completed
+    const roundPushes = pushed.filter((e) => e.type === 'model_round_started');
+    expect(roundPushes.map((r) => r.round)).toEqual([1, 2, 3]);
+    expect(roundPushes.every((r) => r.status === 'running')).toBe(true);
+    expect(roundPushes.every((r) => r.label === modelRoundLabel(r.round!))).toBe(true);
+    expect(
+      events.filter((e) => e.type === 'model_round_started' && e.status === 'completed').length,
+    ).toBe(3);
+
+    // phase_completed with the plan label
+    const completed = events.filter((e) => e.type === 'phase_completed');
+    expect(completed).toHaveLength(1);
+    expect(completed[0].label).toBe(phaseCompletedLabel('plan'));
+    expect(completed[0].status).toBe('completed');
+  });
+
+  it('build success emits phase_completed with the slide count', async () => {
+    const { sink, events } = captureActivity();
+    const buildFiles = makeFiles([
+      { path: '/brief.md', content: '# brief' },
+      { path: '/design.md', content: 'design' },
+    ]);
+    const { transport } = makeTransport([
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>Hello</section>\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
+        ],
+      }),
+      () => ({ content: 'done.' }),
+    ]);
+
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('ready');
+    const completed = events.filter((e) => e.type === 'phase_completed');
+    expect(completed).toHaveLength(1);
+    expect(completed[0].phase).toBe('build');
+    expect(completed[0].status).toBe('completed');
+    expect(completed[0].label).toBe(phaseCompletedLabel('build', { slideCount: 1 }));
+  });
+
+  it('edit success emits phase_completed with the edit label', async () => {
+    const { sink, events } = captureActivity();
+    const editFiles = makeFiles([
+      { path: '/brief.md', content: '# brief' },
+      { path: '/design.md', content: 'design' },
+      { path: '/theme.css', content: 'body{}' },
+      { path: '/slides/01.html', content: '<section>Hello</section>' },
+      { path: '/deck.json', content: '{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}' },
+    ]);
+    const { transport } = makeTransport([
+      () => ({
+        content: 'updating',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/slides/01.html', diff: '@@\n <section>Hello</section>\n+<p>More</p>\n' } })),
+        ],
+      }),
+      () => ({ content: 'done.' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('ready');
+    const completed = events.filter((e) => e.type === 'phase_completed');
+    expect(completed).toHaveLength(1);
+    expect(completed[0].label).toBe(phaseCompletedLabel('edit'));
+    expect(completed[0].phase).toBe('edit');
+  });
+
+  it('user stop emits phase_stopped and settles the connecting row', async () => {
+    const { sink, events } = captureActivity();
+    const controller = new AbortController();
+    const aborted: string[] = [];
+    const transport = async () => {
+      // abort the in-flight request mid-run → the runner cancels partial files
+      controller.abort();
+      return { content: 'never' };
+    };
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      abortRequest: (id) => aborted.push(id),
+      signal: controller.signal,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('cancelled');
+    expect(aborted.length).toBeGreaterThan(0);
+    const stopped = events.filter((e) => e.type === 'phase_stopped');
+    expect(stopped).toHaveLength(1);
+    expect(stopped[0].label).toBe(phaseStoppedLabel());
+    expect(stopped[0].status).toBe('cancelled');
+    // a round already started, so the connecting row was resolved to completed
+    // (user-stop patching it to cancelled would wrongly flip a completed row)
+    expect(events.find((e) => e.type === 'connecting')?.status).toBe('completed');
+    // a round started before the stop
+    expect(events.filter((e) => e.type === 'model_round_started').length).toBe(1);
+  });
+
+  it('transport error emits phase_failed with the message', async () => {
+    const { sink, events } = captureActivity();
+    const { transport } = makeTransport([() => ({ error: 'API key is required.' })]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('error');
+    const failed = events.filter((e) => e.type === 'phase_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].label).toBe(phaseFailedLabel('API key is required.'));
+    expect(failed[0].status).toBe('failed');
+    expect(failed[0].detail).toBe('API key is required.');
+    // a round started (the transport responded with an error after onRoundStart),
+    // so connecting resolved to completed rather than being re-flipped to failed
+    expect(events.find((e) => e.type === 'connecting')?.status).toBe('completed');
+  });
+
+  it('a pre-aborted signal settles connecting to cancelled with no round row', async () => {
+    const { sink, events } = captureActivity();
+    const controller = new AbortController();
+    controller.abort();
+    const { transport } = makeTransport([() => ({ content: 'never' })]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      signal: controller.signal,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('cancelled');
+    // no round ever started, so the connecting spinner settles to cancelled
+    expect(events.find((e) => e.type === 'connecting')?.status).toBe('cancelled');
+    expect(events.filter((e) => e.type === 'model_round_started').length).toBe(0);
+    expect(events.filter((e) => e.type === 'phase_stopped').length).toBe(1);
+  });
+
+  it('a plan that ends done without a deliverable emits phase_failed, not a bogus ready', async () => {
+    const { sink, events } = captureActivity();
+    const { transport } = makeTransport([
+      () => ({ content: 'listing only', toolCalls: [toolCall('list_files', JSON.stringify({ path: '/' }))] }),
+      () => ({ content: 'I could not write a plan.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('done');
+    const failed = events.filter((e) => e.type === 'phase_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].label).toBe(
+      phaseFailedLabel('The planner finished without a complete brief and design.'),
+    );
+    expect(events.filter((e) => e.type === 'phase_completed').length).toBe(0);
   });
 });

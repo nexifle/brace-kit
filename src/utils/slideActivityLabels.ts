@@ -31,6 +31,11 @@ export function connectingActivityLabel(): string {
   return CONNECTING_LABEL;
 }
 
+/** model_round_started / model_round_completed share this concise row label (A.5). */
+export function modelRoundLabel(round: number): string {
+  return `Round ${round}`;
+}
+
 export function phaseStartedLabel(phase: SlideActivityPhase): string {
   return PHASE_STARTED[phase];
 }
@@ -50,8 +55,10 @@ export function phaseStoppedLabel(): string {
 }
 
 export function phaseFailedLabel(message: string): string {
-  const reason = truncateLabel((message ?? '').trim() || 'Unknown error', 100);
-  return `Error: ${reason}`;
+  // Strip a leading `Error: ` prefix so a message that already carries it doesn't
+  // double-prefix (`Error: Error: ...`) — mirrors toolFailedLabel / emitter.failed.
+  const clean = (message ?? '').replace(/^Error:\s*/, '').trim() || 'Unknown error';
+  return `Error: ${truncateLabel(clean, 100)}`;
 }
 
 /** apply_patch / file_written / file_deleted success-style labels. */

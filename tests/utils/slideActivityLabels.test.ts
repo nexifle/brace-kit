@@ -9,6 +9,7 @@ import {
   googleSearchLabel,
   listFilesLabel,
   mcpToolLabel,
+  modelRoundLabel,
   phaseCompletedLabel,
   phaseFailedLabel,
   phaseStartedLabel,
@@ -41,11 +42,18 @@ describe('slideActivityLabels (Amendment A.5)', () => {
   it('phase_stopped / phase_failed', () => {
     expect(phaseStoppedLabel()).toBe('Stopped');
     expect(phaseFailedLabel('boom')).toBe('Error: boom');
+    // a message already prefixed with `Error: ` is not double-prefixed
+    expect(phaseFailedLabel('Error: boom')).toBe('Error: boom');
     const long = 'x'.repeat(150);
     const failed = phaseFailedLabel(long);
     expect(failed.startsWith('Error: ')).toBe(true);
     // reason portion ≤100 chars (may include ellipsis)
     expect(failed.length).toBeLessThanOrEqual('Error: '.length + 100);
+  });
+
+  it('model rounds', () => {
+    expect(modelRoundLabel(1)).toBe('Round 1');
+    expect(modelRoundLabel(12)).toBe('Round 12');
   });
 
   it('apply_patch create/update/delete labels', () => {

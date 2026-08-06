@@ -49,8 +49,14 @@ import { getSlideFile, rebuildDeckProjection } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
 import {
   askAnsweredLabel,
+  connectingActivityLabel,
   fileDeletedLabel,
   fileWrittenLabel,
+  modelRoundLabel,
+  phaseCompletedLabel,
+  phaseFailedLabel,
+  phaseStartedLabel,
+  phaseStoppedLabel,
   toolFailedLabel,
   toolStartedLabel,
   type SlideActivityPhase,
@@ -145,7 +151,92 @@ function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
  */
 function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySink) {
   let seq = 0;
+  // Fixed id of the `connecting` row so both a run and its later resume (a FRESH
+  // emitter) close the same row when the first model round starts (A.5).
+  const connectingId = `${phase}_connecting`;
+  // True once a model round has begun — the `connecting` row is then already
+  // resolved (completed). Terminal events must NOT re-patch it to cancelled/
+  // failed, except when the phase ends before ANY round started (pre-abort).
+  let roundStartedFlag = false;
   return {
+    /** Emit `phase_started` (completed check) + `connecting` (running spinner) at run start (A.5). */
+    phaseStarted(): void {
+      sink?.push({
+        id: `${phase}_phase_started`,
+        type: 'phase_started',
+        status: 'completed',
+        ts: Date.now(),
+        phase,
+        label: phaseStartedLabel(phase),
+      });
+      sink?.push({
+        id: connectingId,
+        type: 'connecting',
+        status: 'running',
+        ts: Date.now(),
+        phase,
+        label: connectingActivityLabel(),
+      });
+    },
+    /**
+     * Emit a `model_round_started` running row for the given round, completing
+     * the earlier `connecting` row once a model request is actually sent.
+     */
+    roundStarted(round: number): void {
+      if (!roundStartedFlag) {
+        sink?.patch(connectingId, { status: 'completed' });
+        roundStartedFlag = true;
+      }
+      sink?.push({
+        id: `${phase}_round_${round}`,
+        type: 'model_round_started',
+        status: 'running',
+        ts: Date.now(),
+        phase,
+        round,
+        label: modelRoundLabel(round),
+      });
+    },
+    /** Close the round's running row in place (matches the tool-row pattern). */
+    roundCompleted(round: number): void {
+      sink?.patch(`${phase}_round_${round}`, { status: 'completed' });
+    },
+    /** Emit `phase_completed` on a terminal success; build carries the slide count. */
+    phaseCompleted(opts?: { slideCount?: number }): void {
+      sink?.push({
+        id: `${phase}_phase_completed_${++seq}`,
+        type: 'phase_completed',
+        status: 'completed',
+        ts: Date.now(),
+        phase,
+        label: phaseCompletedLabel(phase, opts),
+      });
+    },
+    /** Emit `phase_stopped` on a user cancel; settle the connecting spinner if no round started. */
+    phaseStopped(): void {
+      if (!roundStartedFlag) sink?.patch(connectingId, { status: 'cancelled' });
+      sink?.push({
+        id: `${phase}_phase_stopped_${++seq}`,
+        type: 'phase_stopped',
+        status: 'cancelled',
+        ts: Date.now(),
+        phase,
+        label: phaseStoppedLabel(),
+      });
+    },
+    /** Emit `phase_failed` on a transport/error; settle the connecting spinner if no round started. */
+    phaseFailed(message: string): void {
+      if (!roundStartedFlag) sink?.patch(connectingId, { status: 'failed' });
+      sink?.push({
+        id: `${phase}_phase_failed_${++seq}`,
+        type: 'phase_failed',
+        status: 'failed',
+        ts: Date.now(),
+        phase,
+        label: phaseFailedLabel(message),
+        ...(message ? { detail: message } : {}),
+      });
+    },
     /** Emit a `tool_started` running row, returning its id. */
     started(toolCall: ToolCall, round: number, opts?: { id?: string }): string {
       const id = opts?.id ?? `${phase}_${round}_${++seq}`;
@@ -304,11 +395,17 @@ export async function runPlanPhase(
   params: PlanPhaseParams
 ): Promise<PlanPhaseResult> {
   const session = buildPlanSession(params);
-  const { currentFiles, submit, sessionParams } = session;
+  const { currentFiles, submit, emitter, sessionParams } = session;
 
+  emitter.phaseStarted();
   const result = await runAgentSession(sessionParams);
 
-  return mapResult(result, currentFiles, submit.fired, submit.canvas);
+  const mapped = mapResult(result, currentFiles, submit.fired, submit.canvas);
+  emitPhaseTerminal(emitter, mapped.status, {
+    ...(mapped.error ? { error: mapped.error } : {}),
+    noDeliverable: PHASE_NO_DELIVERABLE.plan,
+  });
+  return mapped;
 }
 
 /**
@@ -359,7 +456,12 @@ export async function resumePlanPhase(
     round: resume.round + 1,
   });
 
-  return mapResult(result, currentFiles, submit.fired, submit.canvas);
+  const mapped = mapResult(result, currentFiles, submit.fired, submit.canvas);
+  emitPhaseTerminal(emitter, mapped.status, {
+    ...(mapped.error ? { error: mapped.error } : {}),
+    noDeliverable: PHASE_NO_DELIVERABLE.plan,
+  });
+  return mapped;
 }
 
 /** Shared dispatcher closure + runner params for the plan session. */
@@ -443,6 +545,8 @@ function buildPlanSession(params: PlanPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
+    onRoundStart: (round: number) => emitter.roundStarted(round),
+    onRoundComplete: (round: number) => emitter.roundCompleted(round),
     dispatchTool,
   };
 
@@ -512,11 +616,21 @@ export async function runBuildPhase(
   params: BuildPhaseParams
 ): Promise<BuildPhaseResult> {
   const session = buildBuildSession(params);
-  const { currentFiles, sessionParams } = session;
+  const { currentFiles, emitter, sessionParams } = session;
 
+  emitter.phaseStarted();
   const result = await runAgentSession(sessionParams);
 
-  return mapBuildResult(result, currentFiles);
+  const mapped = mapBuildResult(result, currentFiles);
+  emitPhaseTerminal(emitter, mapped.status, {
+    ...(mapped.error ? { error: mapped.error } : {}),
+    slideCount:
+      mapped.status === 'ready'
+        ? rebuildDeckProjection(currentFiles).slideOrder.length
+        : undefined,
+    noDeliverable: PHASE_NO_DELIVERABLE.build,
+  });
+  return mapped;
 }
 
 /**
@@ -587,6 +701,8 @@ function buildBuildSession(params: BuildPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
+    onRoundStart: (round) => emitter.roundStarted(round),
+    onRoundComplete: (round) => emitter.roundCompleted(round),
     dispatchTool,
   };
 
@@ -710,11 +826,17 @@ export async function runEditPhase(
   params: EditPhaseParams
 ): Promise<EditPhaseResult> {
   const session = buildEditSession(params);
-  const { currentFiles, sessionParams } = session;
+  const { currentFiles, emitter, sessionParams } = session;
 
+  emitter.phaseStarted();
   const result = await runAgentSession(sessionParams);
 
-  return mapBuildResult(result, currentFiles);
+  const mapped = mapBuildResult(result, currentFiles);
+  emitPhaseTerminal(emitter, mapped.status, {
+    ...(mapped.error ? { error: mapped.error } : {}),
+    noDeliverable: PHASE_NO_DELIVERABLE.edit,
+  });
+  return mapped;
 }
 
 /**
@@ -785,10 +907,56 @@ function buildEditSession(params: EditPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
+    onRoundStart: (round) => emitter.roundStarted(round),
+    onRoundComplete: (round) => emitter.roundCompleted(round),
     dispatchTool,
   };
 
   return { currentFiles, emitter, dispatchTool, sessionParams };
+}
+
+/** Terminal copy when a runner ends `done` without a usable deliverable. */
+const PHASE_NO_DELIVERABLE: Record<SlideActivityPhase, string> = {
+  plan: 'The planner finished without a complete brief and design.',
+  build: 'Build finished without producing a renderable deck.',
+  edit: 'Edit finished without a renderable slide remaining.',
+};
+
+/** Terminal statuses shared by the plan/build/edit runners. */
+type PhaseTerminalStatus = PlanPhaseStatus | BuildPhaseStatus | EditPhaseStatus;
+
+/**
+ * Emit the terminal phase-lifecycle row for a runner result (Amendment A.5):
+ * `phase_completed` on success (build includes the slide count), `phase_stopped`
+ * on user cancel, `phase_failed` on a transport error, and `phase_failed` (rather
+ * than a bogus "ready" label) when the phase ended `done` with no deliverable.
+ * A `waiting_user` suspend emits nothing — the phase is still alive (the running
+ * `ask` row is the spinner).
+ */
+function emitPhaseTerminal(
+  emitter: ReturnType<typeof createActivityEmitter>,
+  status: PhaseTerminalStatus,
+  opts: { error?: string; slideCount?: number; noDeliverable?: string }
+): void {
+  switch (status) {
+    case 'error':
+      emitter.phaseFailed(opts.error ?? '');
+      break;
+    case 'cancelled':
+      emitter.phaseStopped();
+      break;
+    case 'waiting_user':
+      break;
+    case 'plan_ready':
+    case 'ready':
+      emitter.phaseCompleted(
+        opts?.slideCount != null ? { slideCount: opts.slideCount } : undefined
+      );
+      break;
+    case 'done':
+      emitter.phaseFailed(opts.noDeliverable ?? '');
+      break;
+  }
 }
 
 function mapResult(
