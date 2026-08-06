@@ -133,4 +133,32 @@ describe('slideStore', () => {
     s.setPanelView('preview');
     expect(useSlideStore.getState().panelView).toBe('preview');
   });
+
+  it('answerAsk clears the pending ask and appends the answer to the transcript', () => {
+    const ask = {
+      id: 'ask_1',
+      toolCallId: 'tc_1',
+      sessionRef: 'plan' as const,
+      createdAt: 123,
+      payload: { question: 'Which canvas?', field: 'canvas' as const },
+    };
+    useSlideStore.getState().setActiveProjectData(makeProject({ pendingAsk: ask }));
+    expect(useSlideStore.getState().pendingAsk).not.toBeNull();
+
+    useSlideStore.getState().answerAsk('proj_1', '4:5');
+
+    const s = useSlideStore.getState();
+    expect(s.pendingAsk).toBeNull();
+    expect(s.messages).toHaveLength(1);
+    expect(s.messages[0].role).toBe('user');
+    expect(s.messages[0].content).toBe('4:5');
+    expect(s.activeProject?.pendingAsk).toBeUndefined();
+    expect(s.activeProject?.messages).toHaveLength(1);
+  });
+
+  it('answerAsk ignores a stale mismatch of project id', () => {
+    useSlideStore.getState().setActiveProjectData(makeProject());
+    useSlideStore.getState().answerAsk('other_proj', 'hello');
+    expect(useSlideStore.getState().messages).toHaveLength(0);
+  });
 });

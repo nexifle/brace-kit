@@ -18,6 +18,7 @@ import { Btn } from '../ui/Btn.tsx';
 import { ComposerPicker } from '../ComposerPicker.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
 import { useElementSize } from '../../hooks/index.ts';
+import { AskPrompt } from './AskPrompt.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -275,7 +276,8 @@ function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
 const RAIL_WIDTH = 320;
 
 function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => void }) {
-  const { activeProject, messages } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy } = useSlideStore();
+  const answerAsk = useSlideStore((s) => s.answerAsk);
   return (
     <AnimatePresence initial={false}>
       {railOpen && (
@@ -318,8 +320,16 @@ function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => voi
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
-              {activeProject ? (
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
+              {pendingAsk ? (
+                <AskPrompt
+                  ask={pendingAsk}
+                  busy={busy}
+                  onSubmit={(answer, attachments) =>
+                    answerAsk(pendingAsk.projectId, answer, attachments)
+                  }
+                />
+              ) : activeProject ? (
                 <p className="text-sm text-foreground/90 leading-relaxed">
                   {messages.length > 0
                     ? 'Your deck session is ready. Follow-up edits will refine the slides.'
@@ -342,7 +352,8 @@ function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => voi
 /* ==================================================================== */
 
 function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const { activeProject, messages } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy } = useSlideStore();
+  const answerAsk = useSlideStore((s) => s.answerAsk);
 
   if (open) {
     return (
@@ -361,8 +372,16 @@ function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-          {activeProject ? (
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
+          {pendingAsk ? (
+            <AskPrompt
+              ask={pendingAsk}
+              busy={busy}
+              onSubmit={(answer, attachments) =>
+                answerAsk(pendingAsk.projectId, answer, attachments)
+              }
+            />
+          ) : activeProject ? (
             <p className="text-sm text-foreground/90 leading-relaxed">
               {messages.length > 0
                 ? 'Your deck session is ready. Follow-up edits will refine the slides.'

@@ -62,6 +62,12 @@ export interface SlideStoreState {
   setSessionStatus: (status: SlideSessionStatus) => void;
   setBusy: (busy: boolean) => void;
   setPendingAsk: (pendingAsk: SlideAskState | null) => void;
+  /**
+   * Record the user's answer to a suspended question (AskPrompt US-017).
+   * Clears the pending ask and appends the answer to the transcript; the
+   * orchestrator (US-024) resumes the plan session from the recorded answer.
+   */
+  answerAsk: (projectId: string, answer: string, attachments?: string[]) => void;
   /** Rebuild the deck projection from a fresh VFS (e.g. after build/edit). */
   setActiveDeckFromVfs: (files: SlideFile[]) => void;
   setDeck: (deck: SlideDeck | null) => void;
@@ -122,6 +128,26 @@ export const useSlideStore = create<SlideStoreState>((set) => ({
 
   setBusy: (busy) => set({ busy }),
   setPendingAsk: (pendingAsk) => set({ pendingAsk }),
+
+  answerAsk: (projectId, answer, _attachments) =>
+    set((state) => {
+      if (!state.activeProject || state.activeProject.id !== projectId) return {};
+      const message: SlideMainMessage = {
+        id: `askans_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        role: 'user',
+        content: answer,
+        createdAt: Date.now(),
+      };
+      return {
+        pendingAsk: null,
+        messages: [...state.messages, message],
+        activeProject: {
+          ...state.activeProject,
+          pendingAsk: undefined,
+          messages: [...state.messages, message],
+        },
+      };
+    }),
 
   setActiveDeckFromVfs: (files) =>
     set((state) => {
