@@ -41,7 +41,7 @@ import {
   type SlidePatchOperation,
 } from './applyPatchHarness.ts';
 import { getSlideFile, rebuildDeckProjection } from '../utils/slideVfs.ts';
-import { getToolsForPhase } from './slideTools.ts';
+import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
 
 // ==================== Plan phase ====================
 
@@ -62,6 +62,24 @@ interface SubmitPlanArgs {
   summary?: string;
   canvas?: string;
 }
+
+/** Runtime context for external, background-routed tools (US-028/029). */
+export interface SlideToolOptions {
+  /** Offer `google_search` to the session (injection replaces the default tools). */
+  enableGoogleSearch?: boolean;
+  /**
+   * Executes an external tool call (e.g. `google_search`) via the existing
+   * `MCP_CALL_TOOL` background path. When absent, external tools resolve with a
+   * clear error instead of hanging (FR-14).
+   */
+  externalTool?: ExternalToolCaller;
+}
+
+/** Executes an external tool call and returns its text result (or an error). */
+export type ExternalToolCaller = (input: {
+  name: string;
+  args: Record<string, unknown>;
+}) => Promise<{ content?: string; error?: string }>;
 
 /** Options for running the plan phase. */
 export interface PlanPhaseParams {
@@ -87,6 +105,8 @@ export interface PlanPhaseParams {
   onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
   /** Live session updates from the runner (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;
+  /** External tool sharing (google_search / MCP) for the session (US-028/029). */
+  toolOptions?: SlideToolOptions;
 }
 
 export type PlanPhaseStatus =
@@ -226,6 +246,8 @@ function buildPlanSession(params: PlanPhaseParams) {
         if (typeof parsed.canvas === 'string' && parsed.canvas) submit.canvas = parsed.canvas;
         return { content: 'Accepted. The plan is ready for user review.' };
       }
+      case 'google_search':
+        return dispatchExternal(params.toolOptions, toolCall);
       default:
         return { content: `Error: Unknown plan-phase tool: ${toolCall.name}` };
     }
@@ -234,7 +256,7 @@ function buildPlanSession(params: PlanPhaseParams) {
   const sessionParams = {
     systemPrompt: params.systemPrompt,
     messages: params.messages,
-    tools: params.tools ?? getToolsForPhase('plan'),
+    tools: params.tools ?? getToolsForPhaseWithOptions('plan', params.toolOptions),
     providerConfig: params.providerConfig,
     chatOptions: params.chatOptions ?? {},
     maxRounds: params.maxRounds,
@@ -274,6 +296,8 @@ export interface BuildPhaseParams {
   onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
   /** Live session updates from the runner (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;
+  /** External tool sharing (google_search / MCP) for the session (US-028/029). */
+  toolOptions?: SlideToolOptions;
 }
 
 /**
@@ -340,6 +364,8 @@ function buildBuildSession(params: BuildPhaseParams) {
         }
         return { content: result.output };
       }
+      case 'google_search':
+        return dispatchExternal(params.toolOptions, toolCall);
       default:
         return { content: `Error: Unknown build-phase tool: ${toolCall.name}` };
     }
@@ -348,7 +374,7 @@ function buildBuildSession(params: BuildPhaseParams) {
   const sessionParams: AgentSessionParams = {
     systemPrompt: composePlanDocsSystemPrompt(params.systemPrompt, currentFiles),
     messages: params.messages,
-    tools: params.tools ?? getToolsForPhase('build'),
+    tools: params.tools ?? getToolsForPhaseWithOptions('build', params.toolOptions),
     providerConfig: params.providerConfig,
     chatOptions: params.chatOptions ?? {},
     maxRounds: params.maxRounds,
@@ -439,6 +465,8 @@ export interface EditPhaseParams {
   onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
   /** Live session updates from the runner (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;
+  /** External tool sharing (google_search / MCP) for the session (US-028/029). */
+  toolOptions?: SlideToolOptions;
 }
 
 /**
@@ -508,6 +536,8 @@ function buildEditSession(params: EditPhaseParams) {
         }
         return { content: result.output };
       }
+      case 'google_search':
+        return dispatchExternal(params.toolOptions, toolCall);
       default:
         return { content: `Error: Unknown edit-phase tool: ${toolCall.name}` };
     }
@@ -516,7 +546,7 @@ function buildEditSession(params: EditPhaseParams) {
   const sessionParams: AgentSessionParams = {
     systemPrompt: composePlanDocsSystemPrompt(params.systemPrompt, currentFiles),
     messages: params.messages,
-    tools: params.tools ?? getToolsForPhase('edit'),
+    tools: params.tools ?? getToolsForPhaseWithOptions('edit', params.toolOptions),
     providerConfig: params.providerConfig,
     chatOptions: params.chatOptions ?? {},
     maxRounds: params.maxRounds,
@@ -615,4 +645,45 @@ function args<T>(toolCall: ToolCall): T {
   } catch {
     return {} as T;
   }
+}
+
+// ==================== External tool helpers (US-028/029) ====================
+
+/**
+ * Resolve a phase's tool list, injecting `google_search` on top when the
+ * caller's `toolOptions.enableGoogleSearch` is set (plan, and build/edit when
+ * opted in). A caller-provided `tools` override is always respected verbatim.
+ */
+function getToolsForPhaseWithOptions(
+  phase: SlidePatchPhase,
+  toolOptions: SlideToolOptions | undefined
+): MCPTool[] {
+  return getToolsForPhase(phase, {
+    enableGoogleSearch: toolOptions?.enableGoogleSearch,
+  });
+}
+
+/**
+ * Dispatch an external tool call (`google_search`, future MCP) through the
+ * injected `SlideToolOptions.externalTool`, or surface a clear error when no
+ * executor is wired. Converts `{ content?: [], error?: string }` into the
+ * tool-result body fed back to the model — an empty result maps to a
+ * human-readable "no content" note so the loop never stalls on a blank turn.
+ */
+function dispatchExternal(
+  toolOptions: SlideToolOptions | undefined,
+  toolCall: ToolCall
+): Promise<AgentToolDispatch> {
+  const parsed = args<{ query?: string }>(toolCall);
+  const executor = toolOptions?.externalTool;
+  if (!executor) {
+    return Promise.resolve({
+      content: `Error: ${toolCall.name} is not available in this session. It can be enabled in Settings (enable Google Search / MCP).`,
+    });
+  }
+  return executor({ name: toolCall.name, args: parsed ?? {} }).then((result) => ({
+    content:
+      result.content ||
+      (result.error ? `Error: ${result.error}` : 'The tool returned no content.'),
+  }));
 }

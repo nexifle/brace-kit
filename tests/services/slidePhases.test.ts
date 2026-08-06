@@ -305,6 +305,71 @@ describe('plan ask pause/resume state machine (US-016)', () => {
   });
 });
 
+describe('google_search in plan phase (US-028)', () => {
+  it('executes google_search via the injected externalTool and feeds the result back', async () => {
+    const { transport, callCount: calls } = makeTransport([
+      () => ({
+        toolCalls: [toolCall('google_search', JSON.stringify({ query: 'coffee trends 2026' }))],
+      }),
+      () => ({
+        content: 'Planning with search results.',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+cold brew is rising\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+editorial, coffee tones\n' } })),
+        ],
+      }),
+      () => ({ content: 'Plan ready.' }),
+    ]);
+
+    const seen = { name: '', query: '' };
+    const result = await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      toolOptions: {
+        enableGoogleSearch: true,
+        externalTool: async ({ name, args }) => {
+          seen.name = name;
+          seen.query = (args as { query?: string }).query ?? '';
+          return { content: '[search results] cold brew is trending' };
+        },
+      },
+    });
+
+    expect(seen.name).toBe('google_search');
+    expect(seen.query).toBe('coffee trends 2026');
+    // The search result fed back as a tool observation allowed planning to finish.
+    expect(calls()).toBe(3);
+    expect(result.status).toBe('plan_ready');
+    expect(result.files.find((f) => f.path === '/brief.md')?.content).toContain('cold brew');
+    expect(result.files.find((f) => f.path === '/design.md')?.content).toContain('coffee tones');
+  });
+
+  it('surfaces a clear error instead of hanging when no externalTool is wired', async () => {
+    // The model calls google_search but the session has no executor configured.
+    const { transport } = makeTransport([
+      () => ({ toolCalls: [toolCall('google_search', JSON.stringify({ query: 'x' }))] }),
+      // After the error tool result, the model finishes without a valid plan.
+      () => ({ content: 'No search available, using bundled references.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      toolOptions: { enableGoogleSearch: true },
+    });
+
+    expect(result.status).toBe('done');
+    // Search results were never produced, so there is no ready plan.
+    expect(result.files).toEqual([]);
+  });
+});
+
 describe('runBuildPhase', () => {
   const buildFiles = makeFiles([
     { path: '/brief.md', content: '# Coffee deck\nOne slide per topic.' },

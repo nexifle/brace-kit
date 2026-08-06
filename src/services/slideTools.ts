@@ -11,8 +11,36 @@
 // Any future VFS-mutating helper must route through `apply_patch`, never fork
 // its own write tool.
 
-import type { MCPTool } from '../types/index.ts';
+import type { MCPTool, ProviderConfig } from '../types/index.ts';
 import type { SlidePatchPhase } from './applyPatchHarness.ts';
+
+// Re-export for phase runners that type their tool-enablement params.
+export type { SlidePatchPhase };
+
+// ==================== External research tool ====================
+//
+// `google_search` is NOT part of the slide tool allowlist — it is injected on
+// top of the plan phase (and, when the caller opts in, build/edit) exactly when
+// the user enables Google Search in Settings (FR-10 / PRD US-013). It reuses the
+// shared background `MCP_CALL_TOOL` path that routes built-in tools to
+// `handleGoogleSearch`, mirroring main chat. The definition here is identical to
+// the background's GOOGLE_SEARCH_TOOL so the model sees a consistent schema.
+
+const GOOGLE_SEARCH_TOOL: MCPTool = {
+  name: 'google_search',
+  description:
+    'Search the web using Google. Use this to find current information, news, facts, or any topic that requires up-to-date web search results.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'The search query to look up on the web',
+      },
+    },
+    required: ['query'],
+  },
+};
 
 // ==================== Individual tool definitions ====================
 
@@ -138,33 +166,77 @@ export function isSlideVfsMutator(name: string): boolean {
 }
 
 /**
+ * Whether `google_search` should be offered to a slide agent session for the
+ * given provider, mirroring main chat's gate: only for non-Gemini providers, and
+ * only when the user enabled the Google Search tool AND supplied an API key.
+ * Gemini models get search via native grounding (`enableGoogleSearch`), not the
+ * tool-call path (US-028).
+ */
+export function shouldEnableGoogleSearch(
+  providerConfig: Pick<ProviderConfig, 'providerId' | 'format'> & {
+    enableGoogleSearchTool?: boolean;
+    googleSearchApiKey?: string;
+  }
+): boolean {
+  const isGemini =
+    providerConfig.providerId === 'gemini' || providerConfig.format === 'gemini';
+  return Boolean(
+    !isGemini &&
+      providerConfig.enableGoogleSearchTool &&
+      providerConfig.googleSearchApiKey
+  );
+}
+
+/**
  * Resolve the allowlisted set of slide tool NAMES for a phase.
  *
  * - plan:  read tools + apply_patch + ask + submit_plan
  * - build: read tools + apply_patch (no ask / no submit_plan)
  * - edit:  read tools + apply_patch (follow-ups are pure patches)
  * - main:  read-only tools only (orchestrator may orient but never mutate)
+ *
+ * When `enableGoogleSearch` is passed true (US-028), `google_search` is appended
+ * for plan — and for build/edit when the caller opts in — matching main chat's
+ * behaviour of offering the tool for non-Gemini providers. It is always injected
+ * AFTER the slide tools so `google_search` stays external to the apply_patch
+ * allowlist.
  */
-export function getToolsForPhaseNames(phase: SlidePatchPhase): string[] {
-  switch (phase) {
-    case 'plan':
-      return ['list_files', 'read_file', 'apply_patch', 'ask', 'submit_plan'];
-    case 'build':
-      return ['list_files', 'read_file', 'apply_patch'];
-    case 'edit':
-      return ['list_files', 'read_file', 'apply_patch'];
-    case 'main':
-    default:
-      return ['list_files', 'read_file'];
+export function getToolsForPhaseNames(
+  phase: SlidePatchPhase,
+  options?: { enableGoogleSearch?: boolean }
+): string[] {
+  const base: string[] = (() => {
+    switch (phase) {
+      case 'plan':
+        return ['list_files', 'read_file', 'apply_patch', 'ask', 'submit_plan'];
+      case 'build':
+        return ['list_files', 'read_file', 'apply_patch'];
+      case 'edit':
+        return ['list_files', 'read_file', 'apply_patch'];
+      case 'main':
+      default:
+        return ['list_files', 'read_file'];
+    }
+  })();
+
+  if (options?.enableGoogleSearch && phase !== 'main') {
+    base.push('google_search');
   }
+  return base;
 }
 
 /**
  * Resolve the allowlisted MCPTool definitions for a phase.
  * Mirrors `getToolsForPhaseNames` but returns resolved schemas.
  */
-export function getToolsForPhase(phase: SlidePatchPhase): MCPTool[] {
-  return getToolsForPhaseNames(phase)
-    .map((name) => SLIDE_BUILTIN_TOOLS[name])
-    .filter((tool): tool is MCPTool => Boolean(tool));
+export function getToolsForPhase(
+  phase: SlidePatchPhase,
+  options?: { enableGoogleSearch?: boolean }
+): MCPTool[] {
+  const toolNames = getToolsForPhaseNames(phase, options);
+  return toolNames.map((name) =>
+    name === 'google_search'
+      ? GOOGLE_SEARCH_TOOL
+      : SLIDE_BUILTIN_TOOLS[name]
+  ).filter((tool): tool is MCPTool => Boolean(tool));
 }

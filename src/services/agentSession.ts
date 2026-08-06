@@ -101,8 +101,7 @@ export interface AgentSessionParams {
   /** Resolves each model tool call client-side. See {@link AgentToolDispatch}. */
   dispatchTool: (toolCall: ToolCall) => Promise<AgentToolDispatch>;
   /** Optional live-state hook (UI wiring). */
-  onUpdate?: (state: AgentSessionState) => void;
-  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
+  onUpdate?: (state: AgentSessionState) => void;  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
   transport?: AgentTransport;
   /** Abort in-flight request (injectable for tests). Defaults to STOP_STREAM. */
   abortRequest?: AgentAbortFn;

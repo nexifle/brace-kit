@@ -5,6 +5,7 @@ import {
   getToolsForPhase,
   getToolsForPhaseNames,
   isSlideVfsMutator,
+  shouldEnableGoogleSearch,
 } from '../../src/services/slideTools.ts';
 import type { MCPTool } from '../../src/types/index.ts';
 
@@ -79,5 +80,59 @@ describe('getToolsForPhase', () => {
       const mutators = tools.filter((t) => isSlideVfsMutator(t.name));
       expect(mutators.map((t) => t.name)).toEqual(['apply_patch']);
     }
+  });
+});
+
+describe('google_search injection (US-028)', () => {
+  test('plan does not offer google_search by default', () => {
+    const tools = getToolsForPhase('plan');
+    expect(names(tools)).not.toContain('google_search');
+  });
+
+  test('plan offers google_search when enableGoogleSearch is true, appended last', () => {
+    const tools = getToolsForPhase('plan', { enableGoogleSearch: true });
+    expect(names(tools)).toEqual([
+      'list_files',
+      'read_file',
+      'apply_patch',
+      'ask',
+      'submit_plan',
+      'google_search',
+    ]);
+    // The injected tool keeps the external schema (a query input).
+    const gs = tools.find((t) => t.name === 'google_search');
+    expect((gs?.inputSchema as { required?: string[] })?.required).toContain('query');
+  });
+
+  test('build/edit can opt in to google_search via the options flag', () => {
+    for (const phase of ['build', 'edit'] as const) {
+      const tools = getToolsForPhase(phase, { enableGoogleSearch: true });
+      expect(names(tools)).toContain('google_search');
+    }
+    // main stays read-only even when the flag is passed.
+    expect(names(getToolsForPhase('main', { enableGoogleSearch: true }))).toEqual([
+      'list_files',
+      'read_file',
+    ]);
+  });
+
+  test('google_search is never a VFS mutator', () => {
+    expect(isSlideVfsMutator('google_search')).toBe(false);
+  });
+
+  test('shouldEnableGoogleSearch gates on non-Gemini + toggle + key', () => {
+    const base = { format: 'openai' as const };
+    expect(shouldEnableGoogleSearch({ ...base, enableGoogleSearchTool: true, googleSearchApiKey: '' })).toBe(false);
+    expect(shouldEnableGoogleSearch({ ...base, enableGoogleSearchTool: false, googleSearchApiKey: 'key' })).toBe(false);
+    expect(shouldEnableGoogleSearch({ ...base, enableGoogleSearchTool: true, googleSearchApiKey: 'key' })).toBe(true);
+    // Gemini never uses the tool-call path for search.
+    expect(
+      shouldEnableGoogleSearch({
+        providerId: 'gemini',
+        format: 'gemini' as const,
+        enableGoogleSearchTool: true,
+        googleSearchApiKey: 'key',
+      })
+    ).toBe(false);
   });
 });

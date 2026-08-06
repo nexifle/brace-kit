@@ -23,6 +23,7 @@ import {
   runEditPhase,
   hasValidPlanFiles,
   type PlanPhaseResult,
+  type SlideToolOptions,
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
 import type { AgentTransport, AgentAbortFn } from './agentSession.ts';
@@ -72,6 +73,8 @@ export interface SlideAgentDeps {
   /** Skill-file fetcher; defaults to fetch on chrome.runtime.getURL. */
   skillFetcher?: SlideSkillFetcher;
   maxRounds?: number;
+  /** External tool (google_search / MCP) sharing for sub-agent sessions (US-028/029). */
+  toolOptions?: SlideToolOptions;
 }
 
 /** Cross-call state for the orchestrator's live sub-agent sessions. */
@@ -126,6 +129,7 @@ export function createSlideAgent(
       maxRounds: deps.maxRounds,
       transport: deps.transport,
       abortRequest: deps.abortRequest,
+      toolOptions: deps.toolOptions,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
     });
 
@@ -247,6 +251,7 @@ export function createSlideAgent(
         maxRounds: deps.maxRounds,
         transport: deps.transport,
         abortRequest: deps.abortRequest,
+        toolOptions: deps.toolOptions,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
       },
       paused,
@@ -324,6 +329,7 @@ export function createSlideAgent(
       maxRounds: deps.maxRounds,
       transport: deps.transport,
       abortRequest: deps.abortRequest,
+      toolOptions: deps.toolOptions,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
     });
 
@@ -393,6 +399,7 @@ export function createSlideAgent(
       maxRounds: deps.maxRounds,
       transport: deps.transport,
       abortRequest: deps.abortRequest,
+      toolOptions: deps.toolOptions,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
     });
 
