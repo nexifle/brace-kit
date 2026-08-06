@@ -7,6 +7,8 @@ import {
   setLastActiveSlideProject,
 } from '../../src/utils/slideDB.ts';
 import type { SlideProject } from '../../src/types/slides.ts';
+import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../../src/types/slides.ts';
+
 
 function makeProject(overrides: Partial<SlideProject> = {}): SlideProject {
   return {
@@ -37,14 +39,25 @@ describe('slideStore', () => {
     expect(s.activeProjectId).toBeNull();
     expect(s.activeProject).toBeNull();
     expect(s.phase).toBe('idle');
+    expect(s.sessionStatus).toBe('idle');
     expect(s.busy).toBe(false);
+    expect(s.busy).toBe(s.sessionStatus === 'running');
     expect(s.pendingAsk).toBeNull();
+    expect(s.activity).toEqual([]);
+    expect(s.streamingText).toBe('');
+    expect(s.streamingReasoning).toBe('');
+    expect(s.agentRound).toBe(0);
+    expect(s.agentMaxRounds).toBe(DEFAULT_SLIDE_AGENT_MAX_ROUNDS);
+
+    expect(s.lastToolName).toBeNull();
+    expect(s.lastError).toBeNull();
     expect(s.activeDeck).toBeNull();
     expect(s.deckSlides).toEqual([]);
     expect(s.currentSlideIndex).toBe(0);
     expect(s.messages).toEqual([]);
     expect(s.panelView).toBe('split');
   });
+
 
   it('setActiveProjectData rebuilds deck projection and slides', () => {
     const project = makeProject();
@@ -77,6 +90,51 @@ describe('slideStore', () => {
     expect(s.pendingAsk?.projectId).toBe('proj_1');
     expect(s.pendingAsk?.payload.question).toBe('Which canvas?');
   });
+
+  it('setActiveProjectData clears prior-run activity/stream chrome', () => {
+    const store = useSlideStore.getState();
+    store.setSessionStatus('running');
+    store.setStreamingText('leftover');
+    store.setStreamingReasoning('think');
+    store.setLastError('boom');
+    store.setAgentRound(3);
+    store.setLastToolName('apply_patch');
+    store.pushActivity({
+      id: 'old',
+      type: 'info',
+      status: 'completed',
+      ts: 1,
+      phase: 'plan',
+      label: 'stale',
+    });
+
+    store.setActiveProjectData(makeProject());
+    const s = useSlideStore.getState();
+    expect(s.activity).toEqual([]);
+    expect(s.streamingText).toBe('');
+    expect(s.streamingReasoning).toBe('');
+    expect(s.lastError).toBeNull();
+    expect(s.lastToolName).toBeNull();
+    expect(s.agentRound).toBe(0);
+    expect(s.busy).toBe(false);
+    expect(s.sessionStatus).toBe('idle');
+  });
+
+  it('setActiveProjectData marks waiting_user when project has pendingAsk', () => {
+    const ask = {
+      id: 'ask_1',
+      toolCallId: 'tc_1',
+      sessionRef: 'plan' as const,
+      createdAt: 123,
+      payload: { question: 'Which canvas?', field: 'canvas' as const },
+    };
+    useSlideStore.getState().setActiveProjectData(makeProject({ pendingAsk: ask }));
+    const s = useSlideStore.getState();
+    expect(s.sessionStatus).toBe('waiting_user');
+    expect(s.busy).toBe(false);
+    expect(s.pendingAsk?.id).toBe('ask_1');
+  });
+
 
   it('setActiveDeckFromVfs re-projects and refreshes files', () => {
     useSlideStore.getState().setActiveProjectData(makeProject());
@@ -114,11 +172,113 @@ describe('slideStore', () => {
   it('setSessionStatus derives busy from running', () => {
     useSlideStore.getState().setSessionStatus('running');
     expect(useSlideStore.getState().busy).toBe(true);
+    expect(useSlideStore.getState().busy).toBe(
+      useSlideStore.getState().sessionStatus === 'running',
+    );
 
     useSlideStore.getState().setSessionStatus('waiting_user');
     expect(useSlideStore.getState().busy).toBe(false);
     expect(useSlideStore.getState().sessionStatus).toBe('waiting_user');
+    expect(useSlideStore.getState().busy).toBe(
+      useSlideStore.getState().sessionStatus === 'running',
+    );
   });
+
+  it('setBusy keeps sessionStatus in lockstep with busy', () => {
+    useSlideStore.getState().setBusy(true);
+    let s = useSlideStore.getState();
+    expect(s.busy).toBe(true);
+    expect(s.sessionStatus).toBe('running');
+    expect(s.busy).toBe(s.sessionStatus === 'running');
+
+    useSlideStore.getState().setBusy(false);
+    s = useSlideStore.getState();
+    expect(s.busy).toBe(false);
+    expect(s.sessionStatus).toBe('idle');
+    expect(s.busy).toBe(s.sessionStatus === 'running');
+
+    // setBusy(false) must not clobber waiting_user / done / error / stopped.
+    useSlideStore.getState().setSessionStatus('waiting_user');
+    useSlideStore.getState().setBusy(false);
+    expect(useSlideStore.getState().sessionStatus).toBe('waiting_user');
+    expect(useSlideStore.getState().busy).toBe(false);
+  });
+
+  it('streamingText/streamingReasoning clear on stop, error, and done', () => {
+    const store = useSlideStore.getState();
+    store.setSessionStatus('running');
+    store.setStreamingText('hello');
+    store.appendStreamingText(' world');
+    store.setStreamingReasoning('think');
+    expect(useSlideStore.getState().streamingText).toBe('hello world');
+    expect(useSlideStore.getState().streamingReasoning).toBe('think');
+
+    store.clearStreaming();
+    expect(useSlideStore.getState().streamingText).toBe('');
+    expect(useSlideStore.getState().streamingReasoning).toBe('');
+
+    store.setStreamingText('again');
+    store.setStreamingReasoning('r');
+    store.setSessionStatus('done');
+    expect(useSlideStore.getState().streamingText).toBe('');
+    expect(useSlideStore.getState().streamingReasoning).toBe('');
+    expect(useSlideStore.getState().busy).toBe(false);
+
+    store.setSessionStatus('running');
+    store.setStreamingText('x');
+    store.setStreamingReasoning('rx');
+    store.setSessionStatus('error');
+    expect(useSlideStore.getState().streamingText).toBe('');
+    expect(useSlideStore.getState().streamingReasoning).toBe('');
+
+    store.setSessionStatus('running');
+    store.setStreamingText('y');
+    store.setStreamingReasoning('ry');
+    store.markStopped();
+    expect(useSlideStore.getState().streamingText).toBe('');
+    expect(useSlideStore.getState().streamingReasoning).toBe('');
+    expect(useSlideStore.getState().sessionStatus).toBe('stopped');
+    expect(useSlideStore.getState().busy).toBe(false);
+
+  });
+
+  it('pushActivity and patchActivity manage the activity feed', () => {
+    const base = {
+      id: 'plan_1_1',
+      type: 'tool_started' as const,
+      status: 'running' as const,
+      ts: 1,
+      phase: 'plan' as const,
+      label: 'Updating /brief.md',
+      toolName: 'apply_patch',
+      path: '/brief.md',
+    };
+    useSlideStore.getState().pushActivity(base);
+    useSlideStore.getState().pushActivity({
+      ...base,
+      id: 'plan_1_2',
+      type: 'info' as const,
+      status: 'completed' as const,
+      label: 'Note',
+    });
+    expect(useSlideStore.getState().activity).toHaveLength(2);
+
+    useSlideStore.getState().patchActivity('plan_1_1', {
+      status: 'completed',
+      type: 'tool_finished',
+      label: 'Updated /brief.md',
+    });
+    const row = useSlideStore.getState().activity.find((e) => e.id === 'plan_1_1');
+    expect(row?.status).toBe('completed');
+    expect(row?.type).toBe('tool_finished');
+    expect(row?.label).toBe('Updated /brief.md');
+    // id is immutable under patch
+    expect(row?.id).toBe('plan_1_1');
+
+    useSlideStore.getState().setActivity([]);
+    expect(useSlideStore.getState().activity).toEqual([]);
+  });
+
 
   it('setPhase / setBusy / setPendingAsk / setMessages / addMessage / setPanelView work', () => {
     const s = useSlideStore.getState();

@@ -17,6 +17,8 @@
 
 import type { APIMessage, MCPTool, ProviderConfig, ToolCall } from '../types/index.ts';
 import type { SlidePendingAsk } from '../types/slides.ts';
+import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../types/slides.ts';
+
 
 // ==================== Public types ====================
 
@@ -109,7 +111,10 @@ export interface AgentSessionParams {
 
 // ==================== Defaults / transport ====================
 
-export const DEFAULT_SLIDE_MAX_ROUNDS = 12;
+/** Alias kept for existing call sites / docs. */
+export const DEFAULT_SLIDE_MAX_ROUNDS = DEFAULT_SLIDE_AGENT_MAX_ROUNDS;
+
+
 
 const defaultTransport: AgentTransport = (request) =>
   chrome.runtime.sendMessage(request) as Promise<AgentChatResponse>;

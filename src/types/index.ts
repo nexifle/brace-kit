@@ -632,6 +632,9 @@ export const TITLE_GENERATION_SYSTEM_PROMPT = `Generate a short title (max 6 wor
 
 export type {
   Slide,
+  SlideActivityEvent,
+  SlideActivityEventType,
+  SlideActivityStatus,
   SlideCanvas,
   SlideCanvasResolution,
   SlideDeck,
@@ -643,8 +646,10 @@ export type {
   SlidePhase,
   SlideProject,
   SlideSessionStatus,
+  SlideUiRuntime,
 } from './slides.ts';
 export {
+  DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
   DEFAULT_SLIDE_CANVAS,
   SLIDE_CANVAS_PRESETS,
   SLIDE_PHASE_STATUS_COPY,

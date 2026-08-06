@@ -155,3 +155,69 @@ export interface SlideMainMessage {
   content: string;
   createdAt: number;
 }
+
+// ==================== Agentic UI runtime (Amendment A.3 / A.5) ====================
+
+/** Stable activity event kinds for the chat-rail feed. */
+export type SlideActivityEventType =
+  | 'phase_started'
+  | 'phase_completed'
+  | 'phase_failed'
+  | 'phase_stopped'
+  | 'model_round_started'
+  | 'model_round_completed'
+  | 'assistant_delta'
+  | 'tool_started'
+  | 'tool_finished'
+  | 'file_written'
+  | 'file_deleted'
+  | 'ask_started'
+  | 'ask_answered'
+  | 'preview_updated'
+  | 'connecting'
+  | 'info';
+
+export type SlideActivityStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** One row in the activity feed (append-only per phase run; in-place status via id). */
+export interface SlideActivityEvent {
+  id: string;
+  type: SlideActivityEventType;
+  status: SlideActivityStatus;
+  /** Epoch ms */
+  ts: number;
+  phase: 'plan' | 'build' | 'edit';
+  /** Model round index when relevant (1-based) */
+  round?: number;
+  toolName?: string;
+  toolCallId?: string;
+  /** Human one-liner — max ~120 chars recommended for list row */
+  label: string;
+  /** Optional detail (args summary, error, patch path) — collapsed by default in UI */
+  detail?: string;
+  path?: string;
+  patchOp?: 'create_file' | 'update_file' | 'delete_file';
+  filesTouched?: number;
+}
+
+/**
+ * Authoritative UI runtime fields (Amendment A.3).
+ * `busy` MUST equal `sessionStatus === 'running'` — single source of truth.
+ */
+export interface SlideUiRuntime {
+  phase: SlidePhase;
+  sessionStatus: SlideSessionStatus;
+  busy: boolean;
+  pendingAsk: SlidePendingAsk | null;
+  activity: SlideActivityEvent[];
+  streamingText: string;
+  streamingReasoning: string;
+  /** 1-based current model round (0 when idle / not in a phase). */
+  agentRound: number;
+  agentMaxRounds: number;
+  lastToolName: string | null;
+  lastError: string | null;
+}
+
+/** Default max model rounds for phase chrome (matches agentSession default). */
+export const DEFAULT_SLIDE_AGENT_MAX_ROUNDS = 12;

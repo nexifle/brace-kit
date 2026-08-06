@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type {
   Slide,
+  SlideActivityEvent,
   SlideCanvas,
   SlideDeck,
   SlideFile,
@@ -10,7 +11,10 @@ import type {
   SlideProject,
   SlideSessionStatus,
 } from '../types/index.ts';
-import { DEFAULT_SLIDE_CANVAS } from '../types/index.ts';
+import {
+  DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
+  DEFAULT_SLIDE_CANVAS,
+} from '../types/index.ts';
 import {
   projectDeckSlides,
   rebuildDeckProjection,
@@ -46,10 +50,24 @@ export interface SlideStoreState {
   phase: SlidePhase;
   /** Detailed status of the in-flight agent session (drives busy/UI). */
   sessionStatus: SlideSessionStatus;
-  /** True while an agent phase is generating or in its tool loop. */
+  /**
+   * True while an agent phase is generating or in its tool loop.
+   * Single source of truth with sessionStatus: busy === (sessionStatus === 'running').
+   */
   busy: boolean;
   /** Suspended question the plan session is waiting on, if any. */
   pendingAsk: SlideAskState | null;
+  /** Live / last-run activity feed for the agentic chrome (Amendment A.3). */
+  activity: SlideActivityEvent[];
+  /** Streaming assistant text for the active model turn (cleared on commit/stop/error). */
+  streamingText: string;
+  /** Optional reasoning stream if the provider emits it. */
+  streamingReasoning: string;
+  /** 1-based current model round (0 when idle). */
+  agentRound: number;
+  agentMaxRounds: number;
+  lastToolName: string | null;
+  lastError: string | null;
   /** Decoded deck projection from the VFS (drives preview/navigation/export). */
   activeDeck: SlideDeck | null;
   /** Resolved, ordered slides referenced by `activeDeck.slideOrder`. */
@@ -68,9 +86,33 @@ export interface SlideStoreState {
   /** Load a full project into the store and rebuild its deck projection. */
   setActiveProjectData: (project: SlideProject) => void;
   setPhase: (phase: SlidePhase) => void;
+  /**
+   * Set session status and derive `busy` from it.
+   * Clears streaming buffers when leaving `running` via stop/error/done/idle/waiting_user.
+   */
   setSessionStatus: (status: SlideSessionStatus) => void;
+  /**
+   * Convenience: set busy and keep sessionStatus in lockstep
+   * (`true` → `running`, `false` → `idle` if currently running).
+   */
   setBusy: (busy: boolean) => void;
   setPendingAsk: (pendingAsk: SlideAskState | null) => void;
+  /** Append an activity event (append-only for the phase run). */
+  pushActivity: (event: SlideActivityEvent) => void;
+  /** In-place patch of an existing activity row by id (e.g. tool finish). */
+  patchActivity: (id: string, partial: Partial<SlideActivityEvent>) => void;
+  /** Replace the entire activity list (e.g. phase boundary reset). */
+  setActivity: (activity: SlideActivityEvent[]) => void;
+  setStreamingText: (text: string) => void;
+  appendStreamingText: (delta: string) => void;
+  setStreamingReasoning: (text: string) => void;
+  appendStreamingReasoning: (delta: string) => void;
+  /** Clear both streaming buffers (turn commit / stop / error). */
+  clearStreaming: () => void;
+  setAgentRound: (round: number) => void;
+  setAgentMaxRounds: (max: number) => void;
+  setLastToolName: (name: string | null) => void;
+  setLastError: (error: string | null) => void;
   /**
    * Record the user's answer to a suspended question (AskPrompt US-017).
    * Clears the pending ask and appends the answer to the transcript; the
@@ -79,7 +121,7 @@ export interface SlideStoreState {
   answerAsk: (projectId: string, answer: string, attachments?: string[]) => void;
   /** Rebuild the deck projection from a fresh VFS (e.g. after build/edit). */
   setActiveDeckFromVfs: (files: SlideFile[]) => void;
-  /** Mark the in-flight phase as user-stopped: clear busy + any suspended ask. */
+  /** Mark the in-flight phase as user-stopped: clear busy + streaming + any suspended ask. */
   markStopped: () => void;
   /**
    * Delete a project and every piece of its related data (metadata, transcript,
@@ -113,13 +155,20 @@ export interface SlideStoreState {
 }
 
 const INITIAL_STATE = {
-  activeProjectId: null,
+  activeProjectId: null as string | null,
   activeProject: null as SlideProject | null,
   phase: 'idle' as SlidePhase,
   sessionStatus: 'idle' as SlideSessionStatus,
   busy: false,
   pendingAsk: null as SlideAskState | null,
-  activeDeck: null,
+  activity: [] as SlideActivityEvent[],
+  streamingText: '',
+  streamingReasoning: '',
+  agentRound: 0,
+  agentMaxRounds: DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
+  lastToolName: null as string | null,
+  lastError: null as string | null,
+  activeDeck: null as SlideDeck | null,
   deckSlides: [] as Slide[],
   canvas: DEFAULT_SLIDE_CANVAS,
   currentSlideIndex: 0,
@@ -137,14 +186,29 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     }),
 
   setActiveProjectData: (project) =>
-    set(() => {      const deck = rebuildDeckProjection(project.files);
+    set(() => {
+      const deck = rebuildDeckProjection(project.files);
       const slides = projectDeckSlides(project.files, deck);
       return {
         activeProject: project,
         activeProjectId: project.id,
         phase: project.phase,
         messages: project.messages,
-        pendingAsk: project.pendingAsk ? { ...project.pendingAsk, projectId: project.id } : null,
+        pendingAsk: project.pendingAsk
+          ? { ...project.pendingAsk, projectId: project.id }
+          : null,
+        // Drop prior-run chrome so land/restore never show another session's feed.
+        sessionStatus: project.pendingAsk
+          ? ('waiting_user' as SlideSessionStatus)
+          : ('idle' as SlideSessionStatus),
+        busy: false,
+        activity: [] as SlideActivityEvent[],
+        streamingText: '',
+        streamingReasoning: '',
+        agentRound: 0,
+        agentMaxRounds: DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
+        lastToolName: null as string | null,
+        lastError: null as string | null,
         activeDeck: deck,
         deckSlides: slides,
         canvas: project.canvas,
@@ -152,16 +216,71 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
       };
     }),
 
+
   setPhase: (phase) => set({ phase }),
 
   setSessionStatus: (sessionStatus) =>
-    set(() => ({
-      sessionStatus,
-      busy: sessionStatus === 'running',
+    set((state) => {
+      const busy = sessionStatus === 'running';
+      // Clear streaming when the turn is no longer actively streaming.
+      const clearStream =
+        sessionStatus === 'stopped' ||
+        sessionStatus === 'error' ||
+        sessionStatus === 'done' ||
+        sessionStatus === 'idle' ||
+        (sessionStatus === 'waiting_user' && state.sessionStatus === 'running');
+      return {
+        sessionStatus,
+        busy,
+        ...(clearStream ? { streamingText: '', streamingReasoning: '' } : {}),
+        ...(sessionStatus === 'running' ? { lastError: null } : {}),
+      };
+    }),
+
+  // Keep busy and sessionStatus lockstep so callers of either path stay consistent.
+  setBusy: (busy) =>
+    set((state) => {
+      if (busy) {
+        return { busy: true, sessionStatus: 'running' as SlideSessionStatus };
+      }
+      // Only drop to idle when we were running; preserve waiting_user/done/error/stopped.
+      if (state.sessionStatus === 'running') {
+        return {
+          busy: false,
+          sessionStatus: 'idle' as SlideSessionStatus,
+          streamingText: '',
+          streamingReasoning: '',
+        };
+      }
+      return { busy: false };
+    }),
+
+  setPendingAsk: (pendingAsk) => set({ pendingAsk }),
+
+  pushActivity: (event) =>
+    set((state) => ({ activity: [...state.activity, event] })),
+
+  patchActivity: (id, partial) =>
+    set((state) => ({
+      activity: state.activity.map((ev) =>
+        ev.id === id ? { ...ev, ...partial, id: ev.id } : ev,
+      ),
     })),
 
-  setBusy: (busy) => set({ busy }),
-  setPendingAsk: (pendingAsk) => set({ pendingAsk }),
+  setActivity: (activity) => set({ activity }),
+
+  setStreamingText: (streamingText) => set({ streamingText }),
+  appendStreamingText: (delta) =>
+    set((state) => ({ streamingText: state.streamingText + delta })),
+  setStreamingReasoning: (streamingReasoning) => set({ streamingReasoning }),
+  appendStreamingReasoning: (delta) =>
+    set((state) => ({ streamingReasoning: state.streamingReasoning + delta })),
+  clearStreaming: () => set({ streamingText: '', streamingReasoning: '' }),
+
+  setAgentRound: (agentRound) => set({ agentRound }),
+  setAgentMaxRounds: (agentMaxRounds) => set({ agentMaxRounds }),
+  setLastToolName: (lastToolName) => set({ lastToolName }),
+  setLastError: (lastError) => set({ lastError }),
 
   answerAsk: (projectId, answer, _attachments) =>
     set((state) => {
@@ -200,8 +319,10 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
   markStopped: () =>
     set((state) => ({
       busy: false,
-      sessionStatus: 'stopped',
+      sessionStatus: 'stopped' as SlideSessionStatus,
       pendingAsk: null,
+      streamingText: '',
+      streamingReasoning: '',
       activeProject: state.activeProject
         ? {
             ...state.activeProject,
