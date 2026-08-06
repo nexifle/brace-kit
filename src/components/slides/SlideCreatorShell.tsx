@@ -27,6 +27,7 @@ import { PlanReview } from './PlanReview.tsx';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 import { ExportDeck } from './ExportDeck.tsx';
+import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 import { Transcript } from './Transcript.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 
@@ -171,6 +172,7 @@ function PreviewPane({
 
         <div className="flex items-center gap-2 min-w-0">
           {hasDeck && <ExportDeck />}
+          {hasDeck && <SlideCodeViewer />}
           {hasDeck ? (
             /* slide navigation for decks: prev / position / next */
             <div className="flex items-center gap-1">
