@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
+import { useSlideAgent } from '../../hooks/useSlideAgent.ts';
 import { Btn } from '../ui/Btn.tsx';
 import { ComposerPicker } from '../ComposerPicker.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
@@ -24,6 +25,7 @@ import { AskPrompt } from './AskPrompt.tsx';
 import { PlanReview } from './PlanReview.tsx';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
+import { Transcript } from './Transcript.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -218,15 +220,39 @@ function PreviewPane({
 /* Composer                                                             */
 /* ==================================================================== */
 
-function Composer() {
+function Composer({
+  onSend,
+  busy,
+  placeholder,
+}: {
+  onSend: (text: string) => void;
+  busy: boolean;
+  placeholder: string;
+}) {
+  const [value, setValue] = useState('');
+  const disabled = busy || !value.trim();
+
+  function submit() {
+    if (disabled) return;
+    onSend(value);
+    setValue('');
+  }
+
   return (
     <div className="shrink-0 border-t border-border/70 bg-muted/30 p-3">
       <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 hover:border-border">
         <textarea
           rows={2}
-          readOnly
-          disabled
-          placeholder='Describe your deck — try “6 slides for our product launch”'
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter sends; Shift+Enter inserts a newline.
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={placeholder}
           className="w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:cursor-not-allowed"
         />
 
@@ -258,9 +284,10 @@ function Composer() {
 
           <button
             type="button"
-            disabled
+            onClick={submit}
+            disabled={disabled}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
-            title="Send (Enter)"
+            title="Send"
             aria-label="Send"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -330,9 +357,22 @@ function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
 
 const RAIL_WIDTH = 320;
 
-function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => void }) {
+function ChatRail({
+  railOpen,
+  onClose,
+  onSend,
+  onBuild,
+  onAnswer,
+  placeholder,
+}: {
+  railOpen: boolean;
+  onClose: () => void;
+  onSend: (text: string) => void;
+  onBuild: () => void;
+  onAnswer: (projectId: string, answer: string) => void;
+  placeholder: string;
+}) {
   const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
-  const answerAsk = useSlideStore((s) => s.answerAsk);
   return (
     <AnimatePresence initial={false}>
       {railOpen && (
@@ -380,23 +420,21 @@ function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => voi
                 <AskPrompt
                   ask={pendingAsk}
                   busy={busy}
-                  onSubmit={(answer, attachments) =>
-                    answerAsk(pendingAsk.projectId, answer, attachments)
-                  }
+                  onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
                 />
               ) : activeProject && phase === 'plan_ready' ? (
-                <PlanReview />
+                <PlanReview onBuild={onBuild} />
               ) : activeProject ? (
-                <p className="text-sm text-foreground/90 leading-relaxed">
-                  {messages.length > 0
-                    ? 'Your deck session is ready. Follow-up edits will refine the slides.'
-                    : 'Plan is underway — the agent will draft a brief and design.'}
-                </p>
+                <Transcript messages={messages} />
               ) : (
                 <EmptyChat />
               )}
             </div>
-            <Composer />
+            <Composer
+              onSend={onSend}
+              busy={busy}
+              placeholder={placeholder}
+            />
           </div>
         </motion.aside>
       )}
@@ -408,9 +446,23 @@ function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => voi
 /* Narrow chat drawer (bottom sheet over preview)                       */
 /* ==================================================================== */
 
-function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+function ChatDock({
+  open,
+  onToggle,
+  onSend,
+  onBuild,
+  onAnswer,
+  placeholder,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  onSend: (text: string) => void;
+  onBuild: () => void;
+  onAnswer: (projectId: string, answer: string) => void;
+  placeholder: string;
+}) {
   const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
-  const answerAsk = useSlideStore((s) => s.answerAsk);
+  const [dockValue, setDockValue] = useState('');
 
   if (open) {
     return (
@@ -434,23 +486,21 @@ function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
             <AskPrompt
               ask={pendingAsk}
               busy={busy}
-              onSubmit={(answer, attachments) =>
-                answerAsk(pendingAsk.projectId, answer, attachments)
-              }
+              onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
             />
           ) : activeProject && phase === 'plan_ready' ? (
-            <PlanReview />
+            <PlanReview onBuild={onBuild} />
           ) : activeProject ? (
-            <p className="text-sm text-foreground/90 leading-relaxed">
-              {messages.length > 0
-                ? 'Your deck session is ready. Follow-up edits will refine the slides.'
-                : 'Plan is underway — the agent will draft a brief and design.'}
-            </p>
+            <Transcript messages={messages} />
           ) : (
             <EmptyChat />
           )}
         </div>
-        <Composer />
+        <Composer
+          onSend={onSend}
+          busy={busy}
+          placeholder={placeholder}
+        />
       </div>
     );
   }
@@ -467,17 +517,38 @@ function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
         <ChevronUp size={15} />
       </button>
       <input
-        readOnly
-        disabled
-        placeholder="Describe your deck…"
+        value={dockValue}
+        onChange={(e) => setDockValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (dockValue.trim() && !busy) {
+              onSend(dockValue);
+              setDockValue('');
+            }
+          }
+        }}
+        placeholder={placeholder}
         className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
       />
-      <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm opacity-50">
+      <button
+        type="button"
+        onClick={() => {
+          if (dockValue.trim() && !busy) {
+            onSend(dockValue);
+            setDockValue('');
+          }
+        }}
+        disabled={busy || !dockValue.trim()}
+        className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 disabled:opacity-30 disabled:grayscale hover:brightness-110 active:scale-90"
+        title="Send"
+        aria-label="Send"
+      >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 19V5" />
           <path d="m5 12 7-7 7 7" />
         </svg>
-      </span>
+      </button>
     </div>
   );
 }
@@ -490,6 +561,21 @@ export function SlideCreatorShell() {
   const store = useStore();
   const { phase, busy, activeProject } = useSlideStore();
   const { ref, width } = useElementSize<HTMLDivElement>();
+  const agent = useSlideAgent();
+
+  // Where can the user send / what should the composer save?
+  const promptPlaceholder = activeProject
+    ? 'Follow-up on the deck…'
+    : 'Describe your deck — try “6 slides for our product launch”';
+
+  const handleSend = (text: string) => {
+    if (!text.trim()) return;
+    if (activeProject) {
+      void agent.sendFollowUp(text);
+    } else {
+      void agent.createFromPrompt(text);
+    }
+  };
 
   const back = () => store.closeSlideCreator();
   const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
@@ -538,6 +624,10 @@ export function SlideCreatorShell() {
             <ChatDock
               open={chatOpen}
               onToggle={() => setChatOpen((o) => !o)}
+              onSend={handleSend}
+              onBuild={() => void agent.runBuild()}
+              onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
+              placeholder={promptPlaceholder}
             />
           </div>
         ) : (
@@ -545,6 +635,10 @@ export function SlideCreatorShell() {
             <ChatRail
               railOpen={railOpen}
               onClose={() => setRailOpen(false)}
+              onSend={handleSend}
+              onBuild={() => void agent.runBuild()}
+              onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
+              placeholder={promptPlaceholder}
             />
             <section className="relative min-w-0 flex-1 flex-col">
               <PreviewPane

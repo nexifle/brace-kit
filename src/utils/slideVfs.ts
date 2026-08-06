@@ -125,7 +125,7 @@ export function slideHtmlPath(id: string): string {
   return `/slides/${id}${SLIDE_HTML_EXT}`;
 }
 
-function isSlideCanvas(value: unknown): value is SlideCanvas {
+export function isSlideCanvas(value: unknown): value is SlideCanvas {
   return typeof value === 'string' && value in SLIDE_CANVAS_PRESETS;
 }
 
