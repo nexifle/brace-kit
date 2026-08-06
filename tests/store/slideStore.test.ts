@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import 'fake-indexeddb/auto';
 import { useSlideStore } from '../../src/store/slideStore.ts';
+import {
+  clearAllSlideProjects,
+  saveSlideProject,
+  setLastActiveSlideProject,
+} from '../../src/utils/slideDB.ts';
 import type { SlideProject } from '../../src/types/slides.ts';
 
 function makeProject(overrides: Partial<SlideProject> = {}): SlideProject {
@@ -25,6 +30,7 @@ describe('slideStore', () => {
   beforeEach(() => {
     useSlideStore.getState().reset();
   });
+  afterAll(() => clearAllSlideProjects());
 
   it('starts in a neutral idle state', () => {
     const s = useSlideStore.getState();
@@ -195,5 +201,88 @@ describe('slideStore', () => {
     const s = useSlideStore.getState();
     expect(s.phase).toBe('build');
     expect(s.activeProject?.phase).toBe('build');
+  });
+
+  it('restoreLastActiveProject hydrates the last-active project from slideDB', async () => {
+    const project = makeProject({
+      id: 'proj_restore',
+      phase: 'plan_ready',
+      messages: [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1 }],
+      pendingAsk: {
+        id: 'ask_r',
+        toolCallId: 'tc_r',
+        sessionRef: 'plan' as const,
+        createdAt: 2,
+        payload: { question: 'Canvas?', field: 'canvas', options: ['16:9', '4:5'] },
+      },
+    });
+    await saveSlideProject(project);
+    await setLastActiveSlideProject(project.id);
+
+    useSlideStore.getState().restoreLastActiveProject();
+
+    // await the async IDB reads to settle
+    await new Promise((r) => setTimeout(r, 10));
+    const s = useSlideStore.getState();
+    expect(s.activeProjectId).toBe('proj_restore');
+    expect(s.activeProject?.phase).toBe('plan_ready');
+    expect(s.activeProject?.messages).toHaveLength(1);
+    // pending ask is re-shown on the restored project
+    expect(s.pendingAsk?.projectId).toBe('proj_restore');
+    expect(s.pendingAsk?.payload.question).toBe('Canvas?');
+    // deck projection rebuilt from restored VFS
+    expect(s.deckSlides.map((sl) => sl.id)).toEqual(['01', '02']);
+  });
+
+  it('restoreLastActiveProject with a named id restores that project', async () => {
+    await saveSlideProject(makeProject({ id: 'proj_a' }));
+    await saveSlideProject(makeProject({ id: 'proj_b' }));
+    await setLastActiveSlideProject('proj_a');
+
+    useSlideStore.getState().restoreLastActiveProject('proj_b');
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(useSlideStore.getState().activeProjectId).toBe('proj_b');
+  });
+
+  it('listProjects returns persisted projects sorted by recency', async () => {
+    // saveSlideProject refreshes updatedAt to now, so the newest save sorts first.
+    // Wait >1ms between saves so Date.now() differs (equal index keys sort non-deterministically).
+    await saveSlideProject(makeProject({ id: 'p_old' }));
+    await new Promise((r) => setTimeout(r, 5));
+    await saveSlideProject(makeProject({ id: 'p_new' }));
+    await new Promise((r) => setTimeout(r, 5));
+
+    const list = await useSlideStore.getState().listProjects();
+    const ids = list.map((p) => p.id);
+    expect(ids).toContain('p_old');
+    expect(ids).toContain('p_new');
+    expect(ids[0]).toBe('p_new');
+  });
+
+  it('deleteProject removes all related data and resets when active', async () => {
+    const project = makeProject({ id: 'proj_del' });
+    await saveSlideProject(project);
+    await setLastActiveSlideProject(project.id);
+    useSlideStore.getState().setActiveProjectData(project);
+    expect(useSlideStore.getState().activeProjectId).toBe('proj_del');
+
+    await useSlideStore.getState().deleteProject('proj_del');
+
+    // workspace returned to idle
+    expect(useSlideStore.getState().activeProject).toBeNull();
+    expect(useSlideStore.getState().activeProjectId).toBeNull();
+    // project gone from IDB + last-active cleared
+    const list = await useSlideStore.getState().listProjects();
+    expect(list.some((p) => p.id === 'proj_del')).toBe(false);
+  });
+
+  it('deleteProject of a non-active project leaves the workspace untouched', async () => {
+    await saveSlideProject(makeProject({ id: 'proj_other' }));
+    useSlideStore.getState().setActiveProjectData(makeProject({ id: 'proj_active' }));
+
+    await useSlideStore.getState().deleteProject('proj_other');
+
+    expect(useSlideStore.getState().activeProjectId).toBe('proj_active');
   });
 });

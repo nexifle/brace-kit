@@ -16,7 +16,14 @@ import {
   rebuildDeckProjection,
   upsertSlideFile,
 } from '../utils/slideVfs.ts';
-import { saveSlideProject } from '../utils/slideDB.ts';
+import {
+  deleteSlideProject,
+  getLastActiveSlideProject,
+  getSlideProject,
+  listSlideProjects,
+  saveSlideProject,
+  type StoredSlideProject,
+} from '../utils/slideDB.ts';
 
 /**
  * Panel layout views inside the Slide Creator shell.
@@ -73,6 +80,21 @@ export interface SlideStoreState {
   /** Rebuild the deck projection from a fresh VFS (e.g. after build/edit). */
   setActiveDeckFromVfs: (files: SlideFile[]) => void;
   /**
+   * Delete a project and every piece of its related data (metadata, transcript,
+   * VFS, last-active). If it is the active project, reset the workspace to idle.
+   */
+  deleteProject: (projectId: string) => Promise<void>;
+  /**
+   * Load (without activating) the sorted project list from slideDB for the
+   * history/reopen surface (US-026). Never touches the active project.
+   */
+  listProjects: () => Promise<StoredSlideProject[]>;
+  /**
+   * Restore the last-active slide project (or the named one) from slideDB after
+   * an extension reload, rebuilding the deck + re-showing any pending ask.
+   */
+  restoreLastActiveProject: (projectId?: string) => Promise<void>;
+  /**
    * Persist an edited plan artifact (`/brief.md` or `/design.md`) back into the
    * VFS and IndexedDB (US-018 plan review editing). Fires on the active project
    * only; leaves the phase unchanged so build gating still applies.
@@ -103,7 +125,7 @@ const INITIAL_STATE = {
   panelView: 'split' as SlidePanelView,
 };
 
-export const useSlideStore = create<SlideStoreState>((set) => ({
+export const useSlideStore = create<SlideStoreState>((set, get) => ({
   ...INITIAL_STATE,
 
   setActiveProject: (activeProjectId) =>
@@ -172,6 +194,24 @@ export const useSlideStore = create<SlideStoreState>((set) => ({
         activeProject: state.activeProject ? { ...state.activeProject, files } : null,
       };
     }),
+
+  deleteProject: async (projectId) => {
+    await deleteSlideProject(projectId);
+    set((state) => {
+      // If it was the active project, drop back to a clean idle workspace.
+      if (state.activeProjectId !== projectId) return {};
+      return { ...INITIAL_STATE };
+    });
+  },
+
+  listProjects: () => listSlideProjects(),
+
+  restoreLastActiveProject: async (projectId) => {
+    const id = projectId ?? (await getLastActiveSlideProject());
+    if (!id) return;
+    const project = await getSlideProject(id);
+    if (project) get().setActiveProjectData(project);
+  },
 
   updatePlanFile: (path, content) =>
     set((state) => {

@@ -10,7 +10,7 @@ import { useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import { useSlideStore } from '../store/slideStore.ts';
 import { createSlideAgent } from '../services/slideOrchestrator.ts';
-import { saveSlideProject } from '../utils/slideDB.ts';
+import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
 
 export function useSlideAgent() {
@@ -18,14 +18,15 @@ export function useSlideAgent() {
   const slideStore = useSlideStore();
 
   // A stable agent instance bound once to the store-backed host. Created lazily
-  // on first render; the closure reads live store state via getState(), so it
-  // never goes stale across re-renders.
+  // on first render; the host reads live store state via getState(), so it never
+  // goes stale across re-renders or restores.
   const agentRef = useRef<ReturnType<typeof createSlideAgent> | null>(null);
   if (!agentRef.current) {
     agentRef.current = createSlideAgent(
       {
-        getActiveProject: () => slideStore.activeProject,
+        getActiveProject: () => useSlideStore.getState().activeProject,
         landProject: (project: SlideProject) => {
+          setLastActiveSlideProject(project.id);
           saveSlideProject(project).catch(() => {});
           slideStore.setActiveProjectData(project);
         },

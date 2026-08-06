@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -562,6 +562,12 @@ export function SlideCreatorShell() {
   const { phase, busy, activeProject } = useSlideStore();
   const { ref, width } = useElementSize<HTMLDivElement>();
   const agent = useSlideAgent();
+
+  // Restore the last-active project (files/transcript/pending ask) on open, so
+  // a reload of the extension returns the user to exactly where they left off.
+  useEffect(() => {
+    void useSlideStore.getState().restoreLastActiveProject();
+  }, []);
 
   // Where can the user send / what should the composer save?
   const promptPlaceholder = activeProject
