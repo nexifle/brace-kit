@@ -1,9 +1,26 @@
 import { build } from 'bun';
-import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import tailwindPlugin from 'bun-plugin-tailwind';
 
 const outDir = './dist';
+
+// Recursively copy a directory tree (used for phase skill markdown, which must
+// ship to dist/ so sub-agents can fetch it via chrome.runtime.getURL()).
+function copyDirTree(fromDir: string, toDir: string): void {
+  if (!existsSync(fromDir)) return;
+  mkdirSync(toDir, { recursive: true });
+  for (const entry of readdirSync(fromDir)) {
+    const from = join(fromDir, entry);
+    const to = join(toDir, entry);
+    if (statSync(from).isDirectory()) {
+      copyDirTree(from, to);
+    } else {
+      copyFileSync(from, to);
+      console.log(`Copied: ${from} -> ${to}`);
+    }
+  }
+}
 
 // Ensure output directory exists
 if (!existsSync(outDir)) {
@@ -101,6 +118,9 @@ if (result.success) {
       console.warn(`Failed to copy ${from}: ${(e as Error).message}`);
     }
   }
+
+  // Copy phase skill markdown (sub-agents fetch these at runtime).
+  copyDirTree(join('src', 'skills'), join(outDir, 'skills'));
 
   // Flatten dist/src/* to dist/ (Bun preserves src/ subdir structure)
   const srcOutDir = join(outDir, 'src');
