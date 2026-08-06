@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   PaperclipIcon,
   ImagePlus,
+  History,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
@@ -26,6 +27,7 @@ import { PlanReview } from './PlanReview.tsx';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 import { Transcript } from './Transcript.tsx';
+import { SlideProjectList } from './SlideProjectList.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -363,6 +365,9 @@ function ChatRail({
   onSend,
   onBuild,
   onAnswer,
+  onNew,
+  historyOpen,
+  onHistory,
   placeholder,
 }: {
   railOpen: boolean;
@@ -370,6 +375,9 @@ function ChatRail({
   onSend: (text: string) => void;
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
+  onNew: () => void;
+  historyOpen: boolean;
+  onHistory: (open: boolean) => void;
   placeholder: string;
 }) {
   const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
@@ -385,56 +393,77 @@ function ChatRail({
           className="h-full shrink-0 overflow-hidden bg-background"
         >
           <div className="flex h-full w-[320px] shrink-0 flex-col border-r border-border/70 bg-background">
-            <div className="flex items-center justify-between px-3 h-11 border-b border-border/70 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary shrink-0">
-                  <Plus size={13} />
-                </span>
-                <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground truncate">
-                  Project
-                </span>
-              </div>
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  title="New deck (coming soon)"
-                >
-                  <Plus size={14} />
-                  New
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                  title="Hide chat"
-                  aria-label="Hide chat"
-                >
-                  <PanelLeftClose size={15} />
-                </button>
-              </div>
-            </div>
+            {historyOpen ? (
+              <SlideProjectList
+                open
+                onClose={() => onHistory(false)}
+                onNew={onNew}
+              />
+            ) : (
+              <>
+                <div className="flex items-center justify-between px-3 h-11 border-b border-border/70 shrink-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary shrink-0">
+                      <Plus size={13} />
+                    </span>
+                    <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground truncate">
+                      Project
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onHistory(!historyOpen)}
+                      aria-pressed={historyOpen}
+                      className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      title="Previous decks"
+                    >
+                      <History size={14} />
+                      History
+                    </button>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      title="New deck"
+                      onClick={onNew}
+                    >
+                      <Plus size={14} />
+                      New
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      title="Hide chat"
+                      aria-label="Hide chat"
+                    >
+                      <PanelLeftClose size={15} />
+                    </button>
+                  </div>
+                </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
-              {pendingAsk ? (
-                <AskPrompt
-                  ask={pendingAsk}
+                <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
+                  {pendingAsk ? (
+                    <AskPrompt
+                      ask={pendingAsk}
+                      busy={busy}
+                      onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
+                    />
+                  ) : activeProject && phase === 'plan_ready' ? (
+                    <PlanReview onBuild={onBuild} />
+                  ) : activeProject ? (
+                    <Transcript messages={messages} />
+                  ) : (
+                    <EmptyChat />
+                  )}
+                </div>
+                <Composer
+                  onSend={onSend}
                   busy={busy}
-                  onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
+                  placeholder={placeholder}
                 />
-              ) : activeProject && phase === 'plan_ready' ? (
-                <PlanReview onBuild={onBuild} />
-              ) : activeProject ? (
-                <Transcript messages={messages} />
-              ) : (
-                <EmptyChat />
-              )}
-            </div>
-            <Composer
-              onSend={onSend}
-              busy={busy}
-              placeholder={placeholder}
-            />
+              </>
+            )}
           </div>
         </motion.aside>
       )}
@@ -589,6 +618,15 @@ export function SlideCreatorShell() {
   const narrow = width !== 0 && width < NARROW_BREAKPOINT;
   const [chatOpen, setChatOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // "New deck" clears the active project so the composer starts a fresh deck
+  // (and closes any open history). The newly created project is persisted and
+  // set last-active by the orchestrator on the first prompt.
+  const handleNew = () => {
+    setHistoryOpen(false);
+    useSlideStore.getState().setActiveProject(null);
+  };
 
   return (
     <div
@@ -644,6 +682,9 @@ export function SlideCreatorShell() {
               onSend={handleSend}
               onBuild={() => void agent.runBuild()}
               onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
+              onNew={handleNew}
+              historyOpen={historyOpen}
+              onHistory={setHistoryOpen}
               placeholder={promptPlaceholder}
             />
             <section className="relative min-w-0 flex-1 flex-col">
