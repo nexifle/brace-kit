@@ -35,7 +35,7 @@ async function runBuild(): Promise<boolean> {
   }
 
   const result = await build({
-    entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts'],
+    entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts', './src/slide-renderer.ts'],
     outdir: outDir,
     format: 'esm',
     target: 'browser',
@@ -62,6 +62,7 @@ async function runBuild(): Promise<boolean> {
     { from: './public/sidebar.html', to: `${outDir}/sidebar.html` },
     { from: './public/tab.html', to: `${outDir}/tab.html` },
     { from: './public/onboarding.html', to: `${outDir}/onboarding.html` },
+    { from: './public/slide-renderer.html', to: `${outDir}/slide-renderer.html` },
     { from: './manifest.json', to: `${outDir}/manifest.json` },
   ];
 
@@ -99,7 +100,7 @@ async function runBuild(): Promise<boolean> {
   // Flatten dist/src/* to dist/
   const srcOutDir = join(outDir, 'src');
   if (existsSync(srcOutDir)) {
-    for (const file of ['index.js', 'index.js.map', 'tab.js', 'tab.js.map', 'content.js', 'content.js.map', 'index.css', 'onboarding.js', 'onboarding.js.map', 'onboarding.css']) {
+    for (const file of ['index.js', 'index.js.map', 'tab.js', 'tab.js.map', 'content.js', 'content.js.map', 'index.css', 'onboarding.js', 'onboarding.js.map', 'onboarding.css', 'slide-renderer.js', 'slide-renderer.js.map']) {
       const from = join(srcOutDir, file);
       const to = join(outDir, file);
       if (existsSync(from)) renameSync(from, to);

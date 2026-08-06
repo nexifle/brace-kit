@@ -22,6 +22,11 @@
   "side_panel": {
     "default_path": "sidebar.html"
   },
+  "sandbox": {
+    "pages": [
+      "slide-renderer.html"
+    ]
+  },
   "content_scripts": [
     {
       "matches": [
