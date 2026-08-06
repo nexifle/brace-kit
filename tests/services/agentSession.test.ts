@@ -2,10 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import {
   runAgentSession,
   resumeAgentSession,
+  createStreamingTransport,
   DEFAULT_SLIDE_MAX_ROUNDS,
   type AgentChatResponse,
   type AgentSessionParams,
   type AgentToolDispatch,
+  type StreamDelta,
 } from '../../src/services/agentSession.ts';
 import type { APIMessage, MCPTool, ProviderConfig, ToolCall } from '../../src/types/index.ts';
 import type { SlidePendingAsk } from '../../src/types/slides.ts';
@@ -298,3 +300,261 @@ describe('DEFAULT_SLIDE_MAX_ROUNDS', () => {
     expect(DEFAULT_SLIDE_MAX_ROUNDS).toBe(12);
   });
 });
+
+// ==================== Streaming transport (US-035) ====================
+
+/** Controllable fake chrome.runtime for exercising the streaming transport. */
+function makeRuntime() {
+  const listeners: Array<(message: unknown) => void> = [];
+  let resolveSend: ((message: unknown) => void) | null = null;
+  const sent: Array<Record<string, unknown>> = [];
+  const runtime = {
+    sent,
+    emit: (message: unknown) => {
+      for (const l of [...listeners]) l(message);
+    },
+    resolveSend: (message: unknown) => {
+      resolveSend?.(message);
+      resolveSend = null;
+    },
+    listenersCount: () => listeners.length,
+    sendMessage: (_message: unknown) => {
+      sent.push(_message as Record<string, unknown>);
+      return new Promise<unknown>((resolve) => {
+        resolveSend = resolve;
+      });
+    },
+    onMessage: {
+      addListener: (fn: (message: unknown) => void) => {
+        listeners.push(fn);
+      },
+      removeListener: (fn: (message: unknown) => void) => {
+        const i = listeners.indexOf(fn);
+        if (i !== -1) listeners.splice(i, 1);
+      },
+    },
+  };
+  return runtime;
+}
+
+type TestRuntime = ReturnType<typeof makeRuntime>;
+
+/** Wait (yielding to the loop's microtasks) until the next CHAT_REQUEST is sent. */
+async function waitForSend(runtime: TestRuntime, expectedCount: number) {
+  for (let i = 0; i < 50; i++) {
+    if (runtime.sent.length >= expectedCount) return runtime.sent[expectedCount - 1] as { requestId: string };
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  throw new Error('no CHAT_REQUEST observed');
+}
+
+describe('createStreamingTransport (US-035)', () => {
+  it('feeds text + reasoning deltas to onDelta and resolves on CHAT_STREAM_DONE', async () => {
+    const runtime = makeRuntime();
+    const deltas: StreamDelta[] = [];
+    const transport = createStreamingTransport(runtime, (d) => deltas.push(d));
+    const requestId = 'agent_1_abc';
+    const p = transport({
+      type: 'CHAT_REQUEST',
+      messages: [userMsg],
+      providerConfig,
+      tools: [readTool],
+      options: { stream: true },
+      requestId,
+    });
+
+    runtime.emit({ type: 'CHAT_STREAM_CHUNK', content: 'Hello', requestId });
+    runtime.emit({ type: 'CHAT_STREAM_CHUNK', content: ' world', requestId });
+    runtime.emit({ type: 'CHAT_STREAM_CHUNK', chunkType: 'reasoning', content: 'thinking', requestId });
+    // The sendResponse for a stream is just {started:true} — it must NOT settle.
+    runtime.resolveSend({ started: true });
+    runtime.emit({
+      type: 'CHAT_STREAM_DONE',
+      fullContent: 'Hello world',
+      reasoningContent: 'thinking',
+      toolCalls: undefined,
+      requestId,
+    });
+
+    const res = await p;
+    expect(deltas).toEqual([{ text: 'Hello' }, { text: ' world' }, { reasoning: 'thinking' }]);
+    expect(res.content).toBe('Hello world');
+    expect(res.reasoning_content).toBe('thinking');
+    expect(res.toolCalls).toBeUndefined();
+    // Listener removed after settle — the transport must not leak handlers.
+    expect(runtime.listenersCount()).toBe(0);
+  });
+
+  it('resolves with toolCalls from CHAT_STREAM_DONE when the turn ends in tool calls', async () => {
+    const runtime = makeRuntime();
+    const transport = createStreamingTransport(runtime);
+    const requestId = 'agent_2_abc';
+    const p = transport({
+      type: 'CHAT_REQUEST',
+      messages: [userMsg],
+      providerConfig,
+      tools: [readTool],
+      options: { stream: true },
+      requestId,
+    });
+
+    runtime.emit({
+      type: 'CHAT_STREAM_DONE',
+      fullContent: 'call tool',
+      reasoningSignature: 'sig_abc',
+      toolCalls: [{ id: 'tc_1', name: 'read_file', arguments: '{}' }],
+      requestId,
+    });
+
+    const res = await p;
+    expect(res.toolCalls).toHaveLength(1);
+    expect(res.toolCalls![0].name).toBe('read_file');
+    expect(res.content).toBe('call tool');
+    expect(res.reasoning_signature).toBe('sig_abc');
+  });
+
+  it('resolves with an error on CHAT_STREAM_ERROR', async () => {
+    const runtime = makeRuntime();
+    const transport = createStreamingTransport(runtime);
+    const requestId = 'agent_3_abc';
+    const p = transport({
+      type: 'CHAT_REQUEST',
+      messages: [userMsg],
+      providerConfig,
+      tools: [readTool],
+      options: { stream: true },
+      requestId,
+    });
+
+    runtime.emit({ type: 'CHAT_STREAM_ERROR', error: 'Model exploded', requestId });
+
+    const res = await p;
+    expect(res.error).toBe('Model exploded');
+  });
+
+  it('resolves terminal data from a non-streaming sendResponse (pre-stream error path)', async () => {
+    const runtime = makeRuntime();
+    const transport = createStreamingTransport(runtime);
+    const requestId = 'agent_4_abc';
+    const p = transport({
+      type: 'CHAT_REQUEST',
+      messages: [userMsg],
+      providerConfig,
+      tools: [readTool],
+      options: { stream: true },
+      requestId,
+    });
+
+    runtime.resolveSend({ error: 'API key is required.' });
+
+    const res = await p;
+    expect(res.error).toBe('API key is required.');
+  });
+});
+
+describe('runAgentSession with a streaming transport (US-035)', () => {
+  it('streams a multi-round tool loop end-to-end and resolves done', async () => {
+    const runtime = makeRuntime();
+    const dispatched: ToolCall[] = [];
+    const agentPromise = runAgentSession({
+      systemPrompt: 's',
+      messages: [userMsg],
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      maxRounds: 5,
+      transport: createStreamingTransport(runtime),
+      dispatchTool: async (tc) => {
+        dispatched.push(tc);
+        return { content: '"draft"' };
+      },
+    });
+
+    // Round 1 streams text + a read_file tool call.
+    let req = await waitForSend(runtime, 1);
+    runtime.emit({ type: 'CHAT_STREAM_CHUNK', content: 'reading', requestId: req.requestId });
+    runtime.resolveSend({ started: true });
+    runtime.emit({
+      type: 'CHAT_STREAM_DONE',
+      fullContent: 'reading',
+      toolCalls: [{ id: 'tc_1', name: 'read_file', arguments: '{"path":"/brief.md"}' }],
+      requestId: req.requestId,
+    });
+
+    // Round 2 (after the tool dispatch) completes cleanly.
+    req = await waitForSend(runtime, 2);
+    runtime.emit({ type: 'CHAT_STREAM_CHUNK', content: 'plan done', requestId: req.requestId });
+    runtime.resolveSend({ started: true });
+    runtime.emit({
+      type: 'CHAT_STREAM_DONE',
+      fullContent: 'plan done',
+      requestId: req.requestId,
+    });
+
+    const result = await agentPromise;
+    expect(result.status).toBe('done');
+    expect(result.content).toBe('plan done');
+    expect(result.rounds).toBe(2);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0].name).toBe('read_file');
+    // system, user, assistant(1), tool, assistant(2)
+    expect(result.messages.map((m) => m.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool',
+      'assistant',
+    ]);
+  });
+
+  it('surfaces a streaming CHAT_STREAM_ERROR as status=error', async () => {
+    const runtime = makeRuntime();
+    const agentPromise = runAgentSession({
+      systemPrompt: 's',
+      messages: [userMsg],
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      transport: createStreamingTransport(runtime),
+      dispatchTool: async () => ({}),
+    });
+
+    const req = await waitForSend(runtime, 1);
+    runtime.emit({ type: 'CHAT_STREAM_ERROR', error: 'rate limited', requestId: req.requestId });
+
+    const result = await agentPromise;
+    expect(result.status).toBe('error');
+    expect(result.error).toBe('rate limited');
+  });
+
+  it('aborts an in-flight streaming turn via STOP_STREAM and cancels (US-035)', async () => {
+    const runtime = makeRuntime();
+    const controller = new AbortController();
+    const aborted: string[] = [];
+    const agentPromise = runAgentSession({
+      systemPrompt: 's',
+      messages: [userMsg],
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      // Streaming keeps `activeRequestId` set across the transport await, so a
+      // mid-stream abort must send STOP_STREAM for the in-flight request.
+      transport: createStreamingTransport(runtime),
+      abortRequest: (requestId) => aborted.push(requestId),
+      signal: controller.signal,
+      dispatchTool: async () => ({}),
+    });
+
+    const req = await waitForSend(runtime, 1);
+    // The in-flight stream is parked; a user Stop fires the abort listener.
+    controller.abort();
+    // The background settles an aborted stream via sendResponse({error}),
+    // never a broadcast — both settle paths must cancel the session.
+    runtime.resolveSend({ error: 'Request cancelled' });
+
+    const result = await agentPromise;
+    expect(result.status).toBe('cancelled');
+    expect(aborted).toEqual([req.requestId]);
+  });
+});
+

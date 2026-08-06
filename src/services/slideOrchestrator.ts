@@ -26,7 +26,7 @@ import {
   type SlideToolOptions,
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
-import type { AgentTransport, AgentAbortFn } from './agentSession.ts';
+import type { AgentTransport, AgentAbortFn, StreamDelta } from './agentSession.ts';
 import { isSlideCanvas } from '../utils/slideVfs.ts';
 import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
@@ -66,6 +66,10 @@ export interface SlideAgentHost {
   refreshDeckFromFiles: (files: SlideFile[]) => void;
   /** Mark the workspace as user-stopped (clear busy + pending ask immediately). */
   markStopped: () => void;
+  /** Feed a streaming delta (text/reasoning) for the active turn to the store (US-035). */
+  streamDelta?: (delta: StreamDelta) => void;
+  /** Clear the streaming buffers (turn commit / stop / error). */
+  clearStreaming?: () => void;
 }
 
 /** Runtime/network dependencies (injected for tests). */
@@ -116,6 +120,12 @@ export function createSlideAgent(
     return geminiSupportsFunctionCalling(pc.model);
   }
 
+  /** Feed a streaming turn delta to the store (US-035). */
+  const streamDelta = (delta: StreamDelta) => host.streamDelta?.(delta);
+
+  /** Clear any stale streaming buffers before a fresh turn/phase. */
+  const prepareStream = () => host.clearStreaming?.();
+
   /** Land a clear error narration + error phase on a project, WITHOUT starting a phase. */
   function blockPhase(project: SlideProject): boolean {
     if (canUseFunctionCalling()) return false;
@@ -149,6 +159,7 @@ export function createSlideAgent(
     state.abort = abort;
     state.running = true;
     host.setPhase('plan');
+    prepareStream();
     host.setBusy(true);
 
     const result = await runPlanPhase({
@@ -161,6 +172,7 @@ export function createSlideAgent(
       transport: deps.transport,
       abortRequest: deps.abortRequest,
       toolOptions: deps.toolOptions,
+      onDelta: streamDelta,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
     });
 
@@ -170,6 +182,7 @@ export function createSlideAgent(
 
     if (result.status === 'waiting_user' && result.pendingAsk) {
       state.paused = result.paused ?? null;
+      host.clearStreaming?.();
       const next: SlideProject = {
         ...project,
         files: result.files,
@@ -272,6 +285,7 @@ export function createSlideAgent(
     const abort = new AbortController();
     state.abort = abort;
     state.running = true;
+    prepareStream();
     host.setBusy(true);
 
     const result = await resumePlanPhase(
@@ -285,6 +299,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: deps.toolOptions,
+        onDelta: streamDelta,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
       },
       paused,
@@ -297,6 +312,7 @@ export function createSlideAgent(
 
     if (result.status === 'waiting_user' && result.pendingAsk) {
       state.paused = result.paused ?? null;
+      host.clearStreaming?.();
       const next: SlideProject = {
         ...project,
         files: result.files,
@@ -352,6 +368,7 @@ export function createSlideAgent(
     state.abort = abort;
     state.running = true;
     host.setPhase('build');
+    prepareStream();
     host.setBusy(true);
 
     const result = await runBuildPhase({
@@ -364,6 +381,7 @@ export function createSlideAgent(
       transport: deps.transport,
       abortRequest: deps.abortRequest,
       toolOptions: deps.toolOptions,
+      onDelta: streamDelta,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
     });
 
@@ -421,6 +439,7 @@ export function createSlideAgent(
     state.abort = abort;
     state.running = true;
     host.setPhase('edit');
+    prepareStream();
     host.setBusy(true);
 
     appendMessage(project, makeMsg('user', message));
@@ -435,6 +454,7 @@ export function createSlideAgent(
       transport: deps.transport,
       abortRequest: deps.abortRequest,
       toolOptions: deps.toolOptions,
+      onDelta: streamDelta,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
     });
 

@@ -10,6 +10,7 @@ import { useEffect, useRef } from 'react';
 import { useStore } from '../store/index.ts';
 import { useSlideStore } from '../store/slideStore.ts';
 import { createSlideAgent } from '../services/slideOrchestrator.ts';
+import type { StreamDelta } from '../services/agentSession.ts';
 import { shouldEnableGoogleSearch } from '../services/slideTools.ts';
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
@@ -52,6 +53,13 @@ export function useSlideAgent() {
         recordAnswer: (projectId, answer) => slideStore.answerAsk(projectId, answer),
         refreshDeckFromFiles: (files: SlideFile[]) => slideStore.setActiveDeckFromVfs(files),
         markStopped: () => slideStore.markStopped(),
+        // Streaming (US-035): paint each model-turn delta into the store so the
+        // rail shows live agent text instead of waiting for the turn to finish.
+        streamDelta: (delta: StreamDelta) => {
+          if (delta.text) slideStore.appendStreamingText(delta.text);
+          if (delta.reasoning) slideStore.appendStreamingReasoning(delta.reasoning);
+        },
+        clearStreaming: () => slideStore.clearStreaming(),
       },
       {
         providerConfig,

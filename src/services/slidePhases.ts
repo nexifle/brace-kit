@@ -35,6 +35,7 @@ import {
   type AgentSessionState,
   type AgentToolDispatch,
   type AgentTransport,
+  type StreamDelta,
 } from './agentSession.ts';
 import {
   applyPatchOperation,
@@ -96,7 +97,7 @@ export interface PlanPhaseParams {
   /** Isolated session messages (e.g. the user's initial deck prompt). */
   messages: APIMessage[];
   providerConfig: ProviderConfig;
-  /** Base chat options; `stream` is forced false by the session runner. */
+  /** Base chat options; the session runner streams by default (US-035). */
   chatOptions?: Record<string, unknown>;
   /** Initial VFS. Copies it; patches never mutate the caller's array. */
   files: import('../types/slides.ts').SlideFile[];
@@ -113,6 +114,8 @@ export interface PlanPhaseParams {
   onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
   /** Live session updates from the runner (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;
+  /** Per-turn streaming deltas (US-035) — wire to store streamingText/Reasoning. */
+  onDelta?: (delta: StreamDelta) => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
 }
@@ -274,6 +277,7 @@ function buildPlanSession(params: PlanPhaseParams) {
     transport: params.transport,
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
+    onDelta: params.onDelta,
     dispatchTool,
   };
 
@@ -289,7 +293,7 @@ export interface BuildPhaseParams {
   /** Isolated session user messages (the build kickoff / orchestrator prompt). */
   messages: APIMessage[];
   providerConfig: ProviderConfig;
-  /** Base chat options; `stream` is forced false by the session runner. */
+  /** Base chat options; the session runner streams by default (US-035). */
   chatOptions?: Record<string, unknown>;
   /** Current VFS, including the approved `/brief.md` + `/design.md`. Copied; never mutated. */
   files: import('../types/slides.ts').SlideFile[];
@@ -306,6 +310,8 @@ export interface BuildPhaseParams {
   onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
   /** Live session updates from the runner (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;
+  /** Per-turn streaming deltas (US-035) — wire to store streamingText/Reasoning. */
+  onDelta?: (delta: StreamDelta) => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
 }
@@ -393,6 +399,7 @@ function buildBuildSession(params: BuildPhaseParams) {
     transport: params.transport,
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
+    onDelta: params.onDelta,
     dispatchTool,
   };
 
@@ -459,7 +466,7 @@ export interface EditPhaseParams {
   /** Isolated session user messages (the user's follow-up request). */
   messages: APIMessage[];
   providerConfig: ProviderConfig;
-  /** Base chat options; `stream` is forced false by the session runner. */
+  /** Base chat options; the session runner streams by default (US-035). */
   chatOptions?: Record<string, unknown>;
   /** Current VFS, including the built `/deck.json`, `/theme.css`, `/slides/*`. Copied; never mutated. */
   files: import('../types/slides.ts').SlideFile[];
@@ -476,6 +483,8 @@ export interface EditPhaseParams {
   onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
   /** Live session updates from the runner (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;
+  /** Per-turn streaming deltas (US-035) — wire to store streamingText/Reasoning. */
+  onDelta?: (delta: StreamDelta) => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
 }
@@ -566,6 +575,7 @@ function buildEditSession(params: EditPhaseParams) {
     transport: params.transport,
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
+    onDelta: params.onDelta,
     dispatchTool,
   };
 

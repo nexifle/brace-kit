@@ -1,7 +1,10 @@
 // ==================== Reusable agent session runner ====================
 // Runs an isolated, multi-round model+tool loop over the existing CHAT_REQUEST
-// transport (options.stream forced to `false`, so the background returns the
-// full turn — content + toolCalls — in one sendResponse).
+// transport. The default transport STREAMS (Amendment A.4): it sends
+// `options.stream: true` and feeds the background's broadcast
+// CHAT_STREAM_CHUNK hunks back through the injected `onDelta` callback so
+// phase runners can paint `streamingText`/`streamingReasoning` live, then
+// resolves with the assembled turn ({content, toolCalls}) on CHAT_STREAM_DONE.
 //
 // Generic by design: phase runners (plan/build/edit) supply the tool schemas
 // and a `dispatchTool` that resolves each model tool call client-side. It is
@@ -92,8 +95,20 @@ export interface AgentSessionParams {
   /** Tool schemas offered to the model this round (resolved per-phase). */
   tools: MCPTool[];
   providerConfig: ProviderConfig;
-  /** Base chat options; the runner forces `stream: false`. */
+  /** Base chat options; the runner streams by default (`stream: true` unless `stream: false`, Amendment A.4). */
   chatOptions: Record<string, unknown>;
+  /**
+   * Stream the model turn (`options.stream: true` via the default transport).
+   * Defaults to `true` — Amendment A.4 makes streaming the production path for
+   * phase turns; `false` selects the plain full-turn transport instead.
+   */
+  stream?: boolean;
+  /**
+   * Per-chunk callback for streaming deltas (text + reasoning), invoked by the
+   * default streaming transport as the background broadcasts CHAT_STREAM_CHUNK.
+   * Wire this to `appendStreamingText`/`appendStreamingReasoning` in the store.
+   */
+  onDelta?: (delta: StreamDelta) => void;
   /** Cap on model turns. Defaults to {@link DEFAULT_SLIDE_MAX_ROUNDS}. */
   maxRounds?: number;
   /** Prefix for generated CHAT_REQUEST requestIds. */
@@ -114,10 +129,113 @@ export interface AgentSessionParams {
 /** Alias kept for existing call sites / docs. */
 export const DEFAULT_SLIDE_MAX_ROUNDS = DEFAULT_SLIDE_AGENT_MAX_ROUNDS;
 
+/** A streaming delta for one model turn (Amendment A.4). */
+export interface StreamDelta {
+  /** Assistant content appended so far this turn. */
+  text?: string;
+  /** Reasoning content appended so far this turn (if provider emits it). */
+  reasoning?: string;
+}
 
+/** Minimal chrome.runtime surface the streaming transport needs (so it's testable). */
+export interface ChromeRuntimeLike {
+  sendMessage: (message: unknown) => Promise<unknown>;
+  onMessage: {
+    addListener: (listener: (message: unknown) => void) => void;
+    removeListener: (listener: (message: unknown) => void) => void;
+  };
+}
 
-const defaultTransport: AgentTransport = (request) =>
-  chrome.runtime.sendMessage(request) as Promise<AgentChatResponse>;
+const defaultRuntime: ChromeRuntimeLike = {
+  sendMessage: (message) => chrome.runtime.sendMessage(
+    message as Parameters<typeof chrome.runtime.sendMessage>[0]
+  ) as Promise<unknown>,
+  onMessage: {
+    addListener: (listener) => chrome.runtime.onMessage.addListener(listener as never),
+    removeListener: (listener) => chrome.runtime.onMessage.removeListener(listener as never),
+  },
+};
+
+/**
+ * Streaming CHAT_REQUEST transport (Amendment A.4). Sends the request with
+ * `options.stream: true` and, from the background's broadcast
+ * CHAT_STREAM_CHUNK / CHAT_STREAM_DONE / CHAT_STREAM_ERROR messages (matched
+ * by requestId), feeds each text/reasoning hunk through `onDelta` and resolves
+ * the promise with the assembled turn on `CHAT_STREAM_DONE` (or an error).
+ *
+ * The `sendMessage` promise resolves `{started:true}` for a stream (no content,
+ * so it does NOT settle — the transport waits for CHAT_STREAM_DONE), but also
+ * resolves with a terminal payload for pre-stream errors (missing API key,
+ * fetch failure, request cancelled on abort) and for non-stream requests. Both
+ * a terminal sendResponse and a DONE/ERROR broadcast settle, so the transport
+ * works whether or not the stream ever starts.
+ */
+export function createStreamingTransport(
+  runtime: ChromeRuntimeLike,
+  onDelta?: (delta: StreamDelta) => void
+): AgentTransport {
+  return (request) =>
+    new Promise<AgentChatResponse>((resolve) => {
+      let settled = false;
+      const removeListener = () => runtime.onMessage.removeListener(onMessage);
+      const settle = (response: AgentChatResponse) => {
+        if (settled) return;
+        settled = true;
+        removeListener();
+        resolve(response);
+      };
+
+      const onMessage = (message: unknown) => {
+        const msg = message as Record<string, unknown>;
+        if (msg?.requestId !== request.requestId) return;
+        if (msg.type === 'CHAT_STREAM_CHUNK') {
+          const chunk = (msg.content as string) ?? '';
+          if (msg.chunkType === 'reasoning') onDelta?.({ reasoning: chunk });
+          else onDelta?.({ text: chunk });
+        } else if (msg.type === 'CHAT_STREAM_DONE') {
+          settle({
+            content: (msg.fullContent as string) ?? '',
+            ...(msg.reasoningContent != null
+              ? { reasoning_content: msg.reasoningContent as string }
+              : {}),
+            ...(msg.reasoningSignature != null
+              ? { reasoning_signature: msg.reasoningSignature as string }
+              : {}),
+            ...(Array.isArray(msg.toolCalls) && msg.toolCalls.length
+              ? { toolCalls: msg.toolCalls as ToolCall[] }
+              : {}),
+          });
+        } else if (msg.type === 'CHAT_STREAM_ERROR') {
+          settle({ error: (msg.error as string) ?? 'Stream failed' });
+        }
+      };
+
+      runtime.onMessage.addListener(onMessage);
+      runtime
+        .sendMessage(request)
+        .then((response) => {
+          const res = response as AgentChatResponse;
+          // Non-stream (or pre-stream error) responses carry terminal data; the
+          // streaming path resolves via CHAT_STREAM_DONE instead.
+          if (res && (res.error != null || res.content !== undefined || res.toolCalls?.length)) {
+            settle(res);
+          }
+        })
+        .catch((e: unknown) => {
+          settle({ error: (e as Error)?.message ?? 'Request failed' });
+        });
+    });
+}
+
+/** Plain full-turn transport used only when a caller opts out of streaming. */
+const plainChatTransport: AgentTransport = (request) =>
+  defaultRuntime.sendMessage(request).then((response) => response as AgentChatResponse);
+
+/** Choose the production transport: streaming by default (Amendment A.4). */
+function buildDefaultTransport(params: AgentSessionParams): AgentTransport {
+  if (params.stream === false) return plainChatTransport;
+  return createStreamingTransport(defaultRuntime, params.onDelta);
+}
 
 const defaultAbort: AgentAbortFn = (requestId) => {
   void chrome.runtime.sendMessage({ type: 'STOP_STREAM', requestId });
@@ -156,7 +274,7 @@ async function runLoop(
   working: APIMessage[],
   startRound: number
 ): Promise<AgentSessionResult> {
-  const transport = params.transport ?? defaultTransport;
+  const transport = params.transport ?? buildDefaultTransport(params);
   const abortRequest = params.abortRequest ?? defaultAbort;
   const signal = params.signal;
   const maxRounds = params.maxRounds ?? DEFAULT_SLIDE_MAX_ROUNDS;
@@ -176,12 +294,15 @@ async function runLoop(
       if (signal?.aborted) return cancel(params, working, round);
 
       const requestId = `${prefix}_${round}_${Date.now().toString(36)}`;
+      // Keep the requestId active across the (possibly streaming) model turn AND
+      // the tool dispatches so an abort can STOP_STREAM the in-flight stream.
+      activeRequestId = requestId;
       const response = await transport({
         type: 'CHAT_REQUEST',
         messages: working,
         providerConfig: params.providerConfig,
         tools: params.tools,
-        options: { ...params.chatOptions, stream: false },
+        options: { ...params.chatOptions, stream: params.stream !== false },
         requestId,
       });
 

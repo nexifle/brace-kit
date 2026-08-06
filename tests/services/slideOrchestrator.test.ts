@@ -97,6 +97,8 @@ function makeHost() {
       stoppedCalls++;
       busy = false;
     },
+    streamDelta: () => {},
+    clearStreaming: () => {},
   };
 
   return {
@@ -346,6 +348,9 @@ describe('createSlideAgent — stop generation (US-027)', () => {
       providerConfig,
       transport,
       skillFetcher: skills.fetcher,
+      // stop() now aborts the in-flight stream via abortRequest (US-035); stub it
+      // so the test never touches chrome.
+      abortRequest: () => {},
     });
 
     const pending = agent.createFromPrompt('a plan');
@@ -498,3 +503,32 @@ describe('createSlideAgent — non-function-calling model guard (US-032)', () =>
     expect(agent.canUseFunctionCalling()).toBe(true);
   });
 });
+
+describe('createSlideAgent — streaming lifecycle (US-035)', () => {
+  it('clears streaming at phase start and again when a plan suspends on an ask', async () => {
+    const skills = makeSkillFetcher();
+    const h = makeHost();
+    let clears = 0;
+    h.host.clearStreaming = () => { clears++; };
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport: async () => ({
+        content: 'drafting',
+        toolCalls: [toolCall('ask', JSON.stringify({ question: 'Canvas?', options: ['16:9', '4:5'], field: 'canvas' }))],
+      }) as AgentChatResponse,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.createFromPrompt('a deck');
+
+    // The plan suspends on the ask...
+    expect(h.pendingAsk).not.toBeNull();
+    expect(h.active?.phase).toBe('plan');
+    // clearStreaming ran at phase start (prepareStream) AND on the waiting_user
+    // branch so leftover turn text never sticks in the rail.
+    expect(clears).toBeGreaterThanOrEqual(2);
+  });
+});
+
+
