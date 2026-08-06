@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import 'fake-indexeddb/auto';
 import { useSlideStore } from '../../src/store/slideStore.ts';
 import type { SlideProject } from '../../src/types/slides.ts';
 
@@ -160,5 +161,39 @@ describe('slideStore', () => {
     useSlideStore.getState().setActiveProjectData(makeProject());
     useSlideStore.getState().answerAsk('other_proj', 'hello');
     expect(useSlideStore.getState().messages).toHaveLength(0);
+  });
+
+  it('updatePlanFile upserts an edited plan artifact into the VFS', async () => {
+    const project = makeProject({
+      files: [
+        { path: '/deck.json', content: '{}' },
+        { path: '/brief.md', content: '# Old brief' },
+      ],
+    });
+    useSlideStore.getState().setActiveProjectData(project);
+
+    useSlideStore.getState().updatePlanFile('/brief.md', '# New brief');
+
+    const s = useSlideStore.getState();
+    expect(s.activeProject?.files).toHaveLength(2);
+    expect(s.activeProject?.files.find((f) => f.path === '/brief.md')?.content).toBe('# New brief');
+    expect(s.phase).toBe('idle');
+  });
+
+  it('updatePlanFile ignores a missing active project', () => {
+    useSlideStore.getState().reset();
+    useSlideStore.getState().updatePlanFile('/brief.md', 'x');
+    expect(useSlideStore.getState().activeProject).toBeNull();
+  });
+
+  it('requestBuild transitions the active project into the build phase', () => {
+    const project = makeProject({ phase: 'plan_ready' });
+    useSlideStore.getState().setActiveProjectData(project);
+
+    useSlideStore.getState().requestBuild();
+
+    const s = useSlideStore.getState();
+    expect(s.phase).toBe('build');
+    expect(s.activeProject?.phase).toBe('build');
   });
 });

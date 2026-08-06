@@ -14,7 +14,9 @@ import { DEFAULT_SLIDE_CANVAS } from '../types/index.ts';
 import {
   projectDeckSlides,
   rebuildDeckProjection,
+  upsertSlideFile,
 } from '../utils/slideVfs.ts';
+import { saveSlideProject } from '../utils/slideDB.ts';
 
 /**
  * Panel layout views inside the Slide Creator shell.
@@ -70,6 +72,14 @@ export interface SlideStoreState {
   answerAsk: (projectId: string, answer: string, attachments?: string[]) => void;
   /** Rebuild the deck projection from a fresh VFS (e.g. after build/edit). */
   setActiveDeckFromVfs: (files: SlideFile[]) => void;
+  /**
+   * Persist an edited plan artifact (`/brief.md` or `/design.md`) back into the
+   * VFS and IndexedDB (US-018 plan review editing). Fires on the active project
+   * only; leaves the phase unchanged so build gating still applies.
+   */
+  updatePlanFile: (path: string, content: string) => void;
+  /** Transition the active project into the build phase (the Build CTA). */
+  requestBuild: () => void;
   setDeck: (deck: SlideDeck | null) => void;
   selectSlide: (index: number) => void;
   setMessages: (messages: SlideMainMessage[]) => void;
@@ -161,6 +171,23 @@ export const useSlideStore = create<SlideStoreState>((set) => ({
         currentSlideIndex: Math.min(state.currentSlideIndex, maxIndex),
         activeProject: state.activeProject ? { ...state.activeProject, files } : null,
       };
+    }),
+
+  updatePlanFile: (path, content) =>
+    set((state) => {
+      if (!state.activeProject) return {};
+      const files = upsertSlideFile(state.activeProject.files, path, content);
+      const nextProject = { ...state.activeProject, files, updatedAt: Date.now() };
+      saveSlideProject(nextProject).catch(() => {});
+      return { activeProject: nextProject };
+    }),
+
+  requestBuild: () =>
+    set((state) => {
+      if (!state.activeProject) return {};
+      const nextProject = { ...state.activeProject, phase: 'build' as SlidePhase };
+      saveSlideProject(nextProject).catch(() => {});
+      return { activeProject: nextProject, phase: 'build' as SlidePhase };
     }),
 
   setDeck: (activeDeck) =>

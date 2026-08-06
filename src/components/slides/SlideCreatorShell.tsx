@@ -19,6 +19,7 @@ import { ComposerPicker } from '../ComposerPicker.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
 import { useElementSize } from '../../hooks/index.ts';
 import { AskPrompt } from './AskPrompt.tsx';
+import { PlanReview } from './PlanReview.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -276,7 +277,7 @@ function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
 const RAIL_WIDTH = 320;
 
 function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => void }) {
-  const { activeProject, messages, pendingAsk, busy } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
   const answerAsk = useSlideStore((s) => s.answerAsk);
   return (
     <AnimatePresence initial={false}>
@@ -329,6 +330,8 @@ function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => voi
                     answerAsk(pendingAsk.projectId, answer, attachments)
                   }
                 />
+              ) : activeProject && phase === 'plan_ready' ? (
+                <PlanReview />
               ) : activeProject ? (
                 <p className="text-sm text-foreground/90 leading-relaxed">
                   {messages.length > 0
@@ -352,7 +355,7 @@ function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => voi
 /* ==================================================================== */
 
 function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const { activeProject, messages, pendingAsk, busy } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
   const answerAsk = useSlideStore((s) => s.answerAsk);
 
   if (open) {
@@ -381,6 +384,8 @@ function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
                 answerAsk(pendingAsk.projectId, answer, attachments)
               }
             />
+          ) : activeProject && phase === 'plan_ready' ? (
+            <PlanReview />
           ) : activeProject ? (
             <p className="text-sm text-foreground/90 leading-relaxed">
               {messages.length > 0
