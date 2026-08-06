@@ -285,4 +285,27 @@ describe('slideStore', () => {
 
     expect(useSlideStore.getState().activeProjectId).toBe('proj_active');
   });
+
+  it('markStopped clears busy, dismisses a suspended ask, and flags the project stopped', () => {
+    useSlideStore.getState().setActiveProjectData({
+      ...makeProject(),
+      pendingAsk: {
+        id: 'ask_1',
+        toolCallId: 'tc_1',
+        sessionRef: 'plan',
+        createdAt: 1000,
+        payload: { question: 'Canvas?', field: 'canvas' },
+      },
+    });
+    useSlideStore.getState().setBusy(true);
+
+    useSlideStore.getState().markStopped();
+
+    const s = useSlideStore.getState();
+    expect(s.busy).toBe(false);
+    expect(s.sessionStatus).toBe('stopped');
+    expect(s.pendingAsk).toBeNull();
+    expect(s.activeProject?.stopped).toBe(true);
+    expect(s.activeProject?.pendingAsk).toBeUndefined();
+  });
 });

@@ -58,6 +58,8 @@ export interface SlideAgentHost {
   recordAnswer: (projectId: string, answer: string) => void;
   /** Refresh the deck preview from a fresh VFS (incremental during a phase). */
   refreshDeckFromFiles: (files: SlideFile[]) => void;
+  /** Mark the workspace as user-stopped (clear busy + pending ask immediately). */
+  markStopped: () => void;
 }
 
 /** Runtime/network dependencies (injected for tests). */
@@ -183,6 +185,20 @@ export function createSlideAgent(
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Planning failed.'));
     }
+
+    if (result.status === 'cancelled') {
+      // Keep partial files (stop() already narrated + cleared busy). Land on the
+      // FRESH active project so the "Generation stopped" message survives, and
+      // persist the partial VFS so a reload returns to the same stopped state.
+      const current = host.getActiveProject() ?? project;
+      host.landProject({
+        ...current,
+        files: result.files,
+        stopped: true,
+        pendingAsk: undefined,
+        updatedAt: Date.now(),
+      });
+    }
   }
 
   /** Create a new project and start the plan phase. */
@@ -273,6 +289,16 @@ export function createSlideAgent(
       host.landProject(next);
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Planning failed.'));
+    } else if (result.status === 'cancelled') {
+      // Keep partial files from the resumed plan session.
+      const current = host.getActiveProject() ?? project;
+      host.landProject({
+        ...current,
+        files: result.files,
+        stopped: true,
+        pendingAsk: undefined,
+        updatedAt: Date.now(),
+      });
     }
   }
 
@@ -328,6 +354,17 @@ export function createSlideAgent(
       host.landProject(next);
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Build failed.'));
+    }
+
+    if (result.status === 'cancelled') {
+      // Keep the partially-built deck files (stop() already narrated + cleared busy).
+      host.landProject({
+        ...project,
+        files: result.files,
+        stopped: true,
+        pendingAsk: undefined,
+        updatedAt: Date.now(),
+      });
     }
   }
 
@@ -387,6 +424,18 @@ export function createSlideAgent(
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Edit failed.'));
     }
+
+    if (result.status === 'cancelled') {
+      // Keep partial follow-up edits (stop() already narrated + cleared busy).
+      const current = host.getActiveProject() ?? project;
+      host.landProject({
+        ...current,
+        files: result.files,
+        stopped: true,
+        pendingAsk: undefined,
+        updatedAt: Date.now(),
+      });
+    }
   }
 
   /** Abort the in-flight phase, leaving partial VFS consistent. */
@@ -395,7 +444,17 @@ export function createSlideAgent(
     state.abort = null;
     state.running = false;
     state.paused = null;
-    host.setBusy(false);
+    // Immediately reflect the stop in the store (clear busy + any suspended ask)
+    // so the UI isn't stuck on a pending AskPrompt or a busy composer/spinner.
+    host.markStopped();
+    // Narrate the stop in the transcript so a reload shows why it halted.
+    const project = host.getActiveProject();
+    if (project) {
+      appendMessage(
+        { ...project, stopped: true, pendingAsk: undefined, updatedAt: Date.now() },
+        makeMsg('summary', 'Generation stopped — partial work was kept.')
+      );
+    }
   }
 
   return {

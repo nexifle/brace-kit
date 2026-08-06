@@ -35,6 +35,7 @@ export function useSlideAgent() {
         setPendingAsk: (pendingAsk) => slideStore.setPendingAsk(pendingAsk),
         recordAnswer: (projectId, answer) => slideStore.answerAsk(projectId, answer),
         refreshDeckFromFiles: (files: SlideFile[]) => slideStore.setActiveDeckFromVfs(files),
+        markStopped: () => slideStore.markStopped(),
       },
       { providerConfig }
     );

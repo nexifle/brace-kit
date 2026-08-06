@@ -224,10 +224,12 @@ function PreviewPane({
 
 function Composer({
   onSend,
+  onStop,
   busy,
   placeholder,
 }: {
   onSend: (text: string) => void;
+  onStop: () => void;
   busy: boolean;
   placeholder: string;
 }) {
@@ -284,19 +286,33 @@ function Composer({
             <ComposerPicker />
           </div>
 
-          <button
-            type="button"
-            onClick={submit}
-            disabled={disabled}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
-            title="Send"
-            aria-label="Send"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V5" />
-              <path d="m5 12 7-7 7 7" />
-            </svg>
-          </button>
+          {busy ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-95"
+              title="Stop generating"
+              aria-label="Stop generating"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={disabled}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
+              title="Send"
+              aria-label="Send"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 19V5" />
+                <path d="m5 12 7-7 7 7" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -363,6 +379,7 @@ function ChatRail({
   railOpen,
   onClose,
   onSend,
+  onStop,
   onBuild,
   onAnswer,
   onNew,
@@ -373,6 +390,7 @@ function ChatRail({
   railOpen: boolean;
   onClose: () => void;
   onSend: (text: string) => void;
+  onStop: () => void;
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
   onNew: () => void;
@@ -459,6 +477,7 @@ function ChatRail({
                 </div>
                 <Composer
                   onSend={onSend}
+                  onStop={onStop}
                   busy={busy}
                   placeholder={placeholder}
                 />
@@ -479,6 +498,7 @@ function ChatDock({
   open,
   onToggle,
   onSend,
+  onStop,
   onBuild,
   onAnswer,
   placeholder,
@@ -486,6 +506,7 @@ function ChatDock({
   open: boolean;
   onToggle: () => void;
   onSend: (text: string) => void;
+  onStop: () => void;
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
   placeholder: string;
@@ -527,6 +548,7 @@ function ChatDock({
         </div>
         <Composer
           onSend={onSend}
+          onStop={onStop}
           busy={busy}
           placeholder={placeholder}
         />
@@ -560,24 +582,38 @@ function ChatDock({
         placeholder={placeholder}
         className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
       />
-      <button
-        type="button"
-        onClick={() => {
-          if (dockValue.trim() && !busy) {
-            onSend(dockValue);
-            setDockValue('');
-          }
-        }}
-        disabled={busy || !dockValue.trim()}
-        className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 disabled:opacity-30 disabled:grayscale hover:brightness-110 active:scale-90"
-        title="Send"
-        aria-label="Send"
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 19V5" />
-          <path d="m5 12 7-7 7 7" />
-        </svg>
-      </button>
+      {busy ? (
+        <button
+          type="button"
+          onClick={onStop}
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-90"
+          title="Stop generating"
+          aria-label="Stop generating"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            if (dockValue.trim() && !busy) {
+              onSend(dockValue);
+              setDockValue('');
+            }
+          }}
+          disabled={busy || !dockValue.trim()}
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 disabled:opacity-30 disabled:grayscale hover:brightness-110 active:scale-90"
+          title="Send"
+          aria-label="Send"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 19V5" />
+            <path d="m5 12 7-7 7 7" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -611,6 +647,9 @@ export function SlideCreatorShell() {
       void agent.createFromPrompt(text);
     }
   };
+
+  // Abort the in-flight plan/build/edit and leave a consistent stopped workspace.
+  const handleStop = () => agent.stop();
 
   const back = () => store.closeSlideCreator();
   const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
@@ -669,6 +708,7 @@ export function SlideCreatorShell() {
               open={chatOpen}
               onToggle={() => setChatOpen((o) => !o)}
               onSend={handleSend}
+              onStop={handleStop}
               onBuild={() => void agent.runBuild()}
               onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
               placeholder={promptPlaceholder}
@@ -680,6 +720,7 @@ export function SlideCreatorShell() {
               railOpen={railOpen}
               onClose={() => setRailOpen(false)}
               onSend={handleSend}
+              onStop={handleStop}
               onBuild={() => void agent.runBuild()}
               onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
               onNew={handleNew}

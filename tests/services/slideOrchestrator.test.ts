@@ -37,6 +37,22 @@ function toolCall(name: string, args: string): ToolCall {
   return { id: `tc_${Math.random().toString(36).slice(2, 8)}`, name, arguments: args };
 }
 
+function builtProject(): SlideProject {
+  return {
+    id: 'sp_built',
+    title: 'Built deck',
+    createdAt: 0,
+    updatedAt: 0,
+    phase: 'plan_ready',
+    canvas: '16:9',
+    messages: [{ id: 'u1', role: 'user', content: 'my deck', createdAt: 0 }],
+    files: [
+      { path: '/brief.md', content: '# Coffee deck' },
+      { path: '/design.md', content: 'Dark theme' },
+    ],
+  };
+}
+
 type Responder = () => AgentChatResponse;
 function makeTransport(respondents: Responder[]) {
   let i = 0;
@@ -54,6 +70,7 @@ function makeHost() {
   let phase: SlideProject['phase'] = 'idle';
   let busy = false;
   let pendingAsk: unknown = null;
+  let stoppedCalls = 0;
   const landed: SlideProject[] = [];
   const answered: Array<{ projectId: string; answer: string }> = [];
 
@@ -76,6 +93,10 @@ function makeHost() {
       answered.push({ projectId, answer });
     },
     refreshDeckFromFiles: (_files: SlideFile[]) => {},
+    markStopped: () => {
+      stoppedCalls++;
+      busy = false;
+    },
   };
 
   return {
@@ -86,6 +107,7 @@ function makeHost() {
     get pendingAsk() { return pendingAsk; },
     get landed() { return landed; },
     get answered() { return answered; },
+    get stoppedCalls() { return stoppedCalls; },
   };
 }
 
@@ -176,22 +198,6 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
 });
 
 describe('createSlideAgent — build + follow-up (US-024)', () => {
-  function builtProject(): SlideProject {
-    return {
-      id: 'sp_built',
-      title: 'Built deck',
-      createdAt: 0,
-      updatedAt: 0,
-      phase: 'plan_ready',
-      canvas: '16:9',
-      messages: [{ id: 'u1', role: 'user', content: 'my deck', createdAt: 0 }],
-      files: [
-        { path: '/brief.md', content: '# Coffee deck' },
-        { path: '/design.md', content: 'Dark theme' },
-      ],
-    };
-  }
-
   it('runs build to ready and refreshes the deck files onto the project', async () => {
     const skills = makeSkillFetcher();
     const { transport } = makeTransport([
@@ -281,5 +287,80 @@ describe('deriveSlideTitle', () => {
     expect(deriveSlideTitle('  build   a coffee deck  ')).toBe('build a coffee deck');
     expect(deriveSlideTitle('   ')).toBe('Untitled deck');
     expect(deriveSlideTitle('x'.repeat(200)).length).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('createSlideAgent — stop generation (US-027)', () => {
+  it('aborts the in-flight plan, clears busy + pendingAsk, and keeps partial files', async () => {
+    const skills = makeSkillFetcher();
+    // Round 1 lands a real patch (brief.md). Round 2 is parked until we release
+    // it, so agent.stop() fires while a subsequent model request is in flight.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let round = 0;
+    const transport = async (): Promise<AgentChatResponse> => {
+      round++;
+      if (round === 1) {
+        return {
+          content: 'drafting',
+          toolCalls: [
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: Coffee\n' } })),
+          ],
+        };
+      }
+      await gate;
+      return { content: 'still going' };
+    };
+
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    const pending = agent.createFromPrompt('a plan');
+    // Give the runner time to run round 1 (landing brief.md) and park in round 2.
+    await new Promise((r) => setTimeout(r, 5));
+
+    agent.stop();
+    release();
+    await pending;
+
+    // Stop clears busy + narrates in the transcript.
+    expect(h.stoppedCalls).toBeGreaterThanOrEqual(1);
+    expect(h.busy).toBe(false);
+    expect(h.pendingAsk).toBeNull();
+    // The cancelled branch persisted the partial VFS (brief.md survived).
+    expect(h.active?.files.some((f) => f.path === '/brief.md')).toBe(true);
+    expect(h.active?.stopped).toBe(true);
+    expect(h.active?.messages.some((m) => m.role === 'summary' && /stopped/i.test(m.content))).toBe(true);
+  });
+
+  it('stop clears a suspended pending ask without a running session', () => {
+    const skills = makeSkillFetcher();
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      pendingAsk: {
+        id: 'ask_1',
+        toolCallId: 'tc_1',
+        sessionRef: 'plan',
+        createdAt: 0,
+        payload: { question: 'Canvas?', field: 'canvas' },
+      },
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport: async () => ({ content: 'unused' }),
+      skillFetcher: skills.fetcher,
+    });
+
+    agent.stop();
+
+    expect(h.stoppedCalls).toBeGreaterThanOrEqual(1);
+    expect(h.busy).toBe(false);
+    expect(h.active?.stopped).toBe(true);
+    expect(h.active?.pendingAsk).toBeUndefined();
   });
 });

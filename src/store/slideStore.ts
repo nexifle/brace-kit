@@ -79,6 +79,8 @@ export interface SlideStoreState {
   answerAsk: (projectId: string, answer: string, attachments?: string[]) => void;
   /** Rebuild the deck projection from a fresh VFS (e.g. after build/edit). */
   setActiveDeckFromVfs: (files: SlideFile[]) => void;
+  /** Mark the in-flight phase as user-stopped: clear busy + any suspended ask. */
+  markStopped: () => void;
   /**
    * Delete a project and every piece of its related data (metadata, transcript,
    * VFS, last-active). If it is the active project, reset the workspace to idle.
@@ -194,6 +196,20 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
         activeProject: state.activeProject ? { ...state.activeProject, files } : null,
       };
     }),
+
+  markStopped: () =>
+    set((state) => ({
+      busy: false,
+      sessionStatus: 'stopped',
+      pendingAsk: null,
+      activeProject: state.activeProject
+        ? {
+            ...state.activeProject,
+            stopped: true,
+            pendingAsk: undefined,
+          }
+        : null,
+    })),
 
   deleteProject: async (projectId) => {
     await deleteSlideProject(projectId);
