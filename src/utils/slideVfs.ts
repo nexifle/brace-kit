@@ -191,3 +191,33 @@ export function projectDeckSlides(files: SlideFile[], deck: SlideDeck): Slide[] 
   }
   return slides;
 }
+
+// ==================== Preview Composition (US-021) ====================
+
+/**
+ * Compose the full HTML fragment the sandbox preview should render for a single
+ * slide: the deck's shared theme CSS plus the slide's own CSS (if any) inlined
+ * as `<style>` blocks, followed by the slide's markup. The sandbox sets this as
+ * `#stage` innerHTML, so the styles MUST be part of the fragment — there is no
+ * separate style-sheet injection across the postMessage boundary.
+ *
+ * Missing pieces degrade gracefully: no theme -> no shared styles, no slide css
+ * -> per-slide styles absent, and a missing backing HTML file -> empty body.
+ */
+export function composeSlideHtml(files: SlideFile[], slide: Slide, deck: SlideDeck): string {
+  const map = slidesToMap(files);
+  const styles: string[] = [];
+  if (deck.theme) {
+    const theme = map.get(deck.theme);
+    if (theme) styles.push(theme);
+  }
+  if (slide.cssPath) {
+    const css = map.get(slide.cssPath);
+    if (css) styles.push(css);
+  }
+  const html = map.get(slide.htmlPath) ?? '';
+  const blocks = styles
+    .map((css) => `<style>\n${css}\n</style>`)
+    .join('\n');
+  return blocks ? `${blocks}\n${html}` : html;
+}

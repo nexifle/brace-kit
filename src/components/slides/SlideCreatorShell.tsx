@@ -20,6 +20,7 @@ import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index
 import { useElementSize } from '../../hooks/index.ts';
 import { AskPrompt } from './AskPrompt.tsx';
 import { PlanReview } from './PlanReview.tsx';
+import { SlidePreview } from './SlidePreview.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -126,6 +127,11 @@ function PreviewPane({
   onToggleRail?: () => void;
 }) {
   const busy = useSlideStore((s) => s.busy);
+  const activeProject = useSlideStore((s) => s.activeProject);
+  const deckSlides = useSlideStore((s) => s.deckSlides);
+  const canvas = useSlideStore((s) => s.canvas);
+  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
+  const hasDeck = !!activeProject && deckSlides.length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -152,10 +158,12 @@ function PreviewPane({
             Rendering
           </span>
         ) : (
-          <span className="text-2xs text-muted-foreground/50">16:9 · 1920×1080</span>
+          <span className="text-2xs text-muted-foreground/50">
+            {preset.label} · {preset.width}×{preset.height}
+          </span>
         )}
       </div>
-      <PreviewCanvas />
+      {hasDeck ? <SlidePreview /> : <PreviewCanvas />}
     </div>
   );
 }

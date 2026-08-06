@@ -17,6 +17,7 @@ import {
   rebuildDeckProjection,
   projectDeckSlides,
   slideHtmlPath,
+  composeSlideHtml,
 } from '../../src/utils/slideVfs.ts';
 
 describe('slideVfs path rules', () => {
@@ -209,5 +210,39 @@ describe('projectDeckSlides', () => {
     expect(slides[0].htmlPath).toBe(slideHtmlPath('01'));
     expect(slides[0].cssPath).toBe('/slides/01.css');
     expect(slides[1].cssPath).toBeUndefined();
+  });
+});
+
+describe('composeSlideHtml', () => {
+  const deck = { title: 'T', canvas: '16:9' as const, theme: '/theme.css', slideOrder: ['01'] };
+  const slide = { id: '01', htmlPath: '/slides/01.html', cssPath: '/slides/01.css' };
+  const one = { path: '/theme.css', content: '.deck-theme{--x:1}' };
+  const slideCss = { path: '/slides/01.css', content: '#head{color:red}' };
+  const slideHtml = { path: '/slides/01.html', content: '<section class="slide deck-theme"><h1>Hi</h1></section>' };
+
+  test('inlines theme + slide css then markup', () => {
+    const out = composeSlideHtml([one, slideCss, slideHtml], slide, deck);
+    expect(out).toContain('<style>\n.deck-theme{--x:1}\n</style>');
+    expect(out).toContain('<style>\n#head{color:red}\n</style>');
+    expect(out).toContain('<section class="slide deck-theme"><h1>Hi</h1></section>');
+    expect(out.indexOf('<style>')).toBeLessThan(out.indexOf('<section'));
+  });
+
+  test('omits missing theme and missing css gracefully', () => {
+    const noTheme = { ...deck, theme: '/nope.css' };
+    const out = composeSlideHtml([slideCss, slideHtml], slide, noTheme);
+    expect(out).not.toContain('.deck-theme');
+    expect(out).toContain('#head{color:red}');
+    expect(out).toContain('<h1>Hi</h1>');
+  });
+
+  test('returns bare markup when no slide css and theme css present', () => {
+    const out = composeSlideHtml([slideHtml], slide, deck);
+    expect(out).toBe('<section class="slide deck-theme"><h1>Hi</h1></section>');
+  });
+
+  test('returns empty body when the slide html file is missing', () => {
+    const out = composeSlideHtml([one, slideCss], slide, deck);
+    expect(out).not.toContain('<section');
   });
 });
