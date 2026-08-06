@@ -8,6 +8,8 @@ import {
   Presentation,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   ArrowUpRight,
   PaperclipIcon,
   ImagePlus,
@@ -21,6 +23,7 @@ import { useElementSize } from '../../hooks/index.ts';
 import { AskPrompt } from './AskPrompt.tsx';
 import { PlanReview } from './PlanReview.tsx';
 import { SlidePreview } from './SlidePreview.tsx';
+import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -129,9 +132,17 @@ function PreviewPane({
   const busy = useSlideStore((s) => s.busy);
   const activeProject = useSlideStore((s) => s.activeProject);
   const deckSlides = useSlideStore((s) => s.deckSlides);
+  const currentSlideIndex = useSlideStore((s) => s.currentSlideIndex);
+  const selectSlide = useSlideStore((s) => s.selectSlide);
   const canvas = useSlideStore((s) => s.canvas);
   const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
   const hasDeck = !!activeProject && deckSlides.length > 0;
+  const position = hasDeck
+    ? `${Math.min(currentSlideIndex + 1, deckSlides.length)} / ${deckSlides.length}`
+    : null;
+
+  const goNext = () => selectSlide(Math.min(currentSlideIndex + 1, deckSlides.length - 1));
+  const goPrev = () => selectSlide(Math.max(currentSlideIndex - 1, 0));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -152,18 +163,53 @@ function PreviewPane({
             Preview
           </span>
         </div>
-        {busy ? (
-          <span className="flex items-center gap-1.5 text-2xs font-medium text-primary">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            Rendering
-          </span>
-        ) : (
-          <span className="text-2xs text-muted-foreground/50">
-            {preset.label} · {preset.width}×{preset.height}
-          </span>
-        )}
+
+        <div className="flex items-center gap-2 min-w-0">
+          {hasDeck ? (
+            /* slide navigation for decks: prev / position / next */
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={goPrev}
+                disabled={currentSlideIndex <= 0}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                title="Previous slide (Left)"
+                aria-label="Previous slide"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              <span className="min-w-[3.5rem] text-center text-2xs tabular-nums text-muted-foreground">
+                {position}
+              </span>
+              <button
+                type="button"
+                onClick={goNext}
+                disabled={currentSlideIndex >= deckSlides.length - 1}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                title="Next slide (Right)"
+                aria-label="Next slide"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          ) : busy ? (
+            <span className="flex items-center gap-1.5 text-2xs font-medium text-primary">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              Rendering
+            </span>
+          ) : (
+            <span className="text-2xs text-muted-foreground/50">
+              {preset.label} · {preset.width}×{preset.height}
+            </span>
+          )}
+        </div>
       </div>
-      {hasDeck ? <SlidePreview /> : <PreviewCanvas />}
+
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {hasDeck ? <SlidePreview /> : <PreviewCanvas />}
+      </div>
+
+      {hasDeck && <SlideFilmstrip />}
     </div>
   );
 }
