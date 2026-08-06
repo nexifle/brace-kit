@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   applyPatchOpLabel,
+  askAnsweredLabel,
   askStartedLabel,
   connectingActivityLabel,
   fileDeletedLabel,
@@ -57,6 +58,7 @@ describe('slideActivityLabels (Amendment A.5)', () => {
     expect(readFileLabel('/deck.json')).toBe('Reading /deck.json');
     expect(listFilesLabel()).toBe('Listing project files');
     expect(askStartedLabel()).toBe('Asking you a question');
+    expect(askAnsweredLabel()).toBe('Answer received');
     expect(submitPlanLabel()).toBe('Submitting plan');
   });
 

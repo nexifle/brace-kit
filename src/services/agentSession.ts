@@ -115,8 +115,8 @@ export interface AgentSessionParams {
   requestIdPrefix?: string;
   /** When aborted, the loop stops between turns and aborts the in-flight call. */
   signal?: AbortSignal;
-  /** Resolves each model tool call client-side. See {@link AgentToolDispatch}. */
-  dispatchTool: (toolCall: ToolCall) => Promise<AgentToolDispatch>;
+  /** Resolves each model tool call client-side. `round` is the 1-based model turn. See {@link AgentToolDispatch}. */
+  dispatchTool: (toolCall: ToolCall, round: number) => Promise<AgentToolDispatch>;
   /** Optional live-state hook (UI wiring). */
   onUpdate?: (state: AgentSessionState) => void;  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
   transport?: AgentTransport;
@@ -340,7 +340,7 @@ async function runLoop(
         if (signal?.aborted) return cancel(params, working, round);
 
         activeRequestId = requestId;
-        const dispatch = await params.dispatchTool(toolCall);
+        const dispatch = await params.dispatchTool(toolCall, round);
 
         if (dispatch.suspended) {
           activeRequestId = undefined;

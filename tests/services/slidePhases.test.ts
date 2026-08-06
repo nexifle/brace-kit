@@ -11,6 +11,13 @@ import {
 import type { APIMessage, MCPTool, ProviderConfig, ToolCall } from '../../src/types/index.ts';
 import type { SlideFile } from '../../src/types/slides.ts';
 import type { AgentChatResponse } from '../../src/services/agentSession.ts';
+import type { SlideActivityEvent } from '../../src/types/slides.ts';
+import type { SlideActivitySink } from '../../src/services/slidePhases.ts';
+import {
+  askStartedLabel,
+  listFilesLabel,
+  readFileLabel,
+} from '../../src/utils/slideActivityLabels';
 
 const providerConfig: ProviderConfig = {
   providerId: 'custom',
@@ -41,6 +48,28 @@ function makeTransport(respondents: Responder[]) {
 }
 
 const userMsg: APIMessage = { role: 'user', content: 'a slide deck about coffee' };
+
+/**
+ * A store-shaped activity sink that append/patch mirrors `pushActivity` /
+ * `patchActivity` (in-place update by id). `events` holds the live rows (a
+ * running tool_started becomes completed in place); `pushed` preserves an
+ * immutable snapshot at push time so tests can assert the initial running state.
+ */
+function captureActivity() {
+  const events: SlideActivityEvent[] = [];
+  const pushed: SlideActivityEvent[] = [];
+  const sink: SlideActivitySink = {
+    push: (event) => {
+      events.push(event);
+      pushed.push({ ...event });
+    },
+    patch: (id, partial) => {
+      const idx = events.findIndex((e) => e.id === id);
+      if (idx >= 0) events[idx] = { ...events[idx], ...partial, id };
+    },
+  };
+  return { sink, events, pushed };
+}
 
 describe('hasValidPlanFiles', () => {
   it('is true only when both brief and design exist and are non-empty', () => {
@@ -788,5 +817,255 @@ describe('runEditPhase', () => {
     });
     expect(result.status).toBe('error');
     expect(result.error).toBe('Edit failed.');
+  });
+});
+
+describe('activity events for tool calls (US-036)', () => {
+  it('emits tool_started (running→completed) and file_written for each apply_patch', async () => {
+    const { sink, events, pushed } = captureActivity();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'drafting',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: Coffee\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+dark theme\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'Done.' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('plan_ready');
+    // tool_started rows appeared for the two apply_patch calls + submit_plan
+    const startedSnap = pushed.filter((e) => e.type === 'tool_started');
+    expect(startedSnap.length).toBe(3);
+    const [a, b, submit] = startedSnap;
+    // each started push carried running status, name, callId + phase
+    for (const ev of startedSnap) {
+      expect(ev.status).toBe('running');
+      expect(ev.phase).toBe('plan');
+      expect(ev.toolCallId).toBeTruthy();
+      expect(ev.label).toBeTruthy();
+    }
+    expect(a.round).toBe(1);
+    expect(b.round).toBe(1);
+    // submit_plan ran on the second model round
+    expect(submit.toolName).toBe('submit_plan');
+    expect(submit.round).toBe(2);
+    // success → every started row patched to completed
+    expect(events.filter((e) => e.type === 'tool_started' && e.status === 'completed').length).toBe(3);
+    // apply_patch success also emitted file_written rows w/ path+patchOp
+    const written = events.filter((e) => e.type === 'file_written');
+    expect(written.length).toBe(2);
+    expect(written[0].path).toBe('/brief.md');
+    expect(written[0].patchOp).toBe('create_file');
+    expect(written[1].path).toBe('/design.md');
+  });
+
+  it('marks the tool_started row failed when a patch fails and emits no file_written', async () => {
+    const { sink, events } = captureActivity();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'bad diff',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/brief.md', diff: '@@\n-  MISSING\n+  x\n' } })),
+        ],
+      }),
+      () => ({ content: 'done' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('done');
+    const started = events.filter((e) => e.type === 'tool_started');
+    expect(started.length).toBe(1);
+    expect(started[0].status).toBe('failed');
+    expect(started[0].label).toMatch(/^Failed:/);
+    // no file_written for a failed patch
+    expect(events.filter((e) => e.type === 'file_written').length).toBe(0);
+  });
+
+  it('emits list_files/read_file tool_started→completed with labels', async () => {
+    const { sink, events } = captureActivity();
+    const files = makeFiles([
+      { path: '/brief.md', content: 'brief' },
+      { path: '/slides/01.html', content: '<section>hi</section>' },
+    ]);
+    const { transport } = makeTransport([
+      () => ({
+        content: 'orienting',
+        toolCalls: [
+          toolCall('list_files', JSON.stringify({ path: '/' })),
+          toolCall('read_file', JSON.stringify({ path: '/brief.md' })),
+        ],
+      }),
+      () => ({ content: 'ok' }),
+    ]);
+
+    await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files,
+      transport,
+      onActivity: sink,
+    });
+
+    const labels = events.filter((e) => e.type === 'tool_started').map((e) => e.label);
+    expect(labels).toContain(listFilesLabel());
+    expect(labels).toContain(readFileLabel('/brief.md'));
+    expect(events.filter((e) => e.type === 'tool_started' && e.status === 'completed').length).toBe(2);
+  });
+
+  it('ask emits a running ask row that suspends, then resume patches it + emits ask_answered', async () => {
+    const { sink, events } = captureActivity();
+    const askId = 'tc_ask_activity';
+    const respondents: (() => AgentChatResponse)[] = [
+      () => ({
+        toolCalls: [{ id: askId, name: 'ask', arguments: JSON.stringify({ question: 'Canvas?', field: 'canvas' }) }],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '4:5' }))] }),
+      () => ({ content: 'done.' }),
+    ];
+
+    const captured: APIMessage[][] = [];
+    const transport: PlanPhaseParams['transport'] = async ({ messages }) => {
+      captured.push(messages.slice());
+      const respond = respondents[Math.min(captured.length - 1, respondents.length - 1)];
+      return respond();
+    };
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('waiting_user');
+    // the ask dispatched a single running row labelled "Asking you a question"
+    const askStarted = events.filter((e) => e.type === 'tool_started' && e.toolCallId === askId);
+    expect(askStarted.length).toBe(1);
+    expect(askStarted[0].status).toBe('running');
+    expect(askStarted[0].label).toBe(askStartedLabel());
+    // the running ask row is keyed by the pending-ask id so resume can close it
+    expect(askStarted[0].id).toBe(result.pendingAsk?.id);
+
+    await resumePlanPhase(
+      {
+        systemPrompt: 'p',
+        messages: [userMsg],
+        providerConfig,
+        files: [],
+        transport,
+        onActivity: sink,
+      },
+      result.paused!,
+      '4:5'
+    );
+
+    // resume closed the suspended ask row (now completed) + emitted ask_answered
+    const askRow = events.find((e) => e.type === 'tool_started' && e.toolCallId === askId);
+    expect(askRow?.status).toBe('completed');
+    const answered = events.filter((e) => e.type === 'ask_answered');
+    expect(answered.length).toBe(1);
+    expect(answered[0].toolCallId).toBe(askId);
+    expect(answered[0].status).toBe('completed');
+  });
+
+  it('build phase emits tool_started + file_written rows for deck files', async () => {
+    const { sink, events } = captureActivity();
+    const buildFiles = makeFiles([
+      { path: '/brief.md', content: '# brief' },
+      { path: '/design.md', content: 'design' },
+    ]);
+    const { transport } = makeTransport([
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>Hello</section>\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
+        ],
+      }),
+      () => ({ content: 'done.' }),
+    ]);
+
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('ready');
+    expect(events.filter((e) => e.type === 'tool_started' && e.status === 'completed').length).toBe(2);
+    const written = events.filter((e) => e.type === 'file_written');
+    expect(written.map((e) => e.path)).toContain('/slides/01.html');
+    expect(written.map((e) => e.path)).toContain('/deck.json');
+    expect(written.every((e) => e.phase === 'build')).toBe(true);
+  });
+
+  it('edit phase emits a file_deleted row for a successful delete_file', async () => {
+    const { sink, events } = captureActivity();
+    const editFiles = makeFiles([
+      { path: '/brief.md', content: '# brief' },
+      { path: '/design.md', content: 'design' },
+      { path: '/theme.css', content: 'body{}' },
+      { path: '/slides/01.html', content: '<section>Hello</section>' },
+      { path: '/slides/02.html', content: '<section>Bye</section>' },
+      {
+        path: '/deck.json',
+        content: '{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01","02"]}',
+      },
+    ]);
+    const { transport } = makeTransport([
+      () => ({
+        content: 'removing slide 01',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'delete_file', path: '/slides/01.html' } })),
+        ],
+      }),
+      () => ({ content: 'done.' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('ready');
+    // the delete tool_started row completed
+    const delRow = events.find((e) => e.type === 'tool_started' && e.toolName === 'apply_patch');
+    expect(delRow?.status).toBe('completed');
+    // a file_deleted row carries the path + patchOp
+    const deleted = events.filter((e) => e.type === 'file_deleted');
+    expect(deleted.length).toBe(1);
+    expect(deleted[0].path).toBe('/slides/01.html');
+    expect(deleted[0].patchOp).toBe('delete_file');
+    expect(deleted[0].phase).toBe('edit');
   });
 });

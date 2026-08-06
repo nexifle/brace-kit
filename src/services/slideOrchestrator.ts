@@ -23,6 +23,7 @@ import {
   runEditPhase,
   hasValidPlanFiles,
   type PlanPhaseResult,
+  type SlideActivitySink,
   type SlideToolOptions,
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
@@ -70,6 +71,10 @@ export interface SlideAgentHost {
   streamDelta?: (delta: StreamDelta) => void;
   /** Clear the streaming buffers (turn commit / stop / error). */
   clearStreaming?: () => void;
+  /** Append an activity-feed row (Amendment A.6). */
+  pushActivity?: (event: import('../types/slides.ts').SlideActivityEvent) => void;
+  /** In-place patch of an activity row by id (e.g. tool finish). */
+  patchActivity?: (id: string, partial: Partial<import('../types/slides.ts').SlideActivityEvent>) => void;
 }
 
 /** Runtime/network dependencies (injected for tests). */
@@ -126,6 +131,16 @@ export function createSlideAgent(
   /** Clear any stale streaming buffers before a fresh turn/phase. */
   const prepareStream = () => host.clearStreaming?.();
 
+  /**
+   * Activity-feed sink forwarded to phase runners (Amendment A.6). Builds a
+   * push/patch sink only when the host exposes both hooks; plain/test callers
+   * (no UI store) get `undefined` and the runners simply skip emission.
+   */
+  const activitySink = (): SlideActivitySink | undefined =>
+    host.pushActivity && host.patchActivity
+      ? { push: host.pushActivity, patch: host.patchActivity }
+      : undefined;
+
   /** Land a clear error narration + error phase on a project, WITHOUT starting a phase. */
   function blockPhase(project: SlideProject): boolean {
     if (canUseFunctionCalling()) return false;
@@ -174,6 +189,7 @@ export function createSlideAgent(
       toolOptions: deps.toolOptions,
       onDelta: streamDelta,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
+      onActivity: activitySink(),
     });
 
     state.running = false;
@@ -301,6 +317,7 @@ export function createSlideAgent(
         toolOptions: deps.toolOptions,
         onDelta: streamDelta,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
+        onActivity: activitySink(),
       },
       paused,
       answer
@@ -383,6 +400,7 @@ export function createSlideAgent(
       toolOptions: deps.toolOptions,
       onDelta: streamDelta,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
+      onActivity: activitySink(),
     });
 
     state.running = false;
@@ -456,6 +474,7 @@ export function createSlideAgent(
       toolOptions: deps.toolOptions,
       onDelta: streamDelta,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
+      onActivity: activitySink(),
     });
 
     state.running = false;

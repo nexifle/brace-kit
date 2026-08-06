@@ -60,6 +60,9 @@ export function useSlideAgent() {
           if (delta.reasoning) slideStore.appendStreamingReasoning(delta.reasoning);
         },
         clearStreaming: () => slideStore.clearStreaming(),
+        // Activity-feed sink (US-036): emit tool/file/ask rows as they dispatch.
+        pushActivity: (event) => slideStore.pushActivity(event),
+        patchActivity: (id, partial) => slideStore.patchActivity(id, partial),
       },
       {
         providerConfig,

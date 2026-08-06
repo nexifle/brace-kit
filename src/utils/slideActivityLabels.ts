@@ -79,6 +79,11 @@ export function askStartedLabel(): string {
   return 'Asking you a question';
 }
 
+/** ask_answered label (Amendment A.5/A.6). */
+export function askAnsweredLabel(): string {
+  return 'Answer received';
+}
+
 export function submitPlanLabel(): string {
   return 'Submitting plan';
 }

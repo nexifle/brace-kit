@@ -25,7 +25,11 @@ import type {
   ProviderConfig,
   ToolCall,
 } from '../types/index.ts';
-import type { SlidePendingAsk, SlidePhase } from '../types/slides.ts';
+import type {
+  SlideActivityEvent,
+  SlidePendingAsk,
+  SlidePhase,
+} from '../types/slides.ts';
 import {
   runAgentSession,
   resumeAgentSession,
@@ -43,6 +47,15 @@ import {
 } from './applyPatchHarness.ts';
 import { getSlideFile, rebuildDeckProjection } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
+import {
+  askAnsweredLabel,
+  fileDeletedLabel,
+  fileWrittenLabel,
+  toolFailedLabel,
+  toolStartedLabel,
+  type SlideActivityPhase,
+  type SlidePatchOpLabel,
+} from '../utils/slideActivityLabels.ts';
 
 // ==================== Plan phase ====================
 
@@ -90,6 +103,121 @@ export type ExternalToolCaller = (input: {
   args: Record<string, unknown>;
 }) => Promise<{ content?: string; error?: string }>;
 
+/**
+ * Push/patch hooks for the activity feed (Amendment A.5/A.6). Phase runners
+ * emit a `tool_started` running row before each dispatch and patch it to
+ * completed/failed after, plus `file_written`/`file_deleted` rows for successful
+ * `apply_patch`. The store wires these to `pushActivity`/`patchActivity`.
+ */
+export interface SlideActivitySink {
+  push: (event: SlideActivityEvent) => void;
+  patch: (id: string, partial: Partial<SlideActivityEvent>) => void;
+}
+
+/** Parsed tool-call args needed to build a `tool_started` label. */
+interface ActivityArgs {
+  path?: string;
+  patchOp?: SlidePatchOpLabel;
+  query?: string;
+}
+
+/** Parse the label-relevant bits from a tool call's `arguments` JSON. */
+function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
+  const parsed = args<Record<string, unknown>>(toolCall);
+  const op = parsed?.operation as Partial<SlidePatchOperation> | undefined;
+  return {
+    path:
+      typeof op?.path === 'string'
+        ? op.path
+        : typeof parsed?.path === 'string'
+          ? (parsed.path as string)
+          : undefined,
+    patchOp: op && typeof op.type === 'string' ? (op.type as SlidePatchOpLabel) : undefined,
+    query: typeof parsed?.query === 'string' ? (parsed.query as string) : undefined,
+  };
+}
+
+/**
+ * Per-session activity emitter. Owns a monotonically increasing event `seq` so
+ * a phase run's rows are stable and ordered (`${phase}_${round}_${seq}`). The
+ * `ask` tool row uses the pending-ask's id so a later resume can patch it to
+ * completed and emit `ask_answered`.
+ */
+function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySink) {
+  let seq = 0;
+  return {
+    /** Emit a `tool_started` running row, returning its id. */
+    started(toolCall: ToolCall, round: number, opts?: { id?: string }): string {
+      const id = opts?.id ?? `${phase}_${round}_${++seq}`;
+      const a = activityArgs(toolCall);
+      sink?.push({
+        id,
+        type: 'tool_started',
+        status: 'running',
+        ts: Date.now(),
+        phase,
+        round,
+        toolName: toolCall.name,
+        toolCallId: toolCall.id,
+        label: toolStartedLabel(toolCall.name, a),
+        ...(a?.path ? { detail: a.path } : {}),
+      });
+      return id;
+    },
+    /** Patch a running row to completed (success). */
+    complete(id: string): void {
+      sink?.patch(id, { status: 'completed' });
+    },
+    /** Patch a running row to failed with a reason (≤80 chars via helper). */
+    failed(id: string, reason: string): void {
+      // The tool-result reason (apply_patch output / read error) already starts
+      // with `Error: `; strip it so the row reads `Failed: ...`, not
+      // `Failed: Error: ...`, while keeping the full reason as the detail.
+      const clean = (reason ?? '').replace(/^Error:\s*/, '').trim();
+      sink?.patch(id, {
+        status: 'failed',
+        label: toolFailedLabel(clean),
+        detail: reason,
+      });
+    },
+    /** Emit a `file_written`/`file_deleted` row for a successful `apply_patch`. */
+    fileChanged(op: SlidePatchOperation['type'], path: string, round: number): void {
+      sink?.push({
+        id: `${phase}_${round}_${++seq}`,
+        type: op === 'delete_file' ? 'file_deleted' : 'file_written',
+        status: 'completed',
+        ts: Date.now(),
+        phase,
+        round,
+        patchOp: op,
+        path,
+        label: op === 'delete_file' ? fileDeletedLabel(path) : fileWrittenLabel(op, path),
+      });
+    },
+    /** Emit an `ask_answered` row when a suspended ask is resumed (A.6). */
+    askAnswered(toolCallId: string, round: number): void {
+      // A resumed plan session builds a FRESH emitter (seq resets to 0), yet
+      // reuses the suspended round — so this id would collide with an earlier
+      // `tool_started`/`file_written` id in the same round (e.g. when
+      // list/read/apply_patch ran before the ask, consuming `_1`). pushActivity
+      // appends without dedupe and patchActivity patches every matching id, so a
+      // duplicate id would corrupt later patches. Suffix with a unique tag
+      // (Amendment A.5 allows `…` + uuid-style id).
+      sink?.push({
+        id: `${phase}_${round}_${++seq}_${Math.random().toString(36).slice(2, 7)}`,
+        type: 'ask_answered',
+        status: 'completed',
+        ts: Date.now(),
+        phase,
+        round,
+        toolName: 'ask',
+        toolCallId,
+        label: askAnsweredLabel(),
+      });
+    },
+  };
+}
+
 /** Options for running the plan phase. */
 export interface PlanPhaseParams {
   /** Phase skill text injected as the isolated session's system prompt. */
@@ -118,6 +246,8 @@ export interface PlanPhaseParams {
   onDelta?: (delta: StreamDelta) => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
+  onActivity?: SlideActivitySink;
 }
 
 export type PlanPhaseStatus =
@@ -202,7 +332,15 @@ export async function resumePlanPhase(
   }
 
   const session = buildPlanSession(params);
-  const { currentFiles, submit, sessionParams } = session;
+  const { currentFiles, submit, emitter, sessionParams } = session;
+
+  // Close the suspended ask's running row + emit `ask_answered` (A.6). The
+  // suspended `tool_started` row was keyed by the pending-ask id, so the store
+  // sink (shared across the pause + resume) can patch it directly.
+  if (resume.pendingAsk) {
+    params.onActivity?.patch(resume.pendingAsk.id, { status: 'completed' });
+    emitter.askAnswered(resume.pendingAsk.toolCallId, resume.round);
+  }
 
   // Append the user's answer as the `ask` tool result, resuming exactly where
   // the ask suspended (the assistant ask turn is already in the transcript).
@@ -229,40 +367,67 @@ function buildPlanSession(params: PlanPhaseParams) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
   const submit = { fired: false, canvas: undefined as string | undefined };
+  // Per-run activity emitter (Amendment A.6) for tool/file/ask rows.
+  const emitter = createActivityEmitter('plan', params.onActivity);
 
   const dispatchTool = async (
-    toolCall: ToolCall
+    toolCall: ToolCall,
+    round: number
   ): Promise<AgentToolDispatch> => {
     switch (toolCall.name) {
-      case 'list_files':
-        return { content: listFiles(currentFiles, args<{ path?: string }>(toolCall).path) };
-      case 'read_file':
-        return { content: readFile(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'list_files': {
+        const row = emitter.started(toolCall, round);
+        const content = listFiles(currentFiles, args<{ path?: string }>(toolCall).path);
+        if (content.startsWith('Error:')) emitter.failed(row, content);
+        else emitter.complete(row);
+        return { content };
+      }
+      case 'read_file': {
+        const row = emitter.started(toolCall, round);
+        const content = readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        if (content.startsWith('Error:')) emitter.failed(row, content);
+        else emitter.complete(row);
+        return { content };
+      }
       case 'apply_patch': {
+        const row = emitter.started(toolCall, round);
         const op = args<ApplyPatchArgs>(toolCall).operation;
-        if (!op) return { content: 'Error: apply_patch requires an "operation" argument.' };
+        if (!op) {
+          emitter.failed(row, 'apply_patch requires an "operation" argument.');
+          return { content: 'Error: apply_patch requires an "operation" argument.' };
+        }
         const result = applyPatchOperation(currentFiles, 'plan', op);
         if (result.status === 'completed' && result.files) {
           currentFiles.length = 0;
           currentFiles.push(...result.files);
           params.onFilesChange?.(currentFiles);
+          emitter.complete(row);
+          if (op.path) emitter.fileChanged(op.type, op.path, round);
+        } else {
+          emitter.failed(row, result.output);
         }
         return { content: result.output };
       }
-      case 'ask':
-        return { suspended: true, pendingAsk: buildPendingAsk(toolCall) };
+      case 'ask': {
+        const pendingAsk = buildPendingAsk(toolCall);
+        // Row id = pendingAsk id so a resume can close it + emit ask_answered.
+        emitter.started(toolCall, round, { id: pendingAsk.id });
+        return { suspended: true, pendingAsk };
+      }
       case 'submit_plan': {
+        const row = emitter.started(toolCall, round);
         submit.fired = true;
         const parsed = args<SubmitPlanArgs>(toolCall);
         if (typeof parsed.canvas === 'string' && parsed.canvas) submit.canvas = parsed.canvas;
+        emitter.complete(row);
         return { content: 'Accepted. The plan is ready for user review.' };
       }
       case 'google_search':
-        return dispatchExternal(params.toolOptions, toolCall);
+        return emitExternalActivity(params, emitter, toolCall, round);
       default:
         // Any external/MCP tool (US-029) routes through the shared
         // `MCP_CALL_TOOL` background path, mirroring main chat (FR-14).
-        return dispatchExternal(params.toolOptions, toolCall);
+        return emitExternalActivity(params, emitter, toolCall, round);
     }
   };
 
@@ -281,7 +446,7 @@ function buildPlanSession(params: PlanPhaseParams) {
     dispatchTool,
   };
 
-  return { currentFiles, submit, dispatchTool, sessionParams };
+  return { currentFiles, submit, emitter, dispatchTool, sessionParams };
 }
 
 // ==================== Build phase ====================
@@ -314,6 +479,8 @@ export interface BuildPhaseParams {
   onDelta?: (delta: StreamDelta) => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
+  onActivity?: SlideActivitySink;
 }
 
 /**
@@ -360,31 +527,51 @@ export async function runBuildPhase(
 function buildBuildSession(params: BuildPhaseParams) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
+  const emitter = createActivityEmitter('build', params.onActivity);
 
   const dispatchTool = async (
-    toolCall: ToolCall
+    toolCall: ToolCall,
+    round: number
   ): Promise<AgentToolDispatch> => {
     switch (toolCall.name) {
-      case 'list_files':
-        return { content: listFiles(currentFiles, args<{ path?: string }>(toolCall).path) };
-      case 'read_file':
-        return { content: readFile(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'list_files': {
+        const row = emitter.started(toolCall, round);
+        const content = listFiles(currentFiles, args<{ path?: string }>(toolCall).path);
+        if (content.startsWith('Error:')) emitter.failed(row, content);
+        else emitter.complete(row);
+        return { content };
+      }
+      case 'read_file': {
+        const row = emitter.started(toolCall, round);
+        const content = readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        if (content.startsWith('Error:')) emitter.failed(row, content);
+        else emitter.complete(row);
+        return { content };
+      }
       case 'apply_patch': {
+        const row = emitter.started(toolCall, round);
         const op = args<ApplyPatchArgs>(toolCall).operation;
-        if (!op) return { content: 'Error: apply_patch requires an "operation" argument.' };
+        if (!op) {
+          emitter.failed(row, 'apply_patch requires an "operation" argument.');
+          return { content: 'Error: apply_patch requires an "operation" argument.' };
+        }
         const result = applyPatchOperation(currentFiles, 'build', op);
         if (result.status === 'completed' && result.files) {
           currentFiles.length = 0;
           currentFiles.push(...result.files);
           params.onFilesChange?.(currentFiles);
+          emitter.complete(row);
+          if (op.path) emitter.fileChanged(op.type, op.path, round);
+        } else {
+          emitter.failed(row, result.output);
         }
         return { content: result.output };
       }
       case 'google_search':
-        return dispatchExternal(params.toolOptions, toolCall);
+        return emitExternalActivity(params, emitter, toolCall, round);
       default:
         // External/MCP tool (US-029) routed via the shared `MCP_CALL_TOOL` path.
-        return dispatchExternal(params.toolOptions, toolCall);
+        return emitExternalActivity(params, emitter, toolCall, round);
     }
   };
 
@@ -403,7 +590,7 @@ function buildBuildSession(params: BuildPhaseParams) {
     dispatchTool,
   };
 
-  return { currentFiles, dispatchTool, sessionParams };
+  return { currentFiles, emitter, dispatchTool, sessionParams };
 }
 
 /**
@@ -487,6 +674,8 @@ export interface EditPhaseParams {
   onDelta?: (delta: StreamDelta) => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
+  onActivity?: SlideActivitySink;
 }
 
 /**
@@ -536,31 +725,51 @@ export async function runEditPhase(
 function buildEditSession(params: EditPhaseParams) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
+  const emitter = createActivityEmitter('edit', params.onActivity);
 
   const dispatchTool = async (
-    toolCall: ToolCall
+    toolCall: ToolCall,
+    round: number
   ): Promise<AgentToolDispatch> => {
     switch (toolCall.name) {
-      case 'list_files':
-        return { content: listFiles(currentFiles, args<{ path?: string }>(toolCall).path) };
-      case 'read_file':
-        return { content: readFile(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'list_files': {
+        const row = emitter.started(toolCall, round);
+        const content = listFiles(currentFiles, args<{ path?: string }>(toolCall).path);
+        if (content.startsWith('Error:')) emitter.failed(row, content);
+        else emitter.complete(row);
+        return { content };
+      }
+      case 'read_file': {
+        const row = emitter.started(toolCall, round);
+        const content = readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        if (content.startsWith('Error:')) emitter.failed(row, content);
+        else emitter.complete(row);
+        return { content };
+      }
       case 'apply_patch': {
+        const row = emitter.started(toolCall, round);
         const op = args<ApplyPatchArgs>(toolCall).operation;
-        if (!op) return { content: 'Error: apply_patch requires an "operation" argument.' };
+        if (!op) {
+          emitter.failed(row, 'apply_patch requires an "operation" argument.');
+          return { content: 'Error: apply_patch requires an "operation" argument.' };
+        }
         const result = applyPatchOperation(currentFiles, 'edit', op);
         if (result.status === 'completed' && result.files) {
           currentFiles.length = 0;
           currentFiles.push(...result.files);
           params.onFilesChange?.(currentFiles);
+          emitter.complete(row);
+          if (op.path) emitter.fileChanged(op.type, op.path, round);
+        } else {
+          emitter.failed(row, result.output);
         }
         return { content: result.output };
       }
       case 'google_search':
-        return dispatchExternal(params.toolOptions, toolCall);
+        return emitExternalActivity(params, emitter, toolCall, round);
       default:
         // External/MCP tool (US-029) routed via the shared `MCP_CALL_TOOL` path.
-        return dispatchExternal(params.toolOptions, toolCall);
+        return emitExternalActivity(params, emitter, toolCall, round);
     }
   };
 
@@ -579,7 +788,7 @@ function buildEditSession(params: EditPhaseParams) {
     dispatchTool,
   };
 
-  return { currentFiles, dispatchTool, sessionParams };
+  return { currentFiles, emitter, dispatchTool, sessionParams };
 }
 
 function mapResult(
@@ -719,4 +928,25 @@ function dispatchExternal(
       result.content ||
       (result.error ? `Error: ${result.error}` : 'The tool returned no content.'),
   }));
+}
+
+/**
+ * Dispatch an external tool call (google_search / MCP) while emitting a
+ * `tool_started` running row and patching it to completed/failed on the result
+ * (Amendment A.6). A content prefixed `Error:` is treated as a failed tool.
+ */
+function emitExternalActivity(
+  params: {
+    toolOptions?: SlideToolOptions;
+  },
+  emitter: ReturnType<typeof createActivityEmitter>,
+  toolCall: ToolCall,
+  round: number
+): Promise<AgentToolDispatch> {
+  const row = emitter.started(toolCall, round);
+  return dispatchExternal(params.toolOptions, toolCall).then((dispatch) => {
+    if (dispatch.content?.startsWith('Error:')) emitter.failed(row, dispatch.content);
+    else emitter.complete(row);
+    return dispatch;
+  });
 }
