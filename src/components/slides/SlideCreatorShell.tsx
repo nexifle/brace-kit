@@ -30,6 +30,7 @@ import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 import { ExportDeck } from './ExportDeck.tsx';
 import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 import { Transcript } from './Transcript.tsx';
+import { AgentActivityFeed } from './AgentActivityFeed.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
@@ -419,7 +420,7 @@ function ChatRail({
   placeholder: string;
   blocked?: boolean;
 }) {
-  const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy, phase, activity } = useSlideStore();
   return (
     <AnimatePresence initial={false}>
       {railOpen && (
@@ -495,6 +496,7 @@ function ChatRail({
                   ) : (
                     <EmptyChat />
                   )}
+                  {activeProject && <AgentActivityFeed events={activity} />}
                 </div>
                 <Composer
                   onSend={onSend}
@@ -535,7 +537,7 @@ function ChatDock({
   placeholder: string;
   blocked?: boolean;
 }) {
-  const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy, phase, activity } = useSlideStore();
   const [dockValue, setDockValue] = useState('');
 
   if (open) {
@@ -569,6 +571,7 @@ function ChatDock({
           ) : (
             <EmptyChat />
           )}
+          {activeProject && <AgentActivityFeed events={activity} />}
         </div>
         <Composer
           onSend={onSend}
