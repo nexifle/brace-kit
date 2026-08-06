@@ -30,6 +30,7 @@ import {
   runAgentSession,
   resumeAgentSession,
   type AgentAbortFn,
+  type AgentSessionParams,
   type AgentSessionResult,
   type AgentSessionState,
   type AgentToolDispatch,
@@ -39,7 +40,7 @@ import {
   applyPatchOperation,
   type SlidePatchOperation,
 } from './applyPatchHarness.ts';
-import { getSlideFile } from '../utils/slideVfs.ts';
+import { getSlideFile, rebuildDeckProjection } from '../utils/slideVfs.ts';
 import { getToolsForPhase } from './slideTools.ts';
 
 // ==================== Plan phase ====================
@@ -247,7 +248,171 @@ function buildPlanSession(params: PlanPhaseParams) {
   return { currentFiles, submit, dispatchTool, sessionParams };
 }
 
-/** Map the runner's terminal session state onto the plan-phase result. */
+// ==================== Build phase ====================
+
+/** Options for running the build phase. */
+export interface BuildPhaseParams {
+  /** Phase skill text injected as the isolated session's system prompt. */
+  systemPrompt: string;
+  /** Isolated session user messages (the build kickoff / orchestrator prompt). */
+  messages: APIMessage[];
+  providerConfig: ProviderConfig;
+  /** Base chat options; `stream` is forced false by the session runner. */
+  chatOptions?: Record<string, unknown>;
+  /** Current VFS, including the approved `/brief.md` + `/design.md`. Copied; never mutated. */
+  files: import('../types/slides.ts').SlideFile[];
+  /** Tool set override; defaults to `getToolsForPhase('build')`. */
+  tools?: MCPTool[];
+  /** Cap on model turns. */
+  maxRounds?: number;
+  signal?: AbortSignal;
+  /** CHAT_REQUEST transport (injectable for tests). */
+  transport?: AgentTransport;
+  /** Abort in-flight request (injectable for tests). */
+  abortRequest?: AgentAbortFn;
+  /** Called after every successful `apply_patch` with the new files array. */
+  onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
+  /** Live session updates from the runner (UI wiring). */
+  onUpdate?: (state: AgentSessionState) => void;
+}
+
+/**
+ * Terminal status for the build phase.
+ * `ready` = a renderable deck was produced (deck.json projects ≥1 slide);
+ * `done` = the agent finished but no valid deck / partial. `error`/`cancelled`.
+ */
+export type BuildPhaseStatus = 'ready' | 'done' | 'error' | 'cancelled';
+
+export interface BuildPhaseResult {
+  status: BuildPhaseStatus;
+  /** Mutable VFS accumulated across all patches this run. */
+  files: import('../types/slides.ts').SlideFile[];
+  /** Final assistant summary narration (done/ready). */
+  content?: string;
+  error?: string;
+}
+
+/**
+ * Run the build phase: an isolated agent session that turns the approved
+ * `/brief.md` + `/design.md` into `/theme.css`, `/slides/*`, and `/deck.json`
+ * via `apply_patch`. The plan docs are injected into the session context so the
+ * model never needs the main chat history (FR-20).
+ *
+ * Resolves `ready` when the projected deck has ≥1 slide; `done` when the agent
+ * finishes without a renderable deck. Build has no `ask`/`submit_plan` tools.
+ */
+export async function runBuildPhase(
+  params: BuildPhaseParams
+): Promise<BuildPhaseResult> {
+  const session = buildBuildSession(params);
+  const { currentFiles, sessionParams } = session;
+
+  const result = await runAgentSession(sessionParams);
+
+  return mapBuildResult(result, currentFiles);
+}
+
+/**
+ * Shared dispatcher closure + runner params for the build session. Follows the
+ * same shape as {@link buildPlanSession} but routes `apply_patch` under the
+ * `build` allowlist and has no ask/submit_plan handling.
+ */
+function buildBuildSession(params: BuildPhaseParams) {
+  // A live, mutable copy of the VFS captured by the dispatcher closure.
+  const currentFiles = params.files.slice();
+
+  const dispatchTool = async (
+    toolCall: ToolCall
+  ): Promise<AgentToolDispatch> => {
+    switch (toolCall.name) {
+      case 'list_files':
+        return { content: listFiles(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'read_file':
+        return { content: readFile(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'apply_patch': {
+        const op = args<ApplyPatchArgs>(toolCall).operation;
+        if (!op) return { content: 'Error: apply_patch requires an "operation" argument.' };
+        const result = applyPatchOperation(currentFiles, 'build', op);
+        if (result.status === 'completed' && result.files) {
+          currentFiles.length = 0;
+          currentFiles.push(...result.files);
+          params.onFilesChange?.(currentFiles);
+        }
+        return { content: result.output };
+      }
+      default:
+        return { content: `Error: Unknown build-phase tool: ${toolCall.name}` };
+    }
+  };
+
+  const sessionParams: AgentSessionParams = {
+    systemPrompt: composeBuildSystemPrompt(params.systemPrompt, currentFiles),
+    messages: params.messages,
+    tools: params.tools ?? getToolsForPhase('build'),
+    providerConfig: params.providerConfig,
+    chatOptions: params.chatOptions ?? {},
+    maxRounds: params.maxRounds,
+    signal: params.signal,
+    transport: params.transport,
+    abortRequest: params.abortRequest,
+    onUpdate: params.onUpdate,
+    dispatchTool,
+  };
+
+  return { currentFiles, dispatchTool, sessionParams };
+}
+
+/**
+ * Inject the approved `/brief.md` + `/design.md` into the build system prompt so
+ * the sub-agent has the full plan in context (not the main chat history).
+ * Missing/empty docs are simply omitted — the skill's read-first discipline
+ * still applies afterwards.
+ */
+function composeBuildSystemPrompt(
+  systemPrompt: string,
+  files: import('../types/slides.ts').SlideFile[]
+): string {
+  const brief = getSlideFile(files, '/brief.md');
+  const design = getSlideFile(files, '/design.md');
+  const parts = [systemPrompt];
+  if (brief && brief.content.trim().length > 0) {
+    parts.push('\n\n--- /brief.md (approved) ---\n' + brief.content);
+  }
+  if (design && design.content.trim().length > 0) {
+    parts.push('\n\n--- /design.md (approved) ---\n' + design.content);
+  }
+  return parts.join('');
+}
+
+/** Map the runner's terminal session state onto the build-phase result. */
+function mapBuildResult(
+  result: AgentSessionResult,
+  files: import('../types/slides.ts').SlideFile[]
+): BuildPhaseResult {
+  const base = { files: files.slice() };
+  switch (result.status) {
+    case 'error':
+      return { ...base, status: 'error', error: result.error };
+    case 'cancelled':
+      return { ...base, status: 'cancelled' };
+    case 'waiting_user':
+      // Build has no ask tool — an unexpected suspend degrades to a partial
+      // done rather than leaving the UI stuck.
+      return { ...base, status: 'done', content: result.content };
+    case 'done':
+    default: {
+      // Readiness = the projected deck renders ≥1 slide.
+      const deck = rebuildDeckProjection(files);
+      return {
+        ...base,
+        status: deck.slideOrder.length > 0 ? 'ready' : 'done',
+        content: result.content,
+      };
+    }
+  }
+}
+
+
 function mapResult(
   result: AgentSessionResult,
   files: import('../types/slides.ts').SlideFile[],

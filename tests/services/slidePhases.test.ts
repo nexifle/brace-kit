@@ -3,6 +3,7 @@ import {
   runPlanPhase,
   resumePlanPhase,
   hasValidPlanFiles,
+  runBuildPhase,
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
@@ -300,5 +301,109 @@ describe('plan ask pause/resume state machine (US-016)', () => {
     );
     expect(result.status).toBe('error');
     expect(result.error).toContain('paused plan session');
+  });
+});
+
+describe('runBuildPhase', () => {
+  const buildFiles = makeFiles([
+    { path: '/brief.md', content: '# Coffee deck\nOne slide per topic.' },
+    { path: '/design.md', content: 'Dark theme, 16:9.' },
+  ]);
+
+  it('produces a ready deck from plan docs, injecting them into the session prompt', async () => {
+    let seenSystem = '';
+    const { transport, callCount: calls } = makeTransport([
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/theme.css', diff: '@@\n+body{color:#111}\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section class="slide">Hello</section>\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"Coffee Deck","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
+        ],
+      }),
+      () => ({ content: 'Deck complete.' }),
+    ]);
+
+    // Wrap transport to capture the system prompt injected on the first round.
+    type T = NonNullable<Parameters<typeof runBuildPhase>[0]['transport']>;
+    const capturing = (async (request) => {
+      seenSystem = request.messages[0]?.content ?? '';
+      return (transport as T)(request as Parameters<T>[0]);
+    }) as T;
+
+    const result = await runBuildPhase({
+      systemPrompt: 'you are the build sub-agent',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport: capturing,
+    });
+
+    expect(calls()).toBe(2);
+    expect(result.status).toBe('ready');
+    expect(result.content).toBe('Deck complete.');
+    expect(result.files.find((f) => f.path === '/deck.json')?.content).toContain('slideOrder');
+    expect(result.files.find((f) => f.path === '/slides/01.html')?.content).toContain('Hello');
+    // the build skill prompt carries the approved plan docs in context
+    expect(seenSystem).toContain('build sub-agent');
+    expect(seenSystem).toContain('/brief.md (approved)');
+    expect(seenSystem).toContain('Coffee deck');
+    expect(seenSystem).toContain('/design.md (approved)');
+  });
+
+  it('resolves done (partial) when the agent finishes with no renderable deck', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'no slides yet',
+        toolCalls: [toolCall('list_files', JSON.stringify({ path: '/' }))],
+      }),
+      () => ({ content: 'done' }),
+    ]);
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport,
+    });
+    expect(result.status).toBe('done');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('denies writes to plan-only paths (build allowlist) via the harness', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'oops',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/brief.md', diff: '@@\n-new\n+edited\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+ok\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"slideOrder":["01"],"canvas":"16:9","theme":"/theme.css","title":"t"}\n' } }))] }),
+      () => ({ content: 'finished' }),
+    ]);
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport,
+    });
+    expect(result.status).toBe('ready');
+    // /brief.md must NOT be overwritten during build (denied by allowlist)
+    expect(result.files.find((f) => f.path === '/brief.md')?.content).toBe(buildFiles[0].content);
+  });
+
+  it('returns error status when the transport reports an error', async () => {
+    const { transport } = makeTransport([() => ({ error: 'Build failed.' })]);
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport,
+    });
+    expect(result.status).toBe('error');
+    expect(result.error).toBe('Build failed.');
   });
 });
