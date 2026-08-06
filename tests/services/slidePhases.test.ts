@@ -4,6 +4,7 @@ import {
   resumePlanPhase,
   hasValidPlanFiles,
   runBuildPhase,
+  runEditPhase,
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
@@ -405,5 +406,173 @@ describe('runBuildPhase', () => {
     });
     expect(result.status).toBe('error');
     expect(result.error).toBe('Build failed.');
+  });
+});
+
+describe('runEditPhase', () => {
+  const editFiles = makeFiles([
+    { path: '/brief.md', content: '# Coffee deck\nOne slide per topic.' },
+    { path: '/design.md', content: 'Dark theme, 16:9.' },
+    { path: '/theme.css', content: 'body{color:#111}' },
+    {
+      path: '/slides/01.html',
+      content: '<section class="slide">\n  Hello\n</section>\n',
+    },
+    {
+      path: '/deck.json',
+      content:
+        '{\n  "title":"Coffee Deck",\n  "canvas":"16:9",\n  "theme":"/theme.css",\n  "slideOrder":[\n    "01"\n  ]\n}\n',
+    },
+  ]);
+
+  it('surgically updates an existing slide via update_file and stays ready', async () => {
+    let seenSystem = '';
+    const { transport, callCount: calls } = makeTransport([
+      () => ({
+        content: 'editing',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/slides/01.html', diff: '@@\n-  Hello\n+  Hello, world\n' } })),
+        ],
+      }),
+      () => ({ content: 'Edited.' }),
+    ]);
+
+    type T = NonNullable<Parameters<typeof runEditPhase>[0]['transport']>;
+    const capturing = (async (request) => {
+      seenSystem = request.messages[0]?.content ?? '';
+      return (transport as T)(request as Parameters<T>[0]);
+    }) as T;
+
+    const result = await runEditPhase({
+      systemPrompt: 'you are the edit sub-agent',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport: capturing,
+    });
+
+    expect(calls()).toBe(2);
+    expect(result.status).toBe('ready');
+    expect(result.content).toBe('Edited.');
+    expect(result.files.find((f) => f.path === '/slides/01.html')?.content).toContain(
+      'Hello, world'
+    );
+    // unchanged slides keep their copy
+    expect(result.files.find((f) => f.path === '/slides/01.html')?.content).toContain('</section>');
+    // the plan docs are injected into the edit session prompt as context
+    expect(seenSystem).toContain('edit sub-agent');
+    expect(seenSystem).toContain('/brief.md (approved)');
+    expect(seenSystem).toContain('/design.md (approved)');
+  });
+
+  it('adds a new slide via create_file and updates deck.json slideOrder', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'adding slide 02',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/02.html', diff: '@@\n+<section class="slide">\n+  Second\n+</section>\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/deck.json', diff: '@@\n-    "01"\n+    "01",\n+    "02"\n' } })),
+        ],
+      }),
+      () => ({ content: 'Added.' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.files.find((f) => f.path === '/slides/02.html')).toBeTruthy();
+    expect(result.files.find((f) => f.path === '/deck.json')?.content).toContain('"02"');
+    // the deck still projects slide 01 (unchanged sibling)
+    expect(result.files.find((f) => f.path === '/deck.json')?.content).toContain('"01"');
+  });
+
+  it('returns status done when the edit leaves no renderable deck', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'removing last slide',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'delete_file', path: '/slides/01.html' } })),
+        ],
+      }),
+      () => ({ content: 'done' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+    });
+    expect(result.status).toBe('done');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('routes a failed patch back as output and still finishes', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'trying a stale diff',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/slides/01.html', diff: '@@\n-  MISSING CONTEXT\n+  replacement\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/slides/01.html', diff: '@@\n-  Hello\n+  Edited\n' } })),
+        ],
+      }),
+      () => ({ content: 'recovered' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+    });
+    expect(result.status).toBe('ready');
+    // the first (stale) patch failed and did not clobber the file; the second applied
+    expect(result.files.find((f) => f.path === '/slides/01.html')?.content).toContain('Edited');
+  });
+
+  it('denies writes to paths outside the edit allowlist via the harness', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'bad path',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/../untracked.txt', diff: '@@\n+oops\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/slides/01.html', diff: '@@\n-  Hello\n+  Edited\n' } })),
+        ],
+      }),
+      () => ({ content: 'done' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+    });
+    expect(result.status).toBe('ready');
+    // the out-of-allowlist path was never created; only the allowed slide edit applied
+    expect(result.files.some((f) => f.path.includes('untracked'))).toBe(false);
+    expect(result.files.find((f) => f.path === '/slides/01.html')?.content).toContain('Edited');
+  });
+
+  it('returns error status when the transport reports an error', async () => {
+    const { transport } = makeTransport([() => ({ error: 'Edit failed.' })]);
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+    });
+    expect(result.status).toBe('error');
+    expect(result.error).toBe('Edit failed.');
   });
 });

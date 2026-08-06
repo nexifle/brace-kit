@@ -346,7 +346,7 @@ function buildBuildSession(params: BuildPhaseParams) {
   };
 
   const sessionParams: AgentSessionParams = {
-    systemPrompt: composeBuildSystemPrompt(params.systemPrompt, currentFiles),
+    systemPrompt: composePlanDocsSystemPrompt(params.systemPrompt, currentFiles),
     messages: params.messages,
     tools: params.tools ?? getToolsForPhase('build'),
     providerConfig: params.providerConfig,
@@ -363,12 +363,12 @@ function buildBuildSession(params: BuildPhaseParams) {
 }
 
 /**
- * Inject the approved `/brief.md` + `/design.md` into the build system prompt so
- * the sub-agent has the full plan in context (not the main chat history).
- * Missing/empty docs are simply omitted — the skill's read-first discipline
- * still applies afterwards.
+ * Inject the approved `/brief.md` + `/design.md` into the system prompt so the
+ * isolated build/edit sub-agent has the full plan in context (not the main chat
+ * history). Missing/empty docs are simply omitted — the skill's read-first
+ * discipline still applies afterwards.
  */
-function composeBuildSystemPrompt(
+function composePlanDocsSystemPrompt(
   systemPrompt: string,
   files: import('../types/slides.ts').SlideFile[]
 ): string {
@@ -412,6 +412,123 @@ function mapBuildResult(
   }
 }
 
+
+// ==================== Edit phase ====================
+
+/** Options for running the edit (follow-up) phase. */
+export interface EditPhaseParams {
+  /** Edit skill text injected as the isolated session's system prompt. */
+  systemPrompt: string;
+  /** Isolated session user messages (the user's follow-up request). */
+  messages: APIMessage[];
+  providerConfig: ProviderConfig;
+  /** Base chat options; `stream` is forced false by the session runner. */
+  chatOptions?: Record<string, unknown>;
+  /** Current VFS, including the built `/deck.json`, `/theme.css`, `/slides/*`. Copied; never mutated. */
+  files: import('../types/slides.ts').SlideFile[];
+  /** Tool set override; defaults to `getToolsForPhase('edit')`. */
+  tools?: MCPTool[];
+  /** Cap on model turns. */
+  maxRounds?: number;
+  signal?: AbortSignal;
+  /** CHAT_REQUEST transport (injectable for tests). */
+  transport?: AgentTransport;
+  /** Abort in-flight request (injectable for tests). */
+  abortRequest?: AgentAbortFn;
+  /** Called after every successful `apply_patch` with the new files array. */
+  onFilesChange?: (files: import('../types/slides.ts').SlideFile[]) => void;
+  /** Live session updates from the runner (UI wiring). */
+  onUpdate?: (state: AgentSessionState) => void;
+}
+
+/**
+ * Terminal status for the edit phase.
+ * `ready` = the deck still projects ≥1 slide after the edit (previewable);
+ * `done` = the agent finished but no renderable deck remains / partial.
+ * `error`/`cancelled` passthrough.
+ */
+export type EditPhaseStatus = 'ready' | 'done' | 'error' | 'cancelled';
+
+export interface EditPhaseResult {
+  status: EditPhaseStatus;
+  /** Mutable VFS accumulated across all patches this run. */
+  files: import('../types/slides.ts').SlideFile[];
+  /** Final assistant summary narration (done/ready). */
+  content?: string;
+  error?: string;
+}
+
+/**
+ * Run the edit (follow-up) phase: an isolated agent session that applies a
+ * user's follow-up request as surgical, read-first `apply_patch` changes to an
+ * already-built deck (`/deck.json`, `/theme.css`, `/slides/*`). The approved
+ * `/brief.md` + `/design.md` are injected as context so the sub-agent stays
+ * on-system without the main chat history. Edit has no `ask`/`submit_plan`
+ * tools.
+ *
+ * Resolves `ready` when the projected deck still has ≥1 slide; `done` when the
+ * agent finishes without a renderable deck.
+ */
+export async function runEditPhase(
+  params: EditPhaseParams
+): Promise<EditPhaseResult> {
+  const session = buildEditSession(params);
+  const { currentFiles, sessionParams } = session;
+
+  const result = await runAgentSession(sessionParams);
+
+  return mapBuildResult(result, currentFiles);
+}
+
+/**
+ * Shared dispatcher closure + runner params for the edit session. Follows the
+ * exact build-runner shape but routes `apply_patch` under the `edit` allowlist
+ * (build paths PLUS `/brief.md` + `/design.md`).
+ */
+function buildEditSession(params: EditPhaseParams) {
+  // A live, mutable copy of the VFS captured by the dispatcher closure.
+  const currentFiles = params.files.slice();
+
+  const dispatchTool = async (
+    toolCall: ToolCall
+  ): Promise<AgentToolDispatch> => {
+    switch (toolCall.name) {
+      case 'list_files':
+        return { content: listFiles(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'read_file':
+        return { content: readFile(currentFiles, args<{ path?: string }>(toolCall).path) };
+      case 'apply_patch': {
+        const op = args<ApplyPatchArgs>(toolCall).operation;
+        if (!op) return { content: 'Error: apply_patch requires an "operation" argument.' };
+        const result = applyPatchOperation(currentFiles, 'edit', op);
+        if (result.status === 'completed' && result.files) {
+          currentFiles.length = 0;
+          currentFiles.push(...result.files);
+          params.onFilesChange?.(currentFiles);
+        }
+        return { content: result.output };
+      }
+      default:
+        return { content: `Error: Unknown edit-phase tool: ${toolCall.name}` };
+    }
+  };
+
+  const sessionParams: AgentSessionParams = {
+    systemPrompt: composePlanDocsSystemPrompt(params.systemPrompt, currentFiles),
+    messages: params.messages,
+    tools: params.tools ?? getToolsForPhase('edit'),
+    providerConfig: params.providerConfig,
+    chatOptions: params.chatOptions ?? {},
+    maxRounds: params.maxRounds,
+    signal: params.signal,
+    transport: params.transport,
+    abortRequest: params.abortRequest,
+    onUpdate: params.onUpdate,
+    dispatchTool,
+  };
+
+  return { currentFiles, dispatchTool, sessionParams };
+}
 
 function mapResult(
   result: AgentSessionResult,
