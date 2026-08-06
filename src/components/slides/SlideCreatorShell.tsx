@@ -30,6 +30,7 @@ import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 import { ExportDeck } from './ExportDeck.tsx';
 import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 import { Transcript } from './Transcript.tsx';
+import { StreamingAgentBubble } from './StreamingAgentBubble.tsx';
 import { AgentActivityFeed } from './AgentActivityFeed.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 
@@ -496,6 +497,7 @@ function ChatRail({
                   ) : (
                     <EmptyChat />
                   )}
+                  <StreamingAgentBubble />
                   {activeProject && <AgentActivityFeed events={activity} />}
                 </div>
                 <Composer
@@ -571,6 +573,7 @@ function ChatDock({
           ) : (
             <EmptyChat />
           )}
+          <StreamingAgentBubble />
           {activeProject && <AgentActivityFeed events={activity} />}
         </div>
         <Composer
