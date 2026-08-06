@@ -28,6 +28,7 @@ import type {
 import type { SlidePendingAsk, SlidePhase } from '../types/slides.ts';
 import {
   runAgentSession,
+  resumeAgentSession,
   type AgentAbortFn,
   type AgentSessionResult,
   type AgentSessionState,
@@ -103,6 +104,18 @@ export interface PlanPhaseResult {
   error?: string;
   /** Canvas the model chose via submit_plan, if any. */
   canvasChoice?: string;
+  /**
+   * Agent-session transcript + next round, present on `waiting_user`, needed to
+   * resume the plan session from `answerAsk`/`resumePlanPhase`.
+   */
+  paused?: {
+    /** The paused transcript (system + user + assistant ask turn) at suspend time. */
+    messages: APIMessage[];
+    /** The round number to resume from — the ask turn that suspended the loop. */
+    round: number;
+    /** Pending-ask whose `toolCallId` ties the user's answer to the ask tool call. */
+    pendingAsk: SlidePendingAsk;
+  };
 }
 
 /** True when both /brief.md and /design.md exist and are non-empty. */
@@ -120,14 +133,69 @@ export function hasValidPlanFiles(
  * Run the plan phase: an isolated agent session that drafts `/brief.md` +
  * `/design.md` via `apply_patch`, `ask`s for missing facts, and declares
  * completion via `submit_plan`. Does not start the build phase (FR-7).
+ *
+ * On an `ask` the session suspends (`waiting_user`); the result carries the
+ * paused transcript + round in `paused` so the caller can persist it and later
+ * resume via {@link resumePlanPhase}.
  */
 export async function runPlanPhase(
   params: PlanPhaseParams
 ): Promise<PlanPhaseResult> {
+  const session = buildPlanSession(params);
+  const { currentFiles, submit, sessionParams } = session;
+
+  const result = await runAgentSession(sessionParams);
+
+  return mapResult(result, currentFiles, submit.fired, submit.canvas);
+}
+
+/**
+ * Resume a plan session that previously suspended on an `ask` (US-016
+ * answerAsk). Appends the user's answer as the `ask` tool result tied to the
+ * pending-ask's `toolCallId`, then re-runs the agent loop from the paused round.
+ * Fails if the resume state lacks the running plan session (e.g. the phase was
+ * stopped/none active).
+ */
+export async function resumePlanPhase(
+  params: PlanPhaseParams,
+  resume: PlanPhaseResult['paused'],
+  answer: string
+): Promise<PlanPhaseResult> {
+  if (!resume) {
+    return {
+      status: 'error',
+      files: params.files.slice(),
+      error: 'Cannot resume: no paused plan session is available.',
+    };
+  }
+
+  const session = buildPlanSession(params);
+  const { currentFiles, submit, sessionParams } = session;
+
+  // Append the user's answer as the `ask` tool result, resuming exactly where
+  // the ask suspended (the assistant ask turn is already in the transcript).
+  const messages = [
+    ...resume.messages,
+    {
+      role: 'tool' as const,
+      toolCallId: resume.pendingAsk.toolCallId,
+      name: 'ask' as const,
+      content: answer,
+    },
+  ];
+
+  const result = await resumeAgentSession(sessionParams, {
+    messages,
+    round: resume.round + 1,
+  });
+
+  return mapResult(result, currentFiles, submit.fired, submit.canvas);
+}
+
+/** Shared dispatcher closure + runner params for the plan session. */
+function buildPlanSession(params: PlanPhaseParams) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
-  const onFilesChange = params.onFilesChange;
-
   const submit = { fired: false, canvas: undefined as string | undefined };
 
   const dispatchTool = async (
@@ -145,7 +213,7 @@ export async function runPlanPhase(
         if (result.status === 'completed' && result.files) {
           currentFiles.length = 0;
           currentFiles.push(...result.files);
-          onFilesChange?.(currentFiles);
+          params.onFilesChange?.(currentFiles);
         }
         return { content: result.output };
       }
@@ -162,7 +230,7 @@ export async function runPlanPhase(
     }
   };
 
-  const result = await runAgentSession({
+  const sessionParams = {
     systemPrompt: params.systemPrompt,
     messages: params.messages,
     tools: params.tools ?? getToolsForPhase('plan'),
@@ -174,9 +242,9 @@ export async function runPlanPhase(
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     dispatchTool,
-  });
+  };
 
-  return mapResult(result, currentFiles, submit.fired, submit.canvas);
+  return { currentFiles, submit, dispatchTool, sessionParams };
 }
 
 /** Map the runner's terminal session state onto the plan-phase result. */
@@ -196,6 +264,11 @@ function mapResult(
         ...base,
         status: 'waiting_user',
         pendingAsk: result.pendingAsk,
+        paused: {
+          messages: result.messages,
+          round: result.rounds,
+          pendingAsk: result.pendingAsk as SlidePendingAsk,
+        },
       };
     case 'error':
       return { ...base, status: 'error', error: result.error };
