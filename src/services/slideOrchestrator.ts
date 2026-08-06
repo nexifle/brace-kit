@@ -28,7 +28,12 @@ import {
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
 import type { AgentTransport, AgentAbortFn } from './agentSession.ts';
 import { isSlideCanvas } from '../utils/slideVfs.ts';
+import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
+
+/** Clear message narrated when the active model can't drive the slide tool loop. */
+export const SLIDE_FUNCTION_CALLING_BLOCKED =
+  'The selected model does not support function calling, which Slide Creator needs to plan, build, and edit decks. Switch to a model that supports tools (e.g. an OpenAI/Anthropic-compatible or non-image Gemini model), then try again.';
 
 /** Derive a short provisional title from the user's deck prompt. */
 export function deriveSlideTitle(prompt: string): string {
@@ -75,6 +80,12 @@ export interface SlideAgentDeps {
   maxRounds?: number;
   /** External tool (google_search / MCP) sharing for sub-agent sessions (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /**
+   * Whether the active model can drive the tool loop (US-032). Defaults to the
+   * pure provider check (`supportsFunctionCalling`); inject a live store-backed
+   * checker from the hook so it reflects the current model instantly.
+   */
+  canFunctionCall?: () => boolean;
 }
 
 /** Cross-call state for the orchestrator's live sub-agent sessions. */
@@ -95,6 +106,26 @@ export function createSlideAgent(
     skills: {},
     abort: null,
   };
+
+  /** Whether the active model can drive the tool loop (US-032). */
+  function canUseFunctionCalling(): boolean {
+    if (deps.canFunctionCall) return deps.canFunctionCall();
+    const pc = deps.providerConfig;
+    const isGemini = pc.providerId === 'gemini' || pc.format === 'gemini';
+    if (!isGemini) return true;
+    return geminiSupportsFunctionCalling(pc.model);
+  }
+
+  /** Land a clear error narration + error phase on a project, WITHOUT starting a phase. */
+  function blockPhase(project: SlideProject): boolean {
+    if (canUseFunctionCalling()) return false;
+    appendMessage(
+      { ...project, phase: 'error', pendingAsk: undefined, updatedAt: Date.now() },
+      makeMsg('error', SLIDE_FUNCTION_CALLING_BLOCKED)
+    );
+    host.setPhase('error');
+    return true;
+  }
 
   async function skill(phase: SlidePhaseKey): Promise<string> {
     if (state.skills[phase]) return state.skills[phase] as string;
@@ -221,6 +252,7 @@ export function createSlideAgent(
       files: [],
     };
     host.landProject(project);
+    if (blockPhase(project)) return;
     await runPlan(project, text);
   }
 
@@ -234,6 +266,7 @@ export function createSlideAgent(
     }
 
     host.recordAnswer(projectId, answer);
+    if (blockPhase(project)) return;
 
     const systemPrompt = await skill('plan');
     const abort = new AbortController();
@@ -311,6 +344,7 @@ export function createSlideAgent(
   async function runBuild(): Promise<void> {
     const project = host.getActiveProject();
     if (!project || state.running) return;
+    if (blockPhase(project)) return;
     if (!hasValidPlanFiles(project.files)) return;
 
     const systemPrompt = await skill('build');
@@ -380,6 +414,7 @@ export function createSlideAgent(
     if (!message) return;
     const project = host.getActiveProject();
     if (!project || state.running) return;
+    if (blockPhase(project)) return;
 
     const systemPrompt = await skill('edit');
     const abort = new AbortController();
@@ -470,6 +505,8 @@ export function createSlideAgent(
     runBuild,
     sendFollowUp,
     stop,
+    /** Whether the active model can drive the tool loop (US-032). */
+    canUseFunctionCalling,
   };
 }
 

@@ -393,3 +393,108 @@ describe('createSlideAgent — stop generation (US-027)', () => {
     expect(h.active?.pendingAsk).toBeUndefined();
   });
 });
+
+describe('createSlideAgent — non-function-calling model guard (US-032)', () => {
+  it('blocks createFromPrompt with a clear error instead of hanging', async () => {
+    const skills = makeSkillFetcher();
+    let transportCalled = false;
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport: async () => {
+        transportCalled = true;
+        return { content: 'unused' };
+      },
+      skillFetcher: skills.fetcher,
+      canFunctionCall: () => false,
+    });
+
+    await agent.createFromPrompt('a deck');
+
+    // No model round-trip happened — no silent hang.
+    expect(transportCalled).toBe(false);
+    // A project was created with the user message + a clear error narration.
+    expect(h.active).not.toBeNull();
+    expect(h.active?.phase).toBe('error');
+    expect(
+      h.active?.messages.some((m) => m.role === 'error' && /function calling/i.test(m.content))
+    ).toBe(true);
+    expect(h.busy).toBe(false);
+  });
+
+  it('blocks runBuild with a clear error on an active project', async () => {
+    const skills = makeSkillFetcher();
+    let transportCalled = false;
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport: async () => {
+        transportCalled = true;
+        return { content: 'unused' };
+      },
+      skillFetcher: skills.fetcher,
+      canFunctionCall: () => false,
+    });
+
+    await agent.runBuild();
+
+    expect(transportCalled).toBe(false);
+    expect(h.active?.phase).toBe('error');
+    expect(
+      h.active?.messages.some((m) => m.role === 'error' && /function calling/i.test(m.content))
+    ).toBe(true);
+  });
+
+  it('blocks sendFollowUp with a clear error on an active project', async () => {
+    const skills = makeSkillFetcher();
+    let transportCalled = false;
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport: async () => {
+        transportCalled = true;
+        return { content: 'unused' };
+      },
+      skillFetcher: skills.fetcher,
+      canFunctionCall: () => false,
+    });
+
+    await agent.sendFollowUp('make it bigger');
+
+    expect(transportCalled).toBe(false);
+    expect(h.active?.phase).toBe('error');
+    expect(
+      h.active?.messages.some((m) => m.role === 'error' && /function calling/i.test(m.content))
+    ).toBe(true);
+  });
+
+  it('exposes canUseFunctionCalling from the injected dep', () => {
+    const skills = makeSkillFetcher();
+    const h = makeHost();
+    const supported = createSlideAgent(h.host, {
+      providerConfig,
+      skillFetcher: skills.fetcher,
+      canFunctionCall: () => true,
+    });
+    const blocked = createSlideAgent(h.host, {
+      providerConfig,
+      skillFetcher: skills.fetcher,
+      canFunctionCall: () => false,
+    });
+    expect(supported.canUseFunctionCalling()).toBe(true);
+    expect(blocked.canUseFunctionCalling()).toBe(false);
+  });
+
+  it('defaults to the pure provider check when canFunctionCall is not injected', () => {
+    const skills = makeSkillFetcher();
+    const h = makeHost();
+    // 'test-model' on a non-Gemini ('custom') provider → function calling enabled.
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      skillFetcher: skills.fetcher,
+    });
+    expect(agent.canUseFunctionCalling()).toBe(true);
+  });
+});

@@ -36,7 +36,7 @@ const TAB_META: Record<PlanFile, { label: string; hint: string }> = {
  * drives `updatePlanFile` (edit save) and `requestBuild` (Build CTA). It is
  * rendered in both the wide rail and narrow dock so a ready plan is reachable.
  */
-export function PlanReview({ onBuild }: { onBuild?: () => void }) {
+export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked?: boolean }) {
   const activeProject = useSlideStore((s) => s.activeProject);
   const phase = useSlideStore((s) => s.phase);
   const busy = useSlideStore((s) => s.busy);
@@ -59,8 +59,9 @@ export function PlanReview({ onBuild }: { onBuild?: () => void }) {
   /** True when the active tab has unsaved local edits. */
   const dirty = editing && draft !== fileContent;
 
-  /** Build is blocked unless plan_ready AND both brief + design are non-empty. */
-  const canBuild = phase === 'plan_ready' && hasValidPlanFiles(files);
+  /** Build is blocked unless plan_ready AND both brief + design are non-empty
+   *  AND the model can drive the tool loop (US-032). */
+  const canBuild = phase === 'plan_ready' && hasValidPlanFiles(files) && !blocked;
 
   function beginEdit() {
     setDraft(fileContent);
@@ -196,7 +197,13 @@ export function PlanReview({ onBuild }: { onBuild?: () => void }) {
               disabled={!canBuild || busy}
               onClick={handleBuild}
               className="h-8 min-w-[7.5rem]"
-              title={!canBuild ? 'Add a brief and design before building' : undefined}
+              title={
+                blocked
+                  ? 'Your model cannot use the tools required to build'
+                  : !canBuild
+                    ? 'Add a brief and design before building'
+                    : undefined
+              }
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Hammer size={13} />}
               Build slides
@@ -205,7 +212,12 @@ export function PlanReview({ onBuild }: { onBuild?: () => void }) {
         )}
       </div>
 
-      {!canBuild && !editing && (
+      {blocked && !editing && (
+        <p className="border-t border-border/60 px-3 py-1.5 text-[10px] text-amber-300/90">
+          This model can’t use tools — switch to a function-calling model to build.
+        </p>
+      )}
+      {!canBuild && !editing && !blocked && (
         <p className="border-t border-border/60 px-3 py-1.5 text-[10px] text-muted-foreground/70">
           Add both a brief and a design to unlock build.
         </p>

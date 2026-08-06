@@ -14,6 +14,7 @@ import {
   PaperclipIcon,
   ImagePlus,
   History,
+  AlertTriangle,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
@@ -231,14 +232,18 @@ function Composer({
   onStop,
   busy,
   placeholder,
+  blocked,
+  blockedHint,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
   busy: boolean;
   placeholder: string;
+  blocked?: boolean;
+  blockedHint?: string;
 }) {
   const [value, setValue] = useState('');
-  const disabled = busy || !value.trim();
+  const disabled = busy || !value.trim() || blocked;
 
   function submit() {
     if (disabled) return;
@@ -248,6 +253,15 @@ function Composer({
 
   return (
     <div className="shrink-0 border-t border-border/70 bg-muted/30 p-3">
+      {blocked && (
+        <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-2xs leading-relaxed text-amber-200/90">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-300" />
+          <span>
+            {blockedHint ??
+              'Your current model cannot use the tools Slide Creator requires. Switch to a function-calling model in Settings to plan or edit decks.'}
+          </span>
+        </div>
+      )}
       <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 hover:border-border">
         <textarea
           rows={2}
@@ -260,7 +274,8 @@ function Composer({
               submit();
             }
           }}
-          placeholder={placeholder}
+          placeholder={blocked ? 'Function calling required to plan decks' : placeholder}
+          disabled={blocked}
           className="w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:cursor-not-allowed"
         />
 
@@ -390,6 +405,7 @@ function ChatRail({
   historyOpen,
   onHistory,
   placeholder,
+  blocked,
 }: {
   railOpen: boolean;
   onClose: () => void;
@@ -401,6 +417,7 @@ function ChatRail({
   historyOpen: boolean;
   onHistory: (open: boolean) => void;
   placeholder: string;
+  blocked?: boolean;
 }) {
   const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
   return (
@@ -472,7 +489,7 @@ function ChatRail({
                       onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
                     />
                   ) : activeProject && phase === 'plan_ready' ? (
-                    <PlanReview onBuild={onBuild} />
+                    <PlanReview onBuild={onBuild} blocked={blocked} />
                   ) : activeProject ? (
                     <Transcript messages={messages} />
                   ) : (
@@ -484,6 +501,7 @@ function ChatRail({
                   onStop={onStop}
                   busy={busy}
                   placeholder={placeholder}
+                  blocked={blocked}
                 />
               </>
             )}
@@ -506,6 +524,7 @@ function ChatDock({
   onBuild,
   onAnswer,
   placeholder,
+  blocked,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -514,6 +533,7 @@ function ChatDock({
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
   placeholder: string;
+  blocked?: boolean;
 }) {
   const { activeProject, messages, pendingAsk, busy, phase } = useSlideStore();
   const [dockValue, setDockValue] = useState('');
@@ -543,7 +563,7 @@ function ChatDock({
               onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
             />
           ) : activeProject && phase === 'plan_ready' ? (
-            <PlanReview onBuild={onBuild} />
+            <PlanReview onBuild={onBuild} blocked={blocked} />
           ) : activeProject ? (
             <Transcript messages={messages} />
           ) : (
@@ -555,6 +575,7 @@ function ChatDock({
           onStop={onStop}
           busy={busy}
           placeholder={placeholder}
+          blocked={blocked}
         />
       </div>
     );
@@ -577,13 +598,14 @@ function ChatDock({
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            if (dockValue.trim() && !busy) {
+            if (dockValue.trim() && !busy && !blocked) {
               onSend(dockValue);
               setDockValue('');
             }
           }
         }}
-        placeholder={placeholder}
+        placeholder={blocked ? 'Function calling required' : placeholder}
+        disabled={blocked}
         className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
       />
       {busy ? (
@@ -655,6 +677,10 @@ export function SlideCreatorShell() {
   // Abort the in-flight plan/build/edit and leave a consistent stopped workspace.
   const handleStop = () => agent.stop();
 
+  // US-032: when the active model can't use function-calling tools, block the
+  // composer + build CTA and show a clear notice instead of a silent hang.
+  const blocked = !agent.canUseFunctionCalling();
+
   const back = () => store.closeSlideCreator();
   const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
 
@@ -716,6 +742,7 @@ export function SlideCreatorShell() {
               onBuild={() => void agent.runBuild()}
               onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
               placeholder={promptPlaceholder}
+              blocked={blocked}
             />
           </div>
         ) : (
@@ -731,6 +758,7 @@ export function SlideCreatorShell() {
               historyOpen={historyOpen}
               onHistory={setHistoryOpen}
               placeholder={promptPlaceholder}
+              blocked={blocked}
             />
             <section className="relative min-w-0 flex-1 flex-col">
               <PreviewPane

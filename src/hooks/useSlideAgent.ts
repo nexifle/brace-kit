@@ -13,6 +13,7 @@ import { createSlideAgent } from '../services/slideOrchestrator.ts';
 import { shouldEnableGoogleSearch } from '../services/slideTools.ts';
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
+import { supportsFunctionCalling } from '../providers/presets.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
 import type { MCPTool } from '../types/index.ts';
@@ -57,6 +58,16 @@ export function useSlideAgent() {
         // Spread external-tool sharing (google_search enablement + MCP execution)
         // computed from live main-store settings so sub-agents mirror main chat.
         toolOptions: toolOptionsRef.current,
+        // Live function-calling check (US-032): read the CURRENT provider/model
+        // from the main store so a model switch is reflected instantly, even
+        // though the agent instance itself is created once.
+        canFunctionCall: () => {
+          const s = useStore.getState();
+          const isGemini =
+            s.providerConfig.providerId === 'gemini' || s.providerConfig.format === 'gemini';
+          if (!isGemini) return true;
+          return supportsFunctionCalling(s.providerConfig.model);
+        },
       }
     );
   }
@@ -91,6 +102,7 @@ export function useSlideAgent() {
     sendFollowUp: agentRef.current.sendFollowUp,
     answerAsk: agentRef.current.answerAsk,
     stop: agentRef.current.stop,
+    canUseFunctionCalling: agentRef.current.canUseFunctionCalling,
   };
 }
 
