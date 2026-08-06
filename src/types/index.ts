@@ -621,6 +621,28 @@ export const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
 /** System prompt for conversation title generation (used by auto-rename and /rename command) */
 export const TITLE_GENERATION_SYSTEM_PROMPT = `Generate a short title (max 6 words, no punctuation) for the conversation based on the user messages provided. Match the language of the messages. Output ONLY the title.`;
 
+// ==================== Slide Creator Types ====================
+
+export type {
+  Slide,
+  SlideCanvas,
+  SlideCanvasResolution,
+  SlideDeck,
+  SlideFile,
+  SlideMainMessage,
+  SlideAskField,
+  SlideAskPayload,
+  SlidePendingAsk,
+  SlidePhase,
+  SlideProject,
+  SlideSessionStatus,
+} from './slides.ts';
+export {
+  DEFAULT_SLIDE_CANVAS,
+  SLIDE_CANVAS_PRESETS,
+  SLIDE_PHASE_STATUS_COPY,
+} from './slides.ts';
+
 // ==================== Token Usage Types ====================
 
 // Import for use in AppState
