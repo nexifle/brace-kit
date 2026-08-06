@@ -168,6 +168,7 @@ export const useStore = create<AppState>((set, get) => ({
   showSystemPromptEditor: false,
   mode: 'sidebar',
   railCollapsed: false,
+  slideCreatorOpen: false,
 
   // Security
   security: {
@@ -633,6 +634,9 @@ export const useStore = create<AppState>((set, get) => ({
     set({ railCollapsed });
     chrome.storage.local.set({ railCollapsed }).catch(() => {});
   },
+
+  openSlideCreator: () => set({ slideCreatorOpen: true }),
+  closeSlideCreator: () => set({ slideCreatorOpen: false }),
 
   setHistoryDrawerOpen: (historyDrawerOpen) => set({ historyDrawerOpen }),
 

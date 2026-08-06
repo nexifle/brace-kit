@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/index.ts';
 import { IconButton } from './ui/IconButton.tsx';
 import { Btn } from './ui/Btn.tsx';
-import { MoonIcon, SunIcon, HelpCircleIcon, ExternalLinkIcon, PanelLeftOpenIcon, PanelLeftCloseIcon } from 'lucide-react';
+import { MoonIcon, SunIcon, HelpCircleIcon, ExternalLinkIcon, PanelLeftOpenIcon, PanelLeftCloseIcon, Presentation } from 'lucide-react';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
 import { Logo } from './ui/Logo.tsx';
 import { useChat } from '../hooks';
@@ -53,6 +53,13 @@ export function Header() {
 
   const commonActions = (
     <div className="flex gap-1 items-center">
+      <IconButton
+        title="Slide Creator"
+        onClick={() => store.openSlideCreator()}
+        className="rounded-none!"
+      >
+        <Presentation size={18} />
+      </IconButton>
       <IconButton
         title={store.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         onClick={() => store.setTheme(store.theme === 'dark' ? 'light' : 'dark')}

@@ -7,6 +7,7 @@ import { HistoryDrawer } from './HistoryDrawer.tsx';
 import { GalleryView } from './GalleryView.tsx';
 import { LockScreen } from './LockScreen.tsx';
 import { ConversationRail } from './ConversationRail.tsx';
+import { SlideCreatorShell } from './slides/SlideCreatorShell.tsx';
 import { useStreaming } from '../hooks';
 
 export function App() {
@@ -69,6 +70,21 @@ export function App() {
       </main>
     </>
   );
+
+  // Dedicated Slide Creator workspace replaces the main chat shell entirely.
+  if (store.slideCreatorOpen) {
+    return (
+      <div id="app" className="relative flex h-screen w-full overflow-hidden bg-background text-foreground">
+        {store.isCompacting && (
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center z-[1000] text-white gap-3 animate-in fade-in duration-300">
+            <div className="compacting-spinner"></div>
+            <div className="text-sm font-medium">Summarizing conversation...</div>
+          </div>
+        )}
+        <SlideCreatorShell />
+      </div>
+    );
+  }
 
   return (
     <div

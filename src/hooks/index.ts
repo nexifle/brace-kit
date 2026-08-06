@@ -41,3 +41,4 @@ export { useImageGenerationCheck } from './useImageGenerationCheck.ts';
 export { useQuoteSelection } from './useQuoteSelection.ts';
 export type { QuotePopupState } from './useQuoteSelection.ts';
 export { useMarkdownInteractions } from './useMarkdownInteractions.ts';
+export { useElementSize } from './useElementSize.ts';

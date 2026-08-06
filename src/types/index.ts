@@ -465,6 +465,9 @@ export interface AppState {
   /** Whether the left conversation rail is collapsed in tab mode (persisted) */
   railCollapsed: boolean;
 
+  /** Whether the Slide Creator workspace is open (dedicated mode, not main chat). */
+  slideCreatorOpen: boolean;
+
   // Security
   security: SecuritySettings;
   isAuthenticated: boolean;
@@ -545,6 +548,10 @@ export interface AppState {
   setTheme: (theme: 'light' | 'dark') => void;
   setMode: (mode: 'sidebar' | 'tab') => void;
   setRailCollapsed: (collapsed: boolean) => void;
+
+  /** Enter/leave the dedicated Slide Creator workspace. */
+  openSlideCreator: () => void;
+  closeSlideCreator: () => void;
   setHistoryDrawerOpen: (open: boolean) => void;
   toggleHistoryDrawer: () => void;
   setShowSystemPromptEditor: (show: boolean) => void;

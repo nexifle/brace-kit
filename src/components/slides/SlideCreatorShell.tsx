@@ -1,0 +1,483 @@
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ArrowLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Presentation,
+  ChevronDown,
+  ChevronUp,
+  ArrowUpRight,
+  PaperclipIcon,
+  ImagePlus,
+} from 'lucide-react';
+import { useStore } from '../../store/index.ts';
+import { useSlideStore } from '../../store/slideStore.ts';
+import { Btn } from '../ui/Btn.tsx';
+import { ComposerPicker } from '../ComposerPicker.tsx';
+import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
+import { useElementSize } from '../../hooks/index.ts';
+
+/** Below this container width we collapse to a single-pane + chat drawer. */
+const NARROW_BREAKPOINT = 820;
+
+/* ==================================================================== */
+/* Scale-to-fit slide canvas                                            */
+/* ==================================================================== */
+
+function fitBox(maxW: number, maxH: number, ratio: number, inset: number) {
+  let w = Math.max(maxW - inset, 0);
+  let h = Math.max(maxH - inset, 0);
+  if (w / h > ratio) w = h * ratio;
+  else h = w / ratio;
+  return { width: Math.max(w, 1), height: Math.max(h, 1) };
+}
+
+function PreviewCanvas() {
+  const canvas = useSlideStore((s) => s.canvas);
+  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
+  const { ref, width, height } = useElementSize<HTMLDivElement>();
+  const box = fitBox(width, height, preset.width / preset.height, 56);
+
+  return (
+    <div
+      ref={ref}
+      className="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden"
+    >
+      {/* Soft ambient wash behind the deck (product accent, not decoration). */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-60"
+        style={{
+          background:
+            'radial-gradient(60% 60% at 50% 42%, color-mix(in oklch, var(--color-primary) 9%, transparent), transparent 70%)',
+        }}
+      />
+
+      {/* Deck stack depth motif */}
+      <div className="relative" aria-hidden>
+        <div className="relative flex items-center justify-center">
+          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 h-full w-full rounded-xl border border-border/60 bg-muted/20 -rotate-2" />
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 h-full w-full rounded-xl border border-border/60 bg-muted/30 rotate-1" />
+
+          <div
+            key={canvas}
+            role="img"
+            aria-label="Empty slide preview"
+            className="relative flex flex-col items-center justify-center rounded-xl border border-border bg-background shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] overflow-hidden animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none"
+            style={{ width: box.width, height: box.height }}
+          >
+            {/* Accent top edge on the "slide" */}
+            <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-primary to-primary/40" />
+
+            <div className="flex flex-col items-center text-center gap-4 px-8">
+              <div className="relative">
+                <span className="absolute inset-0 rounded-2xl bg-primary/25 blur-lg" aria-hidden />
+                <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-primary text-primary-foreground shadow-lg">
+                  <Presentation size={24} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground tracking-tight">
+                  Your slides preview
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed max-w-[260px]">
+                  Describe a deck and the agent will plan, build, and render it right here.
+                </p>
+              </div>
+              <Btn
+                variant="outline"
+                size="sm"
+                className="rounded-full! gap-1.5 mt-1 opacity-80"
+                onClick={() => {}}
+              >
+                Start a deck
+                <ArrowUpRight size={14} />
+              </Btn>
+            </div>
+
+            {/* Bottom-page dot navigation (hidden until slides exist) */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 opacity-40">
+              {[0, 1].map((i) => (
+                <span
+                  key={i}
+                  className="h-1 rounded-full bg-foreground/40"
+                  style={{ width: i === 0 ? 16 : 6 }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewPane({
+  showRailToggle,
+  railOpen,
+  onToggleRail,
+}: {
+  showRailToggle?: boolean;
+  railOpen?: boolean;
+  onToggleRail?: () => void;
+}) {
+  const busy = useSlideStore((s) => s.busy);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center justify-between pl-2 pr-3 h-11 border-b border-border/70 bg-background/70 backdrop-blur-sm shrink-0">
+        <div className="flex items-center gap-1 min-w-0">
+          {showRailToggle && (
+            <button
+              type="button"
+              onClick={onToggleRail}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title={railOpen ? 'Hide chat' : 'Show chat'}
+              aria-label={railOpen ? 'Hide chat' : 'Show chat'}
+            >
+              {railOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+            </button>
+          )}
+          <span className="pl-1 text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Preview
+          </span>
+        </div>
+        {busy ? (
+          <span className="flex items-center gap-1.5 text-2xs font-medium text-primary">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+            Rendering
+          </span>
+        ) : (
+          <span className="text-2xs text-muted-foreground/50">16:9 · 1920×1080</span>
+        )}
+      </div>
+      <PreviewCanvas />
+    </div>
+  );
+}
+
+/* ==================================================================== */
+/* Composer                                                             */
+/* ==================================================================== */
+
+function Composer() {
+  return (
+    <div className="shrink-0 border-t border-border/70 bg-muted/30 p-3">
+      <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 hover:border-border">
+        <textarea
+          rows={2}
+          readOnly
+          disabled
+          placeholder='Describe your deck — try “6 slides for our product launch”'
+          className="w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:cursor-not-allowed"
+        />
+
+        <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              title="Attach file (coming soon)"
+              aria-label="Attach file"
+            >
+              <PaperclipIcon size={12} />
+            </button>
+            <button
+              type="button"
+              disabled
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              title="Add image (coming soon)"
+              aria-label="Add image"
+            >
+              <ImagePlus size={12} />
+            </button>
+          </div>
+
+          <div className="min-w-0 flex-1 px-1">
+            <ComposerPicker />
+          </div>
+
+          <button
+            type="button"
+            disabled
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
+            title="Send (Enter)"
+            aria-label="Send"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V5" />
+              <path d="m5 12 7-7 7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center pt-1.5">
+        <span className="flex items-center gap-1 text-2xs text-muted-foreground/60">
+          <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
+          send
+          <span className="mx-0.5 text-muted-foreground/30">·</span>
+          <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Shift</kbd>
+          <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
+          new line
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function EmptyChat() {
+  return (
+    <div className="flex flex-col items-center text-center gap-3 py-10 px-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10 text-primary">
+        <Presentation size={22} />
+      </div>
+      <p className="text-sm font-semibold text-foreground">No deck yet</p>
+      <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
+        Start by describing your deck. The agent will plan it here before building slides.
+      </p>
+    </div>
+  );
+}
+
+/* ==================================================================== */
+/* Phase chip (animated on change)                                      */
+/* ==================================================================== */
+
+function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
+  const slot = busy ? 'busy' : label;
+  return (
+    <span
+      key={slot}
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-2xs font-semibold uppercase tracking-[0.12em] ${
+        busy
+          ? 'bg-primary/10 text-primary'
+          : 'bg-muted text-muted-foreground'
+      } animate-in fade-in slide-in-from-top-1 duration-200`}
+    >
+      {busy && <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />}
+      <span className="truncate">{busy ? 'Building…' : label}</span>
+    </span>
+  );
+}
+
+/* ==================================================================== */
+/* Wide chat rail (left, collapsible)                                   */
+/* ==================================================================== */
+
+/* ==================================================================== */
+/* Wide chat rail (left, collapsible) — framer-motion like app rail      */
+/* ==================================================================== */
+
+const RAIL_WIDTH = 320;
+
+function ChatRail({ railOpen, onClose }: { railOpen: boolean; onClose: () => void }) {
+  const { activeProject, messages } = useSlideStore();
+  return (
+    <AnimatePresence initial={false}>
+      {railOpen && (
+        <motion.aside
+          key="slide-chat-rail"
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: RAIL_WIDTH, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+          className="h-full shrink-0 overflow-hidden bg-background"
+        >
+          <div className="flex h-full w-[320px] shrink-0 flex-col border-r border-border/70 bg-background">
+            <div className="flex items-center justify-between px-3 h-11 border-b border-border/70 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary shrink-0">
+                  <Plus size={13} />
+                </span>
+                <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground truncate">
+                  Project
+                </span>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  title="New deck (coming soon)"
+                >
+                  <Plus size={14} />
+                  New
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  title="Hide chat"
+                  aria-label="Hide chat"
+                >
+                  <PanelLeftClose size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
+              {activeProject ? (
+                <p className="text-sm text-foreground/90 leading-relaxed">
+                  {messages.length > 0
+                    ? 'Your deck session is ready. Follow-up edits will refine the slides.'
+                    : 'Plan is underway — the agent will draft a brief and design.'}
+                </p>
+              ) : (
+                <EmptyChat />
+              )}
+            </div>
+            <Composer />
+          </div>
+        </motion.aside>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/* ==================================================================== */
+/* Narrow chat drawer (bottom sheet over preview)                       */
+/* ==================================================================== */
+
+function ChatDock({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { activeProject, messages } = useSlideStore();
+
+  if (open) {
+    return (
+      <div className="absolute inset-x-0 bottom-0 z-20 flex h-[62%] flex-col rounded-t-2xl border-t border-border bg-background shadow-[0_-8px_40px_-8px_rgba(0,0,0,0.3)] animate-in slide-in-from-bottom-full duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none">
+        <div className="flex items-center justify-between px-4 h-11 border-b border-border/70 shrink-0">
+          <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Conversation
+          </span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <ChevronDown size={15} />
+            View deck
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+          {activeProject ? (
+            <p className="text-sm text-foreground/90 leading-relaxed">
+              {messages.length > 0
+                ? 'Your deck session is ready. Follow-up edits will refine the slides.'
+                : 'Plan is underway — the agent will draft a brief and design.'}
+            </p>
+          ) : (
+            <EmptyChat />
+          )}
+        </div>
+        <Composer />
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-x-3 bottom-3 z-20 flex items-end gap-2 rounded-2xl border border-border bg-background/95 backdrop-blur-md px-2.5 py-2 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.3)] animate-in fade-in slide-in-from-bottom-2 duration-300 motion-reduce:animate-none">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center justify-center w-7 h-7 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+        title="Open conversation"
+        aria-label="Open conversation"
+      >
+        <ChevronUp size={15} />
+      </button>
+      <input
+        readOnly
+        disabled
+        placeholder="Describe your deck…"
+        className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
+      />
+      <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm opacity-50">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 19V5" />
+          <path d="m5 12 7-7 7 7" />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
+/* ==================================================================== */
+/* Shell                                                                */
+/* ==================================================================== */
+
+export function SlideCreatorShell() {
+  const store = useStore();
+  const { phase, busy, activeProject } = useSlideStore();
+  const { ref, width } = useElementSize<HTMLDivElement>();
+
+  const back = () => store.closeSlideCreator();
+  const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
+
+  const narrow = width !== 0 && width < NARROW_BREAKPOINT;
+  const [chatOpen, setChatOpen] = useState(false);
+  const [railOpen, setRailOpen] = useState(true);
+
+  return (
+    <div
+      ref={ref}
+      className="relative flex h-full w-full flex-col overflow-hidden bg-background animate-in fade-in duration-300 motion-reduce:animate-none"
+    >
+      {/* Header */}
+      <header className="relative z-30 flex items-center justify-between gap-2 px-2.5 h-12 border-b border-border/70 bg-background/80 backdrop-blur-md shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <button
+            type="button"
+            onClick={back}
+            className="group flex h-7 shrink-0 items-center justify-center rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Back to main"
+            aria-label="Back to main"
+          >
+            <ArrowLeft size={16} className="transition-transform duration-200 group-hover:-translate-x-0.5" />
+          </button>
+
+          <div className="flex items-center text-white justify-center w-7 h-7 rounded-lg bg-primary p-1 shadow-sm text-primary-foreground shrink-0">
+            <Presentation size={15} />
+          </div>
+
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold text-sm tracking-tight text-foreground whitespace-nowrap">
+              Slide Creator
+            </span>
+            <PhaseChip busy={busy && !!activeProject} label={phaseLabel} />
+          </div>
+        </div>
+      </header>
+
+      {/* Body */}
+      <div className="relative flex min-h-0 flex-1">
+        {narrow ? (
+          /* Preview stays put; chat is a transient bottom sheet. */
+          <div className="relative min-w-0 flex-1">
+            <PreviewPane />
+            <ChatDock
+              open={chatOpen}
+              onToggle={() => setChatOpen((o) => !o)}
+            />
+          </div>
+        ) : (
+          <>
+            <ChatRail
+              railOpen={railOpen}
+              onClose={() => setRailOpen(false)}
+            />
+            <section className="relative min-w-0 flex-1 flex-col">
+              <PreviewPane
+                showRailToggle={!railOpen}
+                railOpen={railOpen}
+                onToggleRail={() => setRailOpen((o) => !o)}
+              />
+            </section>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
