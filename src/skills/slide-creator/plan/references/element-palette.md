@@ -20,7 +20,7 @@ every element to choose from, when it's appropriate, and how to style it.
   catalog.
 
 > Canvas note: sizes below assume a ~1080-wide canvas; **scale up/down with the
-> actual canvas** (a `9_16` portrait or a `16_9` landscape re-weights spacing and
+> actual canvas** (a `9:16` portrait or a `16:9` landscape re-weights spacing and
 > type). The ratio is what matters, not absolute pixels.
 
 ---
@@ -140,7 +140,7 @@ Built-in charts and diagram scaffolding. Keep each simple; one per slide max.
   - *Style:* identical panels so the difference reads in content; one side gets
     the accent tint to mark the winner/right way.
 - **Progress indicator** — the "3/10" counter or a thin progress bar.
-  - *Use when:* near-mandatory on any multi-slide deck (see deck-structure).
+  - *Use when:* near-mandatory on any multi-slide deck (see `deck-structure.md`).
   - *Style:* numerals bottom corner; optional slim rail in accent.
 
 ## 5. Media & imagery devices

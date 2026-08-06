@@ -16,7 +16,8 @@ data-forward tech aesthetic with a neon accent").
 
 ## Canvas & Layout System
 - Canvas: <width>×<height> (<aspect>) — must match /deck.json
-- Safe zone: <inner bounds, margins — e.g. ~40–90px on a 1080-wide canvas>
+- Safe zone: <inner bounds — roughly 4–9% of the canvas width for margins,
+  scaled to the deck, kept clear of any edge UI chrome>
 - Margins & spacing scale: <consistent spacing values>
 - Grid / layout template: <how slides are consistently laid out>
 

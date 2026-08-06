@@ -2,7 +2,7 @@
 
 Read this before writing `/brief.md` or `/design.md`. It captures what deck
 research says about attention, retention, and visual design, generalized across
-aspect ratios (the Slide Creator is canvas-agnostic — `16_9`, `4_5`, `9_16`, …).
+aspect ratios (the Slide Creator is canvas-agnostic — `16:9`, `4:5`, `9:16`, …).
 Use it so the plan is *defensible*: every choice should trace back to a principle
 here. When research tools are available, refresh/augment these with current
 sources; this is the durable baseline, not the last word.
@@ -42,7 +42,8 @@ stop the scroll, the rest doesn't exist.
 - Treat slide 2 as a **standalone hook** — a re-serve / re-show may present it to
   someone who never saw slide 1, so no slide should depend on a previous one.
 - Use **open loops between slides** — tease the next slide ("slide 6 is where
-  most decks go wrong →") to lift completion.
+  most decks go wrong →") to lift completion. Let no slide fully resolve —
+  keep a thread dangling until the closing slide.
 - **Slide count:** the sweet spot is **7–10**. Fewer than 5 is too shallow; 10+
   craters completion. Keep mid-slides tight (engagement sags in the middle).
 - **Continue + progress indicators:** a "3/10" counter and a small
@@ -59,8 +60,9 @@ stop the scroll, the rest doesn't exist.
 - Use **one aspect ratio per deck** — the opening slide's ratio locks the whole
   deck; mixing ratios force-crops everything to match.
 - Keep critical content (text, logos, faces) inside a **safe zone** with clear
-  margins (~40–90px on a 1080-wide canvas) for device cropping and any UI
-  chrome (slide counter, dots).
+  margins roughly **4–9% of the canvas width** (e.g. ~40–90px on a 1080-wide
+  canvas), scaled to the deck, for device cropping and any UI chrome (slide
+  counter, dots).
 
 ### Typography — hierarchy is the #1 design lever
 - Minimum ~40px type on a 1080-wide canvas (24pt body / 36pt+ headings); scale

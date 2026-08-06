@@ -13,7 +13,8 @@ Draw the decorative elements named below from the `element-palette.md` catalog.
 - Audience: ...
 - Goal: ...
 - Slide count: N
-- Canvas / aspect: <e.g. 16_9, 4_5, 9_16 — must match /deck.json>
+- Canvas / aspect: <e.g. 16:9, 4:5, 9:16, 1:1 — must equal the `canvas` value in
+  /deck.json>
 - Variants per slide: M (if the user asked for variants; omit otherwise)
 
 ## Slide Arc

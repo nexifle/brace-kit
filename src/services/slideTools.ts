@@ -110,7 +110,7 @@ const SUBMIT_PLAN_TOOL: MCPTool = {
       },
       canvas: {
         type: 'string',
-        description: 'Chosen canvas preset key (e.g. "16_9"), if not already decided.',
+        description: 'Chosen canvas preset key (e.g. "16:9", "4:5", "9:16", "1:1"), if not already decided.',
       },
     },
   },

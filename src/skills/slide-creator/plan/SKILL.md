@@ -35,7 +35,8 @@ changes the brief (slide count, hook structure, CTA placement) and the design
 (colors, fonts, vibe).
 
 - Read `references/deck-structure.md` — the slide-deck story arc you will lay
-  your slides on.
+  your slides on. If research is available, refresh these principles with current
+  sources before drafting — they are the durable baseline, not the last word.
 - Read `references/element-palette.md` — the element library you will draw from
   to make every slide visually rich, not just text.
 - Research the **topic/niche itself**: what the audience responds to, current
@@ -50,8 +51,10 @@ Before writing, pin down what the user actually wants. Use `ask` **only** for
 facts the prompt hasn't already answered (see the ask policy below):
 
 - **Slide count** — or infer from the content depth.
-- **Canvas / aspect** — from `/deck.json` if already set; otherwise the user's
-  choice (e.g. `16_9`, `4_5`, `9_16`).
+- **Variants per slide** — only if the user implied or asked for variants; the
+  count is whatever the user decides (1, 2, or more — don't assume a default).
+- **Canvas / aspect** — the canvas preset key (`16:9`, `4:5`, `9:16`, `1:1`) from
+  `/deck.json` if already set; otherwise the user's choice.
 - **Topic / niche / theme.**
 - **Audience** — who this is for.
 - **Purpose / goal** — education, lead gen, brand awareness, engagement, etc.
@@ -79,7 +82,8 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
 - You MAY create/update only `apply_patch`-allowlisted **plan** paths:
   - `/brief.md`
   - `/design.md`
-  - `/deck.json` (deck meta only — canvas, aspect, title; not slide HTML)
+  - `/deck.json` (deck meta only — set the `canvas` preset key plus title; not
+    slide HTML)
 - **You MUST NOT write `/slides/**`** (no slide HTML/CSS). That is the build
   phase's job. Any attempt to create or patch a file under `/slides/` is denied
   by the harness and returns `status: failed`.
@@ -130,8 +134,8 @@ Once **both** `/brief.md` and `/design.md` exist, are consistent with the user's
 direction, and every open clarification has been answered, call `submit_plan`:
 
 - `summary`: a short (2–3 sentence) plan summary for the user-facing review panel.
-- `canvas`: the chosen canvas preset key (e.g. `16_9`) if not already settled in
-  `/deck.json`.
+- `canvas`: the exact canvas preset key (`16:9`, `4:5`, `9:16`, `1:1`), matching
+  `/deck.json`, if not already settled there.
 
 Do NOT call `submit_plan` while a question is unanswered, and do NOT auto-start
 the build phase — build only happens after the user reviews and approves in the
