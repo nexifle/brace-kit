@@ -330,6 +330,44 @@ describe('buildSlideChatItems — full step retention', () => {
     expect(items.some((x) => x.type === 'action' && x.event.toolName === 'list_files')).toBe(true);
   });
 
+  it('does not duplicate a final response that is both round content and an assistant transcript message', () => {
+    const finalText =
+      'Done — the cover now uses the coffee-brown palette and the CTA is back on slide 8.';
+    const items = buildSlideChatItems({
+      messages: [
+        msg({ id: 'u1', role: 'user', content: 'fix the cover', createdAt: 10 }),
+        msg({ id: 'a1', role: 'assistant', content: finalText, createdAt: 900 }),
+      ],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'edit', label: 'Editing', ts: 20, status: 'running' }),
+        ev({
+          id: 'edit_round_1',
+          type: 'model_round_started',
+          round: 1,
+          ts: 100,
+          status: 'completed',
+          detail: 'Checking the cover template first.',
+          content: finalText,
+        }),
+        ev({ id: 'pc', type: 'phase_completed', phase: 'edit', label: 'Updates applied', ts: 200 }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'ready',
+      pendingAsk: false,
+    });
+
+    const prose = items.filter(
+      (x) => x.type === 'prose' && x.content === finalText,
+    );
+    // The final response is rendered exactly once — from the transcript message,
+    // not again from the completed round's content.
+    expect(prose).toHaveLength(1);
+    // Mid-round reasoning (round detail) stays durable regardless.
+    expect(
+      items.some((x) => x.type === 'reasoning' && !x.live && x.content?.includes('cover template')),
+    ).toBe(true);
+  });
+
   it('places mid-round assistant prose before later tools (chronological)', () => {
     const items = buildSlideChatItems({
       messages: [msg({ id: 'u', role: 'user', content: 'build deck', createdAt: 1 })],

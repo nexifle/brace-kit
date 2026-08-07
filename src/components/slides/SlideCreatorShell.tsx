@@ -18,6 +18,7 @@ import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
 import { useSlideAgent } from '../../hooks/useSlideAgent.ts';
 import { Btn } from '../ui/Btn.tsx';
+import { Logo } from '../ui/Logo.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
 import { slideComposerCanSend, slideComposerPlaceholder } from '../../utils/slideComposer.ts';
 import { collectFilesTouched } from '../../utils/slideFilesTouched.ts';
@@ -624,12 +625,14 @@ export function SlideCreatorShell() {
             <ArrowLeft size={16} className="transition-transform duration-200 group-hover:-translate-x-0.5" />
           </button>
 
-          <div className="flex items-center text-white justify-center w-7 h-7 rounded-lg bg-primary p-1 shadow-sm text-primary-foreground shrink-0">
-            <Presentation size={15} />
-          </div>
-
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-semibold text-sm tracking-tight text-foreground whitespace-nowrap">
+            <div className="flex items-center text-white justify-center w-7 h-7 bg-primary p-1 shadow-sm text-primary-foreground shrink-0">
+              <Logo />
+            </div>
+            <span className="font-bold text-base tracking-tight text-foreground whitespace-nowrap">
+              BraceKit
+            </span>
+            <span className="inline-flex items-center text-2xs font-mono uppercase tracking-[0.25em] text-muted-foreground/70 border-l border-border pl-3 truncate">
               Slide Creator
             </span>
             <PhaseChip busy={busy && !!activeProject} label={phaseLabel} />

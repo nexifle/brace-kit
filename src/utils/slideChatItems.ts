@@ -316,6 +316,19 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
   const items: SlideChatItem[] = [];
   const usedMessageIds = new Set<string>();
 
+  // Final narrations the orchestrator already landed on the transcript
+  // (assistant/summary). A completed model round's prose must only render when
+  // it is NOT also narrated as such a message — the orchestrator appends the
+  // final turn's exact text as the assistant message, so rendering it a second
+  // time from the round's `content` would duplicate the final response. Mid-round
+  // prose (text before tool calls) is never in `messages` and is preserved.
+  const narratedContents = new Set(
+    messages
+      .filter((m) => isProseMessage(m))
+      .map((m) => m.content.trim())
+      .filter(Boolean),
+  );
+
   // Activity is the spine for agent steps; messages supply user bubbles + prose.
   // Interleave by timestamp within a simple two-pointer merge after expanding
   // activity into items, while always emitting user messages in order.
@@ -402,7 +415,7 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
             content: reasoningBody,
           });
         }
-        if (proseBody) {
+        if (proseBody && !narratedContents.has(proseBody)) {
           items.push({
             type: 'prose',
             id: `round_prose_${ev.id}_${ev.ts}`,
