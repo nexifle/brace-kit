@@ -91,6 +91,21 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
 - Use **small, focused diffs**, one operation per `apply_patch` call.
 - Value dumps belong in the files, NOT in chat prose. Keep narrative turns short;
   the content goes into `/brief.md` and `/design.md`.
+- **`apply_patch` args are FLAT** (do not nest under `operation`):
+
+  ```json
+  { "type": "create_file", "path": "/brief.md", "diff": "+# Deck Brief\n+body\n" }
+  ```
+
+- **`create_file` V4A format:** every content line in `diff` should start with
+  `+`. Example body:
+
+  ```
+  +# Deck Brief
+  +
+  +## Slide 01 — Hook
+  +- Headline: "Your 5-word hook"
+  ```
 
 ## `ask` usage policy
 

@@ -40,16 +40,54 @@ describe('seekSequence', () => {
   });
 });
 
-describe('applyDiff create (full file from empty)', () => {
-  test('creates a full multi-line file from + lines', () => {
+describe('applyDiff create (mode: create)', () => {
+  test('creates a full multi-line file from + lines (with optional @@ header)', () => {
     const diff = '@@\n+<section class="slide">\n+  <h1>Hook</h1>\n+</section>\n';
-    expect(applyDiff('', diff)).toEqual({
+    expect(applyDiff('', diff, 'create')).toEqual({
       ok: true,
       text: '<section class="slide">\n  <h1>Hook</h1>\n</section>\n',
     });
   });
 
-  test('rejects an empty diff', () => {
+  test('creates from + lines without @@ (OpenAI SDK create shape)', () => {
+    expect(applyDiff('', '+# Title\n+- bullet\n+body\n', 'create')).toEqual({
+      ok: true,
+      text: '# Title\n- bullet\nbody\n',
+    });
+  });
+
+  test('accepts bare raw body when no + prefixes (first-try recovery)', () => {
+    const bare = '# Single-Origin Ethiopian Blend — Slide Brief\n\n## Slide 01\n- Hook line\n';
+    expect(applyDiff('', bare, 'create')).toEqual({
+      ok: true,
+      text: bare.endsWith('\n') ? bare : bare + '\n',
+    });
+  });
+
+  test('accepts bare body after a stray @@ header', () => {
+    const res = applyDiff(
+      '',
+      '@@\n# Single-Origin Ethiopian Blend — Slide Brief\n- item\n',
+      'create',
+    );
+    expect(res).toEqual({
+      ok: true,
+      text: '# Single-Origin Ethiopian Blend — Slide Brief\n- item\n',
+    });
+  });
+
+  test('rejects mixed + and bare content lines', () => {
+    const res = applyDiff('', '+# Title\nplain line without plus\n', 'create');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain('Invalid Add File Line');
+  });
+
+  test('rejects an empty create diff', () => {
+    expect(applyDiff('', '', 'create')).toEqual({ ok: false, error: 'Error: empty diff' });
+    expect(applyDiff('', '@@\n', 'create')).toEqual({ ok: false, error: 'Error: empty diff' });
+  });
+
+  test('default mode still rejects empty update diffs', () => {
     expect(applyDiff('existing', '')).toEqual({ ok: false, error: 'Error: empty diff' });
     expect(applyDiff('existing', '@@\n')).toEqual({ ok: false, error: 'Error: empty diff' });
   });

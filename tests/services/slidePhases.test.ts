@@ -132,6 +132,39 @@ describe('runPlanPhase', () => {
     expect(result.files.find((f) => f.path === '/design.md')?.content).toContain('dark theme');
   });
 
+  it('accepts flat apply_patch args (no nested operation) from the model', async () => {
+    // Frontier models emit { type, path, diff } for function tools — not nested under operation.
+    const { transport } = makeTransport([
+      () => ({
+        content: 'drafting',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({ type: 'create_file', path: '/brief.md', diff: '+title: Flat args work\n' }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({ type: 'create_file', path: '/design.md', diff: '+dark theme\n' }),
+          ),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'Done.', canvas: '16:9' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'plan skill',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+    });
+
+    expect(result.status).toBe('plan_ready');
+    expect(result.files.find((f) => f.path === '/brief.md')?.content).toContain('Flat args work');
+    expect(result.files.find((f) => f.path === '/design.md')?.content).toContain('dark theme');
+  });
+
   it('returns plan_ready when both plan files are valid even without submit_plan', async () => {
     const { transport } = makeTransport([
       () => ({

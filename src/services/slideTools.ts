@@ -79,31 +79,36 @@ const READ_FILE_TOOL: MCPTool = {
 const APPLY_PATCH_TOOL: MCPTool = {
   name: 'apply_patch',
   description:
-    'Create, update, or delete a file in the project workspace using a structured patch. Prefer small focused updates. Read the file before update_file when unsure of current contents. One operation per call. This is the only tool that can change project files.',
+    'Create, update, or delete ONE project file per call (sole write tool). ' +
+    'Pass flat arguments — NOT nested under "operation": ' +
+    '{ "type": "create_file", "path": "/brief.md", "diff": "+# Title\\n+body\\n" }. ' +
+    'create_file: full new file; every content line in diff starts with "+". ' +
+    'update_file: V4A hunks with "@@" and " "/"+"/"-" lines; read_file first. ' +
+    'delete_file: path only (omit diff). Prefer small focused patches.',
   inputSchema: {
     type: 'object',
+    // Flat schema matches how models call function tools (and OpenAI operation
+    // fields). Nested `{ operation: { ... } }` is still accepted by the parser.
     properties: {
-      operation: {
-        type: 'object',
-        properties: {
-          type: {
-            type: 'string',
-            enum: ['create_file', 'update_file', 'delete_file'],
-          },
-          path: {
-            type: 'string',
-            description: 'Absolute project path, e.g. /slides/01.html',
-          },
-          diff: {
-            type: 'string',
-            description:
-              'V4A-style diff. Required for create_file and update_file. Omit for delete_file.',
-          },
-        },
-        required: ['type', 'path'],
+      type: {
+        type: 'string',
+        enum: ['create_file', 'update_file', 'delete_file'],
+        description:
+          'create_file = new path (fails if exists); update_file = patch existing; delete_file = remove path.',
+      },
+      path: {
+        type: 'string',
+        description: 'Absolute project path, e.g. /slides/01.html or /brief.md',
+      },
+      diff: {
+        type: 'string',
+        description:
+          'V4A diff body. create_file: one "+" line per file line, e.g. "+line one\\n+line two\\n". ' +
+          'update_file: "@@" sections with context (" "), additions ("+"), deletions ("-"). ' +
+          'Omit for delete_file.',
       },
     },
-    required: ['operation'],
+    required: ['type', 'path'],
   },
 };
 

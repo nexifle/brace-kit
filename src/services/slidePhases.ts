@@ -43,6 +43,7 @@ import {
 } from './agentSession.ts';
 import {
   applyPatchOperation,
+  parseApplyPatchArgs,
   type SlidePatchOperation,
 } from './applyPatchHarness.ts';
 import { getSlideFile, rebuildDeckProjection } from '../utils/slideVfs.ts';
@@ -65,10 +66,7 @@ import {
 
 // ==================== Plan phase ====================
 
-/** Parsed `apply_patch` arguments: either `{ operation }` or a bare operation. */
-interface ApplyPatchArgs {
-  operation?: SlidePatchOperation;
-}
+
 
 /** Arguments accepted by the `ask` tool (PRD Appendix A). */
 interface AskArgs {
@@ -130,17 +128,48 @@ interface ActivityArgs {
 /** Parse the label-relevant bits from a tool call's `arguments` JSON. */
 function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
   const parsed = args<Record<string, unknown>>(toolCall);
-  const op = parsed?.operation as Partial<SlidePatchOperation> | undefined;
+  const patch = parseApplyPatchArgs(parsed);
   return {
-    path:
-      typeof op?.path === 'string'
-        ? op.path
-        : typeof parsed?.path === 'string'
-          ? (parsed.path as string)
-          : undefined,
-    patchOp: op && typeof op.type === 'string' ? (op.type as SlidePatchOpLabel) : undefined,
+    path: patch.ok
+      ? patch.operation.path
+      : typeof parsed?.path === 'string'
+        ? (parsed.path as string)
+        : undefined,
+    patchOp: patch.ok ? (patch.operation.type as SlidePatchOpLabel) : undefined,
     query: typeof parsed?.query === 'string' ? (parsed.query as string) : undefined,
   };
+}
+
+/**
+ * Dispatch `apply_patch` for a phase: parse flat or nested args, apply under
+ * the phase allowlist, adopt files on success, emit activity.
+ */
+function dispatchApplyPatch(
+  toolCall: ToolCall,
+  round: number,
+  phase: SlidePatchPhase,
+  currentFiles: import('../types/slides.ts').SlideFile[],
+  onFilesChange: ((files: import('../types/slides.ts').SlideFile[]) => void) | undefined,
+  emitter: ReturnType<typeof createActivityEmitter>,
+): { content: string } {
+  const row = emitter.started(toolCall, round);
+  const parsed = parseApplyPatchArgs(args<unknown>(toolCall));
+  if (!parsed.ok) {
+    emitter.failed(row, parsed.error);
+    return { content: parsed.error };
+  }
+  const op = parsed.operation;
+  const result = applyPatchOperation(currentFiles, phase, op);
+  if (result.status === 'completed' && result.files) {
+    currentFiles.length = 0;
+    currentFiles.push(...result.files);
+    onFilesChange?.(currentFiles);
+    emitter.complete(row);
+    if (op.path) emitter.fileChanged(op.type, op.path, round);
+  } else {
+    emitter.failed(row, result.output);
+  }
+  return { content: result.output };
 }
 
 /**
@@ -491,25 +520,15 @@ function buildPlanSession(params: PlanPhaseParams) {
         else emitter.complete(row);
         return { content };
       }
-      case 'apply_patch': {
-        const row = emitter.started(toolCall, round);
-        const op = args<ApplyPatchArgs>(toolCall).operation;
-        if (!op) {
-          emitter.failed(row, 'apply_patch requires an "operation" argument.');
-          return { content: 'Error: apply_patch requires an "operation" argument.' };
-        }
-        const result = applyPatchOperation(currentFiles, 'plan', op);
-        if (result.status === 'completed' && result.files) {
-          currentFiles.length = 0;
-          currentFiles.push(...result.files);
-          params.onFilesChange?.(currentFiles);
-          emitter.complete(row);
-          if (op.path) emitter.fileChanged(op.type, op.path, round);
-        } else {
-          emitter.failed(row, result.output);
-        }
-        return { content: result.output };
-      }
+      case 'apply_patch':
+        return dispatchApplyPatch(
+          toolCall,
+          round,
+          'plan',
+          currentFiles,
+          params.onFilesChange,
+          emitter,
+        );
       case 'ask': {
         const pendingAsk = buildPendingAsk(toolCall);
         // Row id = pendingAsk id so a resume can close it + emit ask_answered.
@@ -662,25 +681,15 @@ function buildBuildSession(params: BuildPhaseParams) {
         else emitter.complete(row);
         return { content };
       }
-      case 'apply_patch': {
-        const row = emitter.started(toolCall, round);
-        const op = args<ApplyPatchArgs>(toolCall).operation;
-        if (!op) {
-          emitter.failed(row, 'apply_patch requires an "operation" argument.');
-          return { content: 'Error: apply_patch requires an "operation" argument.' };
-        }
-        const result = applyPatchOperation(currentFiles, 'build', op);
-        if (result.status === 'completed' && result.files) {
-          currentFiles.length = 0;
-          currentFiles.push(...result.files);
-          params.onFilesChange?.(currentFiles);
-          emitter.complete(row);
-          if (op.path) emitter.fileChanged(op.type, op.path, round);
-        } else {
-          emitter.failed(row, result.output);
-        }
-        return { content: result.output };
-      }
+      case 'apply_patch':
+        return dispatchApplyPatch(
+          toolCall,
+          round,
+          'build',
+          currentFiles,
+          params.onFilesChange,
+          emitter,
+        );
       case 'google_search':
         return emitExternalActivity(params, emitter, toolCall, round);
       default:
@@ -868,25 +877,15 @@ function buildEditSession(params: EditPhaseParams) {
         else emitter.complete(row);
         return { content };
       }
-      case 'apply_patch': {
-        const row = emitter.started(toolCall, round);
-        const op = args<ApplyPatchArgs>(toolCall).operation;
-        if (!op) {
-          emitter.failed(row, 'apply_patch requires an "operation" argument.');
-          return { content: 'Error: apply_patch requires an "operation" argument.' };
-        }
-        const result = applyPatchOperation(currentFiles, 'edit', op);
-        if (result.status === 'completed' && result.files) {
-          currentFiles.length = 0;
-          currentFiles.push(...result.files);
-          params.onFilesChange?.(currentFiles);
-          emitter.complete(row);
-          if (op.path) emitter.fileChanged(op.type, op.path, round);
-        } else {
-          emitter.failed(row, result.output);
-        }
-        return { content: result.output };
-      }
+      case 'apply_patch':
+        return dispatchApplyPatch(
+          toolCall,
+          round,
+          'edit',
+          currentFiles,
+          params.onFilesChange,
+          emitter,
+        );
       case 'google_search':
         return emitExternalActivity(params, emitter, toolCall, round);
       default:

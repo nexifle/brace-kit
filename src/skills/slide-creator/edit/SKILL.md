@@ -60,7 +60,8 @@ truth, not your memory of how the deck was built.
   new slide (a new `/slides/NN.html` + `.css`) uses `create_file` for the new
   paths — never `update_file` a path that doesn't exist yet (returns
   `status: failed`). When adding slides, pick the next sequential id and add
-  it to `deck.json` `slideOrder` in its intended position.
+  it to `deck.json` `slideOrder` in its intended position. **create `diff`:**
+  every content line MUST start with `+` (V4A create body), not bare HTML.
 - **`delete_file` for removals.** When a slide must go, delete its HTML (+ its
   `.css`) AND remove its id from `deck.json` `slideOrder`; never leave dangling
   ids (the projection skips missing files, but keep the deck clean).

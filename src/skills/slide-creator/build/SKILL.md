@@ -65,6 +65,8 @@ it to the matching pixel dimensions and safe-zone from the design system.
 - **`create_file` for NEW paths** — a brand-new slide, theme, or deck.json the
   first time. Do not `update_file` a path that doesn't exist yet (it returns
   `status: failed`). Use `update_file` for EXISTING paths to refine them.
+  **create `diff` format:** every content line MUST start with `+` (V4A create
+  body), e.g. `+<section class="slide">\n+  <h1>Hook</h1>\n+</section>\n`.
 - **`delete_file` for removals** — when a slide must go, remove its HTML (+
   its `.css`) AND its id from `deck.json` `slideOrder`; never leave dangling
   ids (the projection skips missing files, but a clean deck has no ghosts).

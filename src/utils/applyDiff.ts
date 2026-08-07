@@ -566,12 +566,97 @@ export function deriveNewContents(
   return { ok: true, text: newLines.join('\n') };
 }
 
+/** How {@link applyDiff} interprets the patch body. Mirrors OpenAI Agents SDK. */
+export type ApplyDiffMode = 'default' | 'create';
+
 /**
- * Apply a bare V4A-style diff to `originalText`. For creating a new file, pass
- * `''` as the original text and a diff of `+` lines. Compatible with the PRD
- * Appendix C examples and the Codex `applyDiff` matching semantics.
+ * Normalize a diff into lines, dropping a single trailing empty line from the
+ * split (so a trailing newline on the payload does not become a phantom line).
  */
-export function applyDiff(originalText: string, diff: string): ApplyDiffResult {
+function normalizeDiffLines(diff: string): string[] {
+  const lines = diff.replace(/\r\n/g, '\n').split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+/**
+ * Ensure file text ends with a trailing newline (VFS convention for created
+ * files). Empty content stays empty.
+ */
+function withTrailingNewline(text: string): string {
+  if (text.length === 0) return text;
+  return text.endsWith('\n') ? text : `${text}\n`;
+}
+
+/**
+ * Create-file V4A body → full file contents.
+ *
+ * Matches OpenAI Agents SDK `applyDiff("", diff, "create")`: every content line
+ * is a `+` line. Practical leniencies (models often mix formats on first try):
+ * - optional bare `@@` / `@@ context` headers are ignored (update-style noise)
+ * - if NO line is `+`-prefixed, treat the whole body as raw file content
+ *   (so bare markdown / HTML creates succeed instead of failing on the first try)
+ * - blank lines without a `+` are treated as empty content lines when the rest
+ *   of the body is `+`-prefixed
+ */
+export function parseCreateDiff(diff: string): ApplyDiffResult {
+  const lines = normalizeDiffLines(diff);
+  // Drop optional update-style hunk headers models copy from update examples.
+  const contentLines = lines.filter((l) => l !== EMPTY_CHANGE_CONTEXT_MARKER && !l.startsWith(CHANGE_CONTEXT_MARKER));
+
+  if (contentLines.length === 0) {
+    return { ok: false, error: 'Error: empty diff' };
+  }
+
+  const plusOrBlank = contentLines.every((l) => l.startsWith('+') || l.length === 0);
+  const anyPlus = contentLines.some((l) => l.startsWith('+'));
+
+  if (plusOrBlank && anyPlus) {
+    // Strict create path (OpenAI SDK): strip one leading '+' per content line.
+    const body = contentLines.map((l) => (l.startsWith('+') ? l.slice(1) : '')).join('\n');
+    return { ok: true, text: withTrailingNewline(body) };
+  }
+
+  if (!anyPlus) {
+    // Pure raw body — no '+' markers at all. Accept as full file contents so a
+    // first-try create_file of markdown/HTML does not bounce on prefix rules.
+    // Lines may start with '-' (markdown lists) or '#' (headings); those are
+    // content, not update hunks.
+    const body = contentLines.join('\n');
+    return { ok: true, text: withTrailingNewline(body) };
+  }
+
+  // Mixed: some '+' lines and some bare/'-'/' ' lines — ambiguous. Fail loudly
+  // so the model re-emits a clean create diff.
+  const bad = contentLines.find((l) => !l.startsWith('+') && l.length > 0);
+  return {
+    ok: false,
+    error:
+      `Invalid Add File Line: '${bad ?? ''}'. ` +
+      `create_file diffs must use one '+' line per file line ` +
+      `(e.g. "+# Title\\n+- bullet\\n+paragraph"), or omit all '+' prefixes and ` +
+      `pass the raw file body.`,
+  };
+}
+
+/**
+ * Apply a bare V4A-style diff to `originalText`.
+ *
+ * - `mode: 'default'` (update): `@@` hunks with ` ` / `+` / `-` lines, matching
+ *   OpenAI Agents SDK / Codex update semantics.
+ * - `mode: 'create'`: create-file body — prefer every line `+`-prefixed; see
+ *   {@link parseCreateDiff}. Use this from `create_file` (not default + empty
+ *   original), matching `applyDiff("", diff, "create")` in the SDK docs.
+ */
+export function applyDiff(
+  originalText: string,
+  diff: string,
+  mode: ApplyDiffMode = 'default',
+): ApplyDiffResult {
+  if (mode === 'create') {
+    return parseCreateDiff(diff);
+  }
+
   let chunks: UpdateFileChunk[];
   try {
     chunks = parseUpdateChunks(diff);

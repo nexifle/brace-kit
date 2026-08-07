@@ -3,6 +3,7 @@ import type { SlideFile } from '../../src/types/index.ts';
 import {
   applyPatchOperation,
   allowlistForPhase,
+  parseApplyPatchArgs,
   type SlidePatchOperation,
 } from '../../src/services/applyPatchHarness.ts';
 
@@ -13,6 +14,71 @@ function files(initial: Record<string, string>): SlideFile[] {
 function toMap(fs: SlideFile[]): Record<string, string> {
   return Object.fromEntries(fs.map((f) => [f.path, f.content]));
 }
+
+describe('parseApplyPatchArgs', () => {
+  test('accepts flat args (preferred function-tool shape)', () => {
+    const res = parseApplyPatchArgs({
+      type: 'create_file',
+      path: '/brief.md',
+      diff: '+# Title\n',
+    });
+    expect(res).toEqual({
+      ok: true,
+      operation: { type: 'create_file', path: '/brief.md', diff: '+# Title\n' },
+    });
+  });
+
+  test('accepts nested operation object (legacy / OpenAI docs shape)', () => {
+    const res = parseApplyPatchArgs({
+      operation: { type: 'update_file', path: '/design.md', diff: '@@\n-a\n+b\n' },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.operation).toEqual({
+      type: 'update_file',
+      path: '/design.md',
+      diff: '@@\n-a\n+b\n',
+    });
+  });
+
+  test('accepts stringified nested operation', () => {
+    const res = parseApplyPatchArgs({
+      operation: JSON.stringify({ type: 'delete_file', path: '/slides/01.html' }),
+    });
+    expect(res).toEqual({
+      ok: true,
+      operation: { type: 'delete_file', path: '/slides/01.html' },
+    });
+  });
+
+  test('accepts stringified whole payload', () => {
+    const res = parseApplyPatchArgs(
+      JSON.stringify({ type: 'create_file', path: '/deck.json', diff: '+{}\n' }),
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.operation.type).toBe('create_file');
+  });
+
+  test('accepts mis-nested operation as type string', () => {
+    const res = parseApplyPatchArgs({
+      operation: 'create_file',
+      path: '/brief.md',
+      diff: '+x\n',
+    });
+    expect(res).toEqual({
+      ok: true,
+      operation: { type: 'create_file', path: '/brief.md', diff: '+x\n' },
+    });
+  });
+
+  test('fails clearly when type/path missing', () => {
+    const res = parseApplyPatchArgs({ path: '/brief.md', diff: '+x\n' });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain('type');
+  });
+});
 
 describe('applyPatchHarness allowlists', () => {
   test('plan allowlist is brief/design/deck meta only', () => {
@@ -56,6 +122,29 @@ describe('applyPatchHarness create_file', () => {
     expect(res.output).toContain('Created');
     expect(res.files).toHaveLength(1);
     expect(res.files[0].content).toContain('<h1>Hook</h1>');
+  });
+
+  test('creates a file from bare content without + prefixes (model first-try)', () => {
+    const res = applyPatchOperation([], 'plan', {
+      type: 'create_file',
+      path: '/brief.md',
+      diff: '# Single-Origin Ethiopian Blend — Slide Brief\n\n## Slide 01\n- Hook\n',
+    });
+    expect(res.status).toBe('completed');
+    if (res.status !== 'completed') return;
+    expect(res.files[0].content).toContain('# Single-Origin Ethiopian Blend — Slide Brief');
+    expect(res.files[0].content).toContain('- Hook');
+  });
+
+  test('creates from + lines only (OpenAI create shape, no @@)', () => {
+    const res = applyPatchOperation([], 'plan', {
+      type: 'create_file',
+      path: '/design.md',
+      diff: '+# Design\n+Palette: dark\n',
+    });
+    expect(res.status).toBe('completed');
+    if (res.status !== 'completed') return;
+    expect(res.files[0].content).toBe('# Design\nPalette: dark\n');
   });
 
   test('fails when create_file targets an existing path', () => {
