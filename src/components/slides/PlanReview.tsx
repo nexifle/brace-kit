@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ClipboardEdit,
@@ -11,6 +11,7 @@ import {
 import { useSlideStore } from '../../store/slideStore.ts';
 import { getSlideFile } from '../../utils/slideVfs.ts';
 import { hasValidPlanFiles } from '../../services/slidePhases.ts';
+import { collectPlanSummary } from '../../utils/slideFilesTouched.ts';
 import { renderMarkdown } from '../../utils/markdown.ts';
 import { Btn } from '../ui/Btn.tsx';
 
@@ -40,6 +41,7 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
   const activeProject = useSlideStore((s) => s.activeProject);
   const phase = useSlideStore((s) => s.phase);
   const busy = useSlideStore((s) => s.busy);
+  const activity = useSlideStore((s) => s.activity);
   const updatePlanFile = useSlideStore((s) => s.updatePlanFile);
   const requestBuild = useSlideStore((s) => s.requestBuild);
 
@@ -47,6 +49,7 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const files = activeProject?.files ?? [];
 
@@ -62,6 +65,19 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
   /** Build is blocked unless plan_ready AND both brief + design are non-empty
    *  AND the model can drive the tool loop (US-032). */
   const canBuild = phase === 'plan_ready' && hasValidPlanFiles(files) && !blocked;
+
+  /** A.11 "When entering plan_ready, auto-scroll rail to PlanReview". The panel
+   *  only mounts at plan_ready, so scrolling once on mount lands the review
+   *  panel at the top of the rail/dock. */
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      rootRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  /** A.11 activity summary: "Created /brief.md · Created /design.md · N steps". */
+  const { createdPaths, steps } = useMemo(() => collectPlanSummary(activity), [activity]);
 
   function beginEdit() {
     setDraft(fileContent);
@@ -87,7 +103,10 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
   const handleBuild = () => (onBuild ? onBuild() : requestBuild());
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-primary/20 bg-card/60 shadow-sm">
+    <div
+      ref={rootRef}
+      className="flex flex-col overflow-hidden rounded-xl border border-primary/20 bg-card/60 shadow-sm"
+    >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 h-10 border-b border-border/70 bg-primary/[0.04] shrink-0">
         <span className="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary shrink-0">
@@ -159,6 +178,32 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
       </div>
 
       {/* Action row */}
+      {/* A.11 activity summary above the Build action */}
+      {!editing && (createdPaths.length > 0 || steps > 0) && (
+        <div className="flex items-start gap-1.5 border-t border-border/60 px-2.5 py-1.5 shrink-0">
+          <FileText size={12} className="mt-0.5 shrink-0 text-primary/70" />
+          <p className="min-w-0 flex-1 text-[10px] leading-relaxed text-muted-foreground">
+            {createdPaths.length > 0 && (
+              <span className="text-muted-foreground/70">Created </span>
+            )}
+            {createdPaths.map((p, i) => (
+              <span key={p}>
+                {i > 0 && <span className="text-muted-foreground/50"> · </span>}
+                <span className="font-medium text-foreground/80">{p}</span>
+              </span>
+            ))}
+            {createdPaths.length > 0 && steps > 0 && (
+              <span className="text-muted-foreground/50"> · </span>
+            )}
+            {steps > 0 && (
+              <span>
+                {steps} {steps === 1 ? 'step' : 'steps'}
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2 border-t border-border/60 bg-muted/20 px-2.5 py-2 shrink-0">
         {editing ? (
           <>
@@ -192,11 +237,11 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
               Edit
             </button>
             <Btn
-              size="sm"
+              size="default"
               variant="default"
               disabled={!canBuild || busy}
               onClick={handleBuild}
-              className="h-8 min-w-[7.5rem]"
+              className="h-9 min-w-[8rem]"
               title={
                 blocked
                   ? 'Your model cannot use the tools required to build'
@@ -205,13 +250,18 @@ export function PlanReview({ onBuild, blocked }: { onBuild?: () => void; blocked
                     : undefined
               }
             >
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <Hammer size={13} />}
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Hammer size={14} />}
               Build slides
             </Btn>
           </>
         )}
       </div>
 
+      {editing && (
+        <p className="border-t border-border/60 px-3 py-1.5 text-[10px] text-muted-foreground/70">
+          Build is locked while you have unsaved edits — save or discard to continue.
+        </p>
+      )}
       {blocked && !editing && (
         <p className="border-t border-border/60 px-3 py-1.5 text-[10px] text-amber-300/90">
           This model can’t use tools — switch to a function-calling model to build.
