@@ -11,40 +11,32 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUpRight,
-  PaperclipIcon,
-  ImagePlus,
   History,
-  AlertTriangle,
   Loader2,
-  Square,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
 import { useSlideAgent } from '../../hooks/useSlideAgent.ts';
 import { Btn } from '../ui/Btn.tsx';
-import { ComposerPicker } from '../ComposerPicker.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
-import type { SlideSessionStatus } from '../../types/slides.ts';
 import { slideComposerCanSend, slideComposerPlaceholder } from '../../utils/slideComposer.ts';
 import { collectFilesTouched } from '../../utils/slideFilesTouched.ts';
 import { useElementSize } from '../../hooks/index.ts';
 import { fitBox } from '../../utils/slideFit.ts';
-import { AskPrompt } from './AskPrompt.tsx';
-import { PlanReview } from './PlanReview.tsx';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 import { ExportDeck } from './ExportDeck.tsx';
 import { SlideCodeViewer } from './SlideCodeViewer.tsx';
-import { Transcript } from './Transcript.tsx';
-import { StreamingAgentBubble } from './StreamingAgentBubble.tsx';
-import { AgentActivityFeed } from './AgentActivityFeed.tsx';
-import { PhaseHeader } from './PhaseHeader.tsx';
-import { FileChangeStrip } from './FileChangeStrip.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
+import { SlideChat } from './chat/SlideChat.tsx';
+import { SlideChatComposer } from './chat/SlideChatComposer.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
+
+/** v0-style chat rail width. */
+const RAIL_WIDTH = 400;
 
 function PreviewCanvas() {
   const canvas = useSlideStore((s) => s.canvas);
@@ -58,7 +50,6 @@ function PreviewCanvas() {
       ref={ref}
       className="relative flex-1 min-h-0 flex items-center justify-center overflow-hidden"
     >
-      {/* Soft ambient wash behind the deck (product accent, not decoration). */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-60"
@@ -68,7 +59,6 @@ function PreviewCanvas() {
         }}
       />
 
-      {/* Deck stack depth motif */}
       <div className="relative" aria-hidden>
         <div className="relative flex items-center justify-center">
           <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 h-full w-full rounded-xl border border-border/60 bg-muted/20 -rotate-2" />
@@ -81,10 +71,8 @@ function PreviewCanvas() {
             className="relative flex flex-col items-center justify-center rounded-xl border border-border bg-background shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] overflow-hidden animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none"
             style={{ width: box.width, height: box.height }}
           >
-            {/* Accent top edge on the "slide" */}
             <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-primary to-primary/40" />
 
-            {/* Building state (no slides yet): never a dead void — show live copy. */}
             {busy ? (
               <div className="flex flex-col items-center text-center gap-4 px-8">
                 <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
@@ -127,7 +115,6 @@ function PreviewCanvas() {
               </div>
             )}
 
-            {/* Bottom-page dot navigation (hidden until slides exist) */}
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 opacity-40">
               {[0, 1].map((i) => (
                 <span
@@ -214,7 +201,6 @@ function PreviewPane({
           {hasDeck && <ExportDeck />}
           {hasDeck && <SlideCodeViewer />}
           {hasDeck ? (
-            /* canvas size + slide navigation for decks */
             <div className="flex items-center gap-2 min-w-0">
               <span
                 className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
@@ -270,197 +256,6 @@ function PreviewPane({
   );
 }
 
-/* ==================================================================== */
-/* Composer                                                             */
-/* ==================================================================== */
-
-function Composer({
-  onSend,
-  onStop,
-  sessionStatus,
-  placeholder,
-  blocked,
-  blockedHint,
-}: {
-  onSend: (text: string) => void;
-  onStop: () => void;
-  sessionStatus: SlideSessionStatus;
-  placeholder: string;
-  blocked?: boolean;
-  blockedHint?: string;
-}) {
-  const [value, setValue] = useState('');
-  const running = sessionStatus === 'running';
-  const waiting = sessionStatus === 'waiting_user';
-  const typed = slideComposerCanSend(sessionStatus);
-  // A.6: the freeform composer is NOT a send path while running (Stop is
-  // primary) nor while waiting_user (AskPrompt is primary). Send is enabled
-  // only for idle/plan_ready/ready/stopped/error/done.
-  const disabled = !typed || blocked;
-  const canSend = typed && !blocked;
-
-  function submit() {
-    if (!canSend || !value.trim()) return;
-    onSend(value);
-    setValue('');
-  }
-
-  return (
-    <div className="shrink-0 border-t border-border/70 bg-muted/30 p-3">
-      {blocked && (
-        <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-2xs leading-relaxed text-amber-200/90">
-          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-300" />
-          <span>
-            {blockedHint ??
-              'Your current model cannot use the tools Slide Creator requires. Switch to a function-calling model in Settings to plan or edit decks.'}
-          </span>
-        </div>
-      )}
-
-      {waiting ? (
-        /* A.6: while a suspended ask is pending, AskPrompt is the primary
-           input — keep only a muted status + cancel affordance here. */
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2.5">
-          <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 size={13} className="shrink-0 animate-spin text-primary" />
-            <span className="truncate">Waiting for your answer above</span>
-          </span>
-          <button
-            type="button"
-            onClick={onStop}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-            title="Cancel plan"
-            aria-label="Cancel plan"
-          >
-            <Square size={11} />
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 hover:border-border">
-          <textarea
-            rows={2}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter sends; Shift+Enter inserts a newline.
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder={
-              blocked
-                ? 'Function calling required to plan decks'
-                : running
-                  ? 'Generating…'
-                  : placeholder
-            }
-            disabled={disabled}
-            className="w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:cursor-not-allowed"
-          />
-
-          <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                title="Attach file (coming soon)"
-                aria-label="Attach file"
-              >
-                <PaperclipIcon size={12} />
-              </button>
-              <button
-                type="button"
-                disabled
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                title="Add image (coming soon)"
-                aria-label="Add image"
-              >
-                <ImagePlus size={12} />
-              </button>
-            </div>
-
-            <div className="min-w-0 flex-1 px-1">
-              <ComposerPicker />
-            </div>
-
-            {running ? (
-              <button
-                type="button"
-                onClick={onStop}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-95"
-                title="Stop generating"
-                aria-label="Stop generating"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="6" width="12" height="12" />
-                </svg>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={submit}
-                disabled={disabled || !value.trim()}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
-                title="Send"
-                aria-label="Send"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 19V5" />
-                  <path d="m5 12 7-7 7 7" />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center pt-1.5">
-        <span className="flex items-center gap-1 text-2xs text-muted-foreground/60">
-          {waiting ? (
-            'Your answer resumes the plan'
-          ) : running ? (
-            <>
-              <span>Stop generating anytime</span>
-              <span className="mx-0.5 text-muted-foreground/30">·</span>
-              <span>no edits send</span>
-            </>
-          ) : (
-            <>
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
-              send
-              <span className="mx-0.5 text-muted-foreground/30">·</span>
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Shift</kbd>
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
-              new line
-            </>
-          )}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function EmptyChat() {
-  return (
-    <div className="flex flex-col items-center text-center gap-3 py-10 px-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10 text-primary">
-        <Presentation size={22} />
-      </div>
-      <p className="text-sm font-semibold text-foreground">No deck yet</p>
-      <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
-        Start by describing your deck. The agent will plan it here before building slides.
-      </p>
-    </div>
-  );
-}
-
-/* ==================================================================== */
-/* Phase chip (animated on change)                                      */
-/* ==================================================================== */
-
 function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
   const slot = busy ? 'busy' : label;
   return (
@@ -479,14 +274,8 @@ function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
 }
 
 /* ==================================================================== */
-/* Wide chat rail (left, collapsible)                                   */
+/* Wide chat rail — v0 full step stream + floating composer              */
 /* ==================================================================== */
-
-/* ==================================================================== */
-/* Wide chat rail (left, collapsible) — framer-motion like app rail      */
-/* ==================================================================== */
-
-const RAIL_WIDTH = 320;
 
 function ChatRail({
   railOpen,
@@ -513,7 +302,13 @@ function ChatRail({
   placeholder: string;
   blocked?: boolean;
 }) {
-  const { activeProject, messages, pendingAsk, busy, phase, activity, sessionStatus } = useSlideStore();
+  const activeProject = useSlideStore((s) => s.activeProject);
+  const sessionStatus = useSlideStore((s) => s.sessionStatus);
+  const [seedText, setSeedText] = useState<string | undefined>();
+  const [seedKey, setSeedKey] = useState(0);
+
+  const title = activeProject?.title?.trim() || 'New deck';
+
   return (
     <AnimatePresence initial={false}>
       {railOpen && (
@@ -525,22 +320,21 @@ function ChatRail({
           transition={{ duration: 0.2, ease: 'easeInOut' }}
           className="h-full shrink-0 overflow-hidden bg-background"
         >
-          <div className="flex h-full w-[320px] shrink-0 flex-col border-r border-border/70 bg-background">
+          <div
+            className="flex h-full shrink-0 flex-col border-r border-border/70 bg-background"
+            style={{ width: RAIL_WIDTH }}
+          >
             {historyOpen ? (
-              <SlideProjectList
-                open
-                onClose={() => onHistory(false)}
-                onNew={onNew}
-              />
+              <SlideProjectList open onClose={() => onHistory(false)} onNew={onNew} />
             ) : (
               <>
                 <div className="flex items-center justify-between px-3 h-11 border-b border-border/70 shrink-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary shrink-0">
-                      <Plus size={13} />
+                      <Presentation size={13} />
                     </span>
-                    <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground truncate">
-                      Project
+                    <span className="text-sm font-medium text-foreground truncate" title={title}>
+                      {title}
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
@@ -552,7 +346,6 @@ function ChatRail({
                       title="Previous decks"
                     >
                       <History size={14} />
-                      History
                     </button>
                     <button
                       type="button"
@@ -561,7 +354,6 @@ function ChatRail({
                       onClick={onNew}
                     >
                       <Plus size={14} />
-                      New
                     </button>
                     <button
                       type="button"
@@ -575,32 +367,23 @@ function ChatRail({
                   </div>
                 </div>
 
-                <PhaseHeader onStop={onStop} />
-                <FileChangeStrip />
-
-                <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
-                  {pendingAsk ? (
-                    <AskPrompt
-                      ask={pendingAsk}
-                      busy={busy}
-                      onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
-                    />
-                  ) : activeProject && phase === 'plan_ready' ? (
-                    <PlanReview onBuild={onBuild} blocked={blocked} />
-                  ) : activeProject ? (
-                    <Transcript messages={messages} />
-                  ) : (
-                    <EmptyChat />
-                  )}
-                  <StreamingAgentBubble />
-                  {activeProject && <AgentActivityFeed events={activity} />}
-                </div>
-                <Composer
+                <SlideChat
+                  onBuild={onBuild}
+                  onAnswer={onAnswer}
+                  blocked={blocked}
+                  onFillComposer={(text) => {
+                    setSeedText(text);
+                    setSeedKey((k) => k + 1);
+                  }}
+                />
+                <SlideChatComposer
                   onSend={onSend}
                   onStop={onStop}
                   sessionStatus={sessionStatus}
                   placeholder={placeholder}
                   blocked={blocked}
+                  seedText={seedText}
+                  seedKey={seedKey}
                 />
               </>
             )}
@@ -612,7 +395,7 @@ function ChatRail({
 }
 
 /* ==================================================================== */
-/* Narrow chat drawer (bottom sheet over preview)                       */
+/* Narrow chat drawer                                                    */
 /* ==================================================================== */
 
 function ChatDock({
@@ -634,10 +417,11 @@ function ChatDock({
   placeholder: string;
   blocked?: boolean;
 }) {
-  const { activeProject, messages, pendingAsk, busy, phase, activity, sessionStatus } = useSlideStore();
+  const sessionStatus = useSlideStore((s) => s.sessionStatus);
   const [dockValue, setDockValue] = useState('');
   const running = sessionStatus === 'running';
   const waiting = sessionStatus === 'waiting_user';
+  const canType = slideComposerCanSend(sessionStatus) && !blocked;
 
   if (open) {
     return (
@@ -656,27 +440,8 @@ function ChatDock({
           </button>
         </div>
 
-        <PhaseHeader onStop={onStop} />
-        <FileChangeStrip />
-
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
-          {pendingAsk ? (
-            <AskPrompt
-              ask={pendingAsk}
-              busy={busy}
-              onSubmit={(answer) => onAnswer(pendingAsk.projectId, answer)}
-            />
-          ) : activeProject && phase === 'plan_ready' ? (
-            <PlanReview onBuild={onBuild} blocked={blocked} />
-          ) : activeProject ? (
-            <Transcript messages={messages} />
-          ) : (
-            <EmptyChat />
-          )}
-          <StreamingAgentBubble />
-          {activeProject && <AgentActivityFeed events={activity} />}
-        </div>
-        <Composer
+        <SlideChat onBuild={onBuild} onAnswer={onAnswer} blocked={blocked} />
+        <SlideChatComposer
           onSend={onSend}
           onStop={onStop}
           sessionStatus={sessionStatus}
@@ -722,45 +487,52 @@ function ChatDock({
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                if (dockValue.trim() && !running && !blocked) {
-                  onSend(dockValue);
-                  setDockValue('');
-                }
+                if (running) return;
+                if (!canType || !dockValue.trim()) return;
+                onSend(dockValue);
+                setDockValue('');
               }
             }}
-            placeholder={
-              blocked ? 'Function calling required' : running ? 'Generating…' : placeholder
-            }
-            disabled={running || blocked}
-            className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
+            disabled={!canType && !running}
+            placeholder={running ? 'Generating…' : placeholder}
+            className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none disabled:opacity-60"
           />
           {running ? (
             <button
               type="button"
               onClick={onStop}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-90"
-              title="Stop generating"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
+              title="Stop"
               aria-label="Stop generating"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" />
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <rect x="6" y="6" width="12" height="12" rx="1.5" />
               </svg>
             </button>
           ) : (
             <button
               type="button"
               onClick={() => {
-                if (dockValue.trim() && !blocked) {
-                  onSend(dockValue);
-                  setDockValue('');
-                }
+                if (!canType || !dockValue.trim()) return;
+                onSend(dockValue);
+                setDockValue('');
               }}
-              disabled={blocked || !dockValue.trim()}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 disabled:opacity-30 disabled:grayscale hover:brightness-110 active:scale-90"
+              disabled={!canType || !dockValue.trim()}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-30"
               title="Send"
               aria-label="Send"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
                 <path d="M12 19V5" />
                 <path d="m5 12 7-7 7 7" />
               </svg>
@@ -773,7 +545,7 @@ function ChatDock({
 }
 
 /* ==================================================================== */
-/* Shell                                                                */
+/* Shell                                                                 */
 /* ==================================================================== */
 
 export function SlideCreatorShell() {
@@ -782,17 +554,12 @@ export function SlideCreatorShell() {
   const { ref, width } = useElementSize<HTMLDivElement>();
   const agent = useSlideAgent();
 
-  // US-046 (A.12): fire a success toast when a build/edit phase completes.
   usePhaseCompletionToast();
 
-  // Restore the last-active project (files/transcript/pending ask) on open, so
-  // a reload of the extension returns the user to exactly where they left off.
   useEffect(() => {
     void useSlideStore.getState().restoreLastActiveProject();
   }, []);
 
-  // A.6 composer placeholder copy: exact per-state string, routed through the
-  // pure helper so both the wide ChatRail and narrow ChatDock share one source.
   const promptPlaceholder = slideComposerPlaceholder(activeProject, phase, sessionStatus);
 
   const handleSend = (text: string) => {
@@ -804,13 +571,8 @@ export function SlideCreatorShell() {
     }
   };
 
-  // Abort the in-flight plan/build/edit and leave a consistent stopped workspace.
   const handleStop = () => agent.stop();
-
-  // US-032: when the active model can't use function-calling tools, block the
-  // composer + build CTA and show a clear notice instead of a silent hang.
   const blocked = !agent.canUseFunctionCalling();
-
   const back = () => store.closeSlideCreator();
   const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
 
@@ -819,9 +581,6 @@ export function SlideCreatorShell() {
   const [railOpen, setRailOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // "New deck" clears the active project so the composer starts a fresh deck
-  // (and closes any open history). The newly created project is persisted and
-  // set last-active by the orchestrator on the first prompt.
   const handleNew = () => {
     setHistoryOpen(false);
     useSlideStore.getState().setActiveProject(null);
@@ -832,7 +591,6 @@ export function SlideCreatorShell() {
       ref={ref}
       className="relative flex h-full w-full flex-col overflow-hidden bg-background animate-in fade-in duration-300 motion-reduce:animate-none"
     >
-      {/* Header */}
       <header className="relative z-30 flex items-center justify-between gap-2 px-2.5 h-12 border-b border-border/70 bg-background/80 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <button
@@ -858,10 +616,8 @@ export function SlideCreatorShell() {
         </div>
       </header>
 
-      {/* Body */}
       <div className="relative flex min-h-0 flex-1">
         {narrow ? (
-          /* Preview stays put; chat is a transient bottom sheet. */
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             <PreviewPane />
             <ChatDock

@@ -1,4 +1,5 @@
-import type { SlideActivityEvent } from '../types/slides.ts';
+import type { Slide, SlideActivityEvent } from '../types/slides.ts';
+
 
 /**
  * A file the agent touched in the current phase run (Amendment A.9 file
@@ -103,3 +104,14 @@ export function collectFilesTouched(activity: SlideActivityEvent[]): SlideFileTo
   }
   return touches;
 }
+
+/** Map a VFS path to the deck slide index whose HTML or CSS path matches it. */
+export function slideIndexForTouch(
+  touch: Pick<SlideFileTouch, 'path'> | { path: string },
+  slides: Slide[],
+): number {
+  return slides.findIndex(
+    (s) => s.htmlPath === touch.path || s.cssPath === touch.path,
+  );
+}
+

@@ -8,6 +8,7 @@
 import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
 import type { MCPTool, ReasoningLevel } from '../../types/index.ts';
+import { buildChatOptions, chatOptionsStateFromStore } from '../../utils/chatOptions.ts';
 import {
   GEMINI_NO_TOOLS_MODELS,
   GEMINI_SEARCH_ONLY_MODELS,
@@ -209,45 +210,11 @@ export function useTools() {
    */
   const getChatOptions = useCallback(
     (options?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
-      const state = useStore.getState();
-      const currentModel = state.providerConfig.model || '';
-      const isGemini = isGeminiProvider();
-      const isXAIImg = isXAIImageModel();
-      const isGeminiImg = isGeminiImageModel();
-
-      const chatOptions: {
-        enableGoogleSearch: boolean;
-        enableReasoning?: boolean;
-        reasoningLevel?: ReasoningLevel;
-        aspectRatio?: string;
-        stream?: boolean;
-        modelParameters?: typeof state.providerConfig.modelParameters;
-        groqBuiltinTools?: string[];
-      } = {
-        enableGoogleSearch:
-          state.enableGoogleSearch &&
-          isGemini &&
-          !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
-        enableReasoning: options?.enableReasoning ?? state.enableReasoning,
-        reasoningLevel: options?.reasoningLevel ?? state.reasoningLevel,
-        stream: state.enableStreaming,
-        modelParameters: state.providerConfig.modelParameters,
-      };
-
-      // Add aspect ratio for image models
-      if ((isXAIImg || isGeminiImg) && options?.aspectRatio) {
-        chatOptions.aspectRatio = options.aspectRatio;
-      }
-
-      // Groq built-in tools via compound_custom
-      if (state.providerConfig.providerId === 'groq' && state.groqEnabledBuiltinTools.length > 0) {
-        chatOptions.groqBuiltinTools = state.groqEnabledBuiltinTools;
-      }
-
-      return chatOptions;
+      return buildChatOptions(chatOptionsStateFromStore(() => useStore.getState()), options);
     },
-    [isGeminiProvider, isXAIImageModel, isGeminiImageModel]
+    [],
   );
+
 
   return {
     fetchMCPTools,

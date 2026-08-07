@@ -15,6 +15,7 @@ import { shouldEnableGoogleSearch } from '../services/slideTools.ts';
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
 import { supportsFunctionCalling } from '../providers/presets.ts';
+import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
 import type { MCPTool } from '../types/index.ts';
@@ -79,7 +80,17 @@ export function useSlideAgent() {
           if (!isGemini) return true;
           return supportsFunctionCalling(s.providerConfig.model);
         },
+        // Same enableReasoning / reasoningLevel / modelParameters as main chat.
+        getChatOptions: () =>
+          buildChatOptions(chatOptionsStateFromStore(() => useStore.getState()), {
+            // Phase turns always stream (Amendment A.4); don't inherit the
+            // main-chat streaming toggle as a hard off switch.
+            stream: true,
+          }),
+
+
       }
+
     );
   }
 

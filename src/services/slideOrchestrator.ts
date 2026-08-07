@@ -95,7 +95,15 @@ export interface SlideAgentDeps {
    * checker from the hook so it reflects the current model instantly.
    */
   canFunctionCall?: () => boolean;
+  /**
+   * Live CHAT_REQUEST options (enableReasoning / reasoningLevel / …).
+   * Prefer a getter so the main-store toggle is read at request time.
+   * Defaults to `{}` (reasoning follows chat.service default: allowed).
+   */
+  getChatOptions?: () => Record<string, unknown> | object;
+
 }
+
 
 /** Cross-call state for the orchestrator's live sub-agent sessions. */
 interface AgentRunState {
@@ -130,6 +138,13 @@ export function createSlideAgent(
 
   /** Clear any stale streaming buffers before a fresh turn/phase. */
   const prepareStream = () => host.clearStreaming?.();
+  /** Live chat options (reasoning level, etc.) — same source as main chat. */
+  const chatOptions = (): Record<string, unknown> => {
+    const opts = deps.getChatOptions?.() ?? {};
+    return opts as Record<string, unknown>;
+  };
+
+
 
   /**
    * Activity-feed sink forwarded to phase runners (Amendment A.6). Builds a
@@ -181,6 +196,7 @@ export function createSlideAgent(
       systemPrompt,
       messages: [{ role: 'user', content: prompt }],
       providerConfig: deps.providerConfig,
+      chatOptions: chatOptions(),
       files: project.files,
       signal: abort.signal,
       maxRounds: deps.maxRounds,
@@ -309,6 +325,7 @@ export function createSlideAgent(
         systemPrompt,
         messages: [],
         providerConfig: deps.providerConfig,
+        chatOptions: chatOptions(),
         files: project.files,
         signal: abort.signal,
         maxRounds: deps.maxRounds,
@@ -392,6 +409,7 @@ export function createSlideAgent(
       systemPrompt,
       messages: [{ role: 'user', content: 'Build the deck from the approved brief and design.' }],
       providerConfig: deps.providerConfig,
+      chatOptions: chatOptions(),
       files: project.files,
       signal: abort.signal,
       maxRounds: deps.maxRounds,
@@ -466,6 +484,7 @@ export function createSlideAgent(
       systemPrompt,
       messages: [{ role: 'user', content: message }],
       providerConfig: deps.providerConfig,
+      chatOptions: chatOptions(),
       files: project.files,
       signal: abort.signal,
       maxRounds: deps.maxRounds,

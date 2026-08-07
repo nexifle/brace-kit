@@ -126,10 +126,12 @@ export interface AgentSessionParams {
    */
   onRoundStart?: (round: number) => void;
   /**
-   * Called when a model turn finishes — clean done, tool dispatch complete,
-   * ask suspend, error, or abort. Mirrors `onRoundStart` to close the row.
+   * Called when a model turn finishes (success, error, or cancel of that round).
+   * `response` is set when the transport returned a payload (may include reasoning).
    */
-  onRoundComplete?: (round: number) => void;  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
+  onRoundComplete?: (round: number, response?: AgentChatResponse) => void;
+  /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
+
   transport?: AgentTransport;
   /** Abort in-flight request (injectable for tests). Defaults to STOP_STREAM. */
   abortRequest?: AgentAbortFn;
@@ -188,12 +190,23 @@ export function createStreamingTransport(
   return (request) =>
     new Promise<AgentChatResponse>((resolve) => {
       let settled = false;
+      // Providers sometimes stream reasoning only as CHAT_STREAM_CHUNK and omit
+      // it on DONE — keep a local join so round footers / Thought rows still get body.
+      let reasoningAccum = '';
       const removeListener = () => runtime.onMessage.removeListener(onMessage);
       const settle = (response: AgentChatResponse) => {
         if (settled) return;
         settled = true;
         removeListener();
-        resolve(response);
+        const reasoning =
+          (response.reasoning_content && response.reasoning_content.trim()) ||
+          reasoningAccum.trim() ||
+          undefined;
+        resolve(
+          reasoning
+            ? { ...response, reasoning_content: reasoning }
+            : response,
+        );
       };
 
       const onMessage = (message: unknown) => {
@@ -201,13 +214,19 @@ export function createStreamingTransport(
         if (msg?.requestId !== request.requestId) return;
         if (msg.type === 'CHAT_STREAM_CHUNK') {
           const chunk = (msg.content as string) ?? '';
-          if (msg.chunkType === 'reasoning') onDelta?.({ reasoning: chunk });
-          else onDelta?.({ text: chunk });
+          if (msg.chunkType === 'reasoning') {
+            reasoningAccum += chunk;
+            onDelta?.({ reasoning: chunk });
+          } else {
+            onDelta?.({ text: chunk });
+          }
         } else if (msg.type === 'CHAT_STREAM_DONE') {
+          const doneReasoning =
+            typeof msg.reasoningContent === 'string' ? msg.reasoningContent : '';
           settle({
             content: (msg.fullContent as string) ?? '',
-            ...(msg.reasoningContent != null
-              ? { reasoning_content: msg.reasoningContent as string }
+            ...(doneReasoning || reasoningAccum
+              ? { reasoning_content: doneReasoning || reasoningAccum }
               : {}),
             ...(msg.reasoningSignature != null
               ? { reasoning_signature: msg.reasoningSignature as string }
@@ -237,6 +256,7 @@ export function createStreamingTransport(
         });
     });
 }
+
 
 /** Plain full-turn transport used only when a caller opts out of streaming. */
 const plainChatTransport: AgentTransport = (request) =>
@@ -319,12 +339,12 @@ async function runLoop(
       });
 
       if (signal?.aborted) {
-        params.onRoundComplete?.(round);
+        params.onRoundComplete?.(round, response);
         return cancel(params, working, round);
       }
 
       if (response?.error) {
-        params.onRoundComplete?.(round);
+        params.onRoundComplete?.(round, response);
         return finish(params, working, round, {
           status: 'error',
           error: response.error,
@@ -345,7 +365,7 @@ async function runLoop(
 
       // No more tool calls → clean completion.
       if (!response.toolCalls?.length) {
-        params.onRoundComplete?.(round);
+        params.onRoundComplete?.(round, response);
         return finish(params, working, round, {
           status: 'done',
           content: response.content ?? '',
@@ -355,7 +375,7 @@ async function runLoop(
       // Tool turn(s) — resolve each call client-side.
       for (const toolCall of response.toolCalls) {
         if (signal?.aborted) {
-          params.onRoundComplete?.(round);
+          params.onRoundComplete?.(round, response);
           return cancel(params, working, round);
         }
 
@@ -364,7 +384,7 @@ async function runLoop(
 
         if (dispatch.suspended) {
           activeRequestId = undefined;
-          params.onRoundComplete?.(round);
+          params.onRoundComplete?.(round, response);
           return finish(params, working, round, {
             status: 'waiting_user',
             pendingAsk: dispatch.pendingAsk,
@@ -379,7 +399,7 @@ async function runLoop(
         });
       }
       activeRequestId = undefined;
-      params.onRoundComplete?.(round);
+      params.onRoundComplete?.(round, response);
     }
   } finally {
     activeRequestId = undefined;

@@ -226,10 +226,22 @@ function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySi
         label: modelRoundLabel(round),
       });
     },
-    /** Close the round's running row in place (matches the tool-row pattern). */
-    roundCompleted(round: number): void {
-      sink?.patch(`${phase}_round_${round}`, { status: 'completed' });
+    /** Close the round's running row; keep full reasoning in `detail` when present. */
+    roundCompleted(
+      round: number,
+      response?: { reasoning_content?: string; error?: string },
+    ): void {
+      // Don't paint partial/truncated thinking as a completed Thought when the
+      // transport failed — leave the row status only.
+      const failed = !!response?.error?.trim();
+      const reasoning = !failed ? response?.reasoning_content?.trim() : undefined;
+      sink?.patch(`${phase}_round_${round}`, {
+        status: failed ? 'failed' : 'completed',
+        ...(reasoning ? { detail: reasoning } : {}),
+      });
     },
+
+
     /** Emit `phase_completed` on a terminal success; build carries the slide count. */
     phaseCompleted(opts?: { slideCount?: number }): void {
       sink?.push({
@@ -565,7 +577,8 @@ function buildPlanSession(params: PlanPhaseParams) {
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
     onRoundStart: (round: number) => emitter.roundStarted(round),
-    onRoundComplete: (round: number) => emitter.roundCompleted(round),
+    onRoundComplete: (round: number, response?: { reasoning_content?: string }) =>
+      emitter.roundCompleted(round, response),
     dispatchTool,
   };
 
@@ -711,7 +724,8 @@ function buildBuildSession(params: BuildPhaseParams) {
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
     onRoundStart: (round) => emitter.roundStarted(round),
-    onRoundComplete: (round) => emitter.roundCompleted(round),
+    onRoundComplete: (round: number, response?: { reasoning_content?: string }) =>
+      emitter.roundCompleted(round, response),
     dispatchTool,
   };
 
@@ -907,7 +921,8 @@ function buildEditSession(params: EditPhaseParams) {
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
     onRoundStart: (round) => emitter.roundStarted(round),
-    onRoundComplete: (round) => emitter.roundCompleted(round),
+    onRoundComplete: (round: number, response?: { reasoning_content?: string }) =>
+      emitter.roundCompleted(round, response),
     dispatchTool,
   };
 
