@@ -21,10 +21,12 @@ import {
   upsertSlideFile,
 } from '../utils/slideVfs.ts';
 import {
+  capSlideActivity,
   deleteSlideProject,
   getLastActiveSlideProject,
   getSlideProject,
   listSlideProjects,
+  saveSlideActivity,
   saveSlideProject,
   type StoredSlideProject,
 } from '../utils/slideDB.ts';
@@ -84,7 +86,7 @@ export interface SlideStoreState {
   // --- selection / project lifecycle ---
   setActiveProject: (projectId: string | null) => void;
   /** Load a full project into the store and rebuild its deck projection. */
-  setActiveProjectData: (project: SlideProject) => void;
+  setActiveProjectData: (project: SlideProject & { activity?: SlideActivityEvent[] }) => void;
   setPhase: (phase: SlidePhase) => void;
   /**
    * Set session status and derive `busy` from it.
@@ -176,6 +178,17 @@ const INITIAL_STATE = {
   panelView: 'split' as SlidePanelView,
 };
 
+/**
+ * Fire-and-forget activity persistence (US-047). Logs a failure (rather than
+ * swallowing silently) so silent persistence loss on a blocked DB upgrade is
+ * diagnosable — mirrors getSlideActivity/getSlideProject's logging.
+ */
+function persistActivity(id: string, activity: SlideActivityEvent[]): void {
+  saveSlideActivity(id, activity).catch((e) => {
+    console.warn('[SlideDB] saveSlideActivity failed:', e);
+  });
+}
+
 export const useSlideStore = create<SlideStoreState>((set, get) => ({
   ...INITIAL_STATE,
 
@@ -202,7 +215,10 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
           ? ('waiting_user' as SlideSessionStatus)
           : ('idle' as SlideSessionStatus),
         busy: false,
-        activity: [] as SlideActivityEvent[],
+        // Restore the last-persisted (capped) activity feed (US-047) so a
+        // reload keeps showing what the agent did last; a fresh project (no
+        // persisted feed) starts empty.
+        activity: project.activity ?? [],
         streamingText: '',
         streamingReasoning: '',
         agentRound: 0,
@@ -258,16 +274,32 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
   setPendingAsk: (pendingAsk) => set({ pendingAsk }),
 
   pushActivity: (event) =>
-    set((state) => ({ activity: [...state.activity, event] })),
+    set((state) => {
+      // US-047: keep the feed durable so a reload still shows the last run.
+      // Cap the LIVE feed too so it stays identical to what persistence keeps
+      // (both use capSlideActivity's 200 default) and memory stays bounded.
+      const next = capSlideActivity([...state.activity, event]);
+      if (state.activeProjectId) persistActivity(state.activeProjectId, next);
+      return { activity: next };
+    }),
 
   patchActivity: (id, partial) =>
-    set((state) => ({
-      activity: state.activity.map((ev) =>
-        ev.id === id ? { ...ev, ...partial, id: ev.id } : ev,
-      ),
-    })),
+    set((state) => {
+      const next = capSlideActivity(
+        state.activity.map((ev) =>
+          ev.id === id ? { ...ev, ...partial, id: ev.id } : ev,
+        ),
+      );
+      if (state.activeProjectId) persistActivity(state.activeProjectId, next);
+      return { activity: next };
+    }),
 
-  setActivity: (activity) => set({ activity }),
+  setActivity: (activity) =>
+    set((state) => {
+      const next = capSlideActivity(activity);
+      if (state.activeProjectId) persistActivity(state.activeProjectId, next);
+      return { activity: next };
+    }),
 
   setStreamingText: (streamingText) => set({ streamingText }),
   appendStreamingText: (delta) =>

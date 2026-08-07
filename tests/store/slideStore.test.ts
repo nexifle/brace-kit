@@ -3,6 +3,8 @@ import 'fake-indexeddb/auto';
 import { useSlideStore } from '../../src/store/slideStore.ts';
 import {
   clearAllSlideProjects,
+  getSlideActivity,
+  saveSlideActivity,
   saveSlideProject,
   setLastActiveSlideProject,
 } from '../../src/utils/slideDB.ts';
@@ -29,8 +31,12 @@ function makeProject(overrides: Partial<SlideProject> = {}): SlideProject {
 }
 
 describe('slideStore', () => {
-  beforeEach(() => {
+  // Reset BOTH the store and the shared fake-indexeddb so no activity/project
+  // leaks across tests (the persistence actions write to IDB; a dirty DB makes
+  // length/list assertions order-dependent).
+  beforeEach(async () => {
     useSlideStore.getState().reset();
+    await clearAllSlideProjects();
   });
   afterAll(() => clearAllSlideProjects());
 
@@ -467,5 +473,102 @@ describe('slideStore', () => {
     expect(s.pendingAsk).toBeNull();
     expect(s.activeProject?.stopped).toBe(true);
     expect(s.activeProject?.pendingAsk).toBeUndefined();
+  });
+
+  it('setActiveProjectData restores the persisted activity feed (US-047)', () => {
+    const feed = [
+      { id: 'e1', type: 'phase_started' as const, status: 'completed' as const, ts: 1, phase: 'plan' as const, label: 'Planning started' },
+      { id: 'e2', type: 'tool_started' as const, status: 'completed' as const, ts: 2, phase: 'plan' as const, round: 1, toolName: 'apply_patch', label: 'Creating /brief.md' },
+    ];
+    useSlideStore.getState().setActiveProjectData({ ...makeProject(), activity: feed });
+
+    expect(useSlideStore.getState().activity).toEqual(feed);
+  });
+
+  it('setActiveProjectData without a persisted feed starts empty', () => {
+    useSlideStore.getState().setActiveProjectData(makeProject());
+    expect(useSlideStore.getState().activity).toEqual([]);
+  });
+
+  it('pushActivity persists the feed for the active project (US-047)', async () => {
+    useSlideStore.getState().setActiveProjectData(makeProject());
+    useSlideStore.getState().pushActivity({
+      id: 'e1',
+      type: 'phase_started',
+      status: 'completed',
+      ts: 1,
+      phase: 'plan',
+      label: 'Planning started',
+    });
+
+    // Fire-and-forget write is async — flush the microtask queue before reading.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await getSlideActivity('proj_1')).toHaveLength(1);
+    expect((await getSlideActivity('proj_1'))[0].label).toBe('Planning started');
+  });
+
+  it('pushActivity does not persist when no project is active', async () => {
+    useSlideStore.getState().pushActivity({
+      id: 'e1',
+      type: 'phase_started',
+      status: 'completed',
+      ts: 1,
+      phase: 'plan',
+      label: 'Planning started',
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await getSlideActivity('proj_never_saved')).toEqual([]);
+  });
+
+  it('patchActivity persists the patched feed for the active project (US-047)', async () => {
+    useSlideStore.getState().setActiveProjectData(makeProject());
+    useSlideStore.getState().pushActivity({
+      id: 'e1',
+      type: 'tool_started',
+      status: 'running',
+      ts: 1,
+      phase: 'plan',
+      label: 'Reading /brief.md',
+    });
+    useSlideStore.getState().patchActivity('e1', { status: 'completed' });
+
+    await new Promise((r) => setTimeout(r, 0));
+    const persisted = await getSlideActivity('proj_1');
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0].status).toBe('completed');
+    expect(persisted[0].id).toBe('e1');
+  });
+
+  it('setActivity replaces and persists the feed for the active project (US-047)', async () => {
+    useSlideStore.getState().setActiveProjectData(makeProject());
+    const feed = [
+      { id: 'a', type: 'phase_started' as const, status: 'completed' as const, ts: 1, phase: 'plan' as const, label: 'Planning started' },
+      { id: 'b', type: 'phase_completed' as const, status: 'completed' as const, ts: 2, phase: 'build' as const, label: 'Deck ready — 3 slides' },
+    ];
+    useSlideStore.getState().setActivity(feed);
+
+    await new Promise((r) => setTimeout(r, 0));
+    const persisted = await getSlideActivity('proj_1');
+    expect(persisted).toHaveLength(2);
+    expect(persisted.map((e) => e.id)).toEqual(['a', 'b']);
+  });
+
+  it('restoreLastActiveProject restores the persisted activity feed (US-047 end-to-end)', async () => {
+    const project = makeProject();
+    await saveSlideProject(project);
+    const feed = [
+      { id: 's', type: 'phase_started' as const, status: 'completed' as const, ts: 1, phase: 'plan' as const, label: 'Planning started' },
+      { id: 't', type: 'tool_finished' as const, status: 'failed' as const, ts: 2, phase: 'plan' as const, round: 1, toolName: 'apply_patch', label: 'Failed: bad context', detail: 'Error: context not found' },
+    ];
+    await saveSlideActivity(project.id, feed);
+
+    await useSlideStore.getState().restoreLastActiveProject('proj_1');
+
+    const s = useSlideStore.getState();
+    expect(s.activeProjectId).toBe('proj_1');
+    expect(s.activity).toEqual(feed);
+    // a pendingAsk re-shows too (restore path unchanged for the rest)
+    expect(s.activeProject?.title).toBe('Test Deck');
   });
 });

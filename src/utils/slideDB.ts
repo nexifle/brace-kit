@@ -1,4 +1,4 @@
-import type { SlideFile, SlideProject } from '../types/index.ts';
+import type { SlideActivityEvent, SlideFile, SlideProject } from '../types/index.ts';
 
 // ==================== Slide Project IndexedDB ====================
 // Dedicated database for Slide Creator projects — separate from the main chat
@@ -6,11 +6,12 @@ import type { SlideFile, SlideProject } from '../types/index.ts';
 // phase, canvas, and pending ask so the workspace survives extension reloads.
 
 const DB_NAME = 'ai-sidebar-slide-projects';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_PROJECTS = 'slide_projects'; // keyPath: project id
 const STORE_MESSAGES = 'slide_messages'; // keyPath: project id -> { messages }
 const STORE_FILES = 'slide_files'; // keyPath: project id -> { files }
+const STORE_ACTIVITY = 'slide_activity'; // keyPath: project id -> { activity }
 const STORE_LAST_ACTIVE = 'slide_last_active'; // keyPath: 'key'
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -32,6 +33,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_FILES)) {
         db.createObjectStore(STORE_FILES, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_ACTIVITY)) {
+        db.createObjectStore(STORE_ACTIVITY, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_LAST_ACTIVE)) {
         db.createObjectStore(STORE_LAST_ACTIVE, { keyPath: 'key' });
@@ -86,8 +90,27 @@ export interface StoredSlideProject {
   stopped?: boolean;
 }
 
-/** The full project as persisted across the three stores. */
-export interface FullSlideProject extends SlideProject {}
+/** The full project as persisted across the stores. */
+export interface FullSlideProject extends SlideProject {
+  /** Capped activity feed persisted alongside the project (US-047). */
+  activity: SlideActivityEvent[];
+}
+
+/** Cap for a persisted activity feed (Amendment A.14): drop the OLDEST beyond this. */
+export const MAX_SLIDE_ACTIVITY_EVENTS = 200;
+
+/**
+ * Cap an activity feed at `max` events, keeping the most recent `max` and
+ * dropping the oldest (front). The feed is append-only in order, so the tail
+ * is the freshest run(s). Returns a copy only when trimming is needed.
+ */
+export function capSlideActivity(
+  events: SlideActivityEvent[],
+  max: number = MAX_SLIDE_ACTIVITY_EVENTS,
+): SlideActivityEvent[] {
+  if (events.length <= max) return events;
+  return events.slice(events.length - max);
+}
 
 function toMetadata(project: SlideProject): StoredSlideProject {
   return {
@@ -160,6 +183,40 @@ export async function saveSlideProject(project: SlideProject): Promise<void> {
 }
 
 /**
+ * Persist a project's activity feed, capped at `MAX_SLIDE_ACTIVITY_EVENTS`
+ * (Amendment A.14): the oldest events are dropped when the cap is exceeded, so
+ * at least the last run survives a reload. `streamingText`/`streamingReasoning`
+ * are deliberately NOT part of the feed and are never persisted.
+ */
+export async function saveSlideActivity(
+  id: string,
+  activity: SlideActivityEvent[],
+): Promise<void> {
+  await runRequest<void>(
+    STORE_ACTIVITY,
+    'readwrite',
+    (store) => store.put({ id, activity: capSlideActivity(activity) }),
+    'saveSlideActivity'
+  );
+}
+
+/** A project's last-persisted (capped) activity feed, or `[]` if none. */
+export async function getSlideActivity(id: string): Promise<SlideActivityEvent[]> {
+  try {
+    const rec = await runRequest<{ activity: SlideActivityEvent[] } | undefined>(
+      STORE_ACTIVITY,
+      'readonly',
+      (store) => store.get(id),
+      'getSlideActivity'
+    );
+    return rec?.activity ?? [];
+  } catch (e) {
+    console.warn('[SlideDB] getSlideActivity error:', e);
+    return [];
+  }
+}
+
+/**
  * Reassemble a full project from metadata + messages + files, or `null` if the
  * project (or its metadata) does not exist.
  */
@@ -173,7 +230,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
     );
     if (!metadata) return null;
 
-    const [messagesRec, filesRec] = await Promise.all([
+    const [messagesRec, filesRec, activityRec] = await Promise.all([
       runRequest<{ messages: SlideProject['messages'] } | undefined>(
         STORE_MESSAGES,
         'readonly',
@@ -185,6 +242,12 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
         'readonly',
         (store) => store.get(id),
         'getSlideProject (files)'
+      ),
+      runRequest<{ activity: SlideActivityEvent[] } | undefined>(
+        STORE_ACTIVITY,
+        'readonly',
+        (store) => store.get(id),
+        'getSlideProject (activity)'
       ),
     ]);
 
@@ -199,6 +262,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
       stopped: metadata.stopped,
       messages: messagesRec?.messages ?? [],
       files: filesRec?.files ?? [],
+      activity: activityRec?.activity ?? [],
     };
   } catch (e) {
     console.warn('[SlideDB] getSlideProject error:', e);
@@ -236,12 +300,13 @@ export async function deleteSlideProject(id: string): Promise<void> {
   const isLastActive = (await getLastActiveSlideProject()) === id;
   const db = await openDB();
   const tx = db.transaction(
-    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_LAST_ACTIVE],
+    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_LAST_ACTIVE],
     'readwrite'
   );
   tx.objectStore(STORE_PROJECTS).delete(id);
   tx.objectStore(STORE_MESSAGES).delete(id);
   tx.objectStore(STORE_FILES).delete(id);
+  tx.objectStore(STORE_ACTIVITY).delete(id);
   if (isLastActive) {
     tx.objectStore(STORE_LAST_ACTIVE).delete('active');
   }
@@ -283,12 +348,13 @@ export async function getLastActiveSlideProject(): Promise<string | null> {
 export async function clearAllSlideProjects(): Promise<void> {
   const db = await openDB();
   const tx = db.transaction(
-    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_LAST_ACTIVE],
+    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_LAST_ACTIVE],
     'readwrite'
   );
   tx.objectStore(STORE_PROJECTS).clear();
   tx.objectStore(STORE_MESSAGES).clear();
   tx.objectStore(STORE_FILES).clear();
+  tx.objectStore(STORE_ACTIVITY).clear();
   tx.objectStore(STORE_LAST_ACTIVE).clear();
 
   await new Promise<void>((resolve, reject) => {

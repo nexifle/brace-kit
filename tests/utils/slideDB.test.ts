@@ -2,14 +2,22 @@ import { beforeEach, afterAll, describe, expect, test } from 'bun:test';
 import 'fake-indexeddb/auto';
 import {
   clearAllSlideProjects,
+  capSlideActivity,
   deleteSlideProject,
   getLastActiveSlideProject,
+  getSlideActivity,
   getSlideProject,
   listSlideProjects,
+  MAX_SLIDE_ACTIVITY_EVENTS,
+  saveSlideActivity,
   saveSlideProject,
   setLastActiveSlideProject,
 } from '../../src/utils/slideDB.ts';
-import type { SlideFile, SlideProject } from '../../src/types/index.ts';
+import type {
+  SlideActivityEvent,
+  SlideFile,
+  SlideProject,
+} from '../../src/types/index.ts';
 
 const project = (id: string, title = `Project ${id}`): SlideProject => ({
   id,
@@ -123,5 +131,79 @@ describe('slideDB last-active', () => {
     await setLastActiveSlideProject('p1');
     await clearAllSlideProjects();
     expect(await getLastActiveSlideProject()).toBeNull();
+  });
+});
+
+describe('slideDB activity persistence (US-047)', () => {
+  const event = (id: string, seed: number): SlideActivityEvent => ({
+    id,
+    type: 'tool_started',
+    status: 'completed',
+    ts: 1000 + seed,
+    phase: 'plan',
+    round: 1,
+    label: `Tool ${seed}`,
+  });
+
+  test('save then get round-trips the activity feed', async () => {
+    const feed = [event('e1', 1), event('e2', 2)];
+    await saveSlideActivity('p1', feed);
+    expect(await getSlideActivity('p1')).toEqual(feed);
+  });
+
+  test('get returns [] for a project with no persisted activity', async () => {
+    expect(await getSlideActivity('missing')).toEqual([]);
+  });
+
+  test('saving over the cap drops the OLDEST events', async () => {
+    const feed = Array.from({ length: MAX_SLIDE_ACTIVITY_EVENTS + 25 }, (_, i) =>
+      event(`e${i}`, i),
+    );
+    await saveSlideActivity('p1', feed);
+    const loaded = await getSlideActivity('p1');
+    expect(loaded).toHaveLength(MAX_SLIDE_ACTIVITY_EVENTS);
+    // The oldest (front) events were dropped; the tail of the feed survived.
+    expect(loaded[0].id).toBe('e25');
+    expect(loaded[MAX_SLIDE_ACTIVITY_EVENTS - 1].id).toBe(
+      `e${MAX_SLIDE_ACTIVITY_EVENTS + 24}`,
+    );
+  });
+
+  test('capSlideActivity is a pure no-op at or under the cap', () => {
+    const feed = [event('e1', 1), event('e2', 2)];
+    expect(capSlideActivity(feed)).toBe(feed);
+    expect(capSlideActivity(feed, 2)).toBe(feed);
+  });
+
+  test('capSlideActivity keeps the tail when over the cap', () => {
+    const feed = [event('e0', 0), event('e1', 1), event('e2', 2), event('e3', 3)];
+    expect(capSlideActivity(feed, 2)).toEqual([event('e2', 2), event('e3', 3)]);
+  });
+
+  test('getSlideProject rehydrates the persisted activity', async () => {
+    await saveSlideProject(project('p1'));
+    await saveSlideActivity('p1', [event('e1', 1)]);
+    const loaded = await getSlideProject('p1');
+    expect(loaded!.activity).toEqual([event('e1', 1)]);
+  });
+
+  test('a project never saved with activity rehydrates with []', async () => {
+    await saveSlideProject(project('p1'));
+    const loaded = await getSlideProject('p1');
+    expect(loaded!.activity).toEqual([]);
+  });
+
+  test('delete removes the persisted activity feed', async () => {
+    await saveSlideProject(project('p1'));
+    await saveSlideActivity('p1', [event('e1', 1)]);
+    await deleteSlideProject('p1');
+    expect(await getSlideActivity('p1')).toEqual([]);
+  });
+
+  test('clearAllSlideProjects clears activity', async () => {
+    await saveSlideProject(project('p1'));
+    await saveSlideActivity('p1', [event('e1', 1)]);
+    await clearAllSlideProjects();
+    expect(await getSlideActivity('p1')).toEqual([]);
   });
 });
