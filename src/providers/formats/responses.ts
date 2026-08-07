@@ -67,24 +67,26 @@ export function formatResponses(
         role: 'user',
         content: [{ type: 'input_text', text: msg.content }],
       });
-    } else if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-      const content: Record<string, unknown>[] = [
-        { type: 'output_text', text: msg.content || '' },
-        ...msg.toolCalls.map((tc) => ({
-          type: 'function_call',
-          id: tc.id,
-          call_id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments || '{}',
-          status: 'completed',
-        })),
-      ];
-      input.push({ role: 'assistant', content });
     } else if (msg.role === 'assistant') {
+      // Assistant messages carry only output_text content. Each tool call is
+      // emitted as a separate top-level `function_call` input item — the shape
+      // the chat proxy's untagged `ModelInput` enum accepts. Nesting a
+      // `function_call` inside the message `content` array fails deserialization
+      // with HTTP 422.
       input.push({
         role: 'assistant',
         content: [{ type: 'output_text', text: msg.content || '' }],
       });
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const tc of msg.toolCalls) {
+          input.push({
+            type: 'function_call',
+            call_id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments || '{}',
+          });
+        }
+      }
     } else if (msg.role === 'tool') {
       input.push({
         type: 'function_call_output',

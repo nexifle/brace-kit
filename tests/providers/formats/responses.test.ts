@@ -122,26 +122,58 @@ describe('Grok Responses Format', () => {
         text: 'Question',
       });
 
-      const assistantCall = input[1] as Record<string, unknown>;
-      const callParts = assistantCall.content as Array<Record<string, unknown>>;
-      expect(callParts.find((p) => p.type === 'function_call')).toEqual({
+      // Assistant message carries only output_text content
+      expect(input[1].role).toBe('assistant');
+      expect(input[1].content).toEqual([{ type: 'output_text', text: '' }]);
+
+      // Tool call is a separate top-level function_call item
+      expect(input[2]).toEqual({
         type: 'function_call',
-        id: 'c1',
         call_id: 'c1',
         name: 'search',
         arguments: '{"q":"x"}',
-        status: 'completed',
       });
 
-      expect(input[2]).toEqual({
+      expect(input[3]).toEqual({
         type: 'function_call_output',
         call_id: 'c1',
         output: 'results',
       });
 
-      expect((input[3].content as Array<Record<string, unknown>>)[0]).toEqual({
+      expect((input[4].content as Array<Record<string, unknown>>)[0]).toEqual({
         type: 'output_text',
         text: 'Done',
+      });
+    });
+
+    it('[REGRESSION] should not nest function_call inside assistant content (proxy ModelInput 422)', () => {
+      const messages: Message[] = [
+        {
+          role: 'assistant',
+          content: 'Let me search',
+          toolCalls: [{ id: 'c1', name: 'search', arguments: '{"q":"x"}' }],
+        },
+        { role: 'tool', toolCallId: 'c1', content: 'results' },
+      ];
+      const config = formatResponses(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      const assistantItem = body.input.find((it: Record<string, unknown>) => it.role === 'assistant');
+      // content must contain only output_text parts — never a function_call part
+      for (const part of assistantItem.content as Array<Record<string, unknown>>) {
+        expect(part.type).toBe('output_text');
+      }
+      // the function call is a top-level item
+      expect(body.input).toContainEqual({
+        type: 'function_call',
+        call_id: 'c1',
+        name: 'search',
+        arguments: '{"q":"x"}',
+      });
+      expect(body.input).toContainEqual({
+        type: 'function_call_output',
+        call_id: 'c1',
+        output: 'results',
       });
     });
 
@@ -241,6 +273,43 @@ describe('Grok Responses Format', () => {
           totalTokenCount: 15,
         },
       });
+    });
+
+    it('should yield text incrementally as events arrive (not buffer until stream end)', async () => {
+      // One SSE event per reader.read() call — if the parser buffered the whole
+      // body before yielding, the first chunk would only appear after all reads.
+      const events = [
+        'data: {"type":"response.output_text.delta","delta":"A"}\n\n',
+        'data: {"type":"response.output_text.delta","delta":"B"}\n\n',
+        'data: {"type":"response.output_text.delta","delta":"C"}\n\n',
+        'data: [DONE]\n\n',
+      ];
+      let reads = 0;
+      const reader = {
+        read: async () => {
+          if (reads < events.length) {
+            const value = new TextEncoder().encode(events[reads]);
+            reads++;
+            return { done: false, value };
+          }
+          return { done: true, value: undefined };
+        },
+        cancel: () => {},
+        releaseLock: () => {},
+      };
+      const response = { body: { getReader: () => reader } } as unknown as Response;
+
+      const generator = parseResponsesStream(response);
+      const first = await generator.next();
+      // First text chunk is available after reading ONLY the first event
+      expect(first.value).toEqual({ type: 'text', content: 'A' });
+      expect(reads).toBe(1);
+
+      const text: string[] = [first.value.content as string];
+      for await (const chunk of generator) {
+        if (chunk.type === 'text') text.push(chunk.content as string);
+      }
+      expect(text.join('')).toBe('ABC');
     });
 
     it('should surface an error event', async () => {
