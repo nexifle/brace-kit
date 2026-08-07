@@ -44,7 +44,11 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
     : [];
   const canSubmit = answer.trim().length > 0 || attachments.length > 0;
 
-  const pickChip = (value: string) => setAnswer(value);
+  // A.11: tapping a chip answers immediately (no separate send step).
+  const submitChip = (value: string) => {
+    if (busy) return;
+    onSubmit(value, attachments.map((a) => a.dataUrl));
+  };
 
   const readImage = (file: File) => {
     if (attachments.length >= MAX_ASK_ATTACHMENTS) return;
@@ -135,8 +139,8 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
             <button
               key={key}
               type="button"
-              onClick={() => pickChip(key)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-all duration-150 ${
+              onClick={() => submitChip(key)}
+              className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-all duration-150 ${
                 answer === key
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -149,8 +153,8 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
             <button
               key={chip}
               type="button"
-              onClick={() => pickChip(chip)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-all duration-150 ${
+              onClick={() => submitChip(chip)}
+              className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-all duration-150 ${
                 answer === chip
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -165,6 +169,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
       {/* Free-text answer */}
       <div className="px-3.5 pt-2.5">
         <textarea
+          autoFocus
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           onKeyDown={(e) => {
