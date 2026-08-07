@@ -647,6 +647,7 @@ export type {
   SlideProject,
   SlideSessionStatus,
   SlideUiRuntime,
+  SlideRound,
 } from './slides.ts';
 export {
   DEFAULT_SLIDE_AGENT_MAX_ROUNDS,

@@ -758,4 +758,128 @@ describe('slideStore', () => {
     // a pendingAsk re-shows too (restore path unchanged for the rest)
     expect(s.activeProject?.title).toBe('Test Deck');
   });
+
+  describe('undo/redo rounds', () => {
+    const r1Files = [
+      { path: '/deck.json', content: JSON.stringify({ title: 'Test Deck', slideOrder: ['01', '02'], canvas: '16:9' }) },
+      { path: '/slides/01.html', content: '<h1>One</h1>' },
+      { path: '/slides/02.html', content: '<h1>Two</h1>' },
+    ];
+    const r2Files = [
+      { path: '/deck.json', content: JSON.stringify({ title: 'Test Deck', slideOrder: ['01', '02'], canvas: '16:9' }) },
+      { path: '/slides/01.html', content: '<h1>One v2</h1>' },
+      { path: '/slides/02.html', content: '<h1>Two</h1>' },
+    ];
+
+    it('commitRound appends checkpoints and advances roundIndex', () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Deck built · 2 slides');
+      useSlideStore.getState().commitRound(r2Files, 'Make the title darker');
+
+      const s = useSlideStore.getState();
+      expect(s.rounds).toHaveLength(2);
+      expect(s.roundIndex).toBe(1);
+      expect(s.rounds[0].number).toBe(1);
+      expect(s.rounds[0].label).toBe('Deck built · 2 slides');
+      expect(s.rounds[1].number).toBe(2);
+      expect(s.rounds[1].label).toBe('Make the title darker');
+    });
+
+    it('commitRound is a no-op when files match the head round', () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Round 1');
+      useSlideStore.getState().commitRound(r1Files, 'Round 2 (dup)');
+
+      const s = useSlideStore.getState();
+      expect(s.rounds).toHaveLength(1);
+      expect(s.roundIndex).toBe(0);
+    });
+
+    it('restoreRound rebuilds the deck to the pointed-to fileset', async () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Round 1');
+      useSlideStore.getState().commitRound(r2Files, 'Round 2');
+
+      await useSlideStore.getState().restoreRound('proj_1', 0);
+
+      const s = useSlideStore.getState();
+      expect(s.roundIndex).toBe(0);
+      expect(s.activeProject?.files).toEqual(r1Files);
+      expect(s.activeDeck?.slideOrder).toEqual(['01', '02']);
+      expect(s.deckSlides.map((sl) => sl.id)).toEqual(['01', '02']);
+      expect(s.deckSlides[0]?.htmlPath).toBe('/slides/01.html');
+    });
+
+    it('commitRound after restore truncates the redo tail', () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Round 1');
+      useSlideStore.getState().commitRound(r2Files, 'Round 2');
+      useSlideStore.getState().restoreRound('proj_1', 0);
+
+      // A new edit from the restored state drops Round 2 (the redo tail).
+      const r3Files = [
+        { path: '/deck.json', content: JSON.stringify({ title: 'Test Deck', slideOrder: ['01', '02'], canvas: '16:9' }) },
+        { path: '/slides/01.html', content: '<h1>One v3</h1>' },
+        { path: '/slides/02.html', content: '<h1>Two</h1>' },
+      ];
+      useSlideStore.getState().commitRound(r3Files, 'Fresh edit');
+      const s = useSlideStore.getState();
+      expect(s.rounds).toHaveLength(2);
+      expect(s.rounds.map((r) => r.number)).toEqual([1, 2]);
+      expect(s.roundIndex).toBe(1);
+      expect(s.rounds[1].label).toBe('Fresh edit');
+      expect(s.rounds[1].files).toEqual(r3Files);
+    });
+
+    it('undo/redo via restoreRound(±1) walk the history', async () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Round 1');
+      useSlideStore.getState().commitRound(r2Files, 'Round 2');
+
+      await useSlideStore.getState().restoreRound('proj_1', 0);
+      expect(useSlideStore.getState().roundIndex).toBe(0);
+      expect(useSlideStore.getState().activeProject?.files).toEqual(r1Files);
+
+      await useSlideStore.getState().restoreRound('proj_1', 1);
+      expect(useSlideStore.getState().roundIndex).toBe(1);
+      expect(useSlideStore.getState().activeProject?.files).toEqual(r2Files);
+
+      // Restoring the current round is a no-op.
+      await useSlideStore.getState().restoreRound('proj_1', 1);
+      expect(useSlideStore.getState().roundIndex).toBe(1);
+    });
+
+    it('restoreRound is a no-op while busy', async () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Round 1');
+      useSlideStore.getState().commitRound(r2Files, 'Round 2');
+      // Simulate the orchestrator having landed the newest fileset.
+      useSlideStore.getState().setActiveDeckFromVfs(r2Files);
+
+      useSlideStore.getState().setBusy(true);
+      await useSlideStore.getState().restoreRound('proj_1', 0);
+      expect(useSlideStore.getState().roundIndex).toBe(1);
+      expect(useSlideStore.getState().activeProject?.files).toEqual(r2Files);
+    });
+
+    it('restoreRound is a no-op while a pendingAsk is suspended', async () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      useSlideStore.getState().commitRound(r1Files, 'Round 1');
+      useSlideStore.getState().commitRound(r2Files, 'Round 2');
+      // Simulate the orchestrator having landed the newest fileset.
+      useSlideStore.getState().setActiveDeckFromVfs(r2Files);
+
+      useSlideStore.getState().setPendingAsk({
+        id: 'ask1',
+        toolCallId: 'tc1',
+        sessionRef: 'plan',
+        payload: { question: 'Canvas?', options: ['16:9'], field: 'canvas' },
+        createdAt: 1500,
+        projectId: 'proj_1',
+      });
+      await useSlideStore.getState().restoreRound('proj_1', 0);
+      expect(useSlideStore.getState().roundIndex).toBe(1);
+      expect(useSlideStore.getState().activeProject?.files).toEqual(r2Files);
+    });
+  });
 });

@@ -85,6 +85,18 @@ export interface Slide {
   cssPath?: string;
 }
 
+/** A deck-generation checkpoint: the VFS after one completed build/edit round. */
+export interface SlideRound {
+  /** 1-based round number (stable, sequential). */
+  number: number;
+  /** Short UI label, e.g. "Deck built · 5 slides" or the edit prompt (≤60 chars). */
+  label: string;
+  /** Epoch ms when the round committed. */
+  createdAt: number;
+  /** Full VFS snapshot at the moment the round landed. */
+  files: SlideFile[];
+}
+
 /**
  * Decoded deck structure projected from the VFS (`/deck.json` + slide files).
  * This is what the UI consumes to render/navigate/export the deck.

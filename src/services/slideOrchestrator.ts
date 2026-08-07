@@ -121,6 +121,8 @@ export interface SlideAgentHost {
   patchActivity?: (id: string, partial: Partial<import('../types/slides.ts').SlideActivityEvent>) => void;
   /** Read the live activity feed (for Continue routing after max-round stops). */
   getActivity?: () => import('../types/slides.ts').SlideActivityEvent[];
+  /** Checkpoint a completed build/edit round's landed VFS (undo/redo history). */
+  recordRound?: (files: SlideFile[], label: string) => void;
 }
 
 /** Runtime/network dependencies (injected for tests). */
@@ -199,6 +201,10 @@ export function createSlideAgent(
 
   /** Feed a streaming turn delta to the store (US-035). */
   const streamDelta = (delta: StreamDelta) => host.streamDelta?.(delta);
+
+  /** Checkpoint a completed build/edit round's landed VFS (undo/redo history). */
+  const recordRound = (files: SlideFile[], label: string) =>
+    host.recordRound?.(files, label);
 
   /** Clear any stale streaming buffers before a fresh turn/phase. */
   const prepareStream = () => host.clearStreaming?.();
@@ -552,6 +558,10 @@ export function createSlideAgent(
       host.setPhase('ready');
       // slideCount comes from the same mapBuildResult projection as the activity feed.
       const slides = result.slideCount ?? 0;
+      recordRound(
+        result.files,
+        slides > 0 ? `Deck built · ${slides} slide${slides === 1 ? '' : 's'}` : 'Deck built',
+      );
       appendMessage(
         next,
         assistantOrFallback(
@@ -578,6 +588,12 @@ export function createSlideAgent(
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
+        if (slides > 0) {
+          recordRound(
+            result.files,
+            `Deck built (partial) · ${slides} slide${slides === 1 ? '' : 's'}`,
+          );
+        }
         const narration = result.content?.trim();
         let landed = next;
         if (narration) {
@@ -710,6 +726,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('ready');
+      recordRound(result.files, 'Continue edit');
       appendMessage(next, assistantOrFallback(result.content, 'Deck updated.'));
       return;
     }
@@ -727,6 +744,9 @@ export function createSlideAgent(
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
+        if (slides > 0) {
+          recordRound(result.files, 'Continue edit');
+        }
         const narration = result.content?.trim();
         let landed = next;
         if (narration) landed = appendMessage(landed, makeMsg('assistant', narration));
@@ -824,6 +844,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('ready');
+      recordRound(result.files, message);
       appendMessage(next, assistantOrFallback(result.content, 'Deck updated.'));
       return;
     }
@@ -842,6 +863,9 @@ export function createSlideAgent(
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
+        if (slides > 0) {
+          recordRound(result.files, message);
+        }
         const narration = result.content?.trim();
         let landed = next;
         if (narration) {

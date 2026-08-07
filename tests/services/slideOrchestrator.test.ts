@@ -86,6 +86,7 @@ function makeHost() {
   const answered: Array<{ projectId: string; answer: string }> = [];
   const activity: SlideActivityEvent[] = [];
   const streamChunks: Array<{ text?: string; reasoning?: string }> = [];
+  const rounds: Array<{ files: SlideFile[]; label: string }> = [];
 
   const host = {
     getActiveProject: () => active,
@@ -122,6 +123,9 @@ function makeHost() {
       if (idx >= 0) activity[idx] = { ...activity[idx], ...partial, id };
     },
     getActivity: () => activity,
+    recordRound: (files: SlideFile[], label: string) => {
+      rounds.push({ files, label });
+    },
   };
 
   return {
@@ -152,6 +156,9 @@ function makeHost() {
     },
     get streamChunks() {
       return streamChunks;
+    },
+    get rounds() {
+      return rounds;
     },
   };
 }
@@ -351,6 +358,11 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     expect(h.phase).toBe('ready');
     expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
     expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Deck complete.')).toBe(true);
+
+    // A completed build commits exactly one round checkpoint with the landed files.
+    expect(h.rounds).toHaveLength(1);
+    expect(h.rounds[0].files).toEqual(h.active?.files);
+    expect(h.rounds[0].label).toContain('Deck built');
   });
 
   it('refuses to build when brief/design are missing', async () => {
@@ -407,6 +419,11 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     expect(userFollowUps.length).toBe(1);
     expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
     expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Edited.')).toBe(true);
+
+    // A completed edit commits one round checkpoint labeled with the follow-up prompt.
+    expect(h.rounds).toHaveLength(1);
+    expect(h.rounds[0].files).toEqual(h.active?.files);
+    expect(h.rounds[0].label).toBe('make the first slide bolder');
   });
 
   it('lands the full model summary as assistant and emits activity for tools/files', async () => {

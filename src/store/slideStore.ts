@@ -9,12 +9,14 @@ import type {
   SlidePendingAsk,
   SlidePhase,
   SlideProject,
+  SlideRound,
   SlideSessionStatus,
 } from '../types/index.ts';
 import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../types/index.ts';
 import {
   projectDeckSlides,
   rebuildDeckProjection,
+  slidesToMap,
   upsertSlideFile,
 } from '../utils/slideVfs.ts';
 import {
@@ -25,6 +27,7 @@ import {
   listSlideProjects,
   saveSlideActivity,
   saveSlideProject,
+  saveSlideRounds,
   type StoredSlideProject,
 } from '../utils/slideDB.ts';
 
@@ -80,12 +83,22 @@ export interface SlideStoreState {
   messages: SlideMainMessage[];
   /** Panel layout view for the shell. */
   panelView: SlidePanelView;
+  /** Deck-generation history for the active project (oldest → newest). */
+  rounds: SlideRound[];
+  /** Index into `rounds` currently active; -1 when no rounds exist. */
+  roundIndex: number;
 
 
   // --- selection / project lifecycle ---
   setActiveProject: (projectId: string | null) => void;
   /** Load a full project into the store and rebuild its deck projection. */
-  setActiveProjectData: (project: SlideProject & { activity?: SlideActivityEvent[] }) => void;
+  setActiveProjectData: (
+    project: SlideProject & {
+      activity?: SlideActivityEvent[];
+      rounds?: SlideRound[];
+      roundIndex?: number;
+    },
+  ) => void;
   setPhase: (phase: SlidePhase) => void;
   /**
    * Set session status and derive `busy` from it.
@@ -147,6 +160,10 @@ export interface SlideStoreState {
   updatePlanFile: (path: string, content: string) => void;
   /** Transition the active project into the build phase (the Build CTA). */
   requestBuild: () => void;
+  /** Append a checkpoint for a completed build/edit round (orchestrator calls it). */
+  commitRound: (files: SlideFile[], label: string) => void;
+  /** Jump the active project to `rounds[index]` (persist files + pointer). */
+  restoreRound: (projectId: string, index: number) => Promise<void>;
   setDeck: (deck: SlideDeck | null) => void;
   selectSlide: (index: number) => void;
   setMessages: (messages: SlideMainMessage[]) => void;
@@ -176,6 +193,8 @@ const INITIAL_STATE = {
   currentSlideIndex: 0,
   messages: [] as SlideMainMessage[],
   panelView: 'split' as SlidePanelView,
+  rounds: [] as SlideRound[],
+  roundIndex: -1 as number,
 };
 
 /**
@@ -187,6 +206,15 @@ function persistActivity(id: string, activity: SlideActivityEvent[]): void {
   saveSlideActivity(id, activity).catch((e) => {
     console.warn('[SlideDB] saveSlideActivity failed:', e);
   });
+}
+
+/** True when two `slidesToMap`-normalized VFS maps hold identical contents. */
+function fileMapsEqual(a: Map<string, string>, b: Map<string, string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [path, content] of a) {
+    if (b.get(path) !== content) return false;
+  }
+  return true;
 }
 
 export const useSlideStore = create<SlideStoreState>((set, get) => ({
@@ -214,6 +242,14 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
           : sameProject
             ? state.activity
             : [];
+      // Rounds likewise live outside SlideProject (own slideDB store). Mid-phase
+      // landProject ships only SlideProject fields, so `rounds` stays undefined
+      // and the live history is preserved; getSlideProject's FullSlideProject
+      // carries them explicitly and wins on open/reload.
+      const rounds =
+        project.rounds !== undefined ? project.rounds : sameProject ? state.rounds : [];
+      const roundIndex =
+        project.roundIndex !== undefined ? project.roundIndex : state.roundIndex;
       // Mid-phase landProject (e.g. appendMessage user turn at edit start) must
       // NOT clear sessionStatus/busy — that drops the composer out of Generating
       // / Stop while the agent is still running. Preserve only while same project
@@ -251,6 +287,8 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
         deckSlides: slides,
         canvas: project.canvas ?? deck.canvas,
         currentSlideIndex: 0,
+        rounds,
+        roundIndex,
       };
     }),
 
@@ -420,6 +458,56 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
       saveSlideProject(nextProject).catch(() => {});
       return { activeProject: nextProject, phase: 'build' as SlidePhase };
     }),
+
+  commitRound: (files, label) =>
+    set((state) => {
+      // No-op when the fileset is identical to the active head — avoids stacking
+      // duplicate checkpoints for a repeated land.
+      const head = state.rounds[state.roundIndex];
+      if (head && fileMapsEqual(slidesToMap(head.files), slidesToMap(files))) {
+        return {};
+      }
+      const number =
+        state.roundIndex >= 0 ? state.rounds[state.roundIndex].number + 1 : 1;
+      const trimmed = label.trim().slice(0, 60);
+      const round: SlideRound = {
+        number,
+        label: trimmed || `Round ${number}`,
+        createdAt: Date.now(),
+        files,
+      };
+      // Truncate any redo tail: restoring then editing drops newer rounds.
+      const rounds = [...state.rounds.slice(0, state.roundIndex + 1), round];
+      const nextIndex = rounds.length - 1;
+      if (state.activeProjectId) {
+        // Files were already persisted by the orchestrator's preceding landProject.
+        saveSlideRounds(state.activeProjectId, rounds, nextIndex).catch(() => {});
+      }
+      return { rounds, roundIndex: nextIndex };
+    }),
+
+  restoreRound: async (projectId, index) => {
+    const s = get();
+    if (
+      !s.activeProject ||
+      s.activeProject.id !== projectId ||
+      s.busy ||
+      s.pendingAsk ||
+      !s.rounds[index] ||
+      index === s.roundIndex
+    ) {
+      return;
+    }
+    const next = {
+      ...s.activeProject,
+      files: s.rounds[index].files,
+      updatedAt: Date.now(),
+    };
+    saveSlideProject(next).catch(() => {});
+    saveSlideRounds(projectId, s.rounds, index).catch(() => {});
+    set({ activeProject: next, roundIndex: index });
+    get().setActiveDeckFromVfs(s.rounds[index].files);
+  },
 
   setDeck: (activeDeck) =>
     set((state) => ({

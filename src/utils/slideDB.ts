@@ -1,4 +1,4 @@
-import type { SlideActivityEvent, SlideFile, SlideProject } from '../types/index.ts';
+import type { SlideActivityEvent, SlideFile, SlideProject, SlideRound } from '../types/index.ts';
 
 // ==================== Slide Project IndexedDB ====================
 // Dedicated database for Slide Creator projects — separate from the main chat
@@ -6,12 +6,13 @@ import type { SlideActivityEvent, SlideFile, SlideProject } from '../types/index
 // phase, canvas, and pending ask so the workspace survives extension reloads.
 
 const DB_NAME = 'ai-sidebar-slide-projects';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORE_PROJECTS = 'slide_projects'; // keyPath: project id
 const STORE_MESSAGES = 'slide_messages'; // keyPath: project id -> { messages }
 const STORE_FILES = 'slide_files'; // keyPath: project id -> { files }
 const STORE_ACTIVITY = 'slide_activity'; // keyPath: project id -> { activity }
+const STORE_ROUNDS = 'slide_rounds'; // keyPath: project id -> { id, rounds, roundIndex }
 const STORE_LAST_ACTIVE = 'slide_last_active'; // keyPath: 'key'
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -36,6 +37,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_ACTIVITY)) {
         db.createObjectStore(STORE_ACTIVITY, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_ROUNDS)) {
+        db.createObjectStore(STORE_ROUNDS, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_LAST_ACTIVE)) {
         db.createObjectStore(STORE_LAST_ACTIVE, { keyPath: 'key' });
@@ -94,6 +98,10 @@ export interface StoredSlideProject {
 export interface FullSlideProject extends SlideProject {
   /** Capped activity feed persisted alongside the project (US-047). */
   activity: SlideActivityEvent[];
+  /** Deck-generation checkpoints (oldest → newest); may be empty for legacy projects. */
+  rounds: SlideRound[];
+  /** Index into `rounds` currently active; -1 when no rounds exist. */
+  roundIndex: number;
 }
 
 /** Cap for a persisted activity feed (Amendment A.14): drop the OLDEST beyond this. */
@@ -217,6 +225,44 @@ export async function getSlideActivity(id: string): Promise<SlideActivityEvent[]
 }
 
 /**
+ * Persist a project's deck-generation rounds (undo/redo history) together with
+ * the active round pointer. Rounds are snapshots of the VFS taken at each
+ * completed build/edit land; restoring moves the pointer and re-persists the
+ * pointed-to files via `saveSlideProject`.
+ */
+export async function saveSlideRounds(
+  id: string,
+  rounds: SlideRound[],
+  roundIndex: number,
+): Promise<void> {
+  await runRequest<void>(
+    STORE_ROUNDS,
+    'readwrite',
+    (store) => store.put({ id, rounds, roundIndex }),
+    'saveSlideRounds'
+  );
+}
+
+/** A project's persisted rounds + active pointer, or `{ [], -1 }` if none. */
+export async function getSlideRounds(id: string): Promise<{
+  rounds: SlideRound[];
+  roundIndex: number;
+}> {
+  try {
+    const rec = await runRequest<{ rounds: SlideRound[]; roundIndex: number } | undefined>(
+      STORE_ROUNDS,
+      'readonly',
+      (store) => store.get(id),
+      'getSlideRounds'
+    );
+    return { rounds: rec?.rounds ?? [], roundIndex: rec?.roundIndex ?? -1 };
+  } catch (e) {
+    console.warn('[SlideDB] getSlideRounds error:', e);
+    return { rounds: [], roundIndex: -1 };
+  }
+}
+
+/**
  * Reassemble a full project from metadata + messages + files, or `null` if the
  * project (or its metadata) does not exist.
  */
@@ -230,7 +276,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
     );
     if (!metadata) return null;
 
-    const [messagesRec, filesRec, activityRec] = await Promise.all([
+    const [messagesRec, filesRec, activityRec, roundsRec] = await Promise.all([
       runRequest<{ messages: SlideProject['messages'] } | undefined>(
         STORE_MESSAGES,
         'readonly',
@@ -249,6 +295,12 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
         (store) => store.get(id),
         'getSlideProject (activity)'
       ),
+      runRequest<{ rounds: SlideRound[]; roundIndex: number } | undefined>(
+        STORE_ROUNDS,
+        'readonly',
+        (store) => store.get(id),
+        'getSlideProject (rounds)'
+      ),
     ]);
 
     return {
@@ -263,6 +315,8 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
       messages: messagesRec?.messages ?? [],
       files: filesRec?.files ?? [],
       activity: activityRec?.activity ?? [],
+      rounds: roundsRec?.rounds ?? [],
+      roundIndex: roundsRec?.roundIndex ?? -1,
     };
   } catch (e) {
     console.warn('[SlideDB] getSlideProject error:', e);
@@ -300,13 +354,14 @@ export async function deleteSlideProject(id: string): Promise<void> {
   const isLastActive = (await getLastActiveSlideProject()) === id;
   const db = await openDB();
   const tx = db.transaction(
-    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_LAST_ACTIVE],
+    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_ROUNDS, STORE_LAST_ACTIVE],
     'readwrite'
   );
   tx.objectStore(STORE_PROJECTS).delete(id);
   tx.objectStore(STORE_MESSAGES).delete(id);
   tx.objectStore(STORE_FILES).delete(id);
   tx.objectStore(STORE_ACTIVITY).delete(id);
+  tx.objectStore(STORE_ROUNDS).delete(id);
   if (isLastActive) {
     tx.objectStore(STORE_LAST_ACTIVE).delete('active');
   }
@@ -348,13 +403,14 @@ export async function getLastActiveSlideProject(): Promise<string | null> {
 export async function clearAllSlideProjects(): Promise<void> {
   const db = await openDB();
   const tx = db.transaction(
-    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_LAST_ACTIVE],
+    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_ROUNDS, STORE_LAST_ACTIVE],
     'readwrite'
   );
   tx.objectStore(STORE_PROJECTS).clear();
   tx.objectStore(STORE_MESSAGES).clear();
   tx.objectStore(STORE_FILES).clear();
   tx.objectStore(STORE_ACTIVITY).clear();
+  tx.objectStore(STORE_ROUNDS).clear();
   tx.objectStore(STORE_LAST_ACTIVE).clear();
 
   await new Promise<void>((resolve, reject) => {

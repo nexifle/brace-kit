@@ -7,16 +7,19 @@ import {
   getLastActiveSlideProject,
   getSlideActivity,
   getSlideProject,
+  getSlideRounds,
   listSlideProjects,
   MAX_SLIDE_ACTIVITY_EVENTS,
   saveSlideActivity,
   saveSlideProject,
+  saveSlideRounds,
   setLastActiveSlideProject,
 } from '../../src/utils/slideDB.ts';
 import type {
   SlideActivityEvent,
   SlideFile,
   SlideProject,
+  SlideRound,
 } from '../../src/types/index.ts';
 
 const project = (id: string, title = `Project ${id}`): SlideProject => ({
@@ -205,5 +208,57 @@ describe('slideDB activity persistence (US-047)', () => {
     await saveSlideActivity('p1', [event('e1', 1)]);
     await clearAllSlideProjects();
     expect(await getSlideActivity('p1')).toEqual([]);
+  });
+});
+
+describe('slideDB round persistence (undo/redo)', () => {
+  const round = (number: number, label = `Round ${number}`): SlideRound => ({
+    number,
+    label,
+    createdAt: 1000 + number,
+    files: [
+      { path: '/deck.json', content: `deck ${number}` },
+      { path: `/slides/0${number}.html`, content: `slide ${number}` },
+    ],
+  });
+
+  test('save then get round-trips rounds + roundIndex', async () => {
+    const rounds = [round(1), round(2)];
+    await saveSlideRounds('p1', rounds, 1);
+    const { rounds: got, roundIndex } = await getSlideRounds('p1');
+    expect(got).toEqual(rounds);
+    expect(roundIndex).toBe(1);
+  });
+
+  test('get defaults to empty rounds and -1 when no record exists', async () => {
+    expect(await getSlideRounds('missing')).toEqual({ rounds: [], roundIndex: -1 });
+  });
+
+  test('getSlideProject rehydrates rounds + roundIndex and defaults for legacy', async () => {
+    await saveSlideProject(project('p1'));
+    await saveSlideRounds('p1', [round(1), round(2)], 1);
+    const loaded = await getSlideProject('p1');
+    expect(loaded!.rounds).toEqual([round(1), round(2)]);
+    expect(loaded!.roundIndex).toBe(1);
+
+    // A project with rounds never saved rehydrates with [] / -1.
+    await saveSlideProject(project('p2'));
+    const legacy = await getSlideProject('p2');
+    expect(legacy!.rounds).toEqual([]);
+    expect(legacy!.roundIndex).toBe(-1);
+  });
+
+  test('delete removes the persisted rounds', async () => {
+    await saveSlideProject(project('p1'));
+    await saveSlideRounds('p1', [round(1)], 0);
+    await deleteSlideProject('p1');
+    expect(await getSlideRounds('p1')).toEqual({ rounds: [], roundIndex: -1 });
+  });
+
+  test('clearAllSlideProjects clears rounds', async () => {
+    await saveSlideProject(project('p1'));
+    await saveSlideRounds('p1', [round(1)], 0);
+    await clearAllSlideProjects();
+    expect(await getSlideRounds('p1')).toEqual({ rounds: [], roundIndex: -1 });
   });
 });

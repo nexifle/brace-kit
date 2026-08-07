@@ -66,6 +66,7 @@ export function useSlideAgent() {
         pushActivity: (event) => slideStore.pushActivity(event),
         patchActivity: (id, partial) => slideStore.patchActivity(id, partial),
         getActivity: () => useSlideStore.getState().activity,
+        recordRound: (files, label) => slideStore.commitRound(files, label),
       },
       {
         // Live provider/model/key from main store — same pattern as canFunctionCall

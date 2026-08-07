@@ -26,6 +26,7 @@ import { fitBox } from '../../utils/slideFit.ts';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
 import { ExportDeck } from './ExportDeck.tsx';
+import { RoundHistory } from './RoundHistory.tsx';
 import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
@@ -201,6 +202,7 @@ function PreviewPane({
         </div>
 
         <div className="flex items-center gap-2 min-w-0">
+          {hasDeck && <RoundHistory />}
           {hasDeck && <ExportDeck />}
           {hasDeck && <SlideCodeViewer />}
           {hasDeck ? (
