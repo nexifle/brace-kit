@@ -178,6 +178,7 @@ export function getReasoningLevelInfo(
         levels: ['minimal', 'low', 'medium', 'high'],
       };
     case 'xai':
+    case 'grok':
       return {
         supportsLevels: true,
         levels: ['low', 'medium', 'high'],

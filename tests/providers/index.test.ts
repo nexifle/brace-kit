@@ -138,6 +138,24 @@ describe('Providers Index - Unified Interfaces', () => {
       });
     });
 
+    describe('Responses format (Grok OAuth)', () => {
+      it('should post to /responses', () => {
+        const provider = {
+          ...PROVIDER_PRESETS.grok,
+          apiKey: 'test-token',
+          model: 'grok-4.5',
+        };
+        const messages: Message[] = [{ role: 'user', content: 'Hello' }];
+
+        const config = formatRequest(provider, messages);
+        const body = JSON.parse(config.options.body as string);
+
+        expect(config.url).toBe('https://cli-chat-proxy.grok.com/v1/responses');
+        expect(body.model).toBe('grok-4.5');
+        expect(body.input).toBeDefined();
+      });
+    });
+
     describe('Tools', () => {
       it('should include tools in OpenAI format', () => {
         const provider = {
@@ -262,6 +280,23 @@ describe('Providers Index - Unified Interfaces', () => {
       expect(results[0]).toEqual({ type: 'text', content: 'Hey' });
     });
 
+    it('should parse Responses stream (Grok OAuth)', async () => {
+      const provider = PROVIDER_PRESETS.grok;
+      const chunks = [
+        'data: {"type":"response.output_text.delta","delta":"Hello"}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      const response = createMockResponse(chunks);
+      const results = [];
+
+      for await (const chunk of parseStream(provider, response)) {
+        results.push(chunk);
+      }
+
+      expect(results).toEqual([{ type: 'text', content: 'Hello' }]);
+    });
+
     it('should use OpenAI parser for unknown format', async () => {
       const provider = {
         ...PROVIDER_PRESETS.openai,
@@ -294,6 +329,18 @@ describe('Providers Index - Unified Interfaces', () => {
 
       expect(result.error).toBe('API key required');
       expect(result.models).toBeUndefined();
+    });
+
+    it('should return empty models for Grok OAuth (static list, no /models)', async () => {
+      const provider = {
+        ...PROVIDER_PRESETS.grok,
+        apiKey: undefined,
+      };
+
+      const result = await fetchModels(provider);
+
+      expect(result.models).toEqual([]);
+      expect(result.error).toBeUndefined();
     });
 
     it('should fetch live models for Anthropic /v1/models', async () => {

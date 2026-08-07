@@ -13,6 +13,7 @@ import {
 import { createThinkTagParser } from '../../providers/utils/thinkTagParser.ts';
 import type { Message, MCPTool, ProviderConfig, ToolCall, StreamingBufferEntry } from '../../types';
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
+import { getGrokAccessToken } from '../../utils/grokOAuth.ts';
 import { getFriendlyErrorMessage, isThinkingParamError } from '../utils/errors';
 import {
   createStreamingService,
@@ -185,6 +186,22 @@ export function createChatService(): ChatService {
           format: providerConfig.format || preset.format,
           apiUrl: providerConfig.apiUrl || preset.apiUrl,
         };
+
+        // Grok (OAuth) authenticates with a device-flow access token rather
+        // than a static API key — resolve (and refresh) it here.
+        if (provider.id === 'grok') {
+          try {
+            provider.apiKey = await getGrokAccessToken();
+          } catch (e) {
+            sendResponse({
+              error:
+                (e as Error).message === 'Grok OAuth: not connected'
+                  ? 'Grok sign-in required. Open Settings → AI Provider → Grok to connect.'
+                  : 'Grok session expired — reconnect from Settings → AI Provider → Grok.',
+            });
+            return;
+          }
+        }
 
         if (!provider.apiKey) {
           // Skip API key validation for Ollama localhost

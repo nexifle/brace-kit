@@ -131,7 +131,7 @@ export interface RequestConfig {
 /**
  * Supported provider format types
  */
-export type ProviderFormatType = 'openai' | 'anthropic' | 'gemini' | 'ollama';
+export type ProviderFormatType = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'responses';
 
 /**
  * Extended provider with runtime configuration

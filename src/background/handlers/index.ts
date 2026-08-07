@@ -31,6 +31,16 @@ export { handleTitleGenerate, registerTitleHandlers } from './title.handler';
 // Models handlers
 export { handleFetchModels, registerModelsHandlers } from './models.handler';
 
+// Grok OAuth handlers
+export {
+  handleGrokOAuthStart,
+  handleGrokOAuthPoll,
+  handleGrokOAuthCancel,
+  handleGrokOAuthStatus,
+  handleGrokOAuthSignout,
+  registerGrokAuthHandlers,
+} from './grokAuth.handler';
+
 // Content handlers
 export {
   handleGetPageContent,

@@ -7,10 +7,12 @@ import {
   PROVIDER_PRESETS,
   formatRequest,
   extractGeminiText,
+  extractResponsesText,
   type ProviderWithConfig,
 } from '../../providers';
 import type { Message, ProviderConfig } from '../../types';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { resolveGrokBearer } from '../../utils/grokOAuth.ts';
 
 type SendResponse = (response?: unknown) => void;
 
@@ -62,6 +64,17 @@ export async function handleMemoryExtract(
       apiUrl: providerConfig.apiUrl || preset.apiUrl,
     };
 
+    // Grok (OAuth) authenticates with a device-flow token — resolve it (and
+    // refresh when needed) before the generic apiKey gate.
+    if (provider.id === 'grok') {
+      const token = await resolveGrokBearer(provider.id);
+      if (!token) {
+        sendResponse({ error: 'No API key' });
+        return;
+      }
+      provider.apiKey = token;
+    }
+
     if (!provider.apiKey) {
       sendResponse({ error: 'No API key' });
       return;
@@ -80,6 +93,8 @@ export async function handleMemoryExtract(
     } else if (provider.format === 'gemini') {
       // Switch from streamGenerateContent to generateContent
       url = url.replace(':streamGenerateContent', ':generateContent').replace('alt=sse&', '');
+    } else if (provider.format === 'responses') {
+      body.stream = false;
     }
 
     options.body = JSON.stringify(body);
@@ -105,6 +120,8 @@ export async function handleMemoryExtract(
     } else if (provider.format === 'gemini') {
       const candidates = data.candidates as GeminiCandidate[] | undefined;
       text = extractGeminiText(candidates?.[0]?.content?.parts);
+    } else if (provider.format === 'responses') {
+      text = extractResponsesText(data);
     }
 
     // Parse JSON from response

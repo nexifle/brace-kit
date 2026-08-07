@@ -18,6 +18,7 @@ export const FORMAT_LABELS: Record<ProviderFormat, string> = {
   anthropic: 'Anthropic API',
   gemini: 'Gemini API',
   ollama: 'Local · Ollama',
+  responses: 'OpenAI Responses API',
 };
 
 /**
@@ -28,6 +29,7 @@ export const FORMAT_PLACEHOLDERS: Record<ProviderFormat, string> = {
   anthropic: 'https://api.anthropic.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   ollama: 'http://localhost:11434',
+  responses: 'https://api.example.com/v1',
 };
 
 // ==================== Model Constants ====================
@@ -288,6 +290,26 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'ollama',
     models: [],
     supportsModelFetch: true,
+  },
+  grok: {
+    id: 'grok',
+    name: 'Grok (OAuth)',
+    apiUrl: 'https://cli-chat-proxy.grok.com/v1',
+    defaultModel: 'grok-4.5',
+    format: 'responses',
+    models: [],
+    supportsModelFetch: false,
+    staticModels: [
+      'grok-build-0.1',
+      'grok-4.5',
+      'grok-4.3',
+      'grok-4.20-0309-reasoning',
+      'grok-4.20-0309-non-reasoning',
+      'grok-4.20-multi-agent-0309',
+      'grok-3-mini',
+      'grok-3-mini-fast',
+      'grok-composer-2.5-fast',
+    ],
   },
 };
 

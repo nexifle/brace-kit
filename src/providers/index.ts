@@ -81,6 +81,9 @@ export { formatXAIImageRequest, parseXAIImageResponse } from './formats/xai.ts';
 // Ollama native format
 export { formatOllama, parseOllamaStream, fetchOllamaModels } from './formats/ollama.ts';
 
+// OpenAI Responses API format (Grok OAuth)
+export { formatResponses, parseResponsesStream, extractResponsesText } from './formats/responses.ts';
+
 // ==================== Internal Imports for Unified Interfaces ====================
 
 import type { ProviderPreset, MCPTool, Message } from '../types/index.ts';
@@ -92,10 +95,12 @@ import { formatAnthropic, fetchAnthropicModels } from './formats/anthropic.ts';
 import { formatGemini } from './formats/gemini.ts';
 import { formatXAIImageRequest } from './formats/xai.ts';
 import { formatOllama } from './formats/ollama.ts';
+import { formatResponses } from './formats/responses.ts';
 import { parseOpenAIStream } from './formats/openai.ts';
 import { parseAnthropicStream } from './formats/anthropic.ts';
 import { parseGeminiStream } from './formats/gemini.ts';
 import { parseOllamaStream } from './formats/ollama.ts';
+import { parseResponsesStream } from './formats/responses.ts';
 import { fetchOpenAIModels } from './formats/openai.ts';
 import { fetchGeminiModels } from './formats/gemini.ts';
 import { fetchOllamaModels } from './formats/ollama.ts';
@@ -141,6 +146,8 @@ export function formatRequest(
       return formatGemini(provider, messages, tools, options);
     case 'ollama':
       return formatOllama(provider, messages, tools, options);
+    case 'responses':
+      return formatResponses(provider, messages, tools, options);
     default:
       return formatOpenAI(provider, messages, tools, options);
   }
@@ -177,6 +184,9 @@ export async function* parseStream(
     case 'ollama':
       yield* parseOllamaStream(response, signal);
       break;
+    case 'responses':
+      yield* parseResponsesStream(response, signal);
+      break;
     default:
       yield* parseOpenAIStream(response, signal);
   }
@@ -197,6 +207,11 @@ export async function fetchModels(
   provider: ProviderPreset & { apiKey?: string }
 ): Promise<ModelFetchResult> {
   const { format, apiUrl, apiKey } = provider;
+
+  // Grok (OAuth) uses a static model list — the chat proxy exposes no /models.
+  if (provider.id === 'grok') {
+    return { models: [] };
+  }
 
   // Ollama localhost doesn't require API key
   if (!apiKey && !isOllamaLocalhost(format, apiUrl)) {

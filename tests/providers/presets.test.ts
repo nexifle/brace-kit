@@ -68,6 +68,19 @@ describe('Provider Presets', () => {
       expect(preset.staticModels).toContain('grok-4.3');
       expect(preset.defaultModel).toBe('grok-4.5');
     });
+
+    it('should have correct Grok OAuth preset', () => {
+      const preset = PROVIDER_PRESETS.grok;
+      expect(preset.id).toBe('grok');
+      expect(preset.name).toBe('Grok (OAuth)');
+      expect(preset.format).toBe('responses');
+      expect(preset.apiUrl).toBe('https://cli-chat-proxy.grok.com/v1');
+      expect(preset.supportsModelFetch).toBe(false);
+      expect(preset.defaultModel).toBe('grok-4.5');
+      expect(preset.staticModels).toContain('grok-4.5');
+      expect(preset.staticModels).toContain('grok-composer-2.5-fast');
+      expect(preset.staticModels).toContain('grok-3-mini');
+    });
   });
 
   describe('Model Constants', () => {

@@ -45,6 +45,7 @@ export function flattenSelectable(
 export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectProps) {
   const { providerConfig, availableProviders, isCustomProvider, switchProvider } = useProvider();
   const providerKeys = useStore((s) => s.providerKeys);
+  const grokAuthStatus = useStore((s) => s.grokAuthStatus);
 
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -199,6 +200,8 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
 
   const isConfigured = useCallback(
     (p: SelectableProvider) => {
+      // Grok (OAuth) is configured when signed in with a refreshable session
+      if (p.id === 'grok') return grokAuthStatus.connected && !grokAuthStatus.needsReauth;
       if (p.format === 'ollama') return true;
       const saved = providerKeys[p.id];
       const key =
@@ -207,7 +210,7 @@ export function ProviderSelect({ onAddClick, onRequestRemove }: ProviderSelectPr
         (p as CustomProvider).apiKey;
       return !!key;
     },
-    [providerKeys, providerConfig]
+    [providerKeys, providerConfig, grokAuthStatus]
   );
 
   const renderRow = (p: SelectableProvider, idx: number) => {

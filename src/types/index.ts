@@ -123,7 +123,7 @@ export interface SelectedText {
 
 // ==================== Provider Types ====================
 
-export type ProviderFormat = 'openai' | 'anthropic' | 'gemini' | 'ollama';
+export type ProviderFormat = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'responses';
 
 export interface ProviderPreset {
   id: string;
@@ -210,6 +210,7 @@ export const SUPPORTED_PARAMETERS: Record<ProviderFormat, (keyof ModelParameters
   anthropic: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
   gemini: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget', 'thinkingLevel'],
   ollama: ['temperature', 'maxTokens', 'topP', 'topK', 'minP', 'numCtx', 'keepAlive'],
+  responses: ['temperature', 'maxTokens', 'topP'],
 };
 
 export interface ProviderConfig {
@@ -401,6 +402,8 @@ export interface AppState {
   showCustomModel: boolean;
   fetchedModels: Record<string, FetchedModelsCache>;
   fetchingModels: boolean;
+  /** Grok (OAuth) sign-in state (derived — not persisted). */
+  grokAuthStatus: { connected: boolean; email?: string; needsReauth: boolean };
 
   // MCP
   mcpServers: MCPServer[];
@@ -504,6 +507,12 @@ export interface AppState {
   setShowCustomModel: (show: boolean) => void;
   setFetchedModels: (providerId: string, models: FetchedModelsCache) => void;
   setFetchingModels: (fetching: boolean) => void;
+  setGrokAuthStatus: (status: {
+    connected: boolean;
+    email?: string;
+    needsReauth: boolean;
+  }) => void;
+  refreshGrokAuthStatus: () => Promise<void>;
 
   setMCPReconnecting: (reconnecting: boolean) => void;
 

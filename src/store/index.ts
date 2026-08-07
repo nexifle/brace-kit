@@ -35,6 +35,7 @@ import {
 import { sha256 } from '../utils/crypto.ts';
 import { selectMemoriesForConversation } from '../utils/memorySampler.ts';
 import { encryptApiKey, decryptApiKey, isEncrypted } from '../utils/keyEncryption.ts';
+import { getGrokAuthStatus } from '../utils/grokOAuth.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -103,6 +104,7 @@ export const useStore = create<AppState>((set, get) => ({
   showCustomModel: false,
   fetchedModels: {},
   fetchingModels: false,
+  grokAuthStatus: { connected: false, needsReauth: false },
 
   // MCP
   mcpServers: [],
@@ -276,6 +278,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setFetchingModels: (fetchingModels) => set({ fetchingModels }),
+
+  setGrokAuthStatus: (grokAuthStatus) => set({ grokAuthStatus }),
+  refreshGrokAuthStatus: async () => {
+    try {
+      const status = await getGrokAuthStatus();
+      set({ grokAuthStatus: status });
+    } catch (e) {
+      // Non-fatal — a stale status simply leaves the previous value
+      console.warn('[Store] Failed to refresh Grok auth status:', e);
+    }
+  },
 
   setMCPReconnecting: (isMCPReconnecting) => set({ isMCPReconnecting }),
 
@@ -1036,6 +1049,9 @@ export const useStore = create<AppState>((set, get) => ({
       set(updates);
       // Tandai bahwa storage sudah selesai dimuat — trigger recovery di useStreaming
       get().setStorageReady(true);
+      // Grok (OAuth) status is derived from storage.session/local — refresh it
+      // on load so the settings UI reflects the real sign-in state.
+      get().refreshGrokAuthStatus().catch(() => {});
     } catch (e) {
       console.warn('Failed to load settings:', e);
       // Tetap signal ready agar recovery tidak terblokir selamanya
