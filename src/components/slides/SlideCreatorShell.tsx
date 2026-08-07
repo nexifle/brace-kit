@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import { ComposerPicker } from '../ComposerPicker.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
 import type { SlideSessionStatus } from '../../types/slides.ts';
 import { slideComposerCanSend, slideComposerPlaceholder } from '../../utils/slideComposer.ts';
+import { collectFilesTouched } from '../../utils/slideFilesTouched.ts';
 import { useElementSize } from '../../hooks/index.ts';
 import { AskPrompt } from './AskPrompt.tsx';
 import { PlanReview } from './PlanReview.tsx';
@@ -57,6 +58,7 @@ function fitBox(maxW: number, maxH: number, ratio: number, inset: number) {
 
 function PreviewCanvas() {
   const canvas = useSlideStore((s) => s.canvas);
+  const busy = useSlideStore((s) => s.busy);
   const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
   const { ref, width, height } = useElementSize<HTMLDivElement>();
   const box = fitBox(width, height, preset.width / preset.height, 56);
@@ -92,31 +94,48 @@ function PreviewCanvas() {
             {/* Accent top edge on the "slide" */}
             <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-primary to-primary/40" />
 
-            <div className="flex flex-col items-center text-center gap-4 px-8">
-              <div className="relative">
-                <span className="absolute inset-0 rounded-2xl bg-primary/25 blur-lg" aria-hidden />
-                <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-primary text-primary-foreground shadow-lg">
-                  <Presentation size={24} />
+            {/* Building state (no slides yet): never a dead void — show live copy. */}
+            {busy ? (
+              <div className="flex flex-col items-center text-center gap-4 px-8">
+                <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                  <Loader2 size={24} className="animate-spin" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground tracking-tight">
+                    Slides will appear as they are written…
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed max-w-[240px]">
+                    The agent is building your deck — this preview updates as slides land.
+                  </p>
                 </div>
               </div>
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground tracking-tight">
-                  Your slides preview
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed max-w-[260px]">
-                  Describe a deck and the agent will plan, build, and render it right here.
-                </p>
+            ) : (
+              <div className="flex flex-col items-center text-center gap-4 px-8">
+                <div className="relative">
+                  <span className="absolute inset-0 rounded-2xl bg-primary/25 blur-lg" aria-hidden />
+                  <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-primary text-primary-foreground shadow-lg">
+                    <Presentation size={24} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground tracking-tight">
+                    Your slides preview
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed max-w-[260px]">
+                    Describe a deck and the agent will plan, build, and render it right here.
+                  </p>
+                </div>
+                <Btn
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full! gap-1.5 mt-1 opacity-80"
+                  onClick={() => {}}
+                >
+                  Start a deck
+                  <ArrowUpRight size={14} />
+                </Btn>
               </div>
-              <Btn
-                variant="outline"
-                size="sm"
-                className="rounded-full! gap-1.5 mt-1 opacity-80"
-                onClick={() => {}}
-              >
-                Start a deck
-                <ArrowUpRight size={14} />
-              </Btn>
-            </div>
+            )}
 
             {/* Bottom-page dot navigation (hidden until slides exist) */}
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 opacity-40">
@@ -145,6 +164,9 @@ function PreviewPane({
   onToggleRail?: () => void;
 }) {
   const busy = useSlideStore((s) => s.busy);
+  const activity = useSlideStore((s) => s.activity);
+  const filesTouched = useMemo(() => collectFilesTouched(activity).length, [activity]);
+  const liveUpdating = busy && filesTouched > 0;
   const activeProject = useSlideStore((s) => s.activeProject);
   const deckSlides = useSlideStore((s) => s.deckSlides);
   const currentSlideIndex = useSlideStore((s) => s.currentSlideIndex);
@@ -177,6 +199,15 @@ function PreviewPane({
           <span className="pl-1 text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             Preview
           </span>
+          {liveUpdating && (
+            <span
+              className="ml-1 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-2xs font-medium text-primary"
+              role="status"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              Live · updating
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2 min-w-0">
@@ -209,7 +240,7 @@ function PreviewPane({
                 <ChevronRight size={15} />
               </button>
             </div>
-          ) : busy ? (
+          ) : busy && !liveUpdating ? (
             <span className="flex items-center gap-1.5 text-2xs font-medium text-primary">
               <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Rendering
