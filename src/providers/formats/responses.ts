@@ -173,8 +173,9 @@ export function formatResponses(
  * - `response.output_text.delta` → text deltas
  * - `response.output_item.added` (function_call) → tool call start
  * - `response.function_call_arguments.delta` → tool call argument deltas
+ * - `response.reasoning_text.delta` / `response.reasoning_summary_text.delta` → reasoning
  * - `response.completed` → token usage
- * - Reasoning items are skipped (xAI reasoning is encrypted under the chat proxy)
+ * - Reasoning *items* (added/done) carry no streamed text — the deltas above do
  *
  * @param response - Fetch response with streaming body
  * @param signal - Optional abort signal for cancellation
@@ -231,9 +232,15 @@ export async function* parseResponsesStream(
           continue;
         }
 
-        if (type === 'response.reasoning_summary_text.delta') {
-          // Grok exposes its reasoning summary as plaintext deltas when
-          // reasoning is enabled — surface it like other providers.
+        if (
+          type === 'response.reasoning_text.delta' ||
+          type === 'response.reasoning_summary_text.delta'
+        ) {
+          // Grok streams its thinking as plaintext deltas when reasoning is
+          // enabled. The proxy emits either `reasoning_text.delta` (full
+          // reasoning content) or `reasoning_summary_text.delta` (a summary)
+          // depending on the request/config — surface both like other
+          // providers. `delta` is a plain string in both variants.
           const text = typeof json.delta === 'string' ? json.delta : '';
           if (text) yield { type: 'reasoning', content: text };
           continue;

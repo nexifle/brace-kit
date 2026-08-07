@@ -312,6 +312,24 @@ describe('Grok Responses Format', () => {
       expect(text.join('')).toBe('ABC');
     });
 
+    it('should surface reasoning from response.reasoning_text.delta (real variant)', async () => {
+      const chunks = [
+        'data: {"type":"response.content_part.added","part":{"type":"reasoning_text","text":""}}\n\n',
+        'data: {"type":"response.reasoning_text.delta","delta":"think"}\n\n',
+        'data: {"type":"response.reasoning_text.delta","delta":"ing hard"}\n\n',
+        'data: {"type":"response.reasoning_text.done","text":"thinking hard"}\n\n',
+        'data: {"type":"response.output_item.done","item":{"type":"reasoning","status":"completed"}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      const reasoning: string[] = [];
+      for await (const chunk of parseResponsesStream(createMockResponse(chunks))) {
+        if (chunk.type === 'reasoning') reasoning.push(chunk.content as string);
+      }
+
+      expect(reasoning.join('')).toBe('thinking hard');
+    });
+
     it('should surface an error event', async () => {
       const chunks = [
         'data: {"type":"error","error":{"message":"Server exploded"}}\n\n',
