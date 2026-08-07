@@ -32,6 +32,7 @@ import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 import { Transcript } from './Transcript.tsx';
 import { StreamingAgentBubble } from './StreamingAgentBubble.tsx';
 import { AgentActivityFeed } from './AgentActivityFeed.tsx';
+import { PhaseHeader } from './PhaseHeader.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
@@ -483,6 +484,8 @@ function ChatRail({
                   </div>
                 </div>
 
+                <PhaseHeader onStop={onStop} />
+
                 <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
                   {pendingAsk ? (
                     <AskPrompt
@@ -558,6 +561,8 @@ function ChatDock({
             View deck
           </button>
         </div>
+
+        <PhaseHeader onStop={onStop} />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3">
           {pendingAsk ? (
