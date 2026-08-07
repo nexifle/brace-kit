@@ -17,7 +17,12 @@ const CAPTURE_DEBOUNCE_MS = 450;
  * Uses its own hidden `SlideRenderer` instance so it never contends with the live
  * preview's renderer (which is busy rendering the active slide).
  */
-export function SlideFilmstrip() {
+export function SlideFilmstrip({
+  onCapturingChange,
+}: {
+  /** Optional callback raising/lowering "thumbnails are being captured". */
+  onCapturingChange?: (capturing: boolean) => void;
+}) {
   const activeProject = useSlideStore((s) => s.activeProject);
   const deckSlides = useSlideStore((s) => s.deckSlides);
   const activeDeck = useSlideStore((s) => s.activeDeck);
@@ -32,6 +37,9 @@ export function SlideFilmstrip() {
   /** htmlPath -> data URL (or 'pending' while being captured). */
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const thumbsRef = useRef<Record<string, string>>({});
+  /** Latest onCapturingChange prop, so an in-flight capture always calls the current one. */
+  const onCapturingChangeRef = useRef(onCapturingChange);
+  onCapturingChangeRef.current = onCapturingChange;
 
   const files = activeProject?.files ?? [];
   const deck = activeDeck ?? rebuildDeckProjection(files);
@@ -47,6 +55,7 @@ export function SlideFilmstrip() {
     if (!r || !activeProject || pendingCaptureRef.current) return;
     pendingCaptureRef.current = true;
     cancelledRef.current = false;
+    onCapturingChangeRef.current?.(true);
     try {
       for (const slide of deckSlides) {
         if (cancelledRef.current) return;
@@ -67,6 +76,7 @@ export function SlideFilmstrip() {
       }
     } finally {
       pendingCaptureRef.current = false;
+      onCapturingChangeRef.current?.(false);
     }
   };
 
@@ -85,6 +95,14 @@ export function SlideFilmstrip() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deckVersion, busy, deckSlides.length, canvas]);
+
+  // If the filmstrip unmounts (deck cleared) mid-capture, always drop the
+  // parent's capturing flag so the preview chrome doesn't hang on the pill.
+  useEffect(() => {
+    return () => {
+      onCapturingChangeRef.current?.(false);
+    };
+  }, []);
 
   if (!activeProject || deckSlides.length === 0) return null;
 

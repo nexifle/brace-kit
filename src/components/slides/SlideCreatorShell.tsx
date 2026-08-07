@@ -40,6 +40,7 @@ import { AgentActivityFeed } from './AgentActivityFeed.tsx';
 import { PhaseHeader } from './PhaseHeader.tsx';
 import { FileChangeStrip } from './FileChangeStrip.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
+import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -174,6 +175,7 @@ function PreviewPane({
   const canvas = useSlideStore((s) => s.canvas);
   const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
   const hasDeck = !!activeProject && deckSlides.length > 0;
+  const [capturingThumbs, setCapturingThumbs] = useState(false);
   const position = hasDeck
     ? `${Math.min(currentSlideIndex + 1, deckSlides.length)} / ${deckSlides.length}`
     : null;
@@ -206,6 +208,15 @@ function PreviewPane({
             >
               <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Live · updating
+            </span>
+          )}
+          {capturingThumbs && !busy && (
+            <span
+              className="ml-1 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground"
+              role="status"
+            >
+              <Loader2 size={10} className="animate-spin" />
+              Capturing thumbnails…
             </span>
           )}
         </div>
@@ -257,7 +268,7 @@ function PreviewPane({
         {hasDeck ? <SlidePreview /> : <PreviewCanvas />}
       </div>
 
-      {hasDeck && <SlideFilmstrip />}
+      {hasDeck && <SlideFilmstrip onCapturingChange={setCapturingThumbs} />}
     </div>
   );
 }
@@ -773,6 +784,9 @@ export function SlideCreatorShell() {
   const { phase, busy, activeProject, sessionStatus } = useSlideStore();
   const { ref, width } = useElementSize<HTMLDivElement>();
   const agent = useSlideAgent();
+
+  // US-046 (A.12): fire a success toast when a build/edit phase completes.
+  usePhaseCompletionToast();
 
   // Restore the last-active project (files/transcript/pending ask) on open, so
   // a reload of the extension returns the user to exactly where they left off.
