@@ -8,6 +8,101 @@ import type { Slide, SlideFile } from '../../types/index.ts';
 
 type CodeTab = 'html' | 'css';
 
+/** Escape raw source when hljs is missing or throws (same entities markdown uses). */
+export function escapeCodeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Highlight source with the same `window.hljs` path chat markdown uses
+ * (`src/utils/markdown.ts` code-fence path). Falls back to escaped plain text.
+ */
+export function highlightSlideSource(code: string, language: string): string {
+  if (!code) return '';
+  const hljs = typeof window !== 'undefined' ? window.hljs : undefined;
+  if (!hljs) return escapeCodeHtml(code);
+  try {
+    if (hljs.getLanguage(language)) {
+      return hljs.highlight(code, { language }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  } catch {
+    return escapeCodeHtml(code);
+  }
+}
+
+/**
+ * Split hljs HTML on newlines while re-opening any spans that crossed the break
+ * so each row is self-contained (needed for per-line gutters).
+ */
+export function splitHighlightedHtmlLines(highlighted: string): string[] {
+  if (!highlighted) return [''];
+
+  type OpenTag = { open: string; name: string };
+  const lines: string[] = [];
+  let buf = '';
+  const stack: OpenTag[] = [];
+  let i = 0;
+
+  const closeOpen = () => stack.map((t) => `</${t.name}>`).reverse().join('');
+  const reopen = () => stack.map((t) => t.open).join('');
+
+  while (i < highlighted.length) {
+    const ch = highlighted[i];
+    if (ch === '<') {
+      const end = highlighted.indexOf('>', i);
+      if (end === -1) {
+        buf += highlighted.slice(i);
+        break;
+      }
+      const tag = highlighted.slice(i, end + 1);
+      if (tag.startsWith('</')) {
+        const name = tag.slice(2, -1).trim().split(/\s+/)[0] ?? '';
+        buf += tag;
+        for (let s = stack.length - 1; s >= 0; s--) {
+          if (stack[s].name === name) {
+            stack.splice(s, 1);
+            break;
+          }
+        }
+      } else if (tag.endsWith('/>') || tag.startsWith('<!')) {
+        buf += tag;
+      } else {
+        const m = /^<([a-zA-Z][\w:-]*)\b([^>]*)>/.exec(tag);
+        if (m) {
+          stack.push({ name: m[1], open: tag });
+        }
+        buf += tag;
+      }
+      i = end + 1;
+      continue;
+    }
+    if (ch === '\n') {
+      lines.push(buf + closeOpen());
+      buf = reopen();
+      i += 1;
+      continue;
+    }
+    buf += ch;
+    i += 1;
+  }
+  lines.push(buf + closeOpen());
+  return lines;
+}
+
+/** Highlight + line-split for the slide code pane (testable without React). */
+export function slideCodeHighlightedLines(code: string, language: CodeTab): string[] {
+  if (!code) return [];
+  // Keep a trailing empty line when the source ends with \n so gutter == file.
+  const highlighted = highlightSlideSource(code, language);
+  return splitHighlightedHtmlLines(highlighted);
+}
+
 export interface SlideCodeContent {
   html: string;
   css: string;
@@ -171,9 +266,9 @@ export function SlideCodeViewer() {
                     <p className="text-xs text-zinc-400">Select a slide to view its source.</p>
                   </div>
                 ) : tab === 'html' ? (
-                  <CodePane code={html} empty={<span>No HTML on disk for {slide.htmlPath}.</span>} />
+                  <CodePane code={html} language="html" empty={<span>No HTML on disk for {slide.htmlPath}.</span>} />
                 ) : hasCss ? (
-                  <CodePane code={css} empty={null} />
+                  <CodePane code={css} language="css" empty={null} />
                 ) : (
                   <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 p-8 text-center">
                     <Braces size={22} className="text-zinc-500" />
@@ -236,8 +331,18 @@ function TabButton({
   );
 }
 
-function CodePane({ code, empty }: { code: string; empty: ReactNode | null }) {
-  const lines = useMemo(() => (code ? code.replace(/\s+$/, '').split('\n') : []), [code]);
+function CodePane({
+  code,
+  language,
+  empty,
+}: {
+  code: string;
+  language: CodeTab;
+  empty: ReactNode | null;
+}) {
+  // Same window.hljs pipeline as chat markdown fences; per-line rows keep the
+  // gutter locked even when tokens span newlines.
+  const lines = useMemo(() => slideCodeHighlightedLines(code, language), [code, language]);
   if (!lines.length) {
     return (
       <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 p-8 text-center">
@@ -247,18 +352,32 @@ function CodePane({ code, empty }: { code: string; empty: ReactNode | null }) {
     );
   }
   return (
-    <div className="flex min-h-full w-full text-left">
-      {/* Line numbers */}
+    <div className="flex min-h-full w-full text-left font-mono text-[12px] leading-5">
       <div
         aria-hidden
-        className="sticky left-0 select-none border-r border-white/10 bg-[#0d0f14] px-3 py-3 text-right font-mono text-[11px] leading-[1.6] text-zinc-500"
+        className="sticky left-0 shrink-0 select-none border-r border-white/10 bg-[#0d0f14] px-3 py-3 text-right text-zinc-500"
       >
         {lines.map((_, i) => (
-          <div key={i}>{i + 1}</div>
+          <div key={i} className="h-5">
+            {i + 1}
+          </div>
         ))}
       </div>
-      <pre className="flex-1 overflow-visible px-4 py-3 font-mono text-[12px] leading-[1.6] whitespace-pre text-zinc-200">
-        <code>{code}</code>
+      {/*
+        Neutralize highlight-github-dark `code.hljs` padding/background so the
+        gutter row height stays 20px (theme defaults add padding and a solid bg).
+      */}
+      <pre className="m-0 flex-1 overflow-visible px-4 py-3 whitespace-pre">
+        <code className={`hljs language-${language} block bg-transparent p-0 text-zinc-200`}>
+          {lines.map((lineHtml, i) => (
+            <div
+              key={i}
+              className="h-5"
+              // hljs output is trusted (our string → hljs → spans only).
+              dangerouslySetInnerHTML={{ __html: lineHtml.length > 0 ? lineHtml : '&nbsp;' }}
+            />
+          ))}
+        </code>
       </pre>
     </div>
   );

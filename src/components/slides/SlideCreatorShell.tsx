@@ -138,10 +138,13 @@ function PreviewPane({
   showRailToggle,
   railOpen,
   onToggleRail,
+  compact = false,
 }: {
   showRailToggle?: boolean;
   railOpen?: boolean;
   onToggleRail?: () => void;
+  /** Narrow/sidebar layout: collapse the round chrome to an icon + popover. */
+  compact?: boolean;
 }) {
   const busy = useSlideStore((s) => s.busy);
   const activity = useSlideStore((s) => s.activity);
@@ -202,7 +205,7 @@ function PreviewPane({
         </div>
 
         <div className="flex items-center gap-2 min-w-0">
-          {hasDeck && <RoundHistory />}
+          {hasDeck && <RoundHistory compact={compact} />}
           {hasDeck && <ExportDeck />}
           {hasDeck && <SlideCodeViewer />}
           {hasDeck ? (
@@ -637,7 +640,7 @@ export function SlideCreatorShell() {
       <div className="relative flex min-h-0 flex-1">
         {narrow ? (
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            <PreviewPane />
+            <PreviewPane compact />
             <ChatDock
               open={chatOpen}
               onToggle={() => setChatOpen((o) => !o)}
