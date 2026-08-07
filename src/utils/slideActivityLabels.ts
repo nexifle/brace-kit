@@ -47,7 +47,7 @@ export function phaseCompletedLabel(
   if (phase === 'plan') return PHASE_COMPLETED_PLAN;
   if (phase === 'edit') return PHASE_COMPLETED_EDIT;
   const n = opts?.slideCount ?? 0;
-  return `Deck ready — ${n} slides`;
+  return `Deck ready — ${n} slide${n === 1 ? '' : 's'}`;
 }
 
 export function phaseStoppedLabel(): string {
@@ -61,7 +61,7 @@ export function phaseFailedLabel(message: string): string {
   return `Error: ${truncateLabel(clean, 100)}`;
 }
 
-/** apply_patch / file_written / file_deleted success-style labels. */
+/** apply_patch running labels (present continuous). */
 export function applyPatchOpLabel(op: SlidePatchOpLabel, path: string): string {
   const p = path || '/';
   switch (op) {
@@ -71,6 +71,19 @@ export function applyPatchOpLabel(op: SlidePatchOpLabel, path: string): string {
       return `Updating ${p}`;
     case 'delete_file':
       return `Deleting ${p}`;
+  }
+}
+
+/** Completed file_written / file_deleted card titles (past tense). */
+export function applyPatchOpDoneLabel(op: SlidePatchOpLabel, path: string): string {
+  const p = path || '/';
+  switch (op) {
+    case 'create_file':
+      return `Created ${p}`;
+    case 'update_file':
+      return `Updated ${p}`;
+    case 'delete_file':
+      return `Deleted ${p}`;
   }
 }
 
@@ -151,12 +164,12 @@ export function toolStartedLabel(
   }
 }
 
-/** file_written uses the same wording as apply_patch create/update. */
+/** file_written success card — past tense (running apply_patch stays present). */
 export function fileWrittenLabel(op: 'create_file' | 'update_file', path: string): string {
-  return applyPatchOpLabel(op, path);
+  return applyPatchOpDoneLabel(op, path);
 }
 
-/** file_deleted */
+/** file_deleted success card */
 export function fileDeletedLabel(path: string): string {
-  return applyPatchOpLabel('delete_file', path);
+  return applyPatchOpDoneLabel('delete_file', path);
 }

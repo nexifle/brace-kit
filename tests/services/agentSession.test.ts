@@ -234,7 +234,9 @@ describe('runAgentSession', () => {
     expect(calls()).toBe(2);
     expect(dispatchCount).toBe(2);
     expect(result.status).toBe('done');
+    expect(result.truncated).toBe(true);
     expect(result.rounds).toBe(2);
+    expect(result.content).toMatch(/model-round limit \(2 rounds\)/);
   });
 
   it('calls onUpdate with terminal and intermediate states', async () => {
@@ -297,7 +299,7 @@ describe('resumeAgentSession', () => {
 
 describe('DEFAULT_SLIDE_MAX_ROUNDS', () => {
   it('is a sane default cap', () => {
-    expect(DEFAULT_SLIDE_MAX_ROUNDS).toBe(12);
+    expect(DEFAULT_SLIDE_MAX_ROUNDS).toBe(24);
   });
 });
 

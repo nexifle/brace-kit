@@ -74,11 +74,14 @@ export function SlideChat({
   onBuild,
   onAnswer,
   onFillComposer,
+  onRetry,
   blocked,
 }: {
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
   onFillComposer?: (text: string) => void;
+  /** Re-run the failed plan/build with original context (no "continue" turn). */
+  onRetry?: () => void;
   blocked?: boolean;
 }) {
   const activeProject = useSlideStore((s) => s.activeProject);
@@ -209,7 +212,7 @@ export function SlideChat({
       case 'file_card':
         return <AgentFileCard item={item} onPathClick={onPathClick} />;
       case 'turn_footer':
-        return <AgentTurnFooter item={item} />;
+        return <AgentTurnFooter item={item} onRetry={onRetry} />;
       case 'error':
         return <AgentErrorLine content={item.content} />;
       case 'phase_eyebrow':

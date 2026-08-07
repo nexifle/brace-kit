@@ -1,11 +1,11 @@
 import {
-  DEFAULT_SLIDE_CANVAS,
   SLIDE_CANVAS_PRESETS,
   type Slide,
   type SlideCanvas,
   type SlideDeck,
   type SlideFile,
 } from '../types/index.ts';
+
 
 // ==================== Path Rules ====================
 
@@ -149,7 +149,8 @@ export function rebuildDeckProjection(files: SlideFile[]): SlideDeck {
     }
   }
 
-  const canvas: SlideCanvas = isSlideCanvas(raw.canvas) ? raw.canvas : DEFAULT_SLIDE_CANVAS;
+  const canvas: SlideCanvas | null = isSlideCanvas(raw.canvas) ? raw.canvas : null;
+
 
   const slideOrder: string[] = Array.isArray(raw.slideOrder)
     ? raw.slideOrder
@@ -170,6 +171,12 @@ export function rebuildDeckProjection(files: SlideFile[]): SlideDeck {
     slideOrder,
   };
 }
+
+/** Number of projectable slides (deck.json slideOrder ∩ existing HTML). */
+export function deckSlideCount(files: SlideFile[]): number {
+  return rebuildDeckProjection(files).slideOrder.length;
+}
+
 
 /**
  * Resolve the ordered `Slide[]` (with html/css paths) that the projection

@@ -41,9 +41,11 @@ const RAIL_WIDTH = 400;
 function PreviewCanvas() {
   const canvas = useSlideStore((s) => s.canvas);
   const busy = useSlideStore((s) => s.busy);
-  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
+  // Layout-only frame when size is unset — not a chosen project canvas.
+  const ratio = canvas ? SLIDE_CANVAS_PRESETS[canvas].width / SLIDE_CANVAS_PRESETS[canvas].height : 16 / 9;
   const { ref, width, height } = useElementSize<HTMLDivElement>();
-  const box = fitBox(width, height, preset.width / preset.height, 56);
+  const box = fitBox(width, height, ratio, 56);
+
 
   return (
     <div
@@ -149,7 +151,8 @@ function PreviewPane({
   const currentSlideIndex = useSlideStore((s) => s.currentSlideIndex);
   const selectSlide = useSlideStore((s) => s.selectSlide);
   const canvas = useSlideStore((s) => s.canvas);
-  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
+  const preset = canvas ? SLIDE_CANVAS_PRESETS[canvas] : null;
+
   const hasDeck = !!activeProject && deckSlides.length > 0;
   const [capturingThumbs, setCapturingThumbs] = useState(false);
   const position = hasDeck
@@ -202,12 +205,19 @@ function PreviewPane({
           {hasDeck && <SlideCodeViewer />}
           {hasDeck ? (
             <div className="flex items-center gap-2 min-w-0">
-              <span
-                className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
-                title={`${preset.label} · ${preset.width}×${preset.height} (export / canvas size)`}
-              >
-                {preset.width}×{preset.height}
-              </span>
+              {preset ? (
+                <span
+                  className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
+                  title={`${preset.label} · ${preset.width}×${preset.height} (export / canvas size)`}
+                >
+                  {preset.width}×{preset.height}
+                </span>
+              ) : (
+                <span className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium text-muted-foreground">
+                  Size not set
+                </span>
+              )}
+
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -241,9 +251,10 @@ function PreviewPane({
             </span>
           ) : (
             <span className="text-2xs text-muted-foreground/50">
-              {preset.label} · {preset.width}×{preset.height}
+              {preset ? `${preset.label} · ${preset.width}×${preset.height}` : 'Choose a slide size to continue'}
             </span>
           )}
+
         </div>
       </div>
 
@@ -284,6 +295,7 @@ function ChatRail({
   onStop,
   onBuild,
   onAnswer,
+  onRetry,
   onNew,
   historyOpen,
   onHistory,
@@ -296,6 +308,7 @@ function ChatRail({
   onStop: () => void;
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
+  onRetry?: () => void;
   onNew: () => void;
   historyOpen: boolean;
   onHistory: (open: boolean) => void;
@@ -370,6 +383,7 @@ function ChatRail({
                 <SlideChat
                   onBuild={onBuild}
                   onAnswer={onAnswer}
+                  onRetry={onRetry}
                   blocked={blocked}
                   onFillComposer={(text) => {
                     setSeedText(text);
@@ -405,6 +419,7 @@ function ChatDock({
   onStop,
   onBuild,
   onAnswer,
+  onRetry,
   placeholder,
   blocked,
 }: {
@@ -414,6 +429,7 @@ function ChatDock({
   onStop: () => void;
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
+  onRetry?: () => void;
   placeholder: string;
   blocked?: boolean;
 }) {
@@ -440,7 +456,7 @@ function ChatDock({
           </button>
         </div>
 
-        <SlideChat onBuild={onBuild} onAnswer={onAnswer} blocked={blocked} />
+        <SlideChat onBuild={onBuild} onAnswer={onAnswer} onRetry={onRetry} blocked={blocked} />
         <SlideChatComposer
           onSend={onSend}
           onStop={onStop}
@@ -627,6 +643,7 @@ export function SlideCreatorShell() {
               onStop={handleStop}
               onBuild={() => void agent.runBuild()}
               onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
+              onRetry={() => void agent.retryFailedPhase()}
               placeholder={promptPlaceholder}
               blocked={blocked}
             />
@@ -640,6 +657,7 @@ export function SlideCreatorShell() {
               onStop={handleStop}
               onBuild={() => void agent.runBuild()}
               onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
+              onRetry={() => void agent.retryFailedPhase()}
               onNew={handleNew}
               historyOpen={historyOpen}
               onHistory={setHistoryOpen}

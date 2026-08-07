@@ -42,29 +42,31 @@ export function SlidePreview() {
   const files = activeProject?.files ?? [];
   const deck = activeDeck ?? rebuildDeckProjection(files);
   const slide = deckSlides[currentSlideIndex];
-  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
-  const ratio = preset.width / preset.height;
+  const canvasKey = canvas ?? deck.canvas;
+  const preset = canvasKey ? SLIDE_CANVAS_PRESETS[canvasKey] : null;
+  const ratio = preset ? preset.width / preset.height : 16 / 9;
   const box = fitBox(paneW, paneH, ratio, FIT_INSET_PX);
-  const scale = fitScale(box.width, preset.width);
+  const scale = preset ? fitScale(box.width, preset.width) : 1;
+
 
   const doRender = useCallback(async () => {
     pendingRenderRef.current = false;
     const r = rendererRef.current;
-    if (!r || !slide || !activeProject) return;
+    if (!r || !slide || !activeProject || !preset) return;
     const w = preset.width;
     const h = preset.height;
     const html = composeSlideHtml(activeProject.files, slide, deck);
-    const key = `${activeProject.updatedAt}:${slide.htmlPath}:${deck.theme ?? ''}:${deck.canvas}`;
+    const key = `${activeProject.updatedAt}:${slide.htmlPath}:${deck.theme ?? ''}:${deck.canvas ?? 'unset'}`;
     try {
       await r.render(html, w, h);
       lastRenderedKeyRef.current = key;
       lastRenderedRef.current = { key, html, w, h };
       setRenderError(null);
     } catch (err) {
-      // Keep the last good frame; surface a subtle hint only.
       setRenderError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeProject, slide, deck, preset.width, preset.height]);
+  }, [activeProject, slide, deck, preset]);
+
 
   // Debounced render: wait for settle/debounce, skip duplicate keys (frame stays).
   useEffect(() => {
@@ -116,11 +118,12 @@ export function SlidePreview() {
           ref={rendererRef}
           className="block origin-top-left"
           style={{
-            width: preset.width,
-            height: preset.height,
+            width: preset?.width ?? box.width,
+            height: preset?.height ?? box.height,
             transform: `scale(${scale})`,
             transformOrigin: 'top left',
           }}
+
           iframeClassName="block h-full w-full border-0"
           aria-label="Live slide preview"
         />

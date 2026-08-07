@@ -443,7 +443,7 @@ describe('buildSlideChatItems — full step retention', () => {
   });
 
 
-  it('does not emit permanent thought for still-running model rounds', () => {
+  it('does not emit Thinking until the API streams reasoning content', () => {
     const items = buildSlideChatItems({
       messages: [],
       activity: [
@@ -463,9 +463,46 @@ describe('buildSlideChatItems — full step retention', () => {
       phase: 'build',
       pendingAsk: false,
     });
-    // live empty-round thinking indicator only
-    const thoughts = items.filter((x) => x.type === 'reasoning');
-    expect(thoughts.every((t) => t.type === 'reasoning' && t.live)).toBe(true);
+    // Open round with no reasoning/text yet → no fake "Thinking…" row.
+    expect(items.some((x) => x.type === 'reasoning')).toBe(false);
+    expect(items.some((x) => x.type === 'prose')).toBe(false);
+  });
+
+  it('shows live Thinking only after reasoning deltas arrive', () => {
+    const base = {
+      messages: [] as SlideMainMessage[],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'build', ts: 1, status: 'running' }),
+        ev({
+          id: 'build_round_1',
+          type: 'model_round_started',
+          round: 1,
+          ts: 2,
+          status: 'running' as const,
+          label: 'Round 1',
+        }),
+      ],
+      sessionStatus: 'running' as const,
+      phase: 'build' as const,
+      pendingAsk: false,
+    };
+    const before = buildSlideChatItems({
+      ...base,
+      streamingReasoning: '',
+      streamingText: '',
+    });
+    expect(before.some((x) => x.type === 'reasoning' && x.live)).toBe(false);
+
+    const after = buildSlideChatItems({
+      ...base,
+      streamingReasoning: 'Considering layout…',
+      streamingText: '',
+    });
+    expect(
+      after.some(
+        (x) => x.type === 'reasoning' && x.live && x.content?.includes('layout'),
+      ),
+    ).toBe(true);
   });
 
 
@@ -695,5 +732,60 @@ describe('countPhaseStats / duration formatters', () => {
     expect(formatWorkedDuration(3_000)).toBe('3s');
     expect(formatWorkedDuration(125_000)).toBe('2m 5s');
     expect(formatThoughtDuration(2_400)).toBe('Thought for 2s');
+  });
+});
+
+describe('buildSlideChatItems — Retry/Continue CTA', () => {
+  it('marks latest failed footer canRetry with retry action by default', () => {
+    const items = buildSlideChatItems({
+      messages: [],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'build', ts: 1, status: 'running' }),
+        ev({
+          id: 'pf',
+          type: 'phase_failed',
+          phase: 'build',
+          label: 'Error: Build finished without producing a renderable deck.',
+          ts: 10,
+          status: 'failed',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'error',
+      pendingAsk: false,
+    });
+    const footers = items.filter((x) => x.type === 'turn_footer');
+    expect(footers).toHaveLength(1);
+    if (footers[0]?.type === 'turn_footer') {
+      expect(footers[0].canRetry).toBe(true);
+      expect(footers[0].continueAction).toBe('retry');
+    }
+  });
+
+  it('uses continue action when the failed phase is a max-round stop', () => {
+    const items = buildSlideChatItems({
+      messages: [],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'build', ts: 1, status: 'running' }),
+        ev({
+          id: 'pf',
+          type: 'phase_failed',
+          phase: 'build',
+          label:
+            'Error: Hit 24 model rounds with only 1 slide projectable — full deck not finished. Partial work was kept.',
+          ts: 10,
+          status: 'failed',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'ready',
+      pendingAsk: false,
+    });
+    const footers = items.filter((x) => x.type === 'turn_footer');
+    expect(footers).toHaveLength(1);
+    if (footers[0]?.type === 'turn_footer') {
+      expect(footers[0].canRetry).toBe(true);
+      expect(footers[0].continueAction).toBe('continue');
+    }
   });
 });

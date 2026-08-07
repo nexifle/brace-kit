@@ -15,10 +15,12 @@ import {
   upsertSlideFile,
   removeSlideFile,
   rebuildDeckProjection,
+  deckSlideCount,
   projectDeckSlides,
   slideHtmlPath,
   composeSlideHtml,
 } from '../../src/utils/slideVfs.ts';
+
 
 describe('slideVfs path rules', () => {
   test('normalize ensures leading slash and collapses slashes', () => {
@@ -163,10 +165,29 @@ describe('rebuildDeckProjection', () => {
     expect(deck.slideOrder).toEqual(['01', '02']);
   });
 
-  test('missing or invalid deck.json degrades to empty deck', () => {
+  test('deckSlideCount matches projected slideOrder length', () => {
+    expect(deckSlideCount(files)).toBe(2);
+    expect(
+      deckSlideCount([
+        { path: '/slides/01.html', content: '<h1>x</h1>' },
+        // no deck.json → not projectable
+      ]),
+    ).toBe(0);
+    expect(
+      deckSlideCount([
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ slideOrder: ['01'], canvas: '16:9' }),
+        },
+        // order id without HTML → filtered
+      ]),
+    ).toBe(0);
+  });
+
+  test('missing or invalid deck.json degrades to empty deck without inventing canvas', () => {
     expect(rebuildDeckProjection([{ path: '/brief.md', content: 'hi' }])).toMatchObject({
       title: expect.any(String),
-      canvas: DEFAULT_SLIDE_CANVAS,
+      canvas: null,
       slideOrder: [],
     });
 
@@ -174,15 +195,16 @@ describe('rebuildDeckProjection', () => {
       { path: '/deck.json', content: '{ not valid json' },
     ]);
     expect(bad.slideOrder).toEqual([]);
-    expect(bad.canvas).toBe(DEFAULT_SLIDE_CANVAS);
+    expect(bad.canvas).toBeNull();
   });
 
-  test('claims a default canvas when deck.json omits an invalid preset', () => {
+  test('invalid canvas preset becomes null — never invents a size', () => {
     const deck = rebuildDeckProjection([
       { path: '/deck.json', content: JSON.stringify({ canvas: '99:99', slideOrder: [] }) },
     ]);
-    expect(deck.canvas).toBe(DEFAULT_SLIDE_CANVAS);
+    expect(deck.canvas).toBeNull();
   });
+
 
   test('theme only resolves when the referenced path exists', () => {
     const noTheme = rebuildDeckProjection([

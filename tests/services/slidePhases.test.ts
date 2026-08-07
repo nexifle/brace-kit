@@ -191,6 +191,31 @@ describe('runPlanPhase', () => {
     expect(result.status).toBe('plan_ready');
   });
 
+  it('returns done when submit_plan fires without valid brief+design files', async () => {
+    // Regression: submit_plan alone used to mark plan_ready while Build CTA
+    // still required hasValidPlanFiles — split readiness / dead end UI.
+    const { transport } = makeTransport([
+      () => ({
+        toolCalls: [
+          toolCall('submit_plan', JSON.stringify({ summary: 'Looks good', canvas: '16:9' })),
+        ],
+      }),
+      () => ({ content: 'Submitted without writing files.' }),
+    ]);
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport,
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.content).toBe('Submitted without writing files.');
+    expect(hasValidPlanFiles(result.files)).toBe(false);
+  });
+
   it('suspends with waiting_user + pendingAsk when the model calls ask', async () => {
     const { transport, callCount: calls } = makeTransport([
       () => ({
@@ -273,9 +298,23 @@ describe('plan ask pause/resume state machine (US-016)', () => {
           { id: askId, name: 'ask', arguments: JSON.stringify({ question: 'Canvas?', options: ['16:9', '4:5'], field: 'canvas' }) },
         ],
       }),
-      // resume round 2: model submits the plan
-      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '4:5' }))] }),
-      // resume round 3: final narration
+      // resume: write missing design so plan is valid, then submit
+      () => ({
+        content: 'finishing',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/design.md',
+                diff: '@@\n+dark theme\n',
+              },
+            }),
+          ),
+          toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '4:5' })),
+        ],
+      }),
       () => ({ content: 'Plan complete.' }),
     ];
 
@@ -651,6 +690,64 @@ describe('runBuildPhase', () => {
     });
     expect(result.status).toBe('done');
     expect(result.error).toBeUndefined();
+  });
+
+  it('does not mark ready when maxRounds truncates even if one slide projects', async () => {
+    // Always-tool responses until the round cap → truncated partial.
+    const { transport } = makeTransport([
+      () => ({
+        content: 'partial',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>One</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"T","canvas":"16:9","slideOrder":["01"]}\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({
+        toolCalls: [toolCall('list_files', JSON.stringify({ path: '/' }))],
+      }),
+    ]);
+
+    const pushed: { type: string; label?: string }[] = [];
+    const result = await runBuildPhase({
+      systemPrompt: 'b',
+      messages: [userMsg],
+      providerConfig,
+      files: buildFiles,
+      transport,
+      maxRounds: 2,
+      onActivity: {
+        push: (e) => pushed.push(e),
+        patch: () => {},
+      },
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.truncated).toBe(true);
+    expect(result.slideCount).toBe(1);
+    expect(result.rounds).toBe(2);
+    // Activity must fail with max-round copy — never "Deck ready — 1 slide".
+    const failed = pushed.filter((e) => e.type === 'phase_failed');
+    expect(failed.length).toBe(1);
+    expect(failed[0].label).toMatch(/model round/i);
+    expect(pushed.some((e) => e.type === 'phase_completed')).toBe(false);
   });
 
   it('denies writes to plan-only paths (build allowlist) via the harness', async () => {

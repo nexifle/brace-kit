@@ -43,7 +43,9 @@ export function SlideFilmstrip({
 
   const files = activeProject?.files ?? [];
   const deck = activeDeck ?? rebuildDeckProjection(files);
-  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
+  const canvasKey = canvas ?? deck.canvas;
+  const preset = canvasKey ? SLIDE_CANVAS_PRESETS[canvasKey] : null;
+
 
   const commitThumbs = (patch: Record<string, string>) => {
     thumbsRef.current = { ...thumbsRef.current, ...patch };
@@ -52,7 +54,7 @@ export function SlideFilmstrip({
 
   const captureAll = async () => {
     const r = rendererRef.current;
-    if (!r || !activeProject || pendingCaptureRef.current) return;
+    if (!r || !activeProject || !preset || pendingCaptureRef.current) return;
     pendingCaptureRef.current = true;
     cancelledRef.current = false;
     onCapturingChangeRef.current?.(true);
@@ -65,6 +67,7 @@ export function SlideFilmstrip({
         const html = composeSlideHtml(activeProject.files, slide, deck);
         const w = preset.width;
         const h = preset.height;
+
         try {
           commitThumbs({ [key]: 'pending' });
           await r.render(html, w, h);
@@ -138,7 +141,12 @@ export function SlideFilmstrip({
                   ? 'border-primary ring-2 ring-primary/30'
                   : 'border-border hover:border-border/80 hover:bg-muted/60'
               }`}
-              style={{ aspectRatio: `${preset.width} / ${preset.height}` }}
+              style={{
+                aspectRatio: preset
+                  ? `${preset.width} / ${preset.height}`
+                  : '16 / 9',
+              }}
+
             >
               {thumb && thumb !== 'pending' ? (
                 <img

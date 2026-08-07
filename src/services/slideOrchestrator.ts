@@ -12,16 +12,19 @@
 // errors — matching PRD US-012. Sub-session tool calls stay in the activity feed.
 
 import type {
+  APIMessage,
   ProviderConfig,
 } from '../types/index.ts';
 import type { SlideMainMessage, SlideProject, SlideCanvas, SlideFile } from '../types/slides.ts';
-import { DEFAULT_SLIDE_CANVAS } from '../types/slides.ts';
+
 import {
   runPlanPhase,
   resumePlanPhase,
   runBuildPhase,
   runEditPhase,
   hasValidPlanFiles,
+  PHASE_NO_DELIVERABLE,
+  maxRoundsNoDeliverable,
   type PlanPhaseResult,
   type SlideActivitySink,
   type SlideToolOptions,
@@ -42,6 +45,37 @@ export function deriveSlideTitle(prompt: string): string {
   return cleaned.length > 0 ? cleaned : 'Untitled deck';
 }
 
+/**
+ * Build isolated plan-session user turns from the main transcript.
+ * Retries must include the original deck prompt — never only "continue"/Retry.
+ */
+export function buildPlanSessionMessages(
+  project: SlideProject,
+  extraUser?: string,
+): APIMessage[] {
+  const out: APIMessage[] = [];
+  for (const m of project.messages) {
+    if (m.role !== 'user') continue;
+    const content = m.content.trim();
+    if (!content) continue;
+    out.push({ role: 'user', content });
+  }
+  const extra = extraUser?.trim();
+  if (extra) {
+    const last = out[out.length - 1];
+    if (!last || last.content !== extra) {
+      out.push({ role: 'user', content: extra });
+    }
+  }
+  if (out.length === 0) {
+    out.push({
+      role: 'user',
+      content: 'Continue planning this deck from the current workspace.',
+    });
+  }
+  return out;
+}
+
 function makeMsg(role: SlideMainMessage['role'], content: string): SlideMainMessage {
   return {
     id: `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -59,6 +93,7 @@ function assistantOrFallback(
   const text = content?.trim();
   return makeMsg(text ? 'assistant' : 'summary', text || fallback);
 }
+
 
 /** Persist + store mutations the orchestrator needs (implemented by the hook). */
 export interface SlideAgentHost {
@@ -84,11 +119,23 @@ export interface SlideAgentHost {
   pushActivity?: (event: import('../types/slides.ts').SlideActivityEvent) => void;
   /** In-place patch of an activity row by id (e.g. tool finish). */
   patchActivity?: (id: string, partial: Partial<import('../types/slides.ts').SlideActivityEvent>) => void;
+  /** Read the live activity feed (for Continue routing after max-round stops). */
+  getActivity?: () => import('../types/slides.ts').SlideActivityEvent[];
 }
 
 /** Runtime/network dependencies (injected for tests). */
 export interface SlideAgentDeps {
-  providerConfig: ProviderConfig;
+  /**
+   * Static provider snapshot (tests / simple callers). Prefer `getProviderConfig`
+   * so a model/provider switch mid-session is reflected on the next phase turn.
+   */
+  providerConfig?: ProviderConfig;
+  /**
+   * Live provider/model/key at request time. Hook wires this to the main store
+   * so the stable agent instance never freezes the first-render selection.
+   * Wins over the static `providerConfig` field when both are set.
+   */
+  getProviderConfig?: () => ProviderConfig;
   /** CHAT_REQUEST transport; defaults to chrome.runtime inside the hook. */
   transport?: AgentTransport;
   /** Abort in-flight request; defaults to STOP_STREAM inside the hook. */
@@ -133,10 +180,18 @@ export function createSlideAgent(
     abort: null,
   };
 
+  /** Live provider/model/key — never freeze the first-render snapshot. */
+  function providerConfig(): ProviderConfig {
+    const live = deps.getProviderConfig?.();
+    if (live) return live;
+    if (deps.providerConfig) return deps.providerConfig;
+    throw new Error('SlideAgentDeps requires getProviderConfig or providerConfig');
+  }
+
   /** Whether the active model can drive the tool loop (US-032). */
   function canUseFunctionCalling(): boolean {
     if (deps.canFunctionCall) return deps.canFunctionCall();
-    const pc = deps.providerConfig;
+    const pc = providerConfig();
     const isGemini = pc.providerId === 'gemini' || pc.format === 'gemini';
     if (!isGemini) return true;
     return geminiSupportsFunctionCalling(pc.model);
@@ -191,8 +246,37 @@ export function createSlideAgent(
     return next;
   }
 
+  /**
+   * No-deliverable terminal (`status: 'done'`).
+   * Error line is ALWAYS the shared PHASE_NO_DELIVERABLE copy (matches activity).
+   * Model prose is optional assistant narration — never the error reason.
+   */
+  function landNoDeliverable(
+    base: SlideProject,
+    files: SlideFile[],
+    content: string | undefined,
+    phaseKey: keyof typeof PHASE_NO_DELIVERABLE,
+    projectPhase: SlideProject['phase'],
+  ): void {
+    let next: SlideProject = {
+      ...base,
+      files,
+      phase: projectPhase,
+      pendingAsk: undefined,
+      updatedAt: Date.now(),
+    };
+    host.landProject(next);
+    host.setPhase(projectPhase);
+    host.setPendingAsk(null);
+    const narration = content?.trim();
+    if (narration) {
+      next = appendMessage(next, makeMsg('assistant', narration));
+    }
+    appendMessage(next, makeMsg('error', PHASE_NO_DELIVERABLE[phaseKey]));
+  }
+
   /** Reflect a plan-phase result into the store + transcript. */
-  async function runPlan(project: SlideProject, prompt: string): Promise<void> {
+  async function runPlan(project: SlideProject, prompt?: string): Promise<void> {
     const systemPrompt = await skill('plan');
     const abort = new AbortController();
     state.abort = abort;
@@ -203,8 +287,10 @@ export function createSlideAgent(
 
     const result = await runPlanPhase({
       systemPrompt,
-      messages: [{ role: 'user', content: prompt }],
-      providerConfig: deps.providerConfig,
+      // Prefer full transcript user turns so Retry / "continue" still see the
+      // original deck brief — not an empty session with only the kickoff word.
+      messages: buildPlanSessionMessages(project, prompt),
+      providerConfig: providerConfig(),
       chatOptions: chatOptions(),
       files: project.files,
       signal: abort.signal,
@@ -254,18 +340,7 @@ export function createSlideAgent(
     }
 
     if (result.status === 'done') {
-      const next: SlideProject = {
-        ...project,
-        files: result.files,
-        phase: 'plan',
-        updatedAt: Date.now(),
-      };
-      host.landProject(next);
-      host.setPhase('plan');
-      appendMessage(
-        next,
-        makeMsg('error', result.content?.trim() || 'The planner finished without a complete brief and design. Try again or rephrase.')
-      );
+      landNoDeliverable(project, result.files, result.content, 'plan', 'plan');
       return;
     }
 
@@ -302,7 +377,8 @@ export function createSlideAgent(
       createdAt: now,
       updatedAt: now,
       phase: 'plan',
-      canvas: DEFAULT_SLIDE_CANVAS,
+      canvas: null,
+
       messages: [makeMsg('user', text)],
       files: [],
     };
@@ -334,7 +410,7 @@ export function createSlideAgent(
       {
         systemPrompt,
         messages: [],
-        providerConfig: deps.providerConfig,
+        providerConfig: providerConfig(),
         chatOptions: chatOptions(),
         files: project.files,
         signal: abort.signal,
@@ -371,6 +447,7 @@ export function createSlideAgent(
 
     if (result.status === 'plan_ready') {
       state.paused = null;
+      host.setPendingAsk(null);
       const canvas = pickCanvas(project.canvas, result.canvasChoice);
       const next: SlideProject = {
         ...project,
@@ -382,13 +459,39 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('plan_ready');
-      appendMessage(next, assistantOrFallback(result.content, 'Plan ready — review the brief and design, then build.'));
-    } else if (result.status === 'error') {
-      const next: SlideProject = { ...project, files: result.files, phase: 'error', updatedAt: Date.now() };
+      appendMessage(
+        next,
+        assistantOrFallback(
+          result.content,
+          'Plan ready — review the brief and design, then build.',
+        ),
+      );
+      return;
+    }
+
+    if (result.status === 'done') {
+      state.paused = null;
+      landNoDeliverable(project, result.files, result.content, 'plan', 'plan');
+      return;
+    }
+
+    if (result.status === 'error') {
+      state.paused = null;
+      host.setPendingAsk(null);
+      const next: SlideProject = {
+        ...project,
+        files: result.files,
+        phase: 'error',
+        pendingAsk: undefined,
+        updatedAt: Date.now(),
+      };
       host.landProject(next);
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Planning failed.'));
-    } else if (result.status === 'cancelled') {
+      return;
+    }
+
+    if (result.status === 'cancelled') {
       // Keep partial files from the resumed plan session.
       const current = host.getActiveProject() ?? project;
       host.landProject({
@@ -419,7 +522,7 @@ export function createSlideAgent(
     const result = await runBuildPhase({
       systemPrompt,
       messages: [{ role: 'user', content: 'Build the deck from the approved brief and design.' }],
-      providerConfig: deps.providerConfig,
+      providerConfig: providerConfig(),
       chatOptions: chatOptions(),
       files: project.files,
       signal: abort.signal,
@@ -437,7 +540,7 @@ export function createSlideAgent(
     state.abort = null;
     host.setBusy(false);
 
-    if (result.status === 'ready' || result.status === 'done') {
+    if (result.status === 'ready') {
       const next: SlideProject = {
         ...project,
         files: result.files,
@@ -447,16 +550,49 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('ready');
-      const slides = result.files.filter((f) => /^\/slides\/.+\.html$/.test(f.path)).length;
+      // slideCount comes from the same mapBuildResult projection as the activity feed.
+      const slides = result.slideCount ?? 0;
       appendMessage(
         next,
         assistantOrFallback(
           result.content,
           slides > 0
             ? `Deck built with ${slides} slide${slides === 1 ? '' : 's'}.`
-            : 'Build finished — no renderable slides yet.',
+            : 'Deck built.',
         ),
       );
+      return;
+    }
+
+    if (result.status === 'done') {
+      if (result.truncated) {
+        const slides = result.slideCount ?? 0;
+        const next: SlideProject = {
+          ...project,
+          files: result.files,
+          // Keep previewable phase if something projects; still error that run was incomplete.
+          phase: slides > 0 ? 'ready' : 'error',
+          pendingAsk: undefined,
+          updatedAt: Date.now(),
+        };
+        host.landProject(next);
+        host.setPhase(next.phase);
+        host.setPendingAsk(null);
+        const narration = result.content?.trim();
+        let landed = next;
+        if (narration) {
+          landed = appendMessage(landed, makeMsg('assistant', narration));
+        }
+        appendMessage(
+          landed,
+          makeMsg(
+            'error',
+            maxRoundsNoDeliverable('build', result.rounds, result.slideCount),
+          ),
+        );
+        return;
+      }
+      landNoDeliverable(project, result.files, result.content, 'build', 'error');
       return;
     }
 
@@ -479,14 +615,54 @@ export function createSlideAgent(
     }
   }
 
-  /** Route a follow-up message to the edit phase. */
-  async function sendFollowUp(text: string): Promise<void> {
-    const message = text.trim();
-    if (!message) return;
+  /**
+   * True when a freeform message should resume/re-run planning rather than
+   * edit. Edit is only for post-plan work (approved brief+design, or a deck).
+   * Failed API plan turns leave phase `error` with empty/partial VFS — those
+   * must NOT jump to the edit skill ("continue" after a plan 402).
+   */
+  function shouldResumePlan(project: SlideProject): boolean {
+    if (!hasValidPlanFiles(project.files)) return true;
+    return project.phase === 'plan' || project.phase === 'idle';
+  }
+
+  /**
+   * Retry / Continue after a failed or max-round-truncated phase.
+   * Does not invent a user "continue" transcript turn.
+   * Routes by the latest phase_failed activity row when available so a truncated
+   * edit does not accidentally re-run build.
+   */
+  async function retryFailedPhase(): Promise<void> {
     const project = host.getActiveProject();
     if (!project || state.running) return;
     if (blockPhase(project)) return;
 
+    const activity = host.getActivity?.() ?? [];
+    let failedPhase: 'plan' | 'build' | 'edit' | undefined;
+    for (let i = activity.length - 1; i >= 0; i--) {
+      const ev = activity[i];
+      if (ev?.type === 'phase_failed' && (ev.phase === 'plan' || ev.phase === 'build' || ev.phase === 'edit')) {
+        failedPhase = ev.phase;
+        break;
+      }
+    }
+
+    if (failedPhase === 'edit') {
+      // Resume edit with an explicit continue instruction (no user bubble).
+      await runEditContinue(project);
+      return;
+    }
+
+    if (failedPhase === 'build' || hasValidPlanFiles(project.files)) {
+      await runBuild();
+      return;
+    }
+
+    await runPlan(project);
+  }
+
+  /** Continue a truncated edit phase without adding a user transcript message. */
+  async function runEditContinue(project: SlideProject): Promise<void> {
     const systemPrompt = await skill('edit');
     const abort = new AbortController();
     state.abort = abort;
@@ -495,12 +671,16 @@ export function createSlideAgent(
     prepareStream();
     host.setBusy(true);
 
-    appendMessage(project, makeMsg('user', message));
-
     const result = await runEditPhase({
       systemPrompt,
-      messages: [{ role: 'user', content: message }],
-      providerConfig: deps.providerConfig,
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Continue the previous edit from the current workspace. Finish any incomplete work; do not undo successful changes.',
+        },
+      ],
+      providerConfig: providerConfig(),
       chatOptions: chatOptions(),
       files: project.files,
       signal: abort.signal,
@@ -518,8 +698,9 @@ export function createSlideAgent(
     state.abort = null;
     host.setBusy(false);
 
-    if (result.status === 'ready' || result.status === 'done') {
-      // Build on the user-follow-up-appended project so the user message is kept.
+    // Reuse sendFollowUp terminal handling by synthesizing via the same branches.
+    // Inline the same land paths as sendFollowUp for ready/done/error/cancelled.
+    if (result.status === 'ready') {
       const current = host.getActiveProject() ?? project;
       const next: SlideProject = {
         ...current,
@@ -529,25 +710,167 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('ready');
-      appendMessage(
-        next,
-        assistantOrFallback(
-          result.content,
-          result.status === 'ready' ? 'Deck updated.' : 'Edit finished — no renderable slides remain.',
-        ),
-      );
+      appendMessage(next, assistantOrFallback(result.content, 'Deck updated.'));
+      return;
+    }
+    if (result.status === 'done') {
+      const current = host.getActiveProject() ?? project;
+      if (result.truncated) {
+        const slides = result.slideCount ?? 0;
+        const next: SlideProject = {
+          ...current,
+          files: result.files,
+          phase: slides > 0 ? 'ready' : 'error',
+          pendingAsk: undefined,
+          updatedAt: Date.now(),
+        };
+        host.landProject(next);
+        host.setPhase(next.phase);
+        host.setPendingAsk(null);
+        const narration = result.content?.trim();
+        let landed = next;
+        if (narration) landed = appendMessage(landed, makeMsg('assistant', narration));
+        appendMessage(
+          landed,
+          makeMsg('error', maxRoundsNoDeliverable('edit', result.rounds, result.slideCount)),
+        );
+        return;
+      }
+      landNoDeliverable(current, result.files, result.content, 'edit', 'error');
+      return;
+    }
+    if (result.status === 'error') {
+      const current = host.getActiveProject() ?? project;
+      const next: SlideProject = {
+        ...current,
+        files: result.files,
+        phase: 'error',
+        updatedAt: Date.now(),
+      };
+      host.landProject(next);
+      host.setPhase('error');
+      appendMessage(next, makeMsg('error', result.error || 'Edit failed.'));
+      return;
+    }
+    if (result.status === 'cancelled') {
+      const current = host.getActiveProject() ?? project;
+      host.landProject({
+        ...current,
+        files: result.files,
+        stopped: true,
+        pendingAsk: undefined,
+        updatedAt: Date.now(),
+      });
+    }
+  }
+
+  /**
+   * Route a freeform composer message: re-plan until brief+design are valid,
+   * otherwise run the edit phase (follow-ups on an existing deck/plan).
+   */
+  async function sendFollowUp(text: string): Promise<void> {
+    const message = text.trim();
+    if (!message) return;
+    const project = host.getActiveProject();
+    if (!project || state.running) return;
+    if (blockPhase(project)) return;
+
+    if (shouldResumePlan(project)) {
+      // Land the follow-up in the transcript, then re-plan with ALL user turns
+      // (original deck prompt + this message) so the model isn't context-blind.
+      const next = appendMessage(project, makeMsg('user', message));
+      await runPlan(next);
+      return;
+    }
+
+    const systemPrompt = await skill('edit');
+    const abort = new AbortController();
+    state.abort = abort;
+    state.running = true;
+    host.setPhase('edit');
+    prepareStream();
+    host.setBusy(true);
+
+    appendMessage(project, makeMsg('user', message));
+
+    const result = await runEditPhase({
+      systemPrompt,
+      messages: [{ role: 'user', content: message }],
+      providerConfig: providerConfig(),
+      chatOptions: chatOptions(),
+      files: project.files,
+      signal: abort.signal,
+      maxRounds: deps.maxRounds,
+      transport: deps.transport,
+      abortRequest: deps.abortRequest,
+      toolOptions: deps.toolOptions,
+      onDelta: streamDelta,
+      onRoundStart: prepareStream,
+      onFilesChange: (files) => host.refreshDeckFromFiles(files),
+      onActivity: activitySink(),
+    });
+
+    state.running = false;
+    state.abort = null;
+    host.setBusy(false);
+
+    if (result.status === 'ready') {
+      const current = host.getActiveProject() ?? project;
+      const next: SlideProject = {
+        ...current,
+        files: result.files,
+        phase: 'ready',
+        updatedAt: Date.now(),
+      };
+      host.landProject(next);
+      host.setPhase('ready');
+      appendMessage(next, assistantOrFallback(result.content, 'Deck updated.'));
+      return;
+    }
+
+    if (result.status === 'done') {
+      const current = host.getActiveProject() ?? project;
+      if (result.truncated) {
+        const slides = result.slideCount ?? 0;
+        const next: SlideProject = {
+          ...current,
+          files: result.files,
+          phase: slides > 0 ? 'ready' : 'error',
+          pendingAsk: undefined,
+          updatedAt: Date.now(),
+        };
+        host.landProject(next);
+        host.setPhase(next.phase);
+        host.setPendingAsk(null);
+        const narration = result.content?.trim();
+        let landed = next;
+        if (narration) {
+          landed = appendMessage(landed, makeMsg('assistant', narration));
+        }
+        appendMessage(
+          landed,
+          makeMsg('error', maxRoundsNoDeliverable('edit', result.rounds, result.slideCount)),
+        );
+        return;
+      }
+      landNoDeliverable(current, result.files, result.content, 'edit', 'error');
       return;
     }
 
     if (result.status === 'error') {
-      const next: SlideProject = { ...project, files: result.files, phase: 'error', updatedAt: Date.now() };
+      const current = host.getActiveProject() ?? project;
+      const next: SlideProject = {
+        ...current,
+        files: result.files,
+        phase: 'error',
+        updatedAt: Date.now(),
+      };
       host.landProject(next);
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Edit failed.'));
     }
 
     if (result.status === 'cancelled') {
-      // Keep partial follow-up edits (stop() already narrated + cleared busy).
       const current = host.getActiveProject() ?? project;
       host.landProject({
         ...current,
@@ -583,14 +906,20 @@ export function createSlideAgent(
     answerAsk,
     runBuild,
     sendFollowUp,
+    /** Re-run plan/build after a phase failure without a fake "continue" turn. */
+    retryFailedPhase,
     stop,
     /** Whether the active model can drive the tool loop (US-032). */
     canUseFunctionCalling,
   };
 }
 
-/** Resolve the effective canvas, preferring the model's submit_plan choice. */
-function pickCanvas(current: SlideCanvas, choice?: string): SlideCanvas {
+/** Prefer submit_plan canvas, else the project's already-chosen canvas — never invent one. */
+function pickCanvas(
+  current: SlideCanvas | null,
+  choice?: string,
+): SlideCanvas | null {
   if (choice && isSlideCanvas(choice)) return choice;
-  return current ?? DEFAULT_SLIDE_CANVAS;
+  return current;
 }
+

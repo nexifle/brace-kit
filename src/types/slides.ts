@@ -24,8 +24,12 @@ export interface SlideCanvasResolution {
   height: number;
 }
 
-/** Default canvas used when the user never answers a canvas ask. */
+/**
+ * UI-only fallback when no canvas is chosen yet (empty chrome / missing deck.json).
+ * NEVER seed a new project or invent a user choice with this — plan must `ask`.
+ */
 export const DEFAULT_SLIDE_CANVAS: SlideCanvas = '16:9';
+
 
 // ==================== Phase ====================
 
@@ -88,8 +92,9 @@ export interface Slide {
 export interface SlideDeck {
   title: string;
   description?: string;
-  /** Canvas aspect applied to all slides. */
-  canvas: SlideCanvas;
+  /** Canvas aspect applied to all slides. Null until the user chooses one. */
+  canvas: SlideCanvas | null;
+
   /** VFS path (or raw content ref) for the shared theme stylesheet. */
   theme?: string;
   /** Ordered slide ids; drives slide navigation and export order. */
@@ -137,7 +142,8 @@ export interface SlideProject {
   createdAt: number;
   updatedAt: number;
   phase: SlidePhase;
-  canvas: SlideCanvas;
+  /** Canvas aspect. Null until the user answers a canvas ask / submit_plan. */
+  canvas: SlideCanvas | null;
   /** Main transcript entries (kept short — see PRD US-012). */
   messages: SlideMainMessage[];
   /** In-memory virtual filesystem (persisted as a map in slideDB). */
@@ -147,6 +153,7 @@ export interface SlideProject {
   /** Set when generation was stopped by the user for clean UI state. */
   stopped?: boolean;
 }
+
 
 /** A single entry in a project's short main transcript. */
 export interface SlideMainMessage {
@@ -225,4 +232,4 @@ export interface SlideUiRuntime {
 }
 
 /** Default max model rounds for phase chrome (matches agentSession default). */
-export const DEFAULT_SLIDE_AGENT_MAX_ROUNDS = 12;
+export const DEFAULT_SLIDE_AGENT_MAX_ROUNDS = 24;

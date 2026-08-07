@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
+  AlertCircle,
   Brain,
   CheckCircle2,
   ChevronDown,
@@ -8,16 +9,19 @@ import {
   FileCode2,
   Loader2,
   Minus,
-  AlertCircle,
   Wrench,
 } from 'lucide-react';
+import type { SlideActivityEvent } from '../../../types/slides.ts';
 import type { SlideChatItem } from '../../../utils/slideChatItems.ts';
 import {
   formatThoughtDuration,
   formatWorkedDuration,
 } from '../../../utils/slideChatItems.ts';
 import { slideTouchSymbol } from '../../../utils/slideFilesTouched.ts';
-import type { SlideActivityEvent } from '../../../types/slides.ts';
+import {
+  applyPatchOpDoneLabel,
+  type SlidePatchOpLabel,
+} from '../../../utils/slideActivityLabels.ts';
 import { MarkdownBody } from '../../message/MarkdownBody.tsx';
 /* ==================================================================== */
 /* Shared density tokens (v0-like within theme)                          */
@@ -142,23 +146,33 @@ function statusIcon(status: SlideActivityEvent['status']) {
     return <Loader2 size={13} className="animate-spin text-primary" />;
   }
   if (status === 'failed') {
-    return <AlertCircle size={13} className="text-destructive" />;
+    return <AlertCircle size={13} className="text-destructive dark:text-red-300" />;
   }
   if (status === 'cancelled') {
     return <Minus size={13} className="text-muted-foreground" />;
   }
   return <CheckCircle2 size={13} className="text-success/80" />;
 }
-
 export function AgentActionRow({
   event,
 }: {
   event: SlideActivityEvent;
 }) {
+  // Older feeds mirrored the file path into `detail`; path is already in the
+  // label (and file cards), so suppress that redundant subline.
+  const detail =
+    event.detail &&
+    event.detail !== event.path &&
+    !(event.label && event.detail && event.label.endsWith(event.detail))
+      ? event.detail
+      : null;
+
   return (
     <div
       className={`flex items-start gap-2 text-[13px] leading-snug ${
-        event.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'
+        event.status === 'failed'
+          ? 'text-destructive dark:text-red-300'
+          : 'text-muted-foreground'
       }`}
     >
       <span className="mt-0.5 shrink-0">{statusIcon(event.status)}</span>
@@ -167,9 +181,9 @@ export function AgentActionRow({
           <Wrench size={12} className="opacity-50" />
           <span className="break-words">{event.label}</span>
         </span>
-        {event.detail ? (
+        {detail ? (
           <span className="mt-0.5 block whitespace-pre-wrap break-words text-[12px] opacity-70">
-            {event.detail}
+            {detail}
           </span>
         ) : null}
       </span>
@@ -186,6 +200,11 @@ export function AgentFileCard({
 }) {
   const [open, setOpen] = useState(true);
   const sym = item.op ? slideTouchSymbol(item.op) : '~';
+  const pathForTitle = item.paths[0] ?? '';
+  const title =
+    item.op && pathForTitle
+      ? applyPatchOpDoneLabel(item.op as SlidePatchOpLabel, pathForTitle)
+      : item.label;
 
   return (
     <div className="overflow-hidden rounded-lg border border-border/70 bg-card/40">
@@ -200,7 +219,7 @@ export function AgentFileCard({
         ) : (
           <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
         )}
-        <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
+        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
         {item.status === 'running' ? (
           <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
         ) : null}
@@ -304,8 +323,10 @@ function plural(n: number, one: string, many: string): string {
 /** v0-style expandable “Worked for …” panel with a readable stats list. */
 export function AgentTurnFooter({
   item,
+  onRetry,
 }: {
   item: Extract<SlideChatItem, { type: 'turn_footer' }>;
+  onRetry?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const worked = formatWorkedDuration(item.durationMs);
@@ -370,6 +391,18 @@ export function AgentTurnFooter({
           ))}
         </dl>
       ) : null}
+
+      {item.canRetry && onRetry ? (
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[12px] font-medium text-primary hover:bg-primary/15 transition-colors"
+          >
+            {item.continueAction === 'continue' ? 'Continue' : 'Retry'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -385,9 +418,9 @@ export function AgentPhaseEyebrow({ label }: { label: string }) {
 
 export function AgentErrorLine({ content }: { content: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-2.5 py-2 text-[13px] text-destructive">
-      <AlertCircle size={14} className="mt-0.5 shrink-0" />
-      <p className="min-w-0 flex-1 whitespace-pre-wrap break-words">{content}</p>
+    <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[13px] text-destructive dark:border-red-400/35 dark:bg-red-400/10 dark:text-red-300">
+      <AlertCircle size={14} className="mt-0.5 shrink-0 opacity-90" aria-hidden />
+      <p className="min-w-0 flex-1 whitespace-pre-wrap break-words font-medium">{content}</p>
     </div>
   );
 }

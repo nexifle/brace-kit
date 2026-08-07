@@ -5,7 +5,7 @@ import type {
   SlideSessionStatus,
 } from '../types/slides.ts';
 import { isStreamingAgentActive } from './slideStreaming.ts';
-
+import { isMaxRoundsFailureLabel } from '../services/slidePhases.ts';
 /* ==================================================================== */
 /* Presentation model (v0-style chat parts; derived each render)         */
 /* ==================================================================== */
@@ -51,6 +51,14 @@ export type SlideChatItem =
       /** Provider model id/label when known */
       modelLabel?: string;
       endedAt?: number;
+      /** Show Retry/Continue when this footer is the latest failed phase turn. */
+      canRetry?: boolean;
+      /**
+       * CTA for a recoverable failure.
+       * `continue` = max-round truncation (resume more work).
+       * `retry` = hard failure (re-run phase).
+       */
+      continueAction?: 'continue' | 'retry';
     }
   | { type: 'error'; id: string; content: string }
   | { type: 'phase_eyebrow'; id: string; label: string }
@@ -341,13 +349,19 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
 
   const flushActivityMapped = (evs: SlideActivityEvent[]) => {
     const collapsed = collapsePatchedToolRows(evs);
-    // Skip apply_patch tool rows when a file_written/file_deleted with same
-    // toolCallId or path follows — keep ALL file cards; drop redundant
+    // Skip apply_patch tool rows when a file_written/file_deleted covers the
+    // same toolCallId or path — keep ALL file cards; drop redundant
     // apply_patch tool_started only when file events exist for that call.
     const fileCallIds = new Set(
       collapsed
         .filter((e) => e.type === 'file_written' || e.type === 'file_deleted')
         .map((e) => e.toolCallId)
+        .filter(Boolean) as string[],
+    );
+    const filePaths = new Set(
+      collapsed
+        .filter((e) => e.type === 'file_written' || e.type === 'file_deleted')
+        .map((e) => e.path)
         .filter(Boolean) as string[],
     );
 
@@ -398,22 +412,22 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
         continue;
       }
 
-
       if (
         (ev.type === 'tool_started' || ev.type === 'tool_finished') &&
-        ev.toolName === 'apply_patch' &&
-        ev.toolCallId &&
-        fileCallIds.has(ev.toolCallId)
+        ev.toolName === 'apply_patch'
       ) {
-        continue;
-      }
-      if (
-        (ev.type === 'tool_started' || ev.type === 'tool_finished') &&
-        ev.toolName === 'apply_patch' &&
-        !ev.toolCallId &&
-        fileCallIds.size > 0
-      ) {
-        continue;
+        const labelPath = ev.label?.match(/(\/[^\s]*)$/)?.[1];
+        if (
+          (ev.toolCallId && fileCallIds.has(ev.toolCallId)) ||
+          (ev.path && filePaths.has(ev.path)) ||
+          // detail used to mirror the path on tool rows — still match for
+          // already-persisted activity feeds.
+          (ev.detail && filePaths.has(ev.detail)) ||
+          (labelPath && filePaths.has(labelPath)) ||
+          (!ev.toolCallId && fileCallIds.size + filePaths.size > 0)
+        ) {
+          continue;
+        }
       }
       items.push(...mapActivityEvent(ev));
     }
@@ -494,21 +508,29 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
   // Prose already in `items` sits above these deferred footers.
   flushPendingFooters();
 
-  // Live tail: only while a model round is still open (streamActive). After
-  // round commit, durable Thought rows carry the body from activity.detail.
+  // Live tail: only while a model round is still open (streamActive).
+  // Do NOT invent a "Thinking…" row before the API emits reasoning — empty
+  // placeholder thinking is misleading when the model only returns text/tools.
+  // After round commit, durable Thought rows come from activity.detail.
   const streamActive = isStreamingAgentActive(sessionStatus, activity);
+
+  // Offer Retry/Continue on the most recent failed phase footer when idle.
+  if (!streamActive && sessionStatus !== 'running' && sessionStatus !== 'waiting_user') {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it?.type === 'turn_footer' && it.status === 'failed') {
+        const cont = isMaxRoundsFailureLabel(it.phaseLabel) ? 'continue' : 'retry';
+        items[i] = { ...it, canRetry: true, continueAction: cont };
+        break;
+      }
+    }
+  }
 
   if (streamActive && streamingReasoning.trim()) {
     items.push({
       type: 'reasoning',
       id: 'live_reasoning',
       content: streamingReasoning,
-      live: true,
-    });
-  } else if (streamActive && !streamingText.trim() && !streamingReasoning.trim()) {
-    items.push({
-      type: 'reasoning',
-      id: 'live_thinking',
       live: true,
     });
   }

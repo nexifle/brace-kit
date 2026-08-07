@@ -166,6 +166,32 @@ describe('slideStore', () => {
     expect(useSlideStore.getState().messages).toHaveLength(2);
   });
 
+  it('setActiveProjectData keeps session running when mid-phase same-project land', () => {
+    // sendFollowUp: setBusy(true) then appendMessage → landProject must not
+    // flip the composer out of Generating… / Stop.
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'proj_1', phase: 'ready' }));
+    store.setBusy(true);
+    store.setStreamingText('partial');
+    expect(useSlideStore.getState().sessionStatus).toBe('running');
+    expect(useSlideStore.getState().busy).toBe(true);
+
+    store.setActiveProjectData(
+      makeProject({
+        id: 'proj_1',
+        phase: 'edit',
+        messages: [{ id: 'm1', role: 'user', content: 'continue', createdAt: 1 }],
+      }),
+    );
+
+    const s = useSlideStore.getState();
+    expect(s.sessionStatus).toBe('running');
+    expect(s.busy).toBe(true);
+    expect(s.phase).toBe('edit');
+    expect(s.streamingText).toBe('partial');
+    expect(s.messages).toHaveLength(1);
+  });
+
   it('setActiveProjectData prefers explicit activity=[] over the live feed (restore)', () => {
     const store = useSlideStore.getState();
     store.setActiveProjectData(makeProject({ id: 'proj_1' }));

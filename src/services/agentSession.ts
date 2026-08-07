@@ -72,6 +72,11 @@ export interface AgentSessionState<S extends AgentSessionStatus = AgentSessionSt
   pendingAsk?: SlidePendingAsk;
   /** Failure message for `error`. */
   error?: string;
+  /**
+   * True when the loop hit maxRounds without a clean tool-free finish.
+   * Callers must not treat this as a successful deliverable by itself.
+   */
+  truncated?: boolean;
 }
 
 export type AgentSessionResult =
@@ -406,8 +411,12 @@ async function runLoop(
     signal?.removeEventListener('abort', onAbort);
   }
 
-  // Max rounds reached without a clean done — surface the partial transcript.
-  return finish(params, working, maxRounds, { status: 'done' });
+  // Max rounds reached without a clean done — partial work only.
+  return finish(params, working, maxRounds, {
+    status: 'done',
+    truncated: true,
+    content: `Hit the model-round limit (${maxRounds} rounds) before the agent finished. Partial workspace was kept.`,
+  });
 }
 
 /** Extra terminal fields carried on the result state. */
@@ -416,6 +425,7 @@ interface AgentSessionTerminal {
   content?: string;
   pendingAsk?: SlidePendingAsk;
   error?: string;
+  truncated?: boolean;
 }
 
 /** Build the terminal state, publish it, and return it. */
@@ -432,6 +442,7 @@ function finish<S extends AgentSessionStatus>(
     ...(extra.content != null ? { content: extra.content } : {}),
     ...(extra.pendingAsk ? { pendingAsk: extra.pendingAsk } : {}),
     ...(extra.error ? { error: extra.error } : {}),
+    ...(extra.truncated ? { truncated: true } : {}),
   };
   params.onUpdate?.(state);
   return state;

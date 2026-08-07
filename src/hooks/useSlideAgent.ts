@@ -22,7 +22,8 @@ import type { MCPTool } from '../types/index.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
 export function useSlideAgent() {
-  const providerConfig = useStore((s) => s.providerConfig);
+  // providerConfig is read live via getState() inside the stable agent — do not
+  // capture the React subscription snapshot into deps (it freezes first render).
   const enableTools = useStore((s) => s.enableTools);
   const enableMCP = useStore((s) => s.enableMCP);
   const mcpServers = useStore((s) => s.mcpServers);
@@ -64,9 +65,13 @@ export function useSlideAgent() {
         // Activity-feed sink (US-036): emit tool/file/ask rows as they dispatch.
         pushActivity: (event) => slideStore.pushActivity(event),
         patchActivity: (id, partial) => slideStore.patchActivity(id, partial),
+        getActivity: () => useSlideStore.getState().activity,
       },
       {
-        providerConfig,
+        // Live provider/model/key from main store — same pattern as canFunctionCall
+        // and getChatOptions. A static providerConfig here would freeze the first
+        // render's selection for the entire agent lifetime (custom provider bug).
+        getProviderConfig: () => useStore.getState().providerConfig,
         // Spread external-tool sharing (google_search enablement + MCP execution)
         // computed from live main-store settings so sub-agents mirror main chat.
         toolOptions: toolOptionsRef.current,
@@ -122,6 +127,7 @@ export function useSlideAgent() {
     createFromPrompt: agentRef.current.createFromPrompt,
     runBuild: agentRef.current.runBuild,
     sendFollowUp: agentRef.current.sendFollowUp,
+    retryFailedPhase: agentRef.current.retryFailedPhase,
     answerAsk: agentRef.current.answerAsk,
     stop: agentRef.current.stop,
     canUseFunctionCalling: agentRef.current.canUseFunctionCalling,

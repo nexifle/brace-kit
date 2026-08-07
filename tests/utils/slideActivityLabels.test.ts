@@ -35,6 +35,7 @@ describe('slideActivityLabels (Amendment A.5)', () => {
   it('phase_completed per phase', () => {
     expect(phaseCompletedLabel('plan')).toBe('Plan ready — review brief & design');
     expect(phaseCompletedLabel('build', { slideCount: 5 })).toBe('Deck ready — 5 slides');
+    expect(phaseCompletedLabel('build', { slideCount: 1 })).toBe('Deck ready — 1 slide');
     expect(phaseCompletedLabel('build')).toBe('Deck ready — 0 slides');
     expect(phaseCompletedLabel('edit')).toBe('Updates applied');
   });
@@ -106,10 +107,10 @@ describe('slideActivityLabels (Amendment A.5)', () => {
     expect(label.length).toBeLessThanOrEqual('Failed: '.length + 80);
   });
 
-  it('file_written / file_deleted match apply_patch wording', () => {
-    expect(fileWrittenLabel('create_file', '/slides/1.html')).toBe('Creating /slides/1.html');
-    expect(fileWrittenLabel('update_file', '/slides/1.css')).toBe('Updating /slides/1.css');
-    expect(fileDeletedLabel('/slides/1.html')).toBe('Deleting /slides/1.html');
+  it('file_written / file_deleted use past-tense card titles', () => {
+    expect(fileWrittenLabel('create_file', '/slides/1.html')).toBe('Created /slides/1.html');
+    expect(fileWrittenLabel('update_file', '/slides/1.css')).toBe('Updated /slides/1.css');
+    expect(fileDeletedLabel('/slides/1.html')).toBe('Deleted /slides/1.html');
   });
 
   it('truncateLabel', () => {

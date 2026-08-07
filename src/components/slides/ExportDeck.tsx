@@ -30,17 +30,20 @@ export function ExportDeck() {
 
   const files = activeProject?.files ?? [];
   const deck = activeDeck ?? rebuildDeckProjection(files);
-  const preset = SLIDE_CANVAS_PRESETS[canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
-  const disabled = exporting || busy || deckSlides.length === 0;
+  const canvasKey = canvas ?? deck.canvas;
+  const preset = canvasKey ? SLIDE_CANVAS_PRESETS[canvasKey] : null;
+  const disabled = exporting || busy || deckSlides.length === 0 || !preset;
+
 
   const onExport = useCallback(async () => {
     const r = rendererRef.current;
-    if (!r || !activeProject || exportingRef.current || deckSlides.length === 0) return;
+    if (!r || !activeProject || !preset || exportingRef.current || deckSlides.length === 0) return;
     exportingRef.current = true;
     setExporting(true);
 
     const w = preset.width;
     const h = preset.height;
+
     // Stable 2-digit prefix + slugified deck title, e.g. 01-my-deck.png
     const base = slugify(deck.title) || 'slides';
     const entries: ZipEntry[] = [];
@@ -87,7 +90,7 @@ export function ExportDeck() {
       exportingRef.current = false;
       setExporting(false);
     }
-  }, [activeProject, deckSlides, deck, preset.width, preset.height, success, warning, error]);
+  }, [activeProject, deckSlides, deck, preset, success, warning, error]);
 
   return (
     <>

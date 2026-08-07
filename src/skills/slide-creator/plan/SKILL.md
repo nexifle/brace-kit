@@ -47,14 +47,20 @@ changes the brief (slide count, hook structure, CTA placement) and the design
 
 ## Capture the requirements first
 
-Before writing, pin down what the user actually wants. Use `ask` **only** for
-facts the prompt hasn't already answered (see the ask policy below):
+Before writing, pin down what the user actually wants:
 
 - **Slide count** — or infer from the content depth.
 - **Variants per slide** — only if the user implied or asked for variants; the
   count is whatever the user decides (1, 2, or more — don't assume a default).
-- **Canvas / aspect** — the canvas preset key (`16:9`, `4:5`, `9:16`, `1:1`) from
-  `/deck.json` if already set; otherwise the user's choice.
+- **Canvas / aspect (REQUIRED)** — the user must choose a preset key:
+  `16:9`, `4:5`, `9:16`, or `1:1` that fits based on the user prompt (e.g. user explicitly said instagram slide, you should provides slide recommendations size that fits for instagram slide). There is **no default size**. If the prompt
+  does not already name one of those four keys (or an unambiguous equivalent
+  like "instagram portrait" → `4:5`, "story" → `9:16`, "square" → `1:1`,
+  "widescreen"/"presentation" → `16:9`), you **MUST** call `ask` with
+  `field: "canvas"` **before** writing `/brief.md`, `/design.md`, or
+  `/deck.json`, and **before** `submit_plan`. Do **not** invent or assume
+  `16:9` (or any other size). Do **not** write a canvas into `/deck.json`
+  until the user has answered.
 - **Topic / niche / theme.**
 - **Audience** — who this is for.
 - **Purpose / goal** — education, lead gen, brand awareness, engagement, etc.
@@ -83,7 +89,8 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
   - `/brief.md`
   - `/design.md`
   - `/deck.json` (deck meta only — set the `canvas` preset key plus title; not
-    slide HTML)
+    slide HTML). **Only write `canvas` after the user has chosen it** (prompt
+    or `ask` answer). Never invent a size.
 - **You MUST NOT write `/slides/**`** (no slide HTML/CSS). That is the build
   phase's job. Any attempt to create or patch a file under `/slides/` is denied
   by the harness and returns `status: failed`.
@@ -109,18 +116,35 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
 
 ## `ask` usage policy
 
-- **Ask only for information the user hasn't already provided** in this thread.
-  If the prompt or prior answers already state slide count, canvas, audience,
-  goal, style, or brand assets, do NOT re-ask — use what was given.
-- When a materially load-bearing fact is genuinely missing or ambiguous (slide
-  count, canvas/aspect, audience, core style direction, brand colors/logo), ask
-  ONE `ask` call at a time with a clear `question`, optional `options[]`, and a
-  meaningful `field` (`canvas`, `slide_count`, `audience`, `topic`, `style`,
-  `brand`, or `other`).
+- **Canvas / aspect is mandatory.** If the user's message (and prior answers in
+  this thread) do not already specify one of `16:9`, `4:5`, `9:16`, `1:1` (or an
+  unambiguous synonym), your **first tool call** must be:
+
+  ```json
+  {
+    "name": "ask",
+    "arguments": {
+      "question": "What slide size / aspect ratio should this deck use?",
+      "field": "canvas",
+      "options": ["16:9", "4:5", "9:16", "1:1"]
+    }
+  }
+  ```
+
+  Do not write plan files and do not call `submit_plan` until that answer is
+  received. There is **no default canvas**.
+- For other facts: **ask only for information the user hasn't already provided**.
+  If the prompt already states slide count, audience, goal, style, or brand
+  assets, do NOT re-ask — use what was given.
+- When another load-bearing fact is missing (slide count, audience, core style,
+  brand colors/logo), ask ONE `ask` call at a time with a clear `question`,
+  optional `options[]`, and a meaningful `field` (`slide_count`, `audience`,
+  `topic`, `style`, `brand`, or `other`).
 - Await the answer as the tool result; do NOT decide the missing fact yourself
   or continue while a question is outstanding.
-- Do not ask merely to postpone a decision you can reasonably infer. Reserve
-  `ask` for facts that genuinely change the deck.
+- Do not ask merely to postpone a non-canvas decision you can reasonably infer.
+  Canvas is the exception: never infer a size.
+
 
 ## Guidelines baked into `/brief.md` and `/design.md`
 

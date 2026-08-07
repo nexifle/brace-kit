@@ -233,8 +233,8 @@ export function SlideProjectList({
                   <div className="space-y-1">
                     {group.items.map((p) => {
                       const active = p.id === activeProjectId;
-                      const preset =
-                        SLIDE_CANVAS_PRESETS[p.canvas] ?? SLIDE_CANVAS_PRESETS['16:9'];
+                      const preset = p.canvas ? SLIDE_CANVAS_PRESETS[p.canvas] : null;
+
                       return (
                         <div
                           key={p.id}
@@ -309,7 +309,8 @@ export function SlideProjectList({
                                 <span className="text-muted-foreground/30">·</span>
                                 <span className="flex items-center gap-1 text-muted-foreground/80">
                                   <MetaIcon phase={p.phase} />
-                                  {preset.label}
+                                  {preset?.label ?? 'Size unset'}
+
                                 </span>
                               </div>
                             </div>

@@ -11,10 +11,7 @@ import type {
   SlideProject,
   SlideSessionStatus,
 } from '../types/index.ts';
-import {
-  DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
-  DEFAULT_SLIDE_CANVAS,
-} from '../types/index.ts';
+import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../types/index.ts';
 import {
   projectDeckSlides,
   rebuildDeckProjection,
@@ -30,6 +27,7 @@ import {
   saveSlideProject,
   type StoredSlideProject,
 } from '../utils/slideDB.ts';
+
 
 /**
  * Panel layout views inside the Slide Creator shell.
@@ -74,14 +72,15 @@ export interface SlideStoreState {
   activeDeck: SlideDeck | null;
   /** Resolved, ordered slides referenced by `activeDeck.slideOrder`. */
   deckSlides: Slide[];
-  /** Canvas aspect of the active project (falls back to project/deck canvas). */
-  canvas: SlideCanvas;
+  /** Canvas aspect of the active project; null until the user chooses one. */
+  canvas: SlideCanvas | null;
   /** Index into `deckSlides` currently being previewed. */
   currentSlideIndex: number;
   /** Main transcript for the active project (kept short per PRD US-012). */
   messages: SlideMainMessage[];
   /** Panel layout view for the shell. */
   panelView: SlidePanelView;
+
 
   // --- selection / project lifecycle ---
   setActiveProject: (projectId: string | null) => void;
@@ -172,7 +171,8 @@ const INITIAL_STATE = {
   lastError: null as string | null,
   activeDeck: null as SlideDeck | null,
   deckSlides: [] as Slide[],
-  canvas: DEFAULT_SLIDE_CANVAS,
+  canvas: null as SlideCanvas | null,
+
   currentSlideIndex: 0,
   messages: [] as SlideMainMessage[],
   panelView: 'split' as SlidePanelView,
@@ -207,12 +207,21 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
       // when re-landing the SAME project mid/after a phase. Explicit
       // `project.activity` (restore from FullSlideProject) always wins; a
       // different project id without a feed starts empty.
+      const sameProject = state.activeProjectId === project.id;
       const activity =
         project.activity !== undefined
           ? project.activity
-          : state.activeProjectId === project.id
+          : sameProject
             ? state.activity
             : [];
+      // Mid-phase landProject (e.g. appendMessage user turn at edit start) must
+      // NOT clear sessionStatus/busy — that drops the composer out of Generating
+      // / Stop while the agent is still running. Preserve only while same project
+      // is actively running or waiting on the user; project switch still resets.
+      const preserveLiveSession =
+        sameProject &&
+        (state.sessionStatus === 'running' || state.sessionStatus === 'waiting_user') &&
+        !project.pendingAsk;
       return {
         activeProject: project,
         activeProjectId: project.id,
@@ -221,21 +230,26 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
         pendingAsk: project.pendingAsk
           ? { ...project.pendingAsk, projectId: project.id }
           : null,
-        // Drop prior-run chrome so land/restore never show another session's feed.
         sessionStatus: project.pendingAsk
           ? ('waiting_user' as SlideSessionStatus)
-          : ('idle' as SlideSessionStatus),
-        busy: false,
+          : preserveLiveSession
+            ? state.sessionStatus
+            : ('idle' as SlideSessionStatus),
+        busy: project.pendingAsk
+          ? false
+          : preserveLiveSession
+            ? state.busy
+            : false,
         activity,
-        streamingText: '',
-        streamingReasoning: '',
-        agentRound: 0,
+        streamingText: preserveLiveSession ? state.streamingText : '',
+        streamingReasoning: preserveLiveSession ? state.streamingReasoning : '',
+        agentRound: preserveLiveSession ? state.agentRound : 0,
         agentMaxRounds: DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
-        lastToolName: null as string | null,
+        lastToolName: preserveLiveSession ? state.lastToolName : null,
         lastError: null as string | null,
         activeDeck: deck,
         deckSlides: slides,
-        canvas: project.canvas,
+        canvas: project.canvas ?? deck.canvas,
         currentSlideIndex: 0,
       };
     }),

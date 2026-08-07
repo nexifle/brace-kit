@@ -46,7 +46,7 @@ import {
   parseApplyPatchArgs,
   type SlidePatchOperation,
 } from './applyPatchHarness.ts';
-import { getSlideFile, rebuildDeckProjection } from '../utils/slideVfs.ts';
+import { deckSlideCount, getSlideFile } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
 import {
   askAnsweredLabel,
@@ -165,7 +165,7 @@ function dispatchApplyPatch(
     currentFiles.push(...result.files);
     onFilesChange?.(currentFiles);
     emitter.complete(row);
-    if (op.path) emitter.fileChanged(op.type, op.path, round);
+    if (op.path) emitter.fileChanged(op.type, op.path, round, toolCall.id);
   } else {
     emitter.failed(row, result.output);
   }
@@ -296,7 +296,8 @@ function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySi
         toolName: toolCall.name,
         toolCallId: toolCall.id,
         label: toolStartedLabel(toolCall.name, a),
-        ...(a?.path ? { detail: a.path } : {}),
+        // Path lives in the label (and on file_written cards) — do not mirror
+        // it as a detail subline under the tool row.
       });
       return id;
     },
@@ -317,7 +318,12 @@ function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySi
       });
     },
     /** Emit a `file_written`/`file_deleted` row for a successful `apply_patch`. */
-    fileChanged(op: SlidePatchOperation['type'], path: string, round: number): void {
+    fileChanged(
+      op: SlidePatchOperation['type'],
+      path: string,
+      round: number,
+      toolCallId?: string,
+    ): void {
       sink?.push({
         id: `${phase}_${round}_${++seq}`,
         type: op === 'delete_file' ? 'file_deleted' : 'file_written',
@@ -327,6 +333,7 @@ function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySi
         round,
         patchOp: op,
         path,
+        ...(toolCallId ? { toolCallId } : {}),
         label: op === 'delete_file' ? fileDeletedLabel(path) : fileWrittenLabel(op, path),
       });
     },
@@ -450,7 +457,7 @@ export async function runPlanPhase(
   emitter.phaseStarted();
   const result = await runAgentSession(sessionParams);
 
-  const mapped = mapResult(result, currentFiles, submit.fired, submit.canvas);
+  const mapped = mapResult(result, currentFiles, submit.canvas);
   emitPhaseTerminal(emitter, mapped.status, {
     ...(mapped.error ? { error: mapped.error } : {}),
     noDeliverable: PHASE_NO_DELIVERABLE.plan,
@@ -506,7 +513,7 @@ export async function resumePlanPhase(
     round: resume.round + 1,
   });
 
-  const mapped = mapResult(result, currentFiles, submit.fired, submit.canvas);
+  const mapped = mapResult(result, currentFiles, submit.canvas);
   emitPhaseTerminal(emitter, mapped.status, {
     ...(mapped.error ? { error: mapped.error } : {}),
     noDeliverable: PHASE_NO_DELIVERABLE.plan,
@@ -646,9 +653,18 @@ export interface BuildPhaseResult {
   status: BuildPhaseStatus;
   /** Mutable VFS accumulated across all patches this run. */
   files: import('../types/slides.ts').SlideFile[];
+  /**
+   * Projectable slide count from {@link rebuildDeckProjection} at terminal time.
+   * Set for `ready`/`done` so callers never re-count HTML paths independently.
+   */
+  slideCount?: number;
   /** Final assistant summary narration (done/ready). */
   content?: string;
   error?: string;
+  /** True when the agent loop hit maxRounds (partial). */
+  truncated?: boolean;
+  /** Model rounds completed when the phase ended (useful for truncated copy). */
+  rounds?: number;
 }
 
 /**
@@ -672,11 +688,12 @@ export async function runBuildPhase(
   const mapped = mapBuildResult(result, currentFiles);
   emitPhaseTerminal(emitter, mapped.status, {
     ...(mapped.error ? { error: mapped.error } : {}),
-    slideCount:
-      mapped.status === 'ready'
-        ? rebuildDeckProjection(currentFiles).slideOrder.length
-        : undefined,
-    noDeliverable: PHASE_NO_DELIVERABLE.build,
+    ...(mapped.status === 'ready' && mapped.slideCount != null
+      ? { slideCount: mapped.slideCount }
+      : {}),
+    noDeliverable: mapped.truncated
+      ? maxRoundsNoDeliverable('build', mapped.rounds, mapped.slideCount)
+      : PHASE_NO_DELIVERABLE.build,
   });
   return mapped;
 }
@@ -778,7 +795,7 @@ function composePlanDocsSystemPrompt(
 /** Map the runner's terminal session state onto the build-phase result. */
 function mapBuildResult(
   result: AgentSessionResult,
-  files: import('../types/slides.ts').SlideFile[]
+  files: import('../types/slides.ts').SlideFile[],
 ): BuildPhaseResult {
   const base = { files: files.slice() };
   switch (result.status) {
@@ -787,17 +804,22 @@ function mapBuildResult(
     case 'cancelled':
       return { ...base, status: 'cancelled' };
     case 'waiting_user':
-      // Build has no ask tool — an unexpected suspend degrades to a partial
-      // done rather than leaving the UI stuck.
-      return { ...base, status: 'done', content: result.content };
+      // Build has no ask tool — unexpected suspend is a partial (no deliverable).
+      return { ...base, status: 'done', slideCount: 0, content: result.content };
     case 'done':
     default: {
-      // Readiness = the projected deck renders ≥1 slide.
-      const deck = rebuildDeckProjection(files);
+      // Projection is the readiness source — but a max-rounds truncation is never
+      // a successful full deck even if one early slide already projects.
+      const slideCount = deckSlideCount(files);
+      const truncated = !!result.truncated;
+      const ready = !truncated && slideCount > 0;
       return {
         ...base,
-        status: deck.slideOrder.length > 0 ? 'ready' : 'done',
+        status: ready ? 'ready' : 'done',
+        slideCount,
         content: result.content,
+        rounds: result.rounds,
+        ...(truncated ? { truncated: true } : {}),
       };
     }
   }
@@ -852,9 +874,15 @@ export interface EditPhaseResult {
   status: EditPhaseStatus;
   /** Mutable VFS accumulated across all patches this run. */
   files: import('../types/slides.ts').SlideFile[];
+  /** Projectable slide count at terminal time (same source as build). */
+  slideCount?: number;
   /** Final assistant summary narration (done/ready). */
   content?: string;
   error?: string;
+  /** True when the agent loop hit maxRounds (partial). */
+  truncated?: boolean;
+  /** Model rounds completed when the phase ended. */
+  rounds?: number;
 }
 
 /**
@@ -880,7 +908,9 @@ export async function runEditPhase(
   const mapped = mapBuildResult(result, currentFiles);
   emitPhaseTerminal(emitter, mapped.status, {
     ...(mapped.error ? { error: mapped.error } : {}),
-    noDeliverable: PHASE_NO_DELIVERABLE.edit,
+    noDeliverable: mapped.truncated
+      ? maxRoundsNoDeliverable('edit', mapped.rounds, mapped.slideCount)
+      : PHASE_NO_DELIVERABLE.edit,
   });
   return mapped;
 }
@@ -958,11 +988,44 @@ function buildEditSession(params: EditPhaseParams) {
 }
 
 /** Terminal copy when a runner ends `done` without a usable deliverable. */
-const PHASE_NO_DELIVERABLE: Record<SlideActivityPhase, string> = {
+export const PHASE_NO_DELIVERABLE: Record<SlideActivityPhase, string> = {
   plan: 'The planner finished without a complete brief and design.',
   build: 'Build finished without producing a renderable deck.',
   edit: 'Edit finished without a renderable slide remaining.',
 };
+
+/**
+ * Clear copy when the agent tool-loop hit max model rounds (one CHAT_REQUEST =
+ * one round). Surfaces in the activity feed + transcript so "Deck ready" is
+ * never implied for a truncated run.
+ */
+export function maxRoundsNoDeliverable(
+  phase: 'plan' | 'build' | 'edit',
+  rounds?: number,
+  slideCount?: number,
+): string {
+  const n = rounds != null && rounds > 0 ? rounds : undefined;
+  const limit = n != null ? `${n} model round${n === 1 ? '' : 's'}` : 'the model-round limit';
+  if (phase === 'build') {
+    const slides = slideCount ?? 0;
+    if (slides > 0) {
+      return `Hit ${limit} with only ${slides} slide${slides === 1 ? '' : 's'} projectable — full deck not finished. Partial work was kept.`;
+    }
+    return `Hit ${limit} before a renderable deck was produced. Partial work was kept.`;
+  }
+  if (phase === 'edit') {
+    return `Hit ${limit} before edits finished. Partial work was kept.`;
+  }
+  return `Hit ${limit} before the plan was complete. Partial work was kept.`;
+}
+
+/** True when a phase_failed label is a max-round truncation (not a hard error). */
+export function isMaxRoundsFailureLabel(label: string | undefined): boolean {
+  if (!label) return false;
+  // Strip activity "Error: " prefix if present.
+  const t = label.replace(/^Error:\s*/i, '');
+  return /\bmodel round/i.test(t) || /\bmodel-round limit\b/i.test(t);
+}
 
 /** Terminal statuses shared by the plan/build/edit runners. */
 type PhaseTerminalStatus = PlanPhaseStatus | BuildPhaseStatus | EditPhaseStatus;
@@ -1004,8 +1067,7 @@ function emitPhaseTerminal(
 function mapResult(
   result: AgentSessionResult,
   files: import('../types/slides.ts').SlideFile[],
-  submitted: boolean,
-  canvasChoice: string | undefined
+  canvasChoice: string | undefined,
 ): PlanPhaseResult {
   const base = {
     files: files.slice(),
@@ -1029,10 +1091,11 @@ function mapResult(
       return { ...base, status: 'cancelled' };
     case 'done':
     default:
-      // Approval-ready iff the model submitted OR both plan files are valid.
+      // Single readiness source for plan: both /brief.md + /design.md non-empty.
+      // submit_plan alone must not mark plan_ready (Build CTA also requires files).
       return {
         ...base,
-        status: submitted || hasValidPlanFiles(files) ? 'plan_ready' : 'done',
+        status: hasValidPlanFiles(files) ? 'plan_ready' : 'done',
         content: result.content,
       };
   }

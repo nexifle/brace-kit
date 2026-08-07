@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { createSlideAgent, deriveSlideTitle } from '../../src/services/slideOrchestrator.ts';
+import {
+  buildPlanSessionMessages,
+  createSlideAgent,
+  deriveSlideTitle,
+} from '../../src/services/slideOrchestrator.ts';
 import type { SlideProject, SlideFile, SlideActivityEvent } from '../../src/types/slides.ts';
-import type { ProviderConfig, ToolCall } from '../../src/types/index.ts';
+import type { APIMessage, ProviderConfig, ToolCall } from '../../src/types/index.ts';
 import type { AgentChatResponse } from '../../src/services/agentSession.ts';
 
 const providerConfig: ProviderConfig = {
@@ -56,12 +60,19 @@ function builtProject(): SlideProject {
 type Responder = () => AgentChatResponse;
 function makeTransport(respondents: Responder[]) {
   let i = 0;
-  const transport = async () => {
+  const seenProviders: ProviderConfig[] = [];
+  const seenMessages: APIMessage[][] = [];
+  const transport = async (msg: {
+    providerConfig?: ProviderConfig;
+    messages?: APIMessage[];
+  }) => {
+    if (msg.providerConfig) seenProviders.push(msg.providerConfig);
+    if (msg.messages) seenMessages.push(msg.messages);
     const respond = respondents[Math.min(i, respondents.length - 1)];
     i++;
     return respond();
   };
-  return { transport, calls: () => i };
+  return { transport, calls: () => i, seenProviders, seenMessages };
 }
 
 /** In-memory host capturing store transitions for assertions. */
@@ -110,6 +121,7 @@ function makeHost() {
       const idx = activity.findIndex((e) => e.id === id);
       if (idx >= 0) activity[idx] = { ...activity[idx], ...partial, id };
     },
+    getActivity: () => activity,
   };
 
   return {
@@ -240,6 +252,58 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(h.pendingAsk).not.toBeNull();
     expect(h.active?.pendingAsk?.payload.field).toBe('canvas');
     expect(h.active?.phase).toBe('plan'); // phase unchanged, waiting on user
+  });
+
+  it('surfaces plan done after answerAsk when files are still incomplete', async () => {
+    // answerAsk used to ignore status=done (activity failed, transcript silent).
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        toolCalls: [
+          toolCall(
+            'ask',
+            JSON.stringify({
+              question: 'Canvas?',
+              options: ['16:9', '4:5'],
+              field: 'canvas',
+            }),
+          ),
+        ],
+      }),
+      // After answer: model ends without writing brief/design
+      () => ({ content: 'Still missing the brief.' }),
+    ]);
+
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.createFromPrompt('a deck');
+    expect(h.pendingAsk).not.toBeNull();
+    const projectId = h.active?.id;
+    expect(projectId).toBeTruthy();
+
+    await agent.answerAsk(projectId!, '16:9');
+
+    expect(h.phase).toBe('plan');
+    expect(h.pendingAsk).toBeNull();
+    // Model prose may appear as assistant; error line is always canonical.
+    expect(
+      h.active?.messages.some(
+        (m) => m.role === 'assistant' && m.content === 'Still missing the brief.',
+      ),
+    ).toBe(true);
+    expect(
+      h.active?.messages.some(
+        (m) =>
+          m.role === 'error' &&
+          m.content.includes('without a complete brief and design'),
+      ),
+    ).toBe(true);
+    expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);
   });
 
   it('surfaces an error message in the transcript when planning fails', async () => {
@@ -504,6 +568,70 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     );
     expect(h.activity.some((e) => e.type === 'file_written')).toBe(true);
   });
+
+  it('treats HTML-without-projectable-deck as build failure, not success', async () => {
+    // Regression: counting /slides/*.html alone claimed "Deck built with 5 slides"
+    // while mapBuildResult/activity correctly said no renderable deck (no deck.json).
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'writing slides',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>One</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/02.html',
+                diff: '@@\n+<section>Two</section>\n',
+              },
+            }),
+          ),
+          // intentionally no /deck.json → slideOrder empty
+        ],
+      }),
+      () => ({ content: 'Deck built with 2 slides.' }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.runBuild();
+
+    expect(h.phase).toBe('error');
+    // Never claim success via summary; model claim may be assistant narration only.
+    expect(h.active?.messages.some((m) => m.role === 'summary' && /Deck built/.test(m.content))).toBe(
+      false,
+    );
+    expect(
+      h.active?.messages.some(
+        (m) => m.role === 'assistant' && m.content === 'Deck built with 2 slides.',
+      ),
+    ).toBe(true);
+    expect(
+      h.active?.messages.some(
+        (m) =>
+          m.role === 'error' && m.content.includes('without producing a renderable deck'),
+      ),
+    ).toBe(true);
+    expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);
+    expect(h.activity.some((e) => e.type === 'phase_completed')).toBe(false);
+  });
 });
 
 describe('deriveSlideTitle', () => {
@@ -697,6 +825,258 @@ describe('createSlideAgent — non-function-calling model guard (US-032)', () =>
   });
 });
 
+describe('createSlideAgent — continue after failed plan resumes plan', () => {
+  it('sendFollowUp re-runs plan with original deck prompt in session messages', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenProviders, seenMessages } = makeTransport([
+      () => ({
+        content: 'retrying plan',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+brief\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+design\n' } })),
+          toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' })),
+        ],
+      }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const h = makeHost();
+    // Simulate a project after a plan-phase API error: no plan files, phase error.
+    h.host.landProject({
+      id: 'sp_failed_plan',
+      title: 'Coffee',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'error',
+      canvas: null,
+      messages: [
+        { id: 'u1', role: 'user', content: 'a coffee deck', createdAt: 0 },
+        { id: 'e1', role: 'error', content: 'API Error (402): Insufficient Balance', createdAt: 1 },
+      ],
+      files: [],
+    });
+    h.host.setPhase('error');
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+
+    await agent.sendFollowUp('continue');
+
+    expect(h.phase).toBe('plan_ready');
+    expect(h.active?.files.some((f) => f.path === '/brief.md')).toBe(true);
+    expect(h.active?.files.some((f) => f.path === '/design.md')).toBe(true);
+    expect(h.active?.messages.some((m) => m.role === 'user' && m.content === 'continue')).toBe(true);
+    expect(seenProviders.length).toBeGreaterThan(0);
+    // Plan session must include the original deck prompt, not only "continue".
+    const firstUserTurns = (seenMessages[0] ?? []).filter((m) => m.role === 'user').map((m) => m.content);
+    expect(firstUserTurns).toContain('a coffee deck');
+    expect(firstUserTurns).toContain('continue');
+  });
+
+  it('retryFailedPhase re-runs plan without adding a continue user turn', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({
+        content: 'retrying plan',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+brief\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+design\n' } })),
+          toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' })),
+        ],
+      }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject({
+      id: 'sp_failed_plan',
+      title: 'Coffee',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'error',
+      canvas: null,
+      messages: [
+        { id: 'u1', role: 'user', content: 'a coffee deck for instagram', createdAt: 0 },
+        { id: 'e1', role: 'error', content: 'API Error (402): Insufficient Balance', createdAt: 1 },
+      ],
+      files: [],
+    });
+    h.host.setPhase('error');
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+
+    await agent.retryFailedPhase();
+
+    expect(h.phase).toBe('plan_ready');
+    // No synthetic "continue"/"retry" user bubble.
+    expect(h.active?.messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual([
+      'a coffee deck for instagram',
+    ]);
+    const firstUserTurns = (seenMessages[0] ?? []).filter((m) => m.role === 'user').map((m) => m.content);
+    expect(firstUserTurns).toEqual(['a coffee deck for instagram']);
+  });
+
+  it('Continue after max-round build failure re-runs build without a user turn', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      // Continue/retry build produces a full deck
+      () => ({
+        content: 'finishing',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>One</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"T","canvas":"16:9","slideOrder":["01"]}\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: 'Deck complete.' }),
+    ]);
+
+    const h = makeHost();
+    // Partial deck after a truncated build: plan files exist + 0 slides.
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'error',
+      messages: [
+        { id: 'u1', role: 'user', content: 'my deck', createdAt: 0 },
+        {
+          id: 'e1',
+          role: 'error',
+          content:
+            'Hit 24 model rounds with only 1 slide projectable — full deck not finished. Partial work was kept.',
+          createdAt: 1,
+        },
+      ],
+    });
+    h.host.setPhase('error');
+    // Seed activity as the UI would after a max-round phase_failed.
+    h.host.pushActivity!({
+      id: 'pf',
+      type: 'phase_failed',
+      status: 'failed',
+      ts: 1,
+      phase: 'build',
+      label:
+        'Error: Hit 24 model rounds with only 1 slide projectable — full deck not finished. Partial work was kept.',
+    });
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.retryFailedPhase();
+
+    expect(h.phase).toBe('ready');
+    expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
+    // No synthetic Continue user message.
+    expect(h.active?.messages.filter((m) => m.role === 'user')).toHaveLength(1);
+  });
+
+  it('buildPlanSessionMessages keeps original prompt and optional extra', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'error',
+      canvas: null,
+      messages: [
+        { id: 'u1', role: 'user', content: 'deck brief', createdAt: 0 },
+        { id: 'e1', role: 'error', content: 'fail', createdAt: 1 },
+      ],
+      files: [],
+    };
+    expect(buildPlanSessionMessages(project).map((m) => m.content)).toEqual(['deck brief']);
+    expect(buildPlanSessionMessages(project, 'continue').map((m) => m.content)).toEqual([
+      'deck brief',
+      'continue',
+    ]);
+  });
+
+  it('sendFollowUp still uses edit when a valid plan already exists', async () => {
+    const skills = makeSkillFetcher();
+    let usedEdit = false;
+    const transport = async (): Promise<AgentChatResponse> => {
+      usedEdit = true;
+      return {
+        content: 'tweaked',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>Hi</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff:
+                  '@@\n+{"canvas":"16:9","theme":"/theme.css","slides":[{"id":"s1","html":"/slides/01.html"}]}\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: { type: 'create_file', path: '/theme.css', diff: '@@\n+body{}\n' },
+            }),
+          ),
+        ],
+      };
+    };
+
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    h.host.setPhase('plan_ready');
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+
+    await agent.sendFollowUp('make the title bigger');
+
+    expect(usedEdit).toBe(true);
+    expect(h.phase === 'ready' || h.phase === 'error' || h.phase === 'edit').toBe(true);
+  });
+});
+
 describe('createSlideAgent — streaming lifecycle (US-035)', () => {
   it('clears streaming at phase start and again when a plan suspends on an ask', async () => {
     const skills = makeSkillFetcher();
@@ -721,6 +1101,61 @@ describe('createSlideAgent — streaming lifecycle (US-035)', () => {
     // clearStreaming ran at phase start (prepareStream) AND on the waiting_user
     // branch so leftover turn text never sticks in the rail.
     expect(clears).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('createSlideAgent — live providerConfig (provider switch)', () => {
+  it('reads getProviderConfig at phase start so a mid-session switch is used', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenProviders } = makeTransport([
+      () => ({
+        content: 'done',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+b\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+d\n' } })),
+          toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' })),
+        ],
+      }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const frozen: ProviderConfig = {
+      ...providerConfig,
+      providerId: 'deepseek',
+      model: 'deepseek-v4-flash',
+      apiUrl: 'https://api.deepseek.com/v1',
+    };
+    let live: ProviderConfig = frozen;
+
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      // Stale first-render snapshot (the bug): still deepseek.
+      providerConfig: frozen,
+      // Live selection after the user switches in the picker.
+      getProviderConfig: () => live,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+
+    live = {
+      ...providerConfig,
+      providerId: 'cline',
+      model: 'cline-pass/deepseek-v4-flash',
+      apiUrl: 'https://api.cline.bot/v1',
+      apiKey: 'cline-key',
+    };
+
+    await agent.createFromPrompt('a coffee deck');
+
+    expect(seenProviders.length).toBeGreaterThan(0);
+    expect(seenProviders[0]?.providerId).toBe('cline');
+    expect(seenProviders[0]?.model).toBe('cline-pass/deepseek-v4-flash');
+    expect(seenProviders[0]?.apiUrl).toBe('https://api.cline.bot/v1');
+    // Every request in the phase must use the live config, not the frozen one.
+    for (const pc of seenProviders) {
+      expect(pc.providerId).toBe('cline');
+    }
   });
 });
 
