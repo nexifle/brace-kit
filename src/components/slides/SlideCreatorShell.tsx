@@ -28,6 +28,7 @@ import type { SlideSessionStatus } from '../../types/slides.ts';
 import { slideComposerCanSend, slideComposerPlaceholder } from '../../utils/slideComposer.ts';
 import { collectFilesTouched } from '../../utils/slideFilesTouched.ts';
 import { useElementSize } from '../../hooks/index.ts';
+import { fitBox } from '../../utils/slideFit.ts';
 import { AskPrompt } from './AskPrompt.tsx';
 import { PlanReview } from './PlanReview.tsx';
 import { SlidePreview } from './SlidePreview.tsx';
@@ -44,18 +45,6 @@ import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
-
-/* ==================================================================== */
-/* Scale-to-fit slide canvas                                            */
-/* ==================================================================== */
-
-function fitBox(maxW: number, maxH: number, ratio: number, inset: number) {
-  let w = Math.max(maxW - inset, 0);
-  let h = Math.max(maxH - inset, 0);
-  if (w / h > ratio) w = h * ratio;
-  else h = w / ratio;
-  return { width: Math.max(w, 1), height: Math.max(h, 1) };
-}
 
 function PreviewCanvas() {
   const canvas = useSlideStore((s) => s.canvas);
@@ -225,31 +214,39 @@ function PreviewPane({
           {hasDeck && <ExportDeck />}
           {hasDeck && <SlideCodeViewer />}
           {hasDeck ? (
-            /* slide navigation for decks: prev / position / next */
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={goPrev}
-                disabled={currentSlideIndex <= 0}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-                title="Previous slide (Left)"
-                aria-label="Previous slide"
+            /* canvas size + slide navigation for decks */
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
+                title={`${preset.label} · ${preset.width}×${preset.height} (export / canvas size)`}
               >
-                <ChevronLeft size={15} />
-              </button>
-              <span className="min-w-[3.5rem] text-center text-2xs tabular-nums text-muted-foreground">
-                {position}
+                {preset.width}×{preset.height}
               </span>
-              <button
-                type="button"
-                onClick={goNext}
-                disabled={currentSlideIndex >= deckSlides.length - 1}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-                title="Next slide (Right)"
-                aria-label="Next slide"
-              >
-                <ChevronRight size={15} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  disabled={currentSlideIndex <= 0}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                  title="Previous slide (Left)"
+                  aria-label="Previous slide"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <span className="min-w-[3.5rem] text-center text-2xs tabular-nums text-muted-foreground">
+                  {position}
+                </span>
+                <button
+                  type="button"
+                  onClick={goNext}
+                  disabled={currentSlideIndex >= deckSlides.length - 1}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                  title="Next slide (Right)"
+                  aria-label="Next slide"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
             </div>
           ) : busy && !liveUpdating ? (
             <span className="flex items-center gap-1.5 text-2xs font-medium text-primary">
@@ -865,7 +862,7 @@ export function SlideCreatorShell() {
       <div className="relative flex min-h-0 flex-1">
         {narrow ? (
           /* Preview stays put; chat is a transient bottom sheet. */
-          <div className="relative min-w-0 flex-1">
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             <PreviewPane />
             <ChatDock
               open={chatOpen}
@@ -893,7 +890,7 @@ export function SlideCreatorShell() {
               placeholder={promptPlaceholder}
               blocked={blocked}
             />
-            <section className="relative min-w-0 flex-1 flex-col">
+            <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <PreviewPane
                 showRailToggle={!railOpen}
                 railOpen={railOpen}
