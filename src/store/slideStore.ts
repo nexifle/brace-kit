@@ -199,9 +199,20 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     }),
 
   setActiveProjectData: (project) =>
-    set(() => {
+    set((state) => {
       const deck = rebuildDeckProjection(project.files);
       const slides = projectDeckSlides(project.files, deck);
+      // Activity lives outside SlideProject (own slideDB store). Orchestrator
+      // landProject only ships SlideProject fields — never wipe the live feed
+      // when re-landing the SAME project mid/after a phase. Explicit
+      // `project.activity` (restore from FullSlideProject) always wins; a
+      // different project id without a feed starts empty.
+      const activity =
+        project.activity !== undefined
+          ? project.activity
+          : state.activeProjectId === project.id
+            ? state.activity
+            : [];
       return {
         activeProject: project,
         activeProjectId: project.id,
@@ -215,10 +226,7 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
           ? ('waiting_user' as SlideSessionStatus)
           : ('idle' as SlideSessionStatus),
         busy: false,
-        // Restore the last-persisted (capped) activity feed (US-047) so a
-        // reload keeps showing what the agent did last; a fresh project (no
-        // persisted feed) starts empty.
-        activity: project.activity ?? [],
+        activity,
         streamingText: '',
         streamingReasoning: '',
         agentRound: 0,

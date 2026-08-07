@@ -97,8 +97,9 @@ describe('slideStore', () => {
     expect(s.pendingAsk?.payload.question).toBe('Which canvas?');
   });
 
-  it('setActiveProjectData clears prior-run activity/stream chrome', () => {
+  it('setActiveProjectData clears activity when switching projects without a feed', () => {
     const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'proj_old' }));
     store.setSessionStatus('running');
     store.setStreamingText('leftover');
     store.setStreamingReasoning('think');
@@ -114,7 +115,7 @@ describe('slideStore', () => {
       label: 'stale',
     });
 
-    store.setActiveProjectData(makeProject());
+    store.setActiveProjectData(makeProject({ id: 'proj_1' }));
     const s = useSlideStore.getState();
     expect(s.activity).toEqual([]);
     expect(s.streamingText).toBe('');
@@ -124,6 +125,166 @@ describe('slideStore', () => {
     expect(s.agentRound).toBe(0);
     expect(s.busy).toBe(false);
     expect(s.sessionStatus).toBe('idle');
+  });
+
+  it('setActiveProjectData keeps live activity when re-landing the same project without a feed', () => {
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'proj_1' }));
+    const feed = [
+      {
+        id: 'e1',
+        type: 'phase_started' as const,
+        status: 'completed' as const,
+        ts: 1,
+        phase: 'edit' as const,
+        label: 'Editing started',
+      },
+      {
+        id: 'e2',
+        type: 'file_written' as const,
+        status: 'completed' as const,
+        ts: 2,
+        phase: 'edit' as const,
+        path: '/theme.css',
+        label: 'Updated /theme.css',
+      },
+    ];
+    for (const ev of feed) store.pushActivity(ev);
+
+    // Orchestrator landProject path: plain SlideProject, no activity field.
+    store.setActiveProjectData(
+      makeProject({
+        id: 'proj_1',
+        messages: [
+          { id: 'm1', role: 'user', content: 'change fonts', createdAt: 1 },
+          { id: 'm2', role: 'assistant', content: 'Fonts updated.', createdAt: 2 },
+        ],
+      }),
+    );
+
+    expect(useSlideStore.getState().activity).toEqual(feed);
+    expect(useSlideStore.getState().messages).toHaveLength(2);
+  });
+
+  it('setActiveProjectData prefers explicit activity=[] over the live feed (restore)', () => {
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'proj_1' }));
+    store.pushActivity({
+      id: 'live',
+      type: 'file_written',
+      status: 'completed',
+      ts: 1,
+      phase: 'edit',
+      path: '/theme.css',
+      label: 'Updated /theme.css',
+    });
+
+    // FullSlideProject restore can ship an empty capped feed — must not keep stale live rows.
+    store.setActiveProjectData({ ...makeProject({ id: 'proj_1' }), activity: [] });
+    expect(useSlideStore.getState().activity).toEqual([]);
+  });
+
+  it('orchestrator-style completion keeps tool rows when landing assistant text', () => {
+    // Mirrors useSlideAgent.landProject → setActiveProjectData(SlideProject) after
+    // pushActivity during a phase: messages update, activity must survive.
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'sp_edit', phase: 'ready' }));
+    store.setBusy(true);
+
+    const phaseFeed = [
+      {
+        id: 'ps',
+        type: 'phase_started' as const,
+        status: 'running' as const,
+        ts: 10,
+        phase: 'edit' as const,
+        label: 'Editing started',
+      },
+      {
+        id: 't1',
+        type: 'tool_started' as const,
+        status: 'completed' as const,
+        ts: 20,
+        phase: 'edit' as const,
+        toolName: 'apply_patch',
+        toolCallId: 'tc_1',
+        label: 'Updating /theme.css',
+      },
+      {
+        id: 'f1',
+        type: 'file_written' as const,
+        status: 'completed' as const,
+        ts: 21,
+        phase: 'edit' as const,
+        path: '/theme.css',
+        patchOp: 'update_file' as const,
+        toolCallId: 'tc_1',
+        label: 'Updated /theme.css',
+      },
+      {
+        id: 'pc',
+        type: 'phase_completed' as const,
+        status: 'completed' as const,
+        ts: 30,
+        phase: 'edit' as const,
+        label: 'Updates applied',
+      },
+    ];
+    for (const ev of phaseFeed) store.pushActivity(ev);
+
+    store.setBusy(false);
+    store.setActiveProjectData(
+      makeProject({
+        id: 'sp_edit',
+        phase: 'ready',
+        messages: [
+          { id: 'u1', role: 'user', content: 'change the font to jakarta sans', createdAt: 1 },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content:
+              'The font change is applied. Plus Jakarta Sans and Lora are loaded from Google Fonts.',
+            createdAt: 2,
+          },
+        ],
+      }),
+    );
+
+    const s = useSlideStore.getState();
+    expect(s.activity.map((e) => e.id)).toEqual(['ps', 't1', 'f1', 'pc']);
+    expect(s.activity.some((e) => e.type === 'file_written' && e.path === '/theme.css')).toBe(true);
+    expect(s.messages.some((m) => m.role === 'assistant' && /Jakarta Sans/.test(m.content))).toBe(
+      true,
+    );
+    expect(s.busy).toBe(false);
+    expect(s.sessionStatus).toBe('idle');
+  });
+
+  it('switching projects adopts the incoming explicit activity feed', () => {
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'proj_a' }));
+    store.pushActivity({
+      id: 'a_only',
+      type: 'phase_started',
+      status: 'completed',
+      ts: 1,
+      phase: 'plan',
+      label: 'A only',
+    });
+
+    const bFeed = [
+      {
+        id: 'b1',
+        type: 'phase_started' as const,
+        status: 'completed' as const,
+        ts: 5,
+        phase: 'build' as const,
+        label: 'Building',
+      },
+    ];
+    store.setActiveProjectData({ ...makeProject({ id: 'proj_b' }), activity: bFeed });
+    expect(useSlideStore.getState().activity).toEqual(bFeed);
+    expect(useSlideStore.getState().activity.some((e) => e.id === 'a_only')).toBe(false);
   });
 
   it('setActiveProjectData marks waiting_user when project has pendingAsk', () => {

@@ -230,7 +230,7 @@ describe('buildSlideChatItems — full step retention', () => {
   });
 
 
-  it('emits durable Thought-for rows for completed model rounds', () => {
+  it('emits durable Thought-for rows only when completed rounds have reasoning body', () => {
     const items = buildSlideChatItems({
       messages: [],
       activity: [
@@ -242,6 +242,7 @@ describe('buildSlideChatItems — full step retention', () => {
           ts: 20,
           status: 'completed',
           label: 'Round 1',
+          // no detail → empty thought must not render
         }),
         ev({
           id: 't1',
@@ -252,11 +253,27 @@ describe('buildSlideChatItems — full step retention', () => {
           status: 'completed',
         }),
         ev({
+          id: 'plan_round_2',
+          type: 'model_round_started',
+          round: 2,
+          ts: 4000,
+          status: 'completed',
+          detail: 'All three files created. Now submit_plan.',
+        }),
+        ev({
+          id: 't2',
+          type: 'tool_started',
+          toolName: 'submit_plan',
+          label: 'Submitting plan',
+          ts: 5500,
+          status: 'completed',
+        }),
+        ev({
           id: 'pc',
           type: 'phase_completed',
           phase: 'plan',
           label: 'Plan ready',
-          ts: 4000,
+          ts: 6000,
         }),
       ],
       sessionStatus: 'idle',
@@ -266,8 +283,137 @@ describe('buildSlideChatItems — full step retention', () => {
     const thoughts = items.filter((x) => x.type === 'reasoning' && !x.live);
     expect(thoughts.length).toBe(1);
     if (thoughts[0]?.type === 'reasoning') {
+      expect(thoughts[0].content).toContain('submit_plan');
       expect(thoughts[0].durationMs).toBeGreaterThanOrEqual(1000);
     }
+    // tools still present; empty thought omitted so feed stays collapsible-only
+    expect(items.some((x) => x.type === 'action' && x.event.toolName === 'list_files')).toBe(true);
+    expect(items.some((x) => x.type === 'action' && x.event.toolName === 'submit_plan')).toBe(true);
+  });
+
+  it('does not show stale streamingText after tools commit the round', () => {
+    // Round 1 text lingered in the store while tools ran; streamActive is false
+    // so live_prose must not appear under the tool rows.
+    const items = buildSlideChatItems({
+      messages: [msg({ id: 'u', role: 'user', content: 'plan a deck', createdAt: 1 })],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'plan', ts: 10, status: 'running' }),
+        ev({
+          id: 'r1',
+          type: 'model_round_started',
+          round: 1,
+          ts: 20,
+          status: 'completed',
+          detail: 'Need to list files first',
+        }),
+        ev({
+          id: 't1',
+          type: 'tool_started',
+          toolName: 'list_files',
+          label: 'Listing project files',
+          ts: 30,
+          status: 'running',
+        }),
+      ],
+      streamingText: 'I will start by checking the workspace…',
+      streamingReasoning: '',
+      sessionStatus: 'running',
+      phase: 'plan',
+      pendingAsk: false,
+    });
+
+    expect(items.some((x) => x.type === 'prose' && x.live)).toBe(false);
+    expect(items.some((x) => x.type === 'reasoning' && x.live)).toBe(false);
+    expect(
+      items.some((x) => x.type === 'reasoning' && !x.live && x.content?.includes('list files')),
+    ).toBe(true);
+    expect(items.some((x) => x.type === 'action' && x.event.toolName === 'list_files')).toBe(true);
+  });
+
+  it('places mid-round assistant prose before later tools (chronological)', () => {
+    const items = buildSlideChatItems({
+      messages: [msg({ id: 'u', role: 'user', content: 'build deck', createdAt: 1 })],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'build', ts: 10, status: 'running' }),
+        ev({
+          id: 'r1',
+          type: 'model_round_started',
+          round: 1,
+          ts: 20,
+          status: 'completed',
+          detail: 'Need research first',
+          content: 'Workspace is empty — I will research then write plan files.',
+        }),
+        ev({
+          id: 't1',
+          type: 'tool_started',
+          toolName: 'tavily_search',
+          label: 'Running tavily_search',
+          ts: 40,
+          status: 'completed',
+        }),
+        ev({
+          id: 'r2',
+          type: 'model_round_started',
+          round: 2,
+          ts: 50,
+          status: 'running',
+        }),
+      ],
+      streamingText: 'Now writing the diffs…',
+      streamingReasoning: 'Careful with + lines',
+      sessionStatus: 'running',
+      phase: 'build',
+      pendingAsk: false,
+    });
+
+    const idx = (pred: (x: (typeof items)[number]) => boolean) => items.findIndex(pred);
+
+    const thoughtIdx = idx(
+      (x) => x.type === 'reasoning' && !x.live && !!x.content?.includes('research'),
+    );
+    const roundProseIdx = idx(
+      (x) =>
+        x.type === 'prose' &&
+        !x.live &&
+        !!x.content?.includes('Workspace is empty'),
+    );
+    const toolIdx = idx(
+      (x) => x.type === 'action' && x.event.toolName === 'tavily_search',
+    );
+    const liveReasonIdx = idx((x) => x.type === 'reasoning' && !!x.live);
+    const liveProseIdx = idx((x) => x.type === 'prose' && !!x.live);
+
+    expect(thoughtIdx).toBeGreaterThanOrEqual(0);
+    expect(roundProseIdx).toBeGreaterThan(thoughtIdx);
+    expect(toolIdx).toBeGreaterThan(roundProseIdx);
+    // Live tail only for the open round — after tools, not before them.
+    expect(liveReasonIdx).toBeGreaterThan(toolIdx);
+    expect(liveProseIdx).toBeGreaterThan(toolIdx);
+  });
+
+  it('does not duplicate final transcript assistant when only live/round prose exists', () => {
+    // Final transcript message lands after phase; mid-round content is already
+    // in activity — both may appear (activity chronological + final summary).
+    // Ensure empty-content rounds don't create blank prose.
+    const items = buildSlideChatItems({
+      messages: [],
+      activity: [
+        ev({
+          id: 'r1',
+          type: 'model_round_started',
+          round: 1,
+          ts: 1,
+          status: 'completed',
+          content: '   ',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'ready',
+      pendingAsk: false,
+    });
+    expect(items.filter((x) => x.type === 'prose')).toHaveLength(0);
+    expect(items.filter((x) => x.type === 'reasoning')).toHaveLength(0);
   });
 
   it('surfaces reasoning body from completed round detail', () => {
@@ -413,6 +559,112 @@ describe('buildSlideChatItems — full step retention', () => {
     expect(items.every((x) => x.type !== 'action' || x.event.type !== 'model_round_started')).toBe(
       true,
     );
+  });
+
+  it('renders assistant role as prose alongside retained file/tool activity', () => {
+    const items = buildSlideChatItems({
+      messages: [
+        msg({ id: 'u1', role: 'user', content: 'change fonts', createdAt: 10 }),
+        msg({
+          id: 'a1',
+          role: 'assistant',
+          content:
+            'The font change is applied. Plus Jakarta Sans and Lora load from Google Fonts.',
+          createdAt: 900,
+        }),
+      ],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'edit', label: 'Editing', ts: 20, status: 'running' }),
+        ev({
+          id: 't1',
+          type: 'tool_started',
+          toolName: 'apply_patch',
+          toolCallId: 'tc_1',
+          label: 'Updating /theme.css',
+          ts: 40,
+          status: 'completed',
+        }),
+        ev({
+          id: 'f1',
+          type: 'file_written',
+          path: '/theme.css',
+          patchOp: 'update_file',
+          toolCallId: 'tc_1',
+          label: 'Updated /theme.css',
+          ts: 41,
+        }),
+        ev({
+          id: 'pc',
+          type: 'phase_completed',
+          phase: 'edit',
+          label: 'Updates applied',
+          ts: 80,
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'ready',
+      pendingAsk: false,
+      modelLabel: 'test-model',
+    });
+
+    expect(items.some((x) => x.type === 'user' && x.content === 'change fonts')).toBe(true);
+    expect(items.some((x) => x.type === 'file_card' && x.paths[0] === '/theme.css')).toBe(true);
+    // apply_patch tool row collapsed when file_written shares toolCallId
+    expect(
+      items.some(
+        (x) =>
+          x.type === 'action' &&
+          x.event.toolName === 'apply_patch' &&
+          x.event.toolCallId === 'tc_1',
+      ),
+    ).toBe(false);
+
+    const proseIdx = items.findIndex(
+      (x) => x.type === 'prose' && x.content.includes('Jakarta Sans'),
+    );
+    const fileIdx = items.findIndex((x) => x.type === 'file_card');
+    const footerIdx = items.findIndex((x) => x.type === 'turn_footer');
+    expect(proseIdx).toBeGreaterThanOrEqual(0);
+    expect(fileIdx).toBeGreaterThanOrEqual(0);
+    expect(fileIdx).toBeLessThan(proseIdx);
+    expect(footerIdx).toBeGreaterThan(proseIdx);
+  });
+
+  it('does not drop file cards when only an assistant message is present after phase', () => {
+    const items = buildSlideChatItems({
+      messages: [
+        msg({
+          id: 'a1',
+          role: 'assistant',
+          content: 'Deck updated with new theme tokens.',
+          createdAt: 500,
+        }),
+      ],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'edit', ts: 1, status: 'running' }),
+        ev({
+          id: 'f1',
+          type: 'file_written',
+          path: '/theme.css',
+          patchOp: 'update_file',
+          ts: 2,
+        }),
+        ev({
+          id: 'f2',
+          type: 'file_written',
+          path: '/slides/01.html',
+          patchOp: 'update_file',
+          ts: 3,
+        }),
+        ev({ id: 'pc', type: 'phase_completed', phase: 'edit', label: 'Updates applied', ts: 4 }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'ready',
+      pendingAsk: false,
+    });
+
+    expect(items.filter((x) => x.type === 'file_card')).toHaveLength(2);
+    expect(items.some((x) => x.type === 'prose' && /theme tokens/.test(x.content))).toBe(true);
   });
 });
 

@@ -4,6 +4,10 @@ export { MessageBubble } from './MessageBubble';
 // Streaming component (optimized for streaming re-renders)
 export { StreamingBubble } from './StreamingBubble';
 
+// Shared markdown body (main chat + slide rail)
+export { MarkdownBody, MARKDOWN_BODY_PROSE_CLASS } from './MarkdownBody.tsx';
+export type { MarkdownBodyProps } from './MarkdownBody.tsx';
+
 // Types
 export type {
   MessageBubbleProps,

@@ -193,8 +193,13 @@ export interface SlideActivityEvent {
   toolCallId?: string;
   /** Human one-liner — max ~120 chars recommended for list row */
   label: string;
-  /** Optional detail (args summary, error, patch path) — collapsed by default in UI */
+  /** Optional detail (args summary, error, reasoning body) — collapsed by default in UI */
   detail?: string;
+  /**
+   * Optional assistant prose from a completed model round (chronological feed).
+   * Distinct from `detail` (reasoning). Rendered as markdown prose in the rail.
+   */
+  content?: string;
   path?: string;
   patchOp?: 'create_file' | 'update_file' | 'delete_file';
   filesTouched?: number;

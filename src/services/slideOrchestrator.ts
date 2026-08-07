@@ -7,9 +7,9 @@
 // here as a dependency-injected service so it is unit-testable without React or
 // `chrome` (inject a test transport/fetcher/store).
 //
-// The main transcript only stores short entries: the user's message, concise
-// assistant/summary narrations, ask cards (via pendingAsk), and errors —
-// matching PRD US-012. Sub-session tool calls stay inside the phase runners.
+// The main transcript stores user messages, the model's final text response
+// (assistant), short system narrations (stop), ask cards (via pendingAsk), and
+// errors — matching PRD US-012. Sub-session tool calls stay in the activity feed.
 
 import type {
   ProviderConfig,
@@ -49,6 +49,15 @@ function makeMsg(role: SlideMainMessage['role'], content: string): SlideMainMess
     content,
     createdAt: Date.now(),
   };
+}
+
+/** Prefer the model's final text; fall back only when the turn produced none. */
+function assistantOrFallback(
+  content: string | undefined,
+  fallback: string,
+): SlideMainMessage {
+  const text = content?.trim();
+  return makeMsg(text ? 'assistant' : 'summary', text || fallback);
 }
 
 /** Persist + store mutations the orchestrator needs (implemented by the hook). */
@@ -204,6 +213,7 @@ export function createSlideAgent(
       abortRequest: deps.abortRequest,
       toolOptions: deps.toolOptions,
       onDelta: streamDelta,
+      onRoundStart: prepareStream,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
       onActivity: activitySink(),
     });
@@ -239,7 +249,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('plan_ready');
-      appendMessage(next, makeMsg('summary', 'Plan ready — review the brief and design, then build.'));
+      appendMessage(next, assistantOrFallback(result.content, 'Plan ready — review the brief and design, then build.'));
       return;
     }
 
@@ -333,6 +343,7 @@ export function createSlideAgent(
         abortRequest: deps.abortRequest,
         toolOptions: deps.toolOptions,
         onDelta: streamDelta,
+        onRoundStart: prepareStream,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
         onActivity: activitySink(),
       },
@@ -371,7 +382,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('plan_ready');
-      appendMessage(next, makeMsg('summary', 'Plan ready — review the brief and design, then build.'));
+      appendMessage(next, assistantOrFallback(result.content, 'Plan ready — review the brief and design, then build.'));
     } else if (result.status === 'error') {
       const next: SlideProject = { ...project, files: result.files, phase: 'error', updatedAt: Date.now() };
       host.landProject(next);
@@ -417,6 +428,7 @@ export function createSlideAgent(
       abortRequest: deps.abortRequest,
       toolOptions: deps.toolOptions,
       onDelta: streamDelta,
+      onRoundStart: prepareStream,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
       onActivity: activitySink(),
     });
@@ -438,7 +450,12 @@ export function createSlideAgent(
       const slides = result.files.filter((f) => /^\/slides\/.+\.html$/.test(f.path)).length;
       appendMessage(
         next,
-        makeMsg('summary', slides > 0 ? `Deck built with ${slides} slide${slides === 1 ? '' : 's'}.` : 'Build finished — no renderable slides yet.')
+        assistantOrFallback(
+          result.content,
+          slides > 0
+            ? `Deck built with ${slides} slide${slides === 1 ? '' : 's'}.`
+            : 'Build finished — no renderable slides yet.',
+        ),
       );
       return;
     }
@@ -492,6 +509,7 @@ export function createSlideAgent(
       abortRequest: deps.abortRequest,
       toolOptions: deps.toolOptions,
       onDelta: streamDelta,
+      onRoundStart: prepareStream,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
       onActivity: activitySink(),
     });
@@ -513,7 +531,10 @@ export function createSlideAgent(
       host.setPhase('ready');
       appendMessage(
         next,
-        makeMsg('summary', result.status === 'ready' ? 'Deck updated.' : 'Edit finished — no renderable slides remain.')
+        assistantOrFallback(
+          result.content,
+          result.status === 'ready' ? 'Deck updated.' : 'Edit finished — no renderable slides remain.',
+        ),
       );
       return;
     }

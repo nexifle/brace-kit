@@ -18,7 +18,7 @@ import {
 } from '../../../utils/slideChatItems.ts';
 import { slideTouchSymbol } from '../../../utils/slideFilesTouched.ts';
 import type { SlideActivityEvent } from '../../../types/slides.ts';
-
+import { MarkdownBody } from '../../message/MarkdownBody.tsx';
 /* ==================================================================== */
 /* Shared density tokens (v0-like within theme)                          */
 /* ==================================================================== */
@@ -61,7 +61,6 @@ export function AgentReasoningRow({
       : 'Thinking…'
     : formatThoughtDuration(item.durationMs ?? 1000);
 
-
   return (
     <div className="text-[13px] text-muted-foreground">
       <button
@@ -75,22 +74,21 @@ export function AgentReasoningRow({
         }`}
         aria-expanded={hasBody ? open : undefined}
       >
-        {/* One leading icon, flush-left with tools / Worked-for. */}
+        {/* Always Brain for thinking — never swap to Activity when body exists. */}
+        <Brain
+          size={14}
+          className={`shrink-0 ${live ? 'text-primary/90' : 'opacity-70'}`}
+        />
+        <span className={live ? 'text-primary/90' : 'text-muted-foreground'}>
+          {label}
+        </span>
         {hasBody ? (
           open ? (
             <ChevronDown size={14} className="shrink-0 opacity-60" />
           ) : (
-            <Activity size={14} className="shrink-0 opacity-70" />
+            <ChevronRight size={14} className="shrink-0 opacity-60" />
           )
-        ) : (
-          <Brain
-            size={14}
-            className={`shrink-0 ${live ? 'text-primary/90' : 'opacity-70'}`}
-          />
-        )}
-        <span className={live ? 'text-primary/90' : 'text-muted-foreground'}>
-          {label}
-        </span>
+        ) : null}
         {live && hasBody ? (
           <Loader2 size={11} className="shrink-0 animate-spin text-primary/80" />
         ) : null}
@@ -123,17 +121,19 @@ export function AgentProse({
   live?: boolean;
 }) {
   return (
-    <div className="text-sm leading-relaxed text-foreground/90">
-      <p className="whitespace-pre-wrap break-words">
-        {content}
-        {live ? (
+    <MarkdownBody
+      content={content}
+      isStreaming={!!live}
+      className="text-foreground/90"
+      endAdornment={
+        live ? (
           <span
             aria-hidden
             className="ml-0.5 inline-block h-3.5 w-0.5 translate-y-0.5 animate-pulse bg-primary align-middle"
           />
-        ) : null}
-      </p>
-    </div>
+        ) : null
+      }
+    />
   );
 }
 

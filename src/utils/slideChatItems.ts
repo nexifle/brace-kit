@@ -354,14 +354,15 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
     for (let i = 0; i < collapsed.length; i++) {
       const ev = collapsed[i];
 
-      // Durable "Thought for Ns" from completed model rounds (emitter patches
-      // model_round_started → status completed in place; detail may hold reasoning).
+      // Durable thought + mid-round assistant prose from completed model rounds.
+      // Order: reasoning (if any) then prose (if any), then later tools — matches
+      // chronological model turn → tool calls. Empty rounds emit nothing.
       if (ev.type === 'model_round_started' || ev.type === 'model_round_completed') {
         if (ev.status === 'running') continue; // live tail paints open rounds
-        // Duration = time until next distinct event in the same flush chunk.
-        // If this is the last event of the chunk, prefer any later activity
-        // outside the chunk (tools after the round often land in later drains).
-        // Fall back to ≥1s so "Thought for 0s" never shows.
+        const reasoningBody = ev.detail?.trim() ?? '';
+        const proseBody = ev.content?.trim() ?? '';
+        if (!reasoningBody && !proseBody) continue;
+
         let endTs = 0;
         for (let j = i + 1; j < collapsed.length; j++) {
           if (collapsed[j].id !== ev.id) {
@@ -370,7 +371,6 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
           }
         }
         if (!endTs) {
-          // Look ahead in the full activity feed after this event's timestamp.
           for (const later of activity) {
             if (later.ts > ev.ts && later.id !== ev.id) {
               endTs = later.ts;
@@ -379,12 +379,22 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
           }
         }
         const durationMs = Math.max(1000, (endTs || ev.ts + 1000) - ev.ts);
-        items.push({
-          type: 'reasoning',
-          id: `thought_${ev.id}_${ev.ts}`,
-          durationMs,
-          ...(ev.detail?.trim() ? { content: ev.detail } : {}),
-        });
+
+        if (reasoningBody) {
+          items.push({
+            type: 'reasoning',
+            id: `thought_${ev.id}_${ev.ts}`,
+            durationMs,
+            content: reasoningBody,
+          });
+        }
+        if (proseBody) {
+          items.push({
+            type: 'prose',
+            id: `round_prose_${ev.id}_${ev.ts}`,
+            content: proseBody,
+          });
+        }
         continue;
       }
 

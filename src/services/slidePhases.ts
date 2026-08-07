@@ -226,18 +226,22 @@ function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySi
         label: modelRoundLabel(round),
       });
     },
-    /** Close the round's running row; keep full reasoning in `detail` when present. */
+    /**
+     * Close the round's running row. Keep reasoning in `detail` and assistant
+     * prose in `content` so the chat timeline can place both before tools from
+     * later rounds (US-039 ordering).
+     */
     roundCompleted(
       round: number,
-      response?: { reasoning_content?: string; error?: string },
+      response?: { content?: string; reasoning_content?: string; error?: string },
     ): void {
-      // Don't paint partial/truncated thinking as a completed Thought when the
-      // transport failed — leave the row status only.
       const failed = !!response?.error?.trim();
       const reasoning = !failed ? response?.reasoning_content?.trim() : undefined;
+      const content = !failed ? response?.content?.trim() : undefined;
       sink?.patch(`${phase}_round_${round}`, {
         status: failed ? 'failed' : 'completed',
         ...(reasoning ? { detail: reasoning } : {}),
+        ...(content ? { content } : {}),
       });
     },
 
@@ -376,6 +380,11 @@ export interface PlanPhaseParams {
   onUpdate?: (state: AgentSessionState) => void;
   /** Per-turn streaming deltas (US-035) — wire to store streamingText/Reasoning. */
   onDelta?: (delta: StreamDelta) => void;
+  /**
+   * Clear live streaming buffers at the start of each model round so prior-round
+   * text/reasoning cannot linger under later tools (US-039 ordering).
+   */
+  onRoundStart?: () => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
@@ -576,9 +585,14 @@ function buildPlanSession(params: PlanPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
-    onRoundStart: (round: number) => emitter.roundStarted(round),
-    onRoundComplete: (round: number, response?: { reasoning_content?: string }) =>
-      emitter.roundCompleted(round, response),
+    onRoundStart: (round: number) => {
+      params.onRoundStart?.();
+      emitter.roundStarted(round);
+    },
+    onRoundComplete: (
+      round: number,
+      response?: { content?: string; reasoning_content?: string },
+    ) => emitter.roundCompleted(round, response),
     dispatchTool,
   };
 
@@ -613,6 +627,8 @@ export interface BuildPhaseParams {
   onUpdate?: (state: AgentSessionState) => void;
   /** Per-turn streaming deltas (US-035) — wire to store streamingText/Reasoning. */
   onDelta?: (delta: StreamDelta) => void;
+  /** Clear live streaming buffers at the start of each model round (US-039). */
+  onRoundStart?: () => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
@@ -723,9 +739,14 @@ function buildBuildSession(params: BuildPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
-    onRoundStart: (round) => emitter.roundStarted(round),
-    onRoundComplete: (round: number, response?: { reasoning_content?: string }) =>
-      emitter.roundCompleted(round, response),
+    onRoundStart: (round: number) => {
+      params.onRoundStart?.();
+      emitter.roundStarted(round);
+    },
+    onRoundComplete: (
+      round: number,
+      response?: { content?: string; reasoning_content?: string },
+    ) => emitter.roundCompleted(round, response),
     dispatchTool,
   };
 
@@ -811,6 +832,8 @@ export interface EditPhaseParams {
   onUpdate?: (state: AgentSessionState) => void;
   /** Per-turn streaming deltas (US-035) — wire to store streamingText/Reasoning. */
   onDelta?: (delta: StreamDelta) => void;
+  /** Clear live streaming buffers at the start of each model round (US-039). */
+  onRoundStart?: () => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
@@ -920,9 +943,14 @@ function buildEditSession(params: EditPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
-    onRoundStart: (round) => emitter.roundStarted(round),
-    onRoundComplete: (round: number, response?: { reasoning_content?: string }) =>
-      emitter.roundCompleted(round, response),
+    onRoundStart: (round: number) => {
+      params.onRoundStart?.();
+      emitter.roundStarted(round);
+    },
+    onRoundComplete: (
+      round: number,
+      response?: { content?: string; reasoning_content?: string },
+    ) => emitter.roundCompleted(round, response),
     dispatchTool,
   };
 

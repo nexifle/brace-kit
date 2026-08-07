@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, Presentation } from 'lucide-react';
 import { useSlideStore } from '../../../store/slideStore.ts';
 import { useStore } from '../../../store/index.ts';
@@ -120,35 +120,75 @@ export function SlideChat({
 
 
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [stickBottom, setStickBottom] = useState(true);
+  /** When false, user scrolled away — do not fight their scroll position. */
+  const stickBottomRef = useRef(true);
+  const isProgrammaticScrollRef = useRef(false);
+  const prevScrollTopRef = useRef(0);
   const [showJump, setShowJump] = useState(false);
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     const el = scrollerRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-      const near = dist <= NEAR_BOTTOM_PX;
-      setStickBottom(near);
-      setShowJump(!near);
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+    if (!el || !stickBottomRef.current) return;
+    isProgrammaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    prevScrollTopRef.current = el.scrollTop;
+    requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = false;
+    });
   }, []);
 
   useEffect(() => {
-    if (!stickBottom) return;
     const el = scrollerRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [items, stickBottom, streamingText, streamingReasoning]);
+
+    const onScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const near = dist <= NEAR_BOTTOM_PX;
+      const scrollingUp = el.scrollTop < prevScrollTopRef.current;
+      prevScrollTopRef.current = el.scrollTop;
+
+      if (near) {
+        stickBottomRef.current = true;
+        setShowJump(false);
+      } else if (scrollingUp) {
+        stickBottomRef.current = false;
+        setShowJump(true);
+      } else {
+        setShowJump(true);
+      }
+    };
+
+    // Wheel intent fires before layout scroll; unstick immediately so a
+    // concurrent stream tick cannot pin scrollTop back to the bottom mid-gesture.
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        stickBottomRef.current = false;
+        setShowJump(true);
+      }
+    };
+    const onTouchStart = () => {
+      prevScrollTopRef.current = el.scrollTop;
+    };
+
+    el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+    };
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [items, streamingText, streamingReasoning, scrollToBottom]);
 
   const jumpLatest = () => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setStickBottom(true);
+    stickBottomRef.current = true;
     setShowJump(false);
+    scrollToBottom();
   };
 
   const onPathClick = (path: string) => {

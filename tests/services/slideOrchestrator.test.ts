@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createSlideAgent, deriveSlideTitle } from '../../src/services/slideOrchestrator.ts';
-import type { SlideProject, SlideFile } from '../../src/types/slides.ts';
+import type { SlideProject, SlideFile, SlideActivityEvent } from '../../src/types/slides.ts';
 import type { ProviderConfig, ToolCall } from '../../src/types/index.ts';
 import type { AgentChatResponse } from '../../src/services/agentSession.ts';
 
@@ -73,6 +73,8 @@ function makeHost() {
   let stoppedCalls = 0;
   const landed: SlideProject[] = [];
   const answered: Array<{ projectId: string; answer: string }> = [];
+  const activity: SlideActivityEvent[] = [];
+  const streamChunks: Array<{ text?: string; reasoning?: string }> = [];
 
   const host = {
     getActiveProject: () => active,
@@ -97,19 +99,48 @@ function makeHost() {
       stoppedCalls++;
       busy = false;
     },
-    streamDelta: () => {},
+    streamDelta: (delta: { text?: string; reasoning?: string }) => {
+      streamChunks.push(delta);
+    },
     clearStreaming: () => {},
+    pushActivity: (event: SlideActivityEvent) => {
+      activity.push(event);
+    },
+    patchActivity: (id: string, partial: Partial<SlideActivityEvent>) => {
+      const idx = activity.findIndex((e) => e.id === id);
+      if (idx >= 0) activity[idx] = { ...activity[idx], ...partial, id };
+    },
   };
 
   return {
     host,
-    get active() { return active; },
-    get phase() { return phase; },
-    get busy() { return busy; },
-    get pendingAsk() { return pendingAsk; },
-    get landed() { return landed; },
-    get answered() { return answered; },
-    get stoppedCalls() { return stoppedCalls; },
+    get active() {
+      return active;
+    },
+    get phase() {
+      return phase;
+    },
+    get busy() {
+      return busy;
+    },
+    get pendingAsk() {
+      return pendingAsk;
+    },
+    get landed() {
+      return landed;
+    },
+    get answered() {
+      return answered;
+    },
+    get stoppedCalls() {
+      return stoppedCalls;
+    },
+    get activity() {
+      return activity;
+    },
+    get streamChunks() {
+      return streamChunks;
+    },
   };
 }
 
@@ -148,10 +179,11 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(files.some((f) => f.path === '/design.md')).toBe(true);
     // canvas from submit_plan adopted
     expect(h.active?.canvas).toBe('4:5');
-    // the transcript carries only the user msg + a short summary — no tool chatter
+    // transcript: user msg + model final text (no tool chatter)
     const roles = h.active!.messages.map((m) => m.role);
     expect(roles).toContain('user');
-    expect(roles).toContain('summary');
+    expect(roles).toContain('assistant');
+    expect(h.active!.messages.some((m) => m.role === 'assistant' && m.content === 'Plan complete.')).toBe(true);
     expect(h.active!.messages.length).toBeLessThanOrEqual(3);
     // tool calls are NOT copied into the main transcript
     expect(h.active!.messages.some((m) => Array.isArray((m as unknown as { toolCalls?: unknown }).toolCalls))).toBe(false);
@@ -254,7 +286,7 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
 
     expect(h.phase).toBe('ready');
     expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
-    expect(h.active?.messages.some((m) => m.role === 'summary' && /Deck built/.test(m.content))).toBe(true);
+    expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Deck complete.')).toBe(true);
   });
 
   it('refuses to build when brief/design are missing', async () => {
@@ -310,6 +342,167 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     const userFollowUps = h.active!.messages.filter((m) => m.role === 'user' && m.content === 'make the first slide bolder');
     expect(userFollowUps.length).toBe(1);
     expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
+    expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Edited.')).toBe(true);
+  });
+
+  it('lands the full model summary as assistant and emits activity for tools/files', async () => {
+    const skills = makeSkillFetcher();
+    const longSummary =
+      'The font change is applied. Plus Jakarta Sans and Lora load from Google Fonts via @import.';
+    const { transport } = makeTransport([
+      () => ({
+        content: 'patching theme',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'update_file',
+                path: '/theme.css',
+                diff: '@@\n+@import url("https://fonts.googleapis.com");\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: longSummary }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{--sans:Inter}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.sendFollowUp('change fonts to jakarta sans');
+
+    const assistant = h.active!.messages.filter((m) => m.role === 'assistant');
+    expect(assistant).toHaveLength(1);
+    expect(assistant[0].content).toBe(longSummary);
+    expect(h.active!.messages.some((m) => m.role === 'summary')).toBe(false);
+
+    // Activity feed still received phase/tool/file events (UI store preserves them on land).
+    expect(h.activity.some((e) => e.type === 'phase_started' && e.phase === 'edit')).toBe(true);
+    expect(h.activity.some((e) => e.type === 'tool_started' && e.toolName === 'apply_patch')).toBe(
+      true,
+    );
+    expect(h.activity.some((e) => e.type === 'file_written' && e.path === '/theme.css')).toBe(true);
+    expect(h.activity.some((e) => e.type === 'phase_completed' && e.phase === 'edit')).toBe(true);
+  });
+
+  it('falls back to a short summary when the model returns empty final text', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: '',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>Hi</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: '   ' }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.sendFollowUp('nudge');
+
+    expect(h.active?.messages.some((m) => m.role === 'summary' && m.content === 'Deck updated.')).toBe(
+      true,
+    );
+    expect(h.active?.messages.some((m) => m.role === 'assistant')).toBe(false);
+  });
+
+  it('lands build final text as assistant instead of Deck built hardcode', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>Hello</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: 'Built 1 slide on 16:9 with the approved design system.' }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.runBuild();
+
+    expect(
+      h.active?.messages.some(
+        (m) =>
+          m.role === 'assistant' &&
+          m.content === 'Built 1 slide on 16:9 with the approved design system.',
+      ),
+    ).toBe(true);
+    expect(h.active?.messages.some((m) => m.role === 'summary' && /Deck built/.test(m.content))).toBe(
+      false,
+    );
+    expect(h.activity.some((e) => e.type === 'file_written')).toBe(true);
   });
 });
 
