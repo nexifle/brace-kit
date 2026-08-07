@@ -15,6 +15,8 @@ import {
   ImagePlus,
   History,
   AlertTriangle,
+  Loader2,
+  Square,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
@@ -22,6 +24,8 @@ import { useSlideAgent } from '../../hooks/useSlideAgent.ts';
 import { Btn } from '../ui/Btn.tsx';
 import { ComposerPicker } from '../ComposerPicker.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
+import type { SlideSessionStatus } from '../../types/slides.ts';
+import { slideComposerCanSend, slideComposerPlaceholder } from '../../utils/slideComposer.ts';
 import { useElementSize } from '../../hooks/index.ts';
 import { AskPrompt } from './AskPrompt.tsx';
 import { PlanReview } from './PlanReview.tsx';
@@ -233,23 +237,30 @@ function PreviewPane({
 function Composer({
   onSend,
   onStop,
-  busy,
+  sessionStatus,
   placeholder,
   blocked,
   blockedHint,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
-  busy: boolean;
+  sessionStatus: SlideSessionStatus;
   placeholder: string;
   blocked?: boolean;
   blockedHint?: string;
 }) {
   const [value, setValue] = useState('');
-  const disabled = busy || !value.trim() || blocked;
+  const running = sessionStatus === 'running';
+  const waiting = sessionStatus === 'waiting_user';
+  const typed = slideComposerCanSend(sessionStatus);
+  // A.6: the freeform composer is NOT a send path while running (Stop is
+  // primary) nor while waiting_user (AskPrompt is primary). Send is enabled
+  // only for idle/plan_ready/ready/stopped/error/done.
+  const disabled = !typed || blocked;
+  const canSend = typed && !blocked;
 
   function submit() {
-    if (disabled) return;
+    if (!canSend || !value.trim()) return;
     onSend(value);
     setValue('');
   }
@@ -265,87 +276,127 @@ function Composer({
           </span>
         </div>
       )}
-      <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 hover:border-border">
-        <textarea
-          rows={2}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter sends; Shift+Enter inserts a newline.
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder={blocked ? 'Function calling required to plan decks' : placeholder}
-          disabled={blocked}
-          className="w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:cursor-not-allowed"
-        />
 
-        <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              disabled
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              title="Attach file (coming soon)"
-              aria-label="Attach file"
-            >
-              <PaperclipIcon size={12} />
-            </button>
-            <button
-              type="button"
-              disabled
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              title="Add image (coming soon)"
-              aria-label="Add image"
-            >
-              <ImagePlus size={12} />
-            </button>
-          </div>
-
-          <div className="min-w-0 flex-1 px-1">
-            <ComposerPicker />
-          </div>
-
-          {busy ? (
-            <button
-              type="button"
-              onClick={onStop}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-95"
-              title="Stop generating"
-              aria-label="Stop generating"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="6" width="12" height="12" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={disabled}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
-              title="Send"
-              aria-label="Send"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 19V5" />
-                <path d="m5 12 7-7 7 7" />
-              </svg>
-            </button>
-          )}
+      {waiting ? (
+        /* A.6: while a suspended ask is pending, AskPrompt is the primary
+           input — keep only a muted status + cancel affordance here. */
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2.5">
+          <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 size={13} className="shrink-0 animate-spin text-primary" />
+            <span className="truncate">Waiting for your answer above</span>
+          </span>
+          <button
+            type="button"
+            onClick={onStop}
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+            title="Cancel plan"
+            aria-label="Cancel plan"
+          >
+            <Square size={11} />
+            Cancel
+          </button>
         </div>
-      </div>
+      ) : (
+        <div className="relative rounded-xl border border-border bg-card/50 shadow-sm transition-all duration-200 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/10 hover:border-border">
+          <textarea
+            rows={2}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends; Shift+Enter inserts a newline.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={
+              blocked
+                ? 'Function calling required to plan decks'
+                : running
+                  ? 'Generating…'
+                  : placeholder
+            }
+            disabled={disabled}
+            className="w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/70 outline-none disabled:cursor-not-allowed"
+          />
+
+          <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                title="Attach file (coming soon)"
+                aria-label="Attach file"
+              >
+                <PaperclipIcon size={12} />
+              </button>
+              <button
+                type="button"
+                disabled
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                title="Add image (coming soon)"
+                aria-label="Add image"
+              >
+                <ImagePlus size={12} />
+              </button>
+            </div>
+
+            <div className="min-w-0 flex-1 px-1">
+              <ComposerPicker />
+            </div>
+
+            {running ? (
+              <button
+                type="button"
+                onClick={onStop}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-95"
+                title="Stop generating"
+                aria-label="Stop generating"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={submit}
+                disabled={disabled || !value.trim()}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale disabled:scale-100"
+                title="Send"
+                aria-label="Send"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 19V5" />
+                  <path d="m5 12 7-7 7 7" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center pt-1.5">
         <span className="flex items-center gap-1 text-2xs text-muted-foreground/60">
-          <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
-          send
-          <span className="mx-0.5 text-muted-foreground/30">·</span>
-          <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Shift</kbd>
-          <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
-          new line
+          {waiting ? (
+            'Your answer resumes the plan'
+          ) : running ? (
+            <>
+              <span>Stop generating anytime</span>
+              <span className="mx-0.5 text-muted-foreground/30">·</span>
+              <span>no edits send</span>
+            </>
+          ) : (
+            <>
+              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
+              send
+              <span className="mx-0.5 text-muted-foreground/30">·</span>
+              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Shift</kbd>
+              <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
+              new line
+            </>
+          )}
         </span>
       </div>
     </div>
@@ -422,7 +473,7 @@ function ChatRail({
   placeholder: string;
   blocked?: boolean;
 }) {
-  const { activeProject, messages, pendingAsk, busy, phase, activity } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy, phase, activity, sessionStatus } = useSlideStore();
   return (
     <AnimatePresence initial={false}>
       {railOpen && (
@@ -506,7 +557,7 @@ function ChatRail({
                 <Composer
                   onSend={onSend}
                   onStop={onStop}
-                  busy={busy}
+                  sessionStatus={sessionStatus}
                   placeholder={placeholder}
                   blocked={blocked}
                 />
@@ -542,8 +593,10 @@ function ChatDock({
   placeholder: string;
   blocked?: boolean;
 }) {
-  const { activeProject, messages, pendingAsk, busy, phase, activity } = useSlideStore();
+  const { activeProject, messages, pendingAsk, busy, phase, activity, sessionStatus } = useSlideStore();
   const [dockValue, setDockValue] = useState('');
+  const running = sessionStatus === 'running';
+  const waiting = sessionStatus === 'waiting_user';
 
   if (open) {
     return (
@@ -584,7 +637,7 @@ function ChatDock({
         <Composer
           onSend={onSend}
           onStop={onStop}
-          busy={busy}
+          sessionStatus={sessionStatus}
           placeholder={placeholder}
           blocked={blocked}
         />
@@ -603,53 +656,75 @@ function ChatDock({
       >
         <ChevronUp size={15} />
       </button>
-      <input
-        value={dockValue}
-        onChange={(e) => setDockValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            if (dockValue.trim() && !busy && !blocked) {
-              onSend(dockValue);
-              setDockValue('');
-            }
-          }
-        }}
-        placeholder={blocked ? 'Function calling required' : placeholder}
-        disabled={blocked}
-        className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
-      />
-      {busy ? (
-        <button
-          type="button"
-          onClick={onStop}
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-90"
-          title="Stop generating"
-          aria-label="Stop generating"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" />
-          </svg>
-        </button>
+      {waiting ? (
+        <>
+          <span className="flex h-7 flex-1 min-w-0 items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 size={13} className="shrink-0 animate-spin text-primary" />
+            <span className="truncate">Waiting for your answer</span>
+          </span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary transition-all duration-200 hover:bg-primary/20 active:scale-90"
+            title="Answer the question"
+            aria-label="Answer the question"
+          >
+            <ArrowUpRight size={13} />
+          </button>
+        </>
       ) : (
-        <button
-          type="button"
-          onClick={() => {
-            if (dockValue.trim() && !busy) {
-              onSend(dockValue);
-              setDockValue('');
+        <>
+          <input
+            value={dockValue}
+            onChange={(e) => setDockValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (dockValue.trim() && !running && !blocked) {
+                  onSend(dockValue);
+                  setDockValue('');
+                }
+              }
+            }}
+            placeholder={
+              blocked ? 'Function calling required' : running ? 'Generating…' : placeholder
             }
-          }}
-          disabled={busy || !dockValue.trim()}
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 disabled:opacity-30 disabled:grayscale hover:brightness-110 active:scale-90"
-          title="Send"
-          aria-label="Send"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 19V5" />
-            <path d="m5 12 7-7 7 7" />
-          </svg>
-        </button>
+            disabled={running || blocked}
+            className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
+          />
+          {running ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="flex items-center justify-center w-7 h-7 rounded-full bg-destructive/85 text-destructive-foreground shadow-sm transition-all duration-200 hover:bg-destructive active:scale-90"
+              title="Stop generating"
+              aria-label="Stop generating"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (dockValue.trim() && !blocked) {
+                  onSend(dockValue);
+                  setDockValue('');
+                }
+              }}
+              disabled={blocked || !dockValue.trim()}
+              className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground shadow-sm transition-all duration-200 disabled:opacity-30 disabled:grayscale hover:brightness-110 active:scale-90"
+              title="Send"
+              aria-label="Send"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 19V5" />
+                <path d="m5 12 7-7 7 7" />
+              </svg>
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -661,7 +736,7 @@ function ChatDock({
 
 export function SlideCreatorShell() {
   const store = useStore();
-  const { phase, busy, activeProject } = useSlideStore();
+  const { phase, busy, activeProject, sessionStatus } = useSlideStore();
   const { ref, width } = useElementSize<HTMLDivElement>();
   const agent = useSlideAgent();
 
@@ -671,10 +746,9 @@ export function SlideCreatorShell() {
     void useSlideStore.getState().restoreLastActiveProject();
   }, []);
 
-  // Where can the user send / what should the composer save?
-  const promptPlaceholder = activeProject
-    ? 'Follow-up on the deck…'
-    : 'Describe your deck — try “6 slides for our product launch”';
+  // A.6 composer placeholder copy: exact per-state string, routed through the
+  // pure helper so both the wide ChatRail and narrow ChatDock share one source.
+  const promptPlaceholder = slideComposerPlaceholder(activeProject, phase, sessionStatus);
 
   const handleSend = (text: string) => {
     if (!text.trim()) return;
