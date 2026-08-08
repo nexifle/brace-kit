@@ -262,12 +262,42 @@ function collapsePatchedToolRows(events: SlideActivityEvent[]): SlideActivityEve
   return order.map((id) => byId.get(id)!);
 }
 
+/**
+ * Error message contents landed within a phase's time window
+ * `[phaseStartTs, nextPhaseStartTs)`. A phase's transcript error is created
+ * right after its terminal event, so the window extends to the next phase's
+ * start (not just the terminal ts). Scoping here means a prior phase's error
+ * text can never suppress a later phase's footer error.
+ */
+function narratedErrorsForPhase(
+  messages: SlideMainMessage[],
+  activity: SlideActivityEvent[],
+  phaseStartIndex: number,
+  terminalIndex: number,
+): Set<string> {
+  const startTs = activity[phaseStartIndex]?.ts ?? -Infinity;
+  let endTs = Infinity;
+  for (let i = terminalIndex + 1; i < activity.length; i++) {
+    if (activity[i].type === 'phase_started') {
+      endTs = activity[i].ts;
+      break;
+    }
+  }
+  return new Set(
+    messages
+      .filter((m) => isErrorMessage(m) && m.createdAt >= startTs && m.createdAt < endTs)
+      .map((m) => m.content.trim())
+      .filter(Boolean),
+  );
+}
+
 function turnFooterFromTerminal(
   terminal: SlideActivityEvent,
   windowStart: number,
   activity: SlideActivityEvent[],
   terminalIndex: number,
   modelLabel?: string,
+  narratedErrors?: Set<string>,
 ): SlideChatItem[] {
   const stats = countPhaseStats(activity, windowStart, terminalIndex);
   const startTs = activity[windowStart]?.ts ?? terminal.ts;
@@ -280,11 +310,17 @@ function turnFooterFromTerminal(
         : 'completed';
   const items: SlideChatItem[] = [];
   if (status === 'failed' && terminal.label) {
-    items.push({
-      type: 'error',
-      id: `err_${terminal.id}`,
-      content: terminal.detail || terminal.label,
-    });
+    const errContent = (terminal.detail || terminal.label).trim();
+    // Skip the error line when a transcript error message already narrates the
+    // same content — otherwise plan/build/edit failures render the identical
+    // error twice (footer line + transcript message).
+    if (errContent && !narratedErrors?.has(errContent)) {
+      items.push({
+        type: 'error',
+        id: `err_${terminal.id}`,
+        content: errContent,
+      });
+    }
   }
   items.push({
     type: 'turn_footer',
@@ -339,6 +375,15 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
       .map((m) => m.content.trim())
       .filter(Boolean),
   );
+
+  // Error narrations the orchestrator already landed on the transcript. A
+  // phase_failed footer also renders an error line from the terminal's
+  // `detail`/`label`; when that content is already a transcript error message
+  // (plan/build/edit all land one for `error` and no-deliverable), the footer
+  // must not duplicate it — mirror the prose dedup above (keep the transcript
+  // message canonical, skip the activity-derived line). Scoped to the current
+  // phase window so a prior phase's error text never suppresses a later
+  // phase's footer error.
 
   // Activity is the spine for agent steps; messages supply user bubbles + prose.
   // Interleave by timestamp within a simple two-pointer merge after expanding
@@ -528,7 +573,14 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
       flushActivityMapped(before);
       actBuffer.length = 0;
       pendingFooters.push(
-        ...turnFooterFromTerminal(ev, phaseWindowStart, activity, idx, modelLabel),
+        ...turnFooterFromTerminal(
+          ev,
+          phaseWindowStart,
+          activity,
+          idx,
+          modelLabel,
+          narratedErrorsForPhase(messages, activity, phaseWindowStart, idx),
+        ),
       );
       continue;
     }

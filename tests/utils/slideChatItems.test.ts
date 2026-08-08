@@ -913,3 +913,109 @@ describe('buildSlideChatItems — Retry/Continue CTA', () => {
     }
   });
 });
+
+describe('buildSlideChatItems — no-deliverable error dedup', () => {
+  const NO_DELIVERABLE = 'The planner finished without a complete brief and design.';
+
+  it('renders a single error row when phase_failed and transcript error share content', () => {
+    const items = buildSlideChatItems({
+      messages: [
+        msg({
+          id: 'e1',
+          role: 'error',
+          content: NO_DELIVERABLE,
+          createdAt: 20,
+        }),
+      ],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'plan', ts: 1, status: 'running' }),
+        ev({
+          id: 'pf',
+          type: 'phase_failed',
+          phase: 'plan',
+          label: `Error: ${NO_DELIVERABLE}`,
+          detail: NO_DELIVERABLE,
+          ts: 10,
+          status: 'failed',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'plan',
+      pendingAsk: false,
+    });
+
+    const errors = items.filter((x) => x.type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.type === 'error' && errors[0].content).toBe(NO_DELIVERABLE);
+    // The footer still renders (Retry/Continue CTA intact).
+    const footers = items.filter((x) => x.type === 'turn_footer');
+    expect(footers).toHaveLength(1);
+  });
+
+  it('keeps the footer error line when no transcript error message narrates it', () => {
+    const items = buildSlideChatItems({
+      messages: [],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'plan', ts: 1, status: 'running' }),
+        ev({
+          id: 'pf',
+          type: 'phase_failed',
+          phase: 'plan',
+          label: `Error: ${NO_DELIVERABLE}`,
+          detail: NO_DELIVERABLE,
+          ts: 10,
+          status: 'failed',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'plan',
+      pendingAsk: false,
+    });
+
+    const errors = items.filter((x) => x.type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.type === 'error' && errors[0].content).toBe(NO_DELIVERABLE);
+  });
+
+  it('does not suppress a later phase footer error via a prior phase error message', () => {
+    // Phase A (plan) narrates the error; phase B (build) fails with the SAME
+    // text but has no transcript error of its own. The scoped dedup must not
+    // let phase A's message silence phase B's footer error.
+    const items = buildSlideChatItems({
+      messages: [
+        msg({ id: 'e1', role: 'error', content: NO_DELIVERABLE, createdAt: 15 }),
+      ],
+      activity: [
+        ev({ id: 'psa', type: 'phase_started', phase: 'plan', ts: 1, status: 'running' }),
+        ev({
+          id: 'pfa',
+          type: 'phase_failed',
+          phase: 'plan',
+          label: `Error: ${NO_DELIVERABLE}`,
+          detail: NO_DELIVERABLE,
+          ts: 10,
+          status: 'failed',
+        }),
+        ev({ id: 'psb', type: 'phase_started', phase: 'build', ts: 20, status: 'running' }),
+        ev({
+          id: 'pfb',
+          type: 'phase_failed',
+          phase: 'build',
+          label: `Error: ${NO_DELIVERABLE}`,
+          detail: NO_DELIVERABLE,
+          ts: 30,
+          status: 'failed',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'error',
+      pendingAsk: false,
+    });
+
+    const errors = items.filter((x) => x.type === 'error');
+    // Phase A's transcript message (1) + phase B's unsuppressed footer error (1).
+    expect(errors).toHaveLength(2);
+    const footers = items.filter((x) => x.type === 'turn_footer');
+    expect(footers).toHaveLength(2);
+  });
+});
