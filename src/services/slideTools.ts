@@ -47,7 +47,7 @@ const GOOGLE_SEARCH_TOOL: MCPTool = {
 const LIST_FILES_TOOL: MCPTool = {
   name: 'list_files',
   description:
-    'List files in the project workspace virtual filesystem. Pass an absolute path prefix to scope the listing (e.g. "/slides" or "/"); omitting returns the workspace root. Read-only.',
+    'List files in the project. Pass an absolute path prefix to scope the listing (e.g. "/slides" or "/"); omitting returns the workspace root. Read-only.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -63,7 +63,7 @@ const LIST_FILES_TOOL: MCPTool = {
 const READ_FILE_TOOL: MCPTool = {
   name: 'read_file',
   description:
-    'Read a single file from the project virtual filesystem by absolute path (e.g. "/slides/01.html"). Prefer reading before update_file when the current contents may be stale. Read-only.',
+    'Read a single file from the project by absolute path (e.g. "/slides/01.html"). Prefer reading before update_file when the current contents may be stale. Read-only.',
   inputSchema: {
     type: 'object',
     properties: {

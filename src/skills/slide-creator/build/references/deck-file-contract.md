@@ -26,7 +26,7 @@ A JSON object with exactly these fields:
 | `title` | string | yes | Deck title shown in the UI. |
 | `description` | string | optional | Short one-liner. |
 | `canvas` | string | yes | The **colon-form aspect preset key** only: `16:9`, `4:5`, `9:16`, or `1:1`. This is what the projection resolves to pixel width/height + the safe zone. |
-| `theme` | string | yes | The **VFS path** to the shared stylesheet that this deck can load, e.g. `/theme.css`. The projection checks the path exists in the VFS; if it doesn't, no shared theme is applied. |
+| `theme` | string | yes | The **file path** to the shared stylesheet that this deck can load, e.g. `/theme.css`. The projection checks the path exists in the project; if it doesn't, no shared theme is applied. |
 | `slideOrder` | string[] | yes | Ordered slide ids, e.g. `["01","02"]`. Each id maps to `/slides/{id}.html` (+ `.css`). |
 
 ### Contract rules
@@ -74,5 +74,5 @@ The single shared stylesheet implementing `/design.md`. Key conventions:
   throw; it degrades. If the deck shows no slides, check `deck.json` parses,
   `slideOrder` ids exist, and paths are correct.
 - **Missing theme path → unstyled deck.** Set `theme` to a path that actually
-  exists in the VFS.
+  exists in the project.
 - **No `<script>`.** Everything is static HTML + CSS.
