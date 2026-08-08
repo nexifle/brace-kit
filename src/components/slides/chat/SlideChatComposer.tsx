@@ -87,7 +87,7 @@ export function SlideChatComposer({
             rows={2}
             disabled={disabled && !running}
             placeholder={running ? 'Generating…' : placeholder}
-            className="max-h-32 min-h-[52px] w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm leading-snug text-foreground placeholder:text-muted-foreground/70 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            className="max-h-[420px] min-h-[52px] w-full resize-none field-sizing-content overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-sm leading-snug text-foreground placeholder:text-muted-foreground/70 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
 
           {/* Toolbar: same controls as main InputArea (subset) */}
