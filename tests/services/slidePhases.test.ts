@@ -5,6 +5,7 @@ import {
   hasValidPlanFiles,
   runBuildPhase,
   runEditPhase,
+  deckJsonWriteFeedback,
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
@@ -1433,5 +1434,124 @@ describe('phase lifecycle activity events (US-037)', () => {
       phaseFailedLabel('The planner finished without a complete brief and design.'),
     );
     expect(events.filter((e) => e.type === 'phase_completed').length).toBe(0);
+  });
+});
+
+describe('deckJsonWriteFeedback', () => {
+  const deckFiles = (content: string): SlideFile[] => [
+    { path: '/deck.json', content },
+  ];
+
+  it('returns a warning for a missing canvas (soft) in build', () => {
+    const out = deckJsonWriteFeedback(
+      // canvas missing → warning (degradable); no hard errors.
+      deckFiles('{"title":"T","slideOrder":["01"]}'),
+      'build',
+    );
+    expect(out).not.toBeNull();
+    expect(out).toContain('[deck.json contract]');
+    expect(out).toContain('canvas');
+  });
+
+  it('returns a warning in edit too (edit applies the same gate)', () => {
+    const out = deckJsonWriteFeedback(
+      deckFiles('{"title":"T","slideOrder":["01"]}'),
+      'edit',
+    );
+    expect(out).not.toBeNull();
+    expect(out).toContain('canvas');
+  });
+
+  it('returns null for a plan-phase deck.json (plan stub must not warn)', () => {
+    const out = deckJsonWriteFeedback(
+      deckFiles('{"title":"T","slideOrder":["01"]}'),
+      'plan',
+    );
+    expect(out).toBeNull();
+  });
+
+  it('returns null for a contract-valid deck.json (silent)', () => {
+    const out = deckJsonWriteFeedback(
+      deckFiles('{"title":"T","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}'),
+      'build',
+    );
+    expect(out).toBeNull();
+  });
+
+  it('returns null when there is no deck.json (missing deck is not a write-time signal)', () => {
+    const out = deckJsonWriteFeedback([], 'build');
+    expect(out).toBeNull();
+  });
+
+  it('returns null for a hard violation (rejected before this helper, never a warning)', () => {
+    // canvas 16_9 is a hard error; dispatchApplyPatch rejects it before adoption,
+    // so this soft-warning helper must not surface it.
+    const out = deckJsonWriteFeedback(
+      deckFiles('{"title":"T","canvas":"16_9","slideOrder":["01"]}'),
+      'build',
+    );
+    expect(out).toBeNull();
+  });
+});
+
+describe('runBuildPhase deck.json contract enforcement', () => {
+  it('rejects a deck.json write with a hard violation so it never lands', async () => {
+    const { transport } = makeTransport([
+      () => ({
+        content: 'writing',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>One</section>\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"T","canvas":"16_9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
+        ],
+      }),
+      () => ({ content: 'finished' }),
+    ]);
+
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: makeFiles([
+        { path: '/brief.md', content: 'brief' },
+        { path: '/design.md', content: 'design' },
+      ]),
+      transport,
+    });
+
+    // The hard-invalid deck.json was rejected at write time — it is NOT in the VFS.
+    expect(result.files.find((f) => f.path === '/deck.json')).toBeUndefined();
+    // /slides/01.html was accepted (not a deck.json).
+    expect(result.files.find((f) => f.path === '/slides/01.html')).toBeTruthy();
+    // No deck.json → no renderable deck → done without a specific contract error.
+    expect(result.status).toBe('done');
+    expect(result.slideCount).toBe(0);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('marks done with a specific terminal error for a pre-existing hard-invalid deck.json', async () => {
+    // Deck.json is pre-seeded (e.g. inherited from plan or a prior run) with a
+    // hard violation; the model finishes without touching it. The terminal gate
+    // must surface the specific reason.
+    const { transport } = makeTransport([
+      () => ({ content: 'finished' }),
+    ]);
+
+    const result = await runBuildPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: makeFiles([
+        { path: '/brief.md', content: 'brief' },
+        { path: '/design.md', content: 'design' },
+        { path: '/slides/01.html', content: '<section>One</section>' },
+        { path: '/deck.json', content: '{"title":"T","canvas":"16_9","theme":"/theme.css","slideOrder":["01"]}' },
+      ]),
+      transport,
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.slideCount).toBe(1);
+    expect(result.error).toContain('canvas');
+    expect(result.error).toContain('16_9');
   });
 });

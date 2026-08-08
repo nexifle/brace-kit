@@ -46,7 +46,14 @@ import {
   parseApplyPatchArgs,
   type SlidePatchOperation,
 } from './applyPatchHarness.ts';
-import { deckSlideCount, getSlideFile } from '../utils/slideVfs.ts';
+import {
+  deckSlideCount,
+  formatDeckJsonIssues,
+  getSlideFile,
+  hasHardDeckJsonErrors,
+  safeSlidePath,
+  validateDeckJson,
+} from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
 import {
   askAnsweredLabel,
@@ -141,8 +148,36 @@ function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
 }
 
 /**
+ * Model-visible feedback appended to a successful /deck.json apply_patch result
+ * for SOFT (warning) issues only — incomplete-but-progressible fields like a
+ * missing canvas or slideOrder the build agent finalizes later. Hard (error)
+ * violations are rejected by {@link dispatchApplyPatch} before adoption, so they
+ * never reach this helper. Returns a warning block, or null when there are no
+ * warnings. Build/edit only — plan-phase stub deck.json must not warn.
+ */
+export function deckJsonWriteFeedback(
+  files: import('../types/slides.ts').SlideFile[],
+  phase: SlidePatchPhase,
+): string | null {
+  if (phase !== 'build' && phase !== 'edit') return null;
+  if (!getSlideFile(files, '/deck.json')) return null;
+  const v = validateDeckJson(files);
+  const soft = v.issues.filter((i) => i.severity === 'warning');
+  if (soft.length === 0) return null;
+  return (
+    '\n\n[deck.json contract] not blocking, but note:\n' + formatDeckJsonIssues(soft)
+  );
+}
+
+/**
  * Dispatch `apply_patch` for a phase: parse flat or nested args, apply under
  * the phase allowlist, adopt files on success, emit activity.
+ *
+ * A /deck.json write that produces a HARD contract violation (extra fields,
+ * forbidden aspect, wrong canvas value, malformed slideOrder, invalid JSON) is
+ * REJECTED — the file is not adopted and the model gets a failed result telling
+ * it what to fix, so a wrong deck.json is never created. Soft violations (missing
+ * canvas/slideOrder the agent finalizes later) are applied with a warning.
  */
 function dispatchApplyPatch(
   toolCall: ToolCall,
@@ -160,16 +195,32 @@ function dispatchApplyPatch(
   }
   const op = parsed.operation;
   const result = applyPatchOperation(currentFiles, phase, op);
-  if (result.status === 'completed' && result.files) {
-    currentFiles.length = 0;
-    currentFiles.push(...result.files);
-    onFilesChange?.(currentFiles);
-    emitter.complete(row);
-    if (op.path) emitter.fileChanged(op.type, op.path, round, toolCall.id);
-  } else {
+  if (result.status !== 'completed' || !result.files) {
     emitter.failed(row, result.output);
+    return { content: result.output };
   }
-  return { content: result.output };
+
+  const isDeck = safeSlidePath(op.path) === '/deck.json';
+  const v = isDeck ? validateDeckJson(result.files) : null;
+  const hard = v?.issues.filter((i) => i.severity === 'error') ?? [];
+  if (hard.length > 0) {
+    // Reject the write: do NOT adopt result.files, so currentFiles keeps the
+    // pre-write state and the wrong deck.json never lands.
+    const msg =
+      'Error: deck.json was not updated — it violates the deck contract:\n' +
+      formatDeckJsonIssues(hard) +
+      '\nFix deck.json and retry the write.';
+    emitter.failed(row, msg);
+    return { content: msg };
+  }
+
+  currentFiles.length = 0;
+  currentFiles.push(...result.files);
+  onFilesChange?.(currentFiles);
+  emitter.complete(row);
+  if (op.path) emitter.fileChanged(op.type, op.path, round, toolCall.id);
+  const extra = isDeck ? deckJsonWriteFeedback(currentFiles, phase) : null;
+  return { content: extra ? result.output + extra : result.output };
 }
 
 /**
@@ -816,10 +867,22 @@ function mapBuildResult(
     case 'done':
     default: {
       // Projection is the readiness source — but a max-rounds truncation is never
-      // a successful full deck even if one early slide already projects.
+      // a successful full deck even if one early slide already projects, and a
+      // structurally invalid deck.json is never a valid deliverable either.
       const slideCount = deckSlideCount(files);
       const truncated = !!result.truncated;
-      const ready = !truncated && slideCount > 0;
+      const v = validateDeckJson(files);
+      // Surface a specific error only for HARD contract violations (extra fields,
+      // forbidden aspect, wrong canvas, malformed slideOrder, invalid JSON). Soft
+      // warnings (missing canvas/slideOrder, which degrade gracefully) do not block.
+      // A deck.json entirely absent is a plain no-deliverable and keeps the generic
+      // narration.
+      const hasDeck = !!getSlideFile(files, '/deck.json');
+      const contractError =
+        !truncated && hasDeck && hasHardDeckJsonErrors(v)
+          ? formatDeckJsonIssues(v.issues)
+          : undefined;
+      const ready = !truncated && slideCount > 0 && !contractError;
       return {
         ...base,
         status: ready ? 'ready' : 'done',
@@ -827,6 +890,7 @@ function mapBuildResult(
         content: result.content,
         rounds: result.rounds,
         ...(truncated ? { truncated: true } : {}),
+        ...(contractError ? { error: contractError } : {}),
       };
     }
   }

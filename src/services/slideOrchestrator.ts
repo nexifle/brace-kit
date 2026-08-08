@@ -288,6 +288,7 @@ export function createSlideAgent(
     content: string | undefined,
     phaseKey: keyof typeof PHASE_NO_DELIVERABLE,
     projectPhase: SlideProject['phase'],
+    customError?: string,
   ): void {
     let next: SlideProject = {
       ...base,
@@ -303,7 +304,10 @@ export function createSlideAgent(
     if (narration) {
       next = appendMessage(next, makeMsg('assistant', narration));
     }
-    appendMessage(next, makeMsg('error', PHASE_NO_DELIVERABLE[phaseKey]));
+    appendMessage(
+      next,
+      makeMsg('error', customError?.trim() || PHASE_NO_DELIVERABLE[phaseKey]),
+    );
   }
 
   /** Reflect a plan-phase result into the store + transcript. */
@@ -637,7 +641,7 @@ export function createSlideAgent(
         );
         return;
       }
-      landNoDeliverable(project, result.files, result.content, 'build', 'error');
+      landNoDeliverable(project, result.files, result.content, 'build', 'error', result.error);
       return;
     }
 
@@ -791,7 +795,7 @@ export function createSlideAgent(
         );
         return;
       }
-      landNoDeliverable(current, result.files, result.content, 'edit', 'error');
+      landNoDeliverable(current, result.files, result.content, 'edit', 'error', result.error);
       return;
     }
     if (result.status === 'error') {
@@ -912,7 +916,7 @@ export function createSlideAgent(
         );
         return;
       }
-      landNoDeliverable(current, result.files, result.content, 'edit', 'error');
+      landNoDeliverable(current, result.files, result.content, 'edit', 'error', result.error);
       return;
     }
 

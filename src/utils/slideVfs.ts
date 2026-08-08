@@ -126,7 +126,10 @@ export function slideHtmlPath(id: string): string {
 }
 
 export function isSlideCanvas(value: unknown): value is SlideCanvas {
-  return typeof value === 'string' && value in SLIDE_CANVAS_PRESETS;
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(SLIDE_CANVAS_PRESETS, value)
+  );
 }
 
 /**
@@ -175,6 +178,143 @@ export function rebuildDeckProjection(files: SlideFile[]): SlideDeck {
 /** Number of projectable slides (deck.json slideOrder ∩ existing HTML). */
 export function deckSlideCount(files: SlideFile[]): number {
   return rebuildDeckProjection(files).slideOrder.length;
+}
+
+// ==================== Deck.json contract validation ====================
+
+/** A single deck.json contract violation (structural/shape only). */
+export interface DeckJsonIssue {
+  /** Machine tag, e.g. 'INVALID_CANVAS'. */
+  code: string;
+  /** Human-readable, model-/user-facing, actionable. */
+  message: string;
+  /**
+   * 'error' = the deck.json is malformed/wrong and the write must be rejected
+   * (unknown fields, forbidden aspect, wrong canvas value, bad slideOrder shape).
+   * 'warning' = incomplete-but-progressible (missing canvas/slideOrder) that the
+   * build agent finalizes later; the write is allowed but surfaced.
+   */
+  severity: 'error' | 'warning';
+}
+
+/** Result of validating /deck.json: valid iff `issues` is empty. */
+export interface DeckJsonValidation {
+  ok: boolean;
+  issues: DeckJsonIssue[];
+}
+
+/**
+ * Validate `/deck.json` against the deck-file-contract (structural shape only).
+ *
+ * Checks are deliberately structural — none depend on other VFS files — so they
+ * never fire as false positives during the build phase's incremental order
+ * where deck.json is planned first and slides are added later. Referential
+ * checks (theme path exists, slideOrder ids have backing HTML) are excluded:
+ * the projection already degrades those gracefully.
+ *
+ * Only FORMAT-critical fields are gated: the `aspect` key (forbidden), any
+ * unknown top-level field outside the contract (`title`, `description`, `canvas`,
+ * `theme`, `slideOrder`), `canvas` (must be a colon preset), and `slideOrder`
+ * (must be an array of ids). `title` and `theme` presence is intentionally NOT
+ * gated — the projection degrades their absence gracefully ("Untitled deck" /
+ * unstyled) and theme-less decks are an accepted, existing behavior.
+ */
+export function validateDeckJson(files: SlideFile[]): DeckJsonValidation {
+  const deckJson = getSlideFile(files, '/deck.json');
+  if (!deckJson) {
+    return {
+      ok: false,
+      issues: [
+        {
+          code: 'MISSING_DECK',
+          severity: 'error',
+          message: 'deck.json is missing — create it with title, canvas, theme, and slideOrder.',
+        },
+      ],
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(deckJson.content);
+  } catch {
+    return {
+      ok: false,
+      issues: [{ code: 'INVALID_JSON', severity: 'error', message: 'deck.json is not valid JSON.' }],
+    };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      issues: [{ code: 'NOT_OBJECT', severity: 'error', message: 'deck.json must be a JSON object.' }],
+    };
+  }
+
+  const issues: DeckJsonIssue[] = [];
+  const obj = parsed as Record<string, unknown>;
+
+  if (Object.prototype.hasOwnProperty.call(obj, 'aspect')) {
+    issues.push({
+      code: 'ASPECT_FORBIDDEN',
+      severity: 'error',
+      message:
+        "The 'aspect' key is not part of the contract — model the ratio with the 'canvas' preset key and remove 'aspect'.",
+    });
+  }
+  // Contract allows exactly: title, description, canvas, theme, slideOrder.
+  // Any other top-level key is outside the contract (the projection ignores it).
+  // 'aspect' is excluded because it is reported separately with a specific message.
+  const allowed = new Set(['title', 'description', 'canvas', 'theme', 'slideOrder']);
+  const unknown = Object.keys(obj).filter((k) => !allowed.has(k) && k !== 'aspect');
+  if (unknown.length > 0) {
+    issues.push({
+      code: 'UNKNOWN_FIELD',
+      severity: 'error',
+      message: `deck.json contains fields outside the contract: ${unknown.join(', ')}. Allowed: title, description, canvas, theme, slideOrder.`,
+    });
+  }
+  if (!isSlideCanvas(obj.canvas)) {
+    const hasCanvas = obj.canvas !== undefined;
+    issues.push({
+      code: 'INVALID_CANVAS',
+      // Present-but-wrong canvas is a hard error; a missing canvas is a warning
+      // (the projection degrades to 16:9 and the agent may set it later).
+      severity: hasCanvas ? 'error' : 'warning',
+      message: hasCanvas
+        ? `canvas must be one of '16:9','4:5','9:16','1:1' (got ${JSON.stringify(obj.canvas)}).`
+        : "canvas is required and must be one of '16:9','4:5','9:16','1:1'.",
+    });
+  }
+  if (!Array.isArray(obj.slideOrder)) {
+    issues.push({
+      code: 'INVALID_SLIDE_ORDER',
+      // Present-but-not-an-array is a hard error; a missing slideOrder is a warning
+      // (the build agent writes the full order when it finalizes the deck).
+      severity: obj.slideOrder !== undefined ? 'error' : 'warning',
+      message: "slideOrder is required and must be an array of slide ids (e.g. ['01','02']).",
+    });
+  } else {
+    const bad = obj.slideOrder.some((id) => typeof id !== 'string' || id.length === 0);
+    if (bad) {
+      issues.push({
+        code: 'INVALID_SLIDE_ORDER_ENTRY',
+        severity: 'error',
+        message: "slideOrder entries must be non-empty strings (e.g. '01').",
+      });
+    }
+  }
+
+  return { ok: issues.length === 0, issues };
+}
+
+/** True when any issue is a hard (blocking) contract violation. */
+export function hasHardDeckJsonErrors(validation: DeckJsonValidation): boolean {
+  return validation.issues.some((i) => i.severity === 'error');
+}
+
+/** Join issues into a short bullet block, e.g. "- canvas: must be one of ...". */
+export function formatDeckJsonIssues(issues: DeckJsonIssue[]): string {
+  return issues.map((i) => `- ${i.message}`).join('\n');
 }
 
 

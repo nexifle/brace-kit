@@ -673,6 +673,45 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);
     expect(h.activity.some((e) => e.type === 'phase_completed')).toBe(false);
   });
+
+  it('surfaces the specific deck.json contract violation instead of the generic no-deliverable copy', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({ content: 'Deck built.' }),
+    ]);
+
+    const h = makeHost();
+    // Pre-seed a hard-invalid deck.json (inherited / not rewritten this run) so the
+    // terminal gate surfaces the specific reason to the user.
+    h.host.landProject({
+      ...builtProject(),
+      files: [
+        ...builtProject().files,
+        { path: '/slides/01.html', content: '<section>One</section>' },
+        { path: '/deck.json', content: '{"title":"T","canvas":"16_9","slideOrder":["01"]}' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.runBuild();
+
+    expect(h.phase).toBe('error');
+    // The specific reason is surfaced, not the generic no-deliverable copy.
+    expect(
+      h.active?.messages.some(
+        (m) => m.role === 'error' && m.content.includes('without producing a renderable deck'),
+      ),
+    ).toBe(false);
+    expect(
+      h.active?.messages.some(
+        (m) => m.role === 'error' && m.content.includes('canvas') && m.content.includes('16_9'),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('deriveSlideTitle', () => {

@@ -19,6 +19,9 @@ import {
   projectDeckSlides,
   slideHtmlPath,
   composeSlideHtml,
+  validateDeckJson,
+  formatDeckJsonIssues,
+  hasHardDeckJsonErrors,
 } from '../../src/utils/slideVfs.ts';
 
 
@@ -266,5 +269,176 @@ describe('composeSlideHtml', () => {
   test('returns empty body when the slide html file is missing', () => {
     const out = composeSlideHtml([one, slideCss], slide, deck);
     expect(out).not.toContain('<section');
+  });
+});
+
+function deckFiles(content: string): SlideFile[] {
+  return [{ path: '/deck.json', content }];
+}
+
+const VALID_DECK =
+  '{"title":"T","canvas":"16:9","theme":"/theme.css","slideOrder":["01","02"]}';
+
+describe('validateDeckJson', () => {
+  test('accepts a contract-valid deck.json', () => {
+    const v = validateDeckJson(deckFiles(VALID_DECK));
+    expect(v.ok).toBe(true);
+    expect(v.issues).toEqual([]);
+  });
+
+  test('accepts a deck.json with no theme and no title (graceful degradation)', () => {
+    // Existing accepted behavior: title/theme are not gated; the projection degrades them.
+    const v = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":["01"]}'));
+    expect(v.ok).toBe(true);
+    expect(v.issues).toEqual([]);
+  });
+
+  test('flags a missing deck.json as MISSING_DECK', () => {
+    const v = validateDeckJson([]);
+    expect(v.ok).toBe(false);
+    expect(v.issues[0]?.code).toBe('MISSING_DECK');
+  });
+
+  test('flags malformed JSON as INVALID_JSON', () => {
+    const v = validateDeckJson(deckFiles('{not json'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toEqual(['INVALID_JSON']);
+  });
+
+  test('flags a non-object JSON value as NOT_OBJECT', () => {
+    const v = validateDeckJson(deckFiles('"a string"'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toEqual(['NOT_OBJECT']);
+  });
+
+  test('flags the forbidden aspect key as ASPECT_FORBIDDEN', () => {
+    const v = validateDeckJson(
+      deckFiles('{"title":"T","aspect":"16:9","canvas":"16:9","slideOrder":["01"]}'),
+    );
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('ASPECT_FORBIDDEN');
+  });
+
+  test('flags underscore-form canvas as INVALID_CANVAS', () => {
+    const v = validateDeckJson(deckFiles('{"canvas":"16_9","slideOrder":["01"]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toEqual(['INVALID_CANVAS']);
+    expect(v.issues[0]?.message).toContain('16_9');
+  });
+
+  test('flags an object canvas as INVALID_CANVAS', () => {
+    const v = validateDeckJson(deckFiles('{"canvas":{"width":1920,"height":1080},"slideOrder":["01"]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('INVALID_CANVAS');
+  });
+
+  test('flags a prototype-chain canvas key as INVALID_CANVAS', () => {
+    const v = validateDeckJson(deckFiles('{"canvas":"toString","slideOrder":["01"]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('INVALID_CANVAS');
+  });
+
+  test('flags a missing canvas as INVALID_CANVAS', () => {
+    const v = validateDeckJson(deckFiles('{"slideOrder":["01"]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toEqual(['INVALID_CANVAS']);
+    expect(v.issues[0]?.message).toContain('required');
+  });
+
+  test('flags a missing or non-array slideOrder as INVALID_SLIDE_ORDER', () => {
+    const v = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":"01"}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('INVALID_SLIDE_ORDER');
+  });
+
+  test('flags non-string slideOrder entries as INVALID_SLIDE_ORDER_ENTRY', () => {
+    const v = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":["01",2]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('INVALID_SLIDE_ORDER_ENTRY');
+  });
+
+  test('collects multiple independent violations', () => {
+    const v = validateDeckJson(deckFiles('{"aspect":"x","canvas":"42:42","slideOrder":["01",{}]}'));
+    const codes = v.issues.map((i) => i.code);
+    expect(codes).toContain('ASPECT_FORBIDDEN');
+    expect(codes).toContain('INVALID_CANVAS');
+    expect(codes).toContain('INVALID_SLIDE_ORDER_ENTRY');
+  });
+});
+
+describe('validateDeckJson severity classification', () => {
+  test('present-but-wrong canvas is a hard error', () => {
+    const v = validateDeckJson(deckFiles('{"canvas":"16_9","slideOrder":["01"]}'));
+    expect(v.issues.find((i) => i.code === 'INVALID_CANVAS')?.severity).toBe('error');
+    expect(hasHardDeckJsonErrors(v)).toBe(true);
+  });
+
+  test('missing canvas is a soft warning', () => {
+    const v = validateDeckJson(deckFiles('{"slideOrder":["01"]}'));
+    expect(v.issues.find((i) => i.code === 'INVALID_CANVAS')?.severity).toBe('warning');
+    expect(hasHardDeckJsonErrors(v)).toBe(false);
+  });
+
+  test('present-but-not-array slideOrder is a hard error; missing slideOrder is a warning', () => {
+    const present = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":"01"}'));
+    expect(present.issues.find((i) => i.code === 'INVALID_SLIDE_ORDER')?.severity).toBe('error');
+    expect(hasHardDeckJsonErrors(present)).toBe(true);
+
+    const missing = validateDeckJson(deckFiles('{"canvas":"16:9"}'));
+    expect(missing.issues.find((i) => i.code === 'INVALID_SLIDE_ORDER')?.severity).toBe('warning');
+    expect(hasHardDeckJsonErrors(missing)).toBe(false);
+  });
+
+  test('unknown field, aspect, and invalid JSON are hard errors', () => {
+    const unknown = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":["01"],"slides":[]}'));
+    expect(unknown.issues.find((i) => i.code === 'UNKNOWN_FIELD')?.severity).toBe('error');
+
+    const aspect = validateDeckJson(deckFiles('{"aspect":"16:9","canvas":"16:9","slideOrder":["01"]}'));
+    expect(aspect.issues.find((i) => i.code === 'ASPECT_FORBIDDEN')?.severity).toBe('error');
+
+    const badJson = validateDeckJson(deckFiles('{ not json'));
+    expect(badJson.issues[0]?.severity).toBe('error');
+    expect(hasHardDeckJsonErrors(badJson)).toBe(true);
+  });
+
+  test('a contract-valid deck has no hard errors', () => {
+    const v = validateDeckJson(deckFiles('{"title":"T","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}'));
+    expect(v.ok).toBe(true);
+    expect(hasHardDeckJsonErrors(v)).toBe(false);
+  });
+});
+
+describe('validateDeckJson unknown-field gate', () => {
+  test('accepts the optional description field', () => {
+    const v = validateDeckJson(deckFiles('{"title":"T","description":"d","canvas":"16:9","slideOrder":["01"]}'));
+    expect(v.ok).toBe(true);
+  });
+
+  test('flags an extra unknown top-level field as UNKNOWN_FIELD', () => {
+    const v = validateDeckJson(deckFiles('{"title":"T","canvas":"16:9","slideOrder":["01"],"slides":[]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('UNKNOWN_FIELD');
+    expect(v.issues.find((i) => i.code === 'UNKNOWN_FIELD')?.message).toContain('slides');
+  });
+
+  test('does not double-report aspect (reported separately as ASPECT_FORBIDDEN)', () => {
+    const v = validateDeckJson(deckFiles('{"title":"T","aspect":"16:9","canvas":"16:9","slideOrder":["01"]}'));
+    const codes = v.issues.map((i) => i.code);
+    expect(codes).toContain('ASPECT_FORBIDDEN');
+    expect(codes).not.toContain('UNKNOWN_FIELD');
+  });
+});
+
+describe('formatDeckJsonIssues', () => {
+  test('joins issues as one "- " bullet per line', () => {
+    const out = formatDeckJsonIssues([
+      { code: 'A', message: 'first' },
+      { code: 'B', message: 'second' },
+    ]);
+    expect(out).toBe('- first\n- second');
+  });
+
+  test('returns empty string for no issues', () => {
+    expect(formatDeckJsonIssues([])).toBe('');
   });
 });
