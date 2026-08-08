@@ -145,16 +145,14 @@ export function InputArea() {
       setText(before + formattedQuote + after);
       setQuotedText(null);
 
-      // Auto-focus and resize
+      // Auto-focus and restore cursor
       if (textareaRef.current) {
         textareaRef.current.focus();
         const newPos = pos + formattedQuote.length;
 
-        // Give React a moment to update the value before measuring scrollHeight
+        // Give React a moment to update the value before restoring selection
         setTimeout(() => {
           if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
             textareaRef.current.setSelectionRange(newPos, newPos);
           }
         }, 0);
@@ -166,9 +164,6 @@ export function InputArea() {
     if (!text.trim() && store.attachments.length === 0) return;
     sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : { enableReasoning });
     setText('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
   }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio, enableReasoning]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -186,12 +181,6 @@ export function InputArea() {
       handleSend();
     }
   }, [handleSend, autocompleteSuggestion]);
-
-  const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
-    const target = e.currentTarget;
-    target.style.height = 'auto';
-    target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-  }, []);
 
   // Sync scroll between textarea and ghost overlay
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -320,7 +309,7 @@ export function InputArea() {
           <div className="relative">
             <div
               ref={ghostRef}
-              className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[120px]"
+              className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[420px]"
               aria-hidden="true"
             >
               <span className="text-transparent">{text}</span>
@@ -332,7 +321,7 @@ export function InputArea() {
             </div>
             <textarea
               ref={textareaRef}
-              className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
+              className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed field-sizing-content overflow-y-auto min-h-[96px] max-h-[420px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
               placeholder={placeholder}
               rows={2}
               value={text}
@@ -344,7 +333,6 @@ export function InputArea() {
               onMouseUp={updateCursorPos}
               onBlur={updateCursorPos}
               onKeyDown={handleKeyDown}
-              onInput={handleInput}
               onScroll={handleScroll}
               onPaste={(e) => handlePaste(e.nativeEvent)}
               disabled={store.isStreaming || isProcessingCommand}
