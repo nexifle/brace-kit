@@ -2,6 +2,9 @@
 // Shared types for the agentic HTML/CSS slide-deck builder.
 // These power the VFS, projection, store, and phase runners across modules.
 
+// Type-only import to avoid a runtime cycle (index.ts re-exports from here).
+import type { APIMessage } from './index.ts';
+
 // ==================== Canvas / Aspect Presets ====================
 
 /**
@@ -164,6 +167,14 @@ export interface SlideProject {
   pendingAsk?: SlidePendingAsk;
   /** Set when generation was stopped by the user for clean UI state. */
   stopped?: boolean;
+  /**
+   * The isolated plan-session conversation (user + assistant + tool turns, no
+   * leading system message) from the last completed plan round. Persisted so a
+   * follow-up re-plan continues the SAME context instead of starting fresh —
+   * the prior round's transcript becomes a cacheable prefix for the next round
+   * (US-..). Undefined until the first plan round completes.
+   */
+  planTranscript?: APIMessage[];
 }
 
 

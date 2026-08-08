@@ -446,7 +446,17 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     set((state) => {
       if (!state.activeProject) return {};
       const files = upsertSlideFile(state.activeProject.files, path, content);
-      const nextProject = { ...state.activeProject, files, updatedAt: Date.now() };
+      const nextProject = {
+        ...state.activeProject,
+        files,
+        // A manual edit to a plan doc invalidates the cached plan transcript —
+        // its tool results embed the OLD file contents. Clear it so the next
+        // re-plan starts from the current files instead of a stale prefix.
+        ...(path === '/brief.md' || path === '/design.md'
+          ? { planTranscript: undefined }
+          : {}),
+        updatedAt: Date.now(),
+      };
       saveSlideProject(nextProject).catch(() => {});
       return { activeProject: nextProject };
     }),

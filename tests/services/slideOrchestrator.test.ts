@@ -404,7 +404,19 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     ]);
 
     const h = makeHost();
-    h.host.landProject(builtProject());
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{--sans:Inter}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
     const agent = createSlideAgent(h.host, {
       providerConfig,
       transport,
@@ -517,7 +529,19 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     ]);
 
     const h = makeHost();
-    h.host.landProject(builtProject());
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{--sans:Inter}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
     const agent = createSlideAgent(h.host, {
       providerConfig,
       transport,
@@ -1037,7 +1061,56 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
     ]);
   });
 
-  it('sendFollowUp still uses edit when a valid plan already exists', async () => {
+  it('buildPlanSessionMessages continues from a persisted planTranscript, appending only the newest user turn', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'plan_ready',
+      canvas: '16:9',
+      messages: [
+        { id: 'u1', role: 'user', content: 'deck brief', createdAt: 0 },
+        { id: 'u2', role: 'user', content: 'make it 12 slides', createdAt: 1 },
+      ],
+      files: [],
+      planTranscript: [
+        { role: 'user', content: 'deck brief' },
+        { role: 'assistant', content: 'drafting', toolCalls: [] },
+        { role: 'tool', toolCallId: 'tc1', name: 'apply_patch', content: 'ok' },
+      ],
+    };
+    const msgs = buildPlanSessionMessages(project);
+    // Prior assistant + tool turns are carried over (same context).
+    expect(msgs.some((m) => m.role === 'assistant' && m.content === 'drafting')).toBe(true);
+    expect(msgs.some((m) => m.role === 'tool' && m.content === 'ok')).toBe(true);
+    // Only the newest user turn is appended.
+    expect(msgs.map((m) => m.content)).toEqual(['deck brief', 'drafting', 'ok', 'make it 12 slides']);
+  });
+
+  it('buildPlanSessionMessages does not duplicate a user turn already at the transcript tail', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'plan_ready',
+      canvas: '16:9',
+      messages: [{ id: 'u1', role: 'user', content: 'make it 12 slides', createdAt: 0 }],
+      files: [],
+      planTranscript: [
+        { role: 'user', content: 'deck brief' },
+        { role: 'assistant', content: 'drafting', toolCalls: [] },
+        { role: 'user', content: 'make it 12 slides' },
+      ],
+    };
+    const msgs = buildPlanSessionMessages(project);
+    // The newest user turn already ends the transcript — no duplicate appended.
+    expect(msgs.filter((m) => m.role === 'user' && m.content === 'make it 12 slides')).toHaveLength(1);
+    expect(msgs.map((m) => m.content)).toEqual(['deck brief', 'drafting', 'make it 12 slides']);
+  });
+
+  it('sendFollowUp uses edit when a built deck already exists', async () => {
     const skills = makeSkillFetcher();
     let usedEdit = false;
     const transport = async (): Promise<AgentChatResponse> => {
@@ -1077,8 +1150,19 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
     };
 
     const h = makeHost();
-    h.host.landProject(builtProject());
-    h.host.setPhase('plan_ready');
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{--sans:Inter}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
 
     const agent = createSlideAgent(h.host, {
       providerConfig,
@@ -1091,6 +1175,124 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
 
     expect(usedEdit).toBe(true);
     expect(h.phase === 'ready' || h.phase === 'error' || h.phase === 'edit').toBe(true);
+  });
+
+  it('re-plans on a plan_ready follow-up so the brief can be revised before building', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({
+        content: 'revising',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'update_file',
+                path: '/brief.md',
+                diff: '@@\n-# Coffee deck\n+# Coffee deck — 12 slides\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: 'Revised plan ready.' }),
+    ]);
+
+    const h = makeHost();
+    // plan_ready with plan files only — no built deck yet.
+    h.host.landProject(builtProject());
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+
+    await agent.sendFollowUp('make it 12 slides instead of 8');
+
+    // Re-plan lands back on plan_ready (edit would land ready/error/edit).
+    expect(h.phase).toBe('plan_ready');
+    // The follow-up was recorded in the main transcript.
+    expect(
+      h.active?.messages.some((m) => m.role === 'user' && m.content === 'make it 12 slides instead of 8'),
+    ).toBe(true);
+    // The plan session saw the original prompt + the follow-up.
+    expect(
+      seenMessages[0]?.some((m) => m.role === 'user' && m.content === 'make it 12 slides instead of 8'),
+    ).toBe(true);
+    // The revised brief landed on the project VFS.
+    expect(h.active?.files.find((f) => f.path === '/brief.md')?.content).toContain('12 slides');
+    // No edit round checkpoint was committed (edit only).
+    expect(h.rounds).toHaveLength(0);
+  });
+
+  it('continues a follow-up plan from the persisted transcript (same context across rounds)', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({
+        content: 'revising',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'update_file',
+                path: '/brief.md',
+                diff: '@@\n-# Coffee deck\n+# Coffee deck — 15 slides\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: 'Revised plan ready.' }),
+    ]);
+
+    const h = makeHost();
+    // A project whose FIRST plan round completed, carrying its conversation.
+    h.host.landProject({
+      ...builtProject(),
+      planTranscript: [
+        { role: 'user', content: 'my deck' },
+        {
+          role: 'assistant',
+          content: 'drafting',
+          toolCalls: [
+            { id: 'tc1', name: 'apply_patch', arguments: '{}' },
+          ],
+        },
+        { role: 'tool', toolCallId: 'tc1', name: 'apply_patch', content: 'ok' },
+      ],
+    });
+
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+
+    await agent.sendFollowUp('make it 15 slides instead of 12');
+
+    // Re-plan landed back on plan_ready.
+    expect(h.phase).toBe('plan_ready');
+    // The session continued from the PRIOR transcript (prior assistant + tool
+    // turns are present) and appended the new follow-up user turn.
+    const session = seenMessages[0] ?? [];
+    expect(session.some((m) => m.role === 'assistant' && m.content === 'drafting')).toBe(true);
+    expect(session.some((m) => m.role === 'tool' && m.content === 'ok')).toBe(true);
+    expect(session.some((m) => m.role === 'user' && m.content === 'make it 15 slides instead of 12')).toBe(
+      true,
+    );
+    // The updated conversation was persisted back onto the project — including
+    // the PRIOR assistant + tool + user turns, not just the new follow-up.
+    const persisted = h.active?.planTranscript ?? [];
+    expect(persisted.some((m) => m.role === 'assistant' && m.content === 'drafting')).toBe(true);
+    expect(persisted.some((m) => m.role === 'tool' && m.content === 'ok')).toBe(true);
+    expect(persisted.some((m) => m.role === 'user' && m.content === 'my deck')).toBe(true);
+    expect(persisted.some((m) => m.role === 'user' && m.content === 'make it 15 slides instead of 12')).toBe(
+      true,
+    );
   });
 });
 

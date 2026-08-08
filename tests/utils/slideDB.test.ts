@@ -262,3 +262,42 @@ describe('slideDB round persistence (undo/redo)', () => {
     expect(await getSlideRounds('p1')).toEqual({ rounds: [], roundIndex: -1 });
   });
 });
+
+describe('slideDB planTranscript persistence (context continuity)', () => {
+  const transcript = [
+    { role: 'user' as const, content: 'make it 12 slides' },
+    { role: 'assistant' as const, content: 'drafting', toolCalls: [] },
+  ];
+
+  test('save then get rehydrates the plan transcript', async () => {
+    await saveSlideProject({ ...project('p1'), planTranscript: transcript });
+    const loaded = await getSlideProject('p1');
+    expect(loaded!.planTranscript).toEqual(transcript);
+  });
+
+  test('a project without a transcript rehydrates with undefined', async () => {
+    await saveSlideProject(project('p1'));
+    const loaded = await getSlideProject('p1');
+    expect(loaded!.planTranscript).toBeUndefined();
+  });
+
+  test('delete removes the persisted plan transcript', async () => {
+    await saveSlideProject({ ...project('p1'), planTranscript: transcript });
+    await deleteSlideProject('p1');
+    expect(await getSlideProject('p1')).toBeNull();
+  });
+
+  test('clearAllSlideProjects clears the plan transcript', async () => {
+    await saveSlideProject({ ...project('p1'), planTranscript: transcript });
+    await clearAllSlideProjects();
+    expect((await getSlideProject('p1'))?.planTranscript).toBeUndefined();
+  });
+
+  test('saving a project without a transcript removes a previously-persisted one', async () => {
+    await saveSlideProject({ ...project('p1'), planTranscript: transcript });
+    // A later land with planTranscript cleared (e.g. manual plan-doc edit) must
+    // not leave the stale transcript behind to be rehydrated on reload.
+    await saveSlideProject({ ...project('p1'), planTranscript: undefined });
+    expect((await getSlideProject('p1'))?.planTranscript).toBeUndefined();
+  });
+});

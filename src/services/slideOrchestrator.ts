@@ -48,11 +48,36 @@ export function deriveSlideTitle(prompt: string): string {
 /**
  * Build isolated plan-session user turns from the main transcript.
  * Retries must include the original deck prompt — never only "continue"/Retry.
+ *
+ * When a prior plan round already completed (`project.planTranscript`), the
+ * follow-up CONTINUES that exact conversation (user + assistant + tool turns)
+ * instead of starting fresh — appending only the newest user turn. This keeps
+ * every plan round on the same context and makes the prior round a cacheable
+ * prefix for the next (token savings).
  */
 export function buildPlanSessionMessages(
   project: SlideProject,
   extraUser?: string,
 ): APIMessage[] {
+  if (project.planTranscript?.length) {
+    const out = project.planTranscript.slice();
+    const newestUser =
+      extraUser?.trim() ||
+      [...project.messages].reverse().find((m) => m.role === 'user')?.content;
+    const tail = out[out.length - 1];
+    if (newestUser && !(tail?.role === 'user' && tail.content === newestUser)) {
+      out.push({ role: 'user', content: newestUser });
+    } else if (!newestUser) {
+      // No newer user turn (e.g. a bare retry over a transcript) — match the
+      // fresh-plan fallback so the session still has an explicit instruction.
+      out.push({
+        role: 'user',
+        content: 'Continue planning this deck from the current workspace.',
+      });
+    }
+    return out;
+  }
+
   const out: APIMessage[] = [];
   for (const m of project.messages) {
     if (m.role !== 'user') continue;
@@ -338,6 +363,9 @@ export function createSlideAgent(
         canvas,
         pendingAsk: undefined,
         updatedAt: Date.now(),
+        // Carry the completed plan conversation forward so a follow-up re-plan
+        // continues the same context (cacheable prefix across rounds).
+        ...(result.transcript ? { planTranscript: result.transcript } : {}),
       };
       host.landProject(next);
       host.setPhase('plan_ready');
@@ -462,6 +490,7 @@ export function createSlideAgent(
         canvas,
         pendingAsk: undefined,
         updatedAt: Date.now(),
+        ...(result.transcript ? { planTranscript: result.transcript } : {}),
       };
       host.landProject(next);
       host.setPhase('plan_ready');
@@ -633,13 +662,19 @@ export function createSlideAgent(
 
   /**
    * True when a freeform message should resume/re-run planning rather than
-   * edit. Edit is only for post-plan work (approved brief+design, or a deck).
+   * edit. Edit is only for post-build work on an existing deck (`ready`).
+   * Before the deck is built — `plan`, `idle`, and `plan_ready` (the plan
+   * review state) — a follow-up revises the plan (brief + design) instead.
    * Failed API plan turns leave phase `error` with empty/partial VFS — those
    * must NOT jump to the edit skill ("continue" after a plan 402).
    */
   function shouldResumePlan(project: SlideProject): boolean {
     if (!hasValidPlanFiles(project.files)) return true;
-    return project.phase === 'plan' || project.phase === 'idle';
+    return (
+      project.phase === 'plan' ||
+      project.phase === 'idle' ||
+      project.phase === 'plan_ready'
+    );
   }
 
   /**

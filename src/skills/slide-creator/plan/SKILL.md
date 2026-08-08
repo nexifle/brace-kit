@@ -27,6 +27,28 @@ Follow the bundled templates (`references/brief-template.md`,
 `references/design-template.md`) and draw the decorative system from
 `references/element-palette.md`.
 
+## If this is a follow-up revision (docs already exist)
+
+When `/brief.md` and `/design.md` are already present in the workspace (this is a
+follow-up, so the conversation already carries your prior planning context), this
+is a **revision**, not a first draft. The user is asking you to change the
+existing plan.
+
+- **Read both current files first** (`read_file /brief.md`, `read_file
+  /design.md`) before touching anything — they are the source of truth, not the
+  user's follow-up message alone.
+- **Revise in place** with `update_file` and small, focused diffs. Preserve
+  everything the user did not ask to change: the slide count, structure, canvas,
+  layout system, and design system stay unless the request implies otherwise.
+- **Do not recreate from scratch.** Do not rewrite `/brief.md` or `/design.md`
+  wholesale unless the user's request amounts to a full replan. If only the copy
+  is wrong, change the copy; if only one slide is wrong, fix that slide.
+- Keep the docs consistent with each other after the change (e.g. if you change
+  the slide count in `/brief.md`, make sure `/design.md` and `/deck.json` still
+  agree).
+- Finish the same way: once both files are coherent and every clarification is
+  answered, call `submit_plan`.
+
 ## Before you write — research first
 
 If the environment offers research tools (`google_search` and/or MCP tools), do

@@ -539,6 +539,28 @@ describe('slideStore', () => {
     expect(s.phase).toBe('idle');
   });
 
+  it('updatePlanFile clears the cached planTranscript on a plan-doc edit', () => {
+    const project = makeProject({
+      phase: 'plan_ready',
+      files: [
+        { path: '/deck.json', content: '{}' },
+        { path: '/brief.md', content: '# Old brief' },
+      ],
+      planTranscript: [
+        { role: 'user', content: 'my deck' },
+        { role: 'assistant', content: 'drafting', toolCalls: [] },
+      ],
+    });
+    useSlideStore.getState().setActiveProjectData(project);
+
+    useSlideStore.getState().updatePlanFile('/brief.md', '# New brief');
+
+    const s = useSlideStore.getState();
+    expect(s.activeProject?.files.find((f) => f.path === '/brief.md')?.content).toBe('# New brief');
+    // The stale transcript (whose tool results embed the old brief) is dropped.
+    expect(s.activeProject?.planTranscript).toBeUndefined();
+  });
+
   it('updatePlanFile ignores a missing active project', () => {
     useSlideStore.getState().reset();
     useSlideStore.getState().updatePlanFile('/brief.md', 'x');

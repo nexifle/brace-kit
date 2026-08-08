@@ -415,6 +415,13 @@ export interface PlanPhaseResult {
   /** Canvas the model chose via submit_plan, if any. */
   canvasChoice?: string;
   /**
+   * The plan-session conversation WITHOUT the leading system message (user +
+   * assistant + tool turns) from a completed round. Persisted on the project so
+   * a follow-up re-plan continues the same context — the prior round's
+   * transcript becomes a cacheable prefix for the next round.
+   */
+  transcript?: APIMessage[];
+  /**
    * Agent-session transcript + next round, present on `waiting_user`, needed to
    * resume the plan session from `answerAsk`/`resumePlanPhase`.
    */
@@ -1097,8 +1104,19 @@ function mapResult(
         ...base,
         status: hasValidPlanFiles(files) ? 'plan_ready' : 'done',
         content: result.content,
+        // Persist the conversation (minus the leading system message) so a
+        // follow-up re-plan continues the same context.
+        transcript: stripSystemMessage(result.messages),
       };
   }
+}
+
+/** Drop the leading `role: 'system'` message from a session transcript. */
+function stripSystemMessage(messages: APIMessage[]): APIMessage[] {
+  if (messages.length > 0 && messages[0].role === 'system') {
+    return messages.slice(1);
+  }
+  return messages;
 }
 
 function buildPendingAsk(toolCall: ToolCall): SlidePendingAsk {
