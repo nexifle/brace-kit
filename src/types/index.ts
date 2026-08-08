@@ -113,6 +113,7 @@ export interface PageContext {
   pageUrl: string;
   content: string;
   metaDescription?: string;
+  favicon?: string;   // absolute URL; present when the page exposed a favicon
 }
 
 export interface SelectedText {
