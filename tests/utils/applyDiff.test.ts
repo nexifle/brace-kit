@@ -146,6 +146,40 @@ describe('applyDiff update (patch existing with context)', () => {
     const res = applyDiff(single, '@@\n-  color: red;\n+  color: blue;\n');
     expect(res).toEqual({ ok: true, text: '.foo {\n  color: blue;\n}\n' });
   });
+
+  test('updates a single-line deck.json by substring match (regression)', () => {
+    // The deck.json is a single line with an em dash. The build agent keeps
+    // failing to update it because it matches only the changing fragment (a
+    // substring), not the whole line. Substring matching must resolve it.
+    const deck = '{"title":"Nexifle \u2014 Instagram Launch","canvas":"4:5"}';
+    const ok = applyDiff(
+      deck,
+      '@@\n-"canvas":"4:5"}\n+"canvas":"4:5","theme":"/theme.css","slideOrder":["01"]}\n',
+    );
+    expect(ok.ok).toBe(true);
+    if (ok.ok) {
+      expect(ok.text).toBe(
+        '{"title":"Nexifle \u2014 Instagram Launch","canvas":"4:5","theme":"/theme.css","slideOrder":["01"]}\n',
+      );
+    }
+  });
+
+  test('matches a full-line deck.json diff even with a different dash codepoint (regression)', () => {
+    // Models emit various dash Unicode codepoints; normalize must fold them so
+    // a full-line replace succeeds regardless of which dash variant is used.
+    const deck = '{"title":"Nexifle \u2014 Instagram Launch","canvas":"4:5"}';
+    const fullwidthDash = '{"title":"Nexifle \uFF0D Instagram Launch","canvas":"4:5"}';
+    const res = applyDiff(
+      deck,
+      `@@\n-${fullwidthDash}\n+{"title":"Nexifle \u2014 Instagram Launch","canvas":"4:5","theme":"/theme.css","slideOrder":["01"]}\n`,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.text).toBe(
+        '{"title":"Nexifle \u2014 Instagram Launch","canvas":"4:5","theme":"/theme.css","slideOrder":["01"]}\n',
+      );
+    }
+  });
 });
 
 describe('applyDiff failure on bad context', () => {

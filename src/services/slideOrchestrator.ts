@@ -31,7 +31,7 @@ import {
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
 import type { AgentTransport, AgentAbortFn, StreamDelta } from './agentSession.ts';
-import { isSlideCanvas } from '../utils/slideVfs.ts';
+import { isSlideCanvas, rebuildDeckProjection, verifyDeck } from '../utils/slideVfs.ts';
 import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
@@ -148,6 +148,11 @@ export interface SlideAgentHost {
   getActivity?: () => import('../types/slides.ts').SlideActivityEvent[];
   /** Checkpoint a completed build/edit round's landed VFS (undo/redo history). */
   recordRound?: (files: SlideFile[], label: string) => void;
+  /**
+   * Best-effort render probe: render each deck slide in the sandbox and return the ids
+   * that fail to render. Absent in unit tests / when the sandbox is unavailable.
+   */
+  verifyRender?: (files: SlideFile[]) => Promise<string[]>;
 }
 
 /** Runtime/network dependencies (injected for tests). */
@@ -194,6 +199,8 @@ interface AgentRunState {
   paused: PlanPhaseResult['paused'] | null;
   skills: Partial<Record<SlidePhaseKey, string>>;
   abort: AbortController | null;
+  /** Corrective verification rounds used this phase entry (cap 1, Phase 1). */
+  verifyRetries: number;
 }
 
 export function createSlideAgent(
@@ -205,6 +212,7 @@ export function createSlideAgent(
     paused: null,
     skills: {},
     abort: null,
+    verifyRetries: 0,
   };
 
   /** Live provider/model/key — never freeze the first-render snapshot. */
@@ -251,6 +259,24 @@ export function createSlideAgent(
       ? { push: host.pushActivity, patch: host.patchActivity }
       : undefined;
 
+  /**
+   * Emit a `phase_failed` activity row for a final verification failure (Phase 1c).
+   * The phase runner already emitted `phase_completed` for a 'ready' status, so
+   * this surfaces the verification failure in the feed and lets
+   * `retryFailedPhase` route a retry back to the failed phase.
+   */
+  function emitVerifyFailed(phase: 'build' | 'edit', issues: string[]): void {
+    activitySink()?.push({
+      id: `${phase}_verify_failed`,
+      type: 'phase_failed',
+      status: 'failed',
+      ts: Date.now(),
+      phase,
+      label: 'Deck failed verification',
+      detail: issues.join('\n'),
+    });
+  }
+
   /** Land a clear error narration + error phase on a project, WITHOUT starting a phase. */
   function blockPhase(project: SlideProject): boolean {
     if (canUseFunctionCalling()) return false;
@@ -269,6 +295,58 @@ export function createSlideAgent(
     });
     state.skills[phase] = text;
     return text;
+  }
+
+  /**
+   * Best-effort workspace rules (root AGENTS.md). Optional: resolves to '' when
+   * the file is absent or not bundled, so the phase never fails on it.
+   */
+  async function workspaceRules(): Promise<string> {
+    try {
+      if (deps.skillFetcher) {
+        return await deps.skillFetcher('skills://AGENTS.md');
+      }
+      const res = await fetch(chrome.runtime.getURL('AGENTS.md'));
+      if (!res.ok) return '';
+      return await res.text();
+    } catch {
+      return '';
+    }
+  }
+
+  /** Project-knowledge block derived from the VFS at phase start (stable per run). */
+  function projectKnowledge(files: SlideFile[]): string {
+    const deck = rebuildDeckProjection(files);
+    const paths = files
+      .map((f) => f.path)
+      .filter(Boolean)
+      .sort()
+      .join(', ');
+    return (
+      '\n\n## Project state\n' +
+      `- canvas: ${deck.canvas ?? 'unset'}\n` +
+      `- slide count: ${deck.slideOrder.length}\n` +
+      `- files: ${paths || 'none'}`
+    );
+  }
+
+  /**
+   * Compose the byte-stable system prompt for a phase run: the phase skill +
+   * a project-knowledge block + (optional) workspace rules. The prefix is
+   * load-bearing for provider prompt caching — it MUST stay byte-identical
+   * across every turn of the phase run, so build it ONCE per run and never
+   * reorder or re-read it mid-conversation or the cache misses. All variable
+   * content (file reads, history, latest message, error_context) lives in the
+   * message tail, never here.
+   */
+  async function phaseSystemPrompt(
+    phaseKey: SlidePhaseKey,
+    project: SlideProject,
+  ): Promise<string> {
+    const base = await skill(phaseKey);
+    const knowledge = projectKnowledge(project.files);
+    const rules = await workspaceRules();
+    return base + knowledge + (rules ? `\n\n## Workspace rules (AGENTS.md)\n${rules}` : '');
   }
 
   function appendMessage(project: SlideProject, msg: SlideMainMessage): SlideProject {
@@ -312,7 +390,8 @@ export function createSlideAgent(
 
   /** Reflect a plan-phase result into the store + transcript. */
   async function runPlan(project: SlideProject, prompt?: string): Promise<void> {
-    const systemPrompt = await skill('plan');
+    state.verifyRetries = 0;
+    const systemPrompt = await phaseSystemPrompt('plan', project);
     const abort = new AbortController();
     state.abort = abort;
     state.running = true;
@@ -374,6 +453,11 @@ export function createSlideAgent(
       host.landProject(next);
       host.setPhase('plan_ready');
       appendMessage(next, assistantOrFallback(result.content, 'Plan ready — review the brief and design, then build.'));
+      // Agent mode auto-continues into build; plan docs are already written.
+      if (next.mode === 'agent') {
+        await runBuild();
+        return;
+      }
       return;
     }
 
@@ -405,7 +489,10 @@ export function createSlideAgent(
   }
 
   /** Create a new project and start the plan phase. */
-  async function createFromPrompt(prompt: string): Promise<void> {
+  async function createFromPrompt(
+    prompt: string,
+    mode: 'plan' | 'agent' = 'plan',
+  ): Promise<void> {
     const text = prompt.trim();
     if (!text) return;
     const now = Date.now();
@@ -415,6 +502,7 @@ export function createSlideAgent(
       createdAt: now,
       updatedAt: now,
       phase: 'plan',
+      mode,
       canvas: null,
 
       messages: [makeMsg('user', text)],
@@ -437,7 +525,7 @@ export function createSlideAgent(
     host.recordAnswer(projectId, answer);
     if (blockPhase(project)) return;
 
-    const systemPrompt = await skill('plan');
+    const systemPrompt = await phaseSystemPrompt('plan', project);
     const abort = new AbortController();
     state.abort = abort;
     state.running = true;
@@ -505,6 +593,11 @@ export function createSlideAgent(
           'Plan ready — review the brief and design, then build.',
         ),
       );
+      // Agent mode auto-continues into build; plan docs are already written.
+      if (next.mode === 'agent') {
+        await runBuild();
+        return;
+      }
       return;
     }
 
@@ -544,13 +637,61 @@ export function createSlideAgent(
   }
 
   /** Run the build phase against the approved plan docs. */
-  async function runBuild(): Promise<void> {
-    const project = host.getActiveProject();
-    if (!project || state.running) return;
-    if (blockPhase(project)) return;
-    if (!hasValidPlanFiles(project.files)) return;
 
-    const systemPrompt = await skill('build');
+  /**
+   * Phase 1 verification loop: verify a just-produced deck and, on a hard
+   * failure with corrective budget remaining, append an `error_context` user
+   * turn to `messages` so the caller can re-run the phase once. The render
+   * probe is best-effort (absent/flaky -> []) and only consulted when the VFS
+   * check passes. Returns `{ retry }`; the caller re-invokes with the extended
+   * `messages` and `result.files` when `retry` is true.
+   */
+  async function verifyAndRetry(
+    phase: 'build' | 'edit',
+    files: SlideFile[],
+    messages: APIMessage[],
+  ): Promise<{ retry: boolean }> {
+    const v = verifyDeck(files);
+    let renderFailures: string[] = [];
+    if (v.ok) {
+      try {
+        renderFailures = (await host.verifyRender?.(files)) ?? [];
+      } catch {
+        renderFailures = [];
+      }
+    }
+    if (v.ok && renderFailures.length === 0) return { retry: false };
+    if (state.verifyRetries >= 1) return { retry: false };
+    state.verifyRetries += 1;
+    const lines = v.issues.map((issue) => `- ${issue}`);
+    if (renderFailures.length) {
+      lines.push(`- These slides failed to render: ${renderFailures.join(', ')}`);
+    }
+    messages.push({
+      role: 'user',
+      content:
+        `[verification] The previous ${phase} produced a deck that failed verification:\n` +
+        lines.join('\n') +
+        '\nFix the specific issues above and re-issue the needed apply_patch changes. Do not undo unrelated completed work.',
+    });
+    return { retry: true };
+  }
+
+  async function runBuild(): Promise<void> {
+    const active = host.getActiveProject();
+    if (!active || state.running) return;
+    if (blockPhase(active)) return;
+    if (!hasValidPlanFiles(active.files)) return;
+
+    // Clicking Build is an explicit "execute now": reflect agent mode so the
+    // Plan/Agent toggle shows Agent while the deck is being built. Persist
+    // immediately so the store's active project carries it for the whole phase.
+    const project: SlideProject =
+    active.mode === 'agent' ? active : { ...active, mode: 'agent' as const };
+    if (project !== active) host.landProject(project);
+
+    state.verifyRetries = 0;
+    const systemPrompt = await phaseSystemPrompt('build', project);
     const abort = new AbortController();
     state.abort = abort;
     state.running = true;
@@ -558,28 +699,76 @@ export function createSlideAgent(
     prepareStream();
     host.setBusy(true);
 
-    const result = await runBuildPhase({
-      systemPrompt,
-      messages: [{ role: 'user', content: 'Build the deck from the approved brief and design.' }],
-      providerConfig: providerConfig(),
-      chatOptions: chatOptions(),
-      files: project.files,
-      signal: abort.signal,
-      maxRounds: deps.maxRounds,
-      transport: deps.transport,
-      abortRequest: deps.abortRequest,
-      toolOptions: deps.toolOptions,
-      onDelta: streamDelta,
-      onRoundStart: prepareStream,
-      onFilesChange: (files) => host.refreshDeckFromFiles(files),
-      onActivity: activitySink(),
-    });
+    const messages: APIMessage[] = [
+      { role: 'user', content: 'Build the deck from the approved brief and design.' },
+    ];
+    const invoke = async (msgs: APIMessage[], files: SlideFile[]) => {
+      prepareStream();
+      return runBuildPhase({
+        systemPrompt,
+        messages: msgs,
+        providerConfig: providerConfig(),
+        chatOptions: chatOptions(),
+        files,
+        signal: abort.signal,
+        maxRounds: deps.maxRounds,
+        transport: deps.transport,
+        abortRequest: deps.abortRequest,
+        toolOptions: deps.toolOptions,
+        onDelta: streamDelta,
+        onRoundStart: prepareStream,
+        onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
+        onActivity: activitySink(),
+      });
+    };
+
+    let result = await invoke(messages, project.files);
+    // Verification loop (Phase 1): retry once on a failed verification for a
+    // deck that was produced (ready) or truncated-but-projectable (done).
+    const shouldVerify =
+      result.status === 'ready' || (result.status === 'done' && !!result.truncated);
+    let verifyFailed = false;
+    let verifyIssues: string[] = [];
+    if (shouldVerify) {
+      const verdict = await verifyAndRetry('build', result.files, messages);
+      if (verdict.retry) {
+        result = await invoke(messages, result.files);
+      }
+      const v = verifyDeck(result.files);
+      verifyFailed = !v.ok;
+      verifyIssues = v.issues;
+    }
 
     state.running = false;
     state.abort = null;
     host.setBusy(false);
 
     if (result.status === 'ready') {
+      if (verifyFailed) {
+        const slides = result.slideCount ?? 0;
+        const next: SlideProject = {
+          ...project,
+          files: result.files,
+          phase: slides > 0 ? 'ready' : 'error',
+          pendingAsk: undefined,
+          updatedAt: Date.now(),
+        };
+        host.landProject(next);
+        host.setPhase(next.phase);
+        host.setPendingAsk(null);
+        emitVerifyFailed('build', verifyIssues);
+        if (slides > 0) {
+          recordRound(
+            result.files,
+            `Deck built · ${slides} slide${slides === 1 ? '' : 's'} (needs review)`,
+          );
+        }
+        appendMessage(
+          next,
+          makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
+        );
+        return;
+      }
       const next: SlideProject = {
         ...project,
         files: result.files,
@@ -632,11 +821,14 @@ export function createSlideAgent(
         if (narration) {
           landed = appendMessage(landed, makeMsg('assistant', narration));
         }
+        if (verifyFailed) emitVerifyFailed('build', verifyIssues);
         appendMessage(
           landed,
           makeMsg(
             'error',
-            maxRoundsNoDeliverable('build', result.rounds, result.slideCount),
+            (verifyFailed
+              ? 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')
+              : maxRoundsNoDeliverable('build', result.rounds, result.slideCount)),
           ),
         );
         return;
@@ -718,7 +910,8 @@ export function createSlideAgent(
 
   /** Continue a truncated edit phase without adding a user transcript message. */
   async function runEditContinue(project: SlideProject): Promise<void> {
-    const systemPrompt = await skill('edit');
+    state.verifyRetries = 0;
+    const systemPrompt = await phaseSystemPrompt('edit', project);
     const abort = new AbortController();
     state.abort = abort;
     state.running = true;
@@ -726,28 +919,49 @@ export function createSlideAgent(
     prepareStream();
     host.setBusy(true);
 
-    const result = await runEditPhase({
-      systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Continue the previous edit from the current workspace. Finish any incomplete work; do not undo successful changes.',
-        },
-      ],
-      providerConfig: providerConfig(),
-      chatOptions: chatOptions(),
-      files: project.files,
-      signal: abort.signal,
-      maxRounds: deps.maxRounds,
-      transport: deps.transport,
-      abortRequest: deps.abortRequest,
-      toolOptions: deps.toolOptions,
-      onDelta: streamDelta,
-      onRoundStart: prepareStream,
-      onFilesChange: (files) => host.refreshDeckFromFiles(files),
-      onActivity: activitySink(),
-    });
+    const priorEdit = project.editTranscript ?? [];
+    const messages: APIMessage[] = [
+      ...priorEdit.slice(-40),
+      {
+        role: 'user',
+        content:
+          'Continue the previous edit from the current workspace. Finish any incomplete work; do not undo successful changes.',
+      },
+    ];
+    const invoke = async (msgs: APIMessage[], files: SlideFile[]) => {
+      prepareStream();
+      return runEditPhase({
+        systemPrompt,
+        messages: msgs,
+        providerConfig: providerConfig(),
+        chatOptions: chatOptions(),
+        files,
+        signal: abort.signal,
+        maxRounds: deps.maxRounds,
+        transport: deps.transport,
+        abortRequest: deps.abortRequest,
+        toolOptions: deps.toolOptions,
+        onDelta: streamDelta,
+        onRoundStart: prepareStream,
+        onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
+        onActivity: activitySink(),
+      });
+    };
+
+    let result = await invoke(messages, project.files);
+    const shouldVerify =
+      result.status === 'ready' || (result.status === 'done' && !!result.truncated);
+    let verifyFailed = false;
+    let verifyIssues: string[] = [];
+    if (shouldVerify) {
+      const verdict = await verifyAndRetry('edit', result.files, messages);
+      if (verdict.retry) {
+        result = await invoke(messages, result.files);
+      }
+      const v = verifyDeck(result.files);
+      verifyFailed = !v.ok;
+      verifyIssues = v.issues;
+    }
 
     state.running = false;
     state.abort = null;
@@ -757,11 +971,33 @@ export function createSlideAgent(
     // Inline the same land paths as sendFollowUp for ready/done/error/cancelled.
     if (result.status === 'ready') {
       const current = host.getActiveProject() ?? project;
+      if (verifyFailed) {
+        const slides = result.slideCount ?? 0;
+        const next: SlideProject = {
+          ...current,
+          files: result.files,
+          phase: slides > 0 ? 'ready' : 'error',
+          pendingAsk: undefined,
+          updatedAt: Date.now(),
+          editTranscript: result.transcript ?? current.editTranscript,
+        };
+        host.landProject(next);
+        host.setPhase(next.phase);
+        host.setPendingAsk(null);
+        emitVerifyFailed('edit', verifyIssues);
+        if (slides > 0) recordRound(result.files, 'Continue edit (needs review)');
+        appendMessage(
+          next,
+          makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
+        );
+        return;
+      }
       const next: SlideProject = {
         ...current,
         files: result.files,
         phase: 'ready',
         updatedAt: Date.now(),
+        editTranscript: result.transcript ?? current.editTranscript,
       };
       host.landProject(next);
       host.setPhase('ready');
@@ -779,6 +1015,7 @@ export function createSlideAgent(
           phase: slides > 0 ? 'ready' : 'error',
           pendingAsk: undefined,
           updatedAt: Date.now(),
+          editTranscript: result.transcript ?? current.editTranscript,
         };
         host.landProject(next);
         host.setPhase(next.phase);
@@ -789,9 +1026,15 @@ export function createSlideAgent(
         const narration = result.content?.trim();
         let landed = next;
         if (narration) landed = appendMessage(landed, makeMsg('assistant', narration));
+        if (verifyFailed) emitVerifyFailed('edit', verifyIssues);
         appendMessage(
           landed,
-          makeMsg('error', maxRoundsNoDeliverable('edit', result.rounds, result.slideCount)),
+          makeMsg(
+            'error',
+            verifyFailed
+              ? 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')
+              : maxRoundsNoDeliverable('edit', result.rounds, result.slideCount),
+          ),
         );
         return;
       }
@@ -805,6 +1048,7 @@ export function createSlideAgent(
         files: result.files,
         phase: 'error',
         updatedAt: Date.now(),
+        editTranscript: result.transcript ?? current.editTranscript,
       };
       host.landProject(next);
       host.setPhase('error');
@@ -819,6 +1063,7 @@ export function createSlideAgent(
         stopped: true,
         pendingAsk: undefined,
         updatedAt: Date.now(),
+        editTranscript: result.transcript ?? current.editTranscript,
       });
     }
   }
@@ -842,7 +1087,8 @@ export function createSlideAgent(
       return;
     }
 
-    const systemPrompt = await skill('edit');
+    state.verifyRetries = 0;
+    const systemPrompt = await phaseSystemPrompt('edit', project);
     const abort = new AbortController();
     state.abort = abort;
     state.running = true;
@@ -852,22 +1098,46 @@ export function createSlideAgent(
 
     appendMessage(project, makeMsg('user', message));
 
-    const result = await runEditPhase({
-      systemPrompt,
-      messages: [{ role: 'user', content: message }],
-      providerConfig: providerConfig(),
-      chatOptions: chatOptions(),
-      files: project.files,
-      signal: abort.signal,
-      maxRounds: deps.maxRounds,
-      transport: deps.transport,
-      abortRequest: deps.abortRequest,
-      toolOptions: deps.toolOptions,
-      onDelta: streamDelta,
-      onRoundStart: prepareStream,
-      onFilesChange: (files) => host.refreshDeckFromFiles(files),
-      onActivity: activitySink(),
-    });
+    // Continue the prior edit-session context (last 40 turns) so a follow-up
+    // like "I didn't like that" sees what the previous follow-up changed.
+    const priorEdit = project.editTranscript ?? [];
+    const messages: APIMessage[] = priorEdit.length
+      ? [...priorEdit.slice(-40), { role: 'user', content: message }]
+      : [{ role: 'user', content: message }];
+    const invoke = async (msgs: APIMessage[], files: SlideFile[]) => {
+      prepareStream();
+      return runEditPhase({
+        systemPrompt,
+        messages: msgs,
+        providerConfig: providerConfig(),
+        chatOptions: chatOptions(),
+        files,
+        signal: abort.signal,
+        maxRounds: deps.maxRounds,
+        transport: deps.transport,
+        abortRequest: deps.abortRequest,
+        toolOptions: deps.toolOptions,
+        onDelta: streamDelta,
+        onRoundStart: prepareStream,
+        onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
+        onActivity: activitySink(),
+      });
+    };
+
+    let result = await invoke(messages, project.files);
+    const shouldVerify =
+      result.status === 'ready' || (result.status === 'done' && !!result.truncated);
+    let verifyFailed = false;
+    let verifyIssues: string[] = [];
+    if (shouldVerify) {
+      const verdict = await verifyAndRetry('edit', result.files, messages);
+      if (verdict.retry) {
+        result = await invoke(messages, result.files);
+      }
+      const v = verifyDeck(result.files);
+      verifyFailed = !v.ok;
+      verifyIssues = v.issues;
+    }
 
     state.running = false;
     state.abort = null;
@@ -875,11 +1145,33 @@ export function createSlideAgent(
 
     if (result.status === 'ready') {
       const current = host.getActiveProject() ?? project;
+      if (verifyFailed) {
+        const slides = result.slideCount ?? 0;
+        const next: SlideProject = {
+          ...current,
+          files: result.files,
+          phase: slides > 0 ? 'ready' : 'error',
+          pendingAsk: undefined,
+          updatedAt: Date.now(),
+          editTranscript: result.transcript ?? current.editTranscript,
+        };
+        host.landProject(next);
+        host.setPhase(next.phase);
+        host.setPendingAsk(null);
+        emitVerifyFailed('edit', verifyIssues);
+        if (slides > 0) recordRound(result.files, `${message} (needs review)`);
+        appendMessage(
+          next,
+          makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
+        );
+        return;
+      }
       const next: SlideProject = {
         ...current,
         files: result.files,
         phase: 'ready',
         updatedAt: Date.now(),
+        editTranscript: result.transcript ?? current.editTranscript,
       };
       host.landProject(next);
       host.setPhase('ready');
@@ -898,6 +1190,7 @@ export function createSlideAgent(
           phase: slides > 0 ? 'ready' : 'error',
           pendingAsk: undefined,
           updatedAt: Date.now(),
+          editTranscript: result.transcript ?? current.editTranscript,
         };
         host.landProject(next);
         host.setPhase(next.phase);
@@ -910,9 +1203,15 @@ export function createSlideAgent(
         if (narration) {
           landed = appendMessage(landed, makeMsg('assistant', narration));
         }
+        if (verifyFailed) emitVerifyFailed('edit', verifyIssues);
         appendMessage(
           landed,
-          makeMsg('error', maxRoundsNoDeliverable('edit', result.rounds, result.slideCount)),
+          makeMsg(
+            'error',
+            verifyFailed
+              ? 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')
+              : maxRoundsNoDeliverable('edit', result.rounds, result.slideCount),
+          ),
         );
         return;
       }
@@ -927,6 +1226,7 @@ export function createSlideAgent(
         files: result.files,
         phase: 'error',
         updatedAt: Date.now(),
+        editTranscript: result.transcript ?? current.editTranscript,
       };
       host.landProject(next);
       host.setPhase('error');
@@ -941,6 +1241,7 @@ export function createSlideAgent(
         stopped: true,
         pendingAsk: undefined,
         updatedAt: Date.now(),
+        editTranscript: result.transcript ?? current.editTranscript,
       });
     }
   }

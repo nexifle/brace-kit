@@ -6,7 +6,7 @@ import type { SlideActivityEvent, SlideFile, SlideProject, SlideRound } from '..
 // phase, canvas, and pending ask so the workspace survives extension reloads.
 
 const DB_NAME = 'ai-sidebar-slide-projects';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const STORE_PROJECTS = 'slide_projects'; // keyPath: project id
 const STORE_MESSAGES = 'slide_messages'; // keyPath: project id -> { messages }
@@ -14,6 +14,7 @@ const STORE_FILES = 'slide_files'; // keyPath: project id -> { files }
 const STORE_ACTIVITY = 'slide_activity'; // keyPath: project id -> { activity }
 const STORE_ROUNDS = 'slide_rounds'; // keyPath: project id -> { id, rounds, roundIndex }
 const STORE_PLAN_TRANSCRIPT = 'slide_plan_transcript'; // keyPath: project id -> { planTranscript }
+const STORE_EDIT_TRANSCRIPT = 'slide_edit_transcript'; // keyPath: project id -> { editTranscript }
 const STORE_LAST_ACTIVE = 'slide_last_active'; // keyPath: 'key'
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -44,6 +45,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_PLAN_TRANSCRIPT)) {
         db.createObjectStore(STORE_PLAN_TRANSCRIPT, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_EDIT_TRANSCRIPT)) {
+        db.createObjectStore(STORE_EDIT_TRANSCRIPT, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORE_LAST_ACTIVE)) {
         db.createObjectStore(STORE_LAST_ACTIVE, { keyPath: 'key' });
@@ -93,6 +97,7 @@ export interface StoredSlideProject {
   createdAt: number;
   updatedAt: number;
   phase: SlideProject['phase'];
+  mode: SlideProject['mode'];
   canvas: SlideProject['canvas'];
   pendingAsk?: SlideProject['pendingAsk'];
   stopped?: boolean;
@@ -131,6 +136,7 @@ function toMetadata(project: SlideProject): StoredSlideProject {
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     phase: project.phase,
+    mode: project.mode,
     canvas: project.canvas,
     pendingAsk: project.pendingAsk,
     stopped: project.stopped,
@@ -207,6 +213,21 @@ export async function saveSlideProject(project: SlideProject): Promise<void> {
       'readwrite',
       (store) => store.delete(project.id),
       'saveSlideProject (planTranscript clear)'
+    );
+  }
+  if (project.editTranscript) {
+    await runRequest<void>(
+      STORE_EDIT_TRANSCRIPT,
+      'readwrite',
+      (store) => store.put({ id: project.id, editTranscript: project.editTranscript }),
+      'saveSlideProject (editTranscript)'
+    );
+  } else {
+    await runRequest<void>(
+      STORE_EDIT_TRANSCRIPT,
+      'readwrite',
+      (store) => store.delete(project.id),
+      'saveSlideProject (editTranscript clear)'
     );
   }
 }
@@ -297,7 +318,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
     );
     if (!metadata) return null;
 
-    const [messagesRec, filesRec, activityRec, roundsRec, planTranscriptRec] = await Promise.all([
+    const [messagesRec, filesRec, activityRec, roundsRec, planTranscriptRec, editTranscriptRec] = await Promise.all([
       runRequest<{ messages: SlideProject['messages'] } | undefined>(
         STORE_MESSAGES,
         'readonly',
@@ -328,6 +349,12 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
         (store) => store.get(id),
         'getSlideProject (planTranscript)'
       ),
+      runRequest<{ editTranscript: SlideProject['editTranscript'] } | undefined>(
+        STORE_EDIT_TRANSCRIPT,
+        'readonly',
+        (store) => store.get(id),
+        'getSlideProject (editTranscript)'
+      ),
     ]);
 
     return {
@@ -336,6 +363,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
       createdAt: metadata.createdAt,
       updatedAt: metadata.updatedAt,
       phase: metadata.phase,
+      mode: metadata.mode ?? 'plan',
       canvas: metadata.canvas,
       pendingAsk: metadata.pendingAsk,
       stopped: metadata.stopped,
@@ -345,6 +373,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
       rounds: roundsRec?.rounds ?? [],
       roundIndex: roundsRec?.roundIndex ?? -1,
       planTranscript: planTranscriptRec?.planTranscript,
+      editTranscript: editTranscriptRec?.editTranscript,
     };
   } catch (e) {
     console.warn('[SlideDB] getSlideProject error:', e);
@@ -382,7 +411,7 @@ export async function deleteSlideProject(id: string): Promise<void> {
   const isLastActive = (await getLastActiveSlideProject()) === id;
   const db = await openDB();
   const tx = db.transaction(
-    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_ROUNDS, STORE_PLAN_TRANSCRIPT, STORE_LAST_ACTIVE],
+    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_ROUNDS, STORE_PLAN_TRANSCRIPT, STORE_EDIT_TRANSCRIPT, STORE_LAST_ACTIVE],
     'readwrite'
   );
   tx.objectStore(STORE_PROJECTS).delete(id);
@@ -391,6 +420,7 @@ export async function deleteSlideProject(id: string): Promise<void> {
   tx.objectStore(STORE_ACTIVITY).delete(id);
   tx.objectStore(STORE_ROUNDS).delete(id);
   tx.objectStore(STORE_PLAN_TRANSCRIPT).delete(id);
+  tx.objectStore(STORE_EDIT_TRANSCRIPT).delete(id);
   if (isLastActive) {
     tx.objectStore(STORE_LAST_ACTIVE).delete('active');
   }
@@ -432,7 +462,7 @@ export async function getLastActiveSlideProject(): Promise<string | null> {
 export async function clearAllSlideProjects(): Promise<void> {
   const db = await openDB();
   const tx = db.transaction(
-    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_ROUNDS, STORE_PLAN_TRANSCRIPT, STORE_LAST_ACTIVE],
+    [STORE_PROJECTS, STORE_MESSAGES, STORE_FILES, STORE_ACTIVITY, STORE_ROUNDS, STORE_PLAN_TRANSCRIPT, STORE_EDIT_TRANSCRIPT, STORE_LAST_ACTIVE],
     'readwrite'
   );
   tx.objectStore(STORE_PROJECTS).clear();
@@ -441,6 +471,7 @@ export async function clearAllSlideProjects(): Promise<void> {
   tx.objectStore(STORE_ACTIVITY).clear();
   tx.objectStore(STORE_ROUNDS).clear();
   tx.objectStore(STORE_PLAN_TRANSCRIPT).clear();
+  tx.objectStore(STORE_EDIT_TRANSCRIPT).clear();
   tx.objectStore(STORE_LAST_ACTIVE).clear();
 
   await new Promise<void>((resolve, reject) => {

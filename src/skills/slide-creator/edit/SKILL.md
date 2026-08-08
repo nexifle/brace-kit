@@ -40,11 +40,12 @@ truth, not your memory of how the deck was built.
 - **Preserve the rest.** Keep the design system, the other slides, their copy,
   and `slideOrder` untouched unless the user's request explicitly implies
   otherwise.
-- **Respect the deck contract.** If you touch `/deck.json`, keep exactly the
-  recognized fields (`title`, `description`, `canvas`, `theme`, `slideOrder`)
-  and correct values (the colon canvas key, real theme path going to an
-  existing file, ids that line up with actual `/slides/{id}.html` files). Do
-  NOT add unknown fields (e.g. no `aspect` key).
+- **Respect the deck contract.** If you touch `/deck.json`, keep the required
+  fields correct (`title`, `description`, `canvas`, `theme`, `slideOrder`) with
+  the right values (the colon canvas key, real theme path going to an existing
+  file, ids that line up with actual `/slides/{id}.html` files). You MAY add
+  extra top-level fields; the projection ignores anything beyond the required
+  keys, so keep the required values correct.
 - **If the request is ambiguous**, make the most conservative reasonable
   interpretation and say what you chose in your summary. You do NOT have an
   `ask` tool in edit — do not stall asking; resolve sensibly on-system.
@@ -86,6 +87,10 @@ truth, not your memory of how the deck was built.
 - **Stay on-system.** Use the deck's existing palette, type scale, radius,
   spacing, and element classes from `/theme.css`. Ad-hoc styling that
   introduces a second design system is a regression.
+- **Fonts stay on Google Fonts** — if a follow-up changes a font family, the new
+  family MUST be a Google Fonts family and the `@import` at the top of
+  `/theme.css` MUST be updated to match. Never introduce a system or non-Google
+  font.
 - **Match real copy.** If the user asks to change wording, use their exact copy.
   If you fix a typo or tune layout, keep the approved copy otherwise intact.
 - **Keep slides on-canvas** — respect the safe zone (no critical text clipped

@@ -5,7 +5,7 @@ import {
   hasValidPlanFiles,
   runBuildPhase,
   runEditPhase,
-  deckJsonWriteFeedback,
+  deckJsonLint,
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
@@ -1437,24 +1437,24 @@ describe('phase lifecycle activity events (US-037)', () => {
   });
 });
 
-describe('deckJsonWriteFeedback', () => {
+describe('deckJsonLint', () => {
   const deckFiles = (content: string): SlideFile[] => [
     { path: '/deck.json', content },
   ];
 
-  it('returns a warning for a missing canvas (soft) in build', () => {
-    const out = deckJsonWriteFeedback(
+  it('reports a missing canvas (soft) in build', () => {
+    const out = deckJsonLint(
       // canvas missing → warning (degradable); no hard errors.
       deckFiles('{"title":"T","slideOrder":["01"]}'),
       'build',
     );
     expect(out).not.toBeNull();
-    expect(out).toContain('[deck.json contract]');
+    expect(out).toContain('[deck.json lint]');
     expect(out).toContain('canvas');
   });
 
-  it('returns a warning in edit too (edit applies the same gate)', () => {
-    const out = deckJsonWriteFeedback(
+  it('reports in edit too (edit applies the same gate)', () => {
+    const out = deckJsonLint(
       deckFiles('{"title":"T","slideOrder":["01"]}'),
       'edit',
     );
@@ -1462,8 +1462,8 @@ describe('deckJsonWriteFeedback', () => {
     expect(out).toContain('canvas');
   });
 
-  it('returns null for a plan-phase deck.json (plan stub must not warn)', () => {
-    const out = deckJsonWriteFeedback(
+  it('returns null for a plan-phase deck.json (plan stub must not lint)', () => {
+    const out = deckJsonLint(
       deckFiles('{"title":"T","slideOrder":["01"]}'),
       'plan',
     );
@@ -1471,31 +1471,43 @@ describe('deckJsonWriteFeedback', () => {
   });
 
   it('returns null for a contract-valid deck.json (silent)', () => {
-    const out = deckJsonWriteFeedback(
+    const out = deckJsonLint(
       deckFiles('{"title":"T","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}'),
       'build',
     );
     expect(out).toBeNull();
   });
 
-  it('returns null when there is no deck.json (missing deck is not a write-time signal)', () => {
-    const out = deckJsonWriteFeedback([], 'build');
-    expect(out).toBeNull();
-  });
-
-  it('returns null for a hard violation (rejected before this helper, never a warning)', () => {
-    // canvas 16_9 is a hard error; dispatchApplyPatch rejects it before adoption,
-    // so this soft-warning helper must not surface it.
-    const out = deckJsonWriteFeedback(
+  it('reports a hard violation as advisory (write is adopted, not rejected)', () => {
+    // canvas 16_9 is a hard error; the write is adopted but the lint surfaces it.
+    const out = deckJsonLint(
       deckFiles('{"title":"T","canvas":"16_9","slideOrder":["01"]}'),
       'build',
     );
-    expect(out).toBeNull();
+    expect(out).not.toBeNull();
+    expect(out).toContain('16_9');
+    expect(out).toContain('issues to fix');
+  });
+
+  it('reports an extra unknown field as advisory (allowed, projection ignores it)', () => {
+    const out = deckJsonLint(
+      deckFiles('{"title":"T","canvas":"16:9","slideOrder":["01"],"slides":[]}'),
+      'build',
+    );
+    expect(out).not.toBeNull();
+    expect(out).toContain('slides');
+    expect(out).toContain('issues to fix');
+  });
+
+  it('reports a deleted deck.json instead of returning null', () => {
+    const out = deckJsonLint([], 'build');
+    expect(out).not.toBeNull();
+    expect(out).toContain('/deck.json is missing');
   });
 });
 
 describe('runBuildPhase deck.json contract enforcement', () => {
-  it('rejects a deck.json write with a hard violation so it never lands', async () => {
+  it('adopts a deck.json write with a hard violation (lint, not rejection)', async () => {
     const { transport } = makeTransport([
       () => ({
         content: 'writing',
@@ -1518,14 +1530,15 @@ describe('runBuildPhase deck.json contract enforcement', () => {
       transport,
     });
 
-    // The hard-invalid deck.json was rejected at write time — it is NOT in the VFS.
-    expect(result.files.find((f) => f.path === '/deck.json')).toBeUndefined();
-    // /slides/01.html was accepted (not a deck.json).
+    // The hard-invalid deck.json is ADOPTED (no write-time rejection); the lint
+    // surfaces the issue and the terminal gate still flags it as not-ready.
+    expect(result.files.find((f) => f.path === '/deck.json')).toBeTruthy();
+    // /slides/01.html was accepted too.
     expect(result.files.find((f) => f.path === '/slides/01.html')).toBeTruthy();
-    // No deck.json → no renderable deck → done without a specific contract error.
+    // Wrong canvas is a hard error at the terminal gate → done with the error.
     expect(result.status).toBe('done');
-    expect(result.slideCount).toBe(0);
-    expect(result.error).toBeUndefined();
+    expect(result.slideCount).toBe(1);
+    expect(result.error).toContain('16_9');
   });
 
   it('marks done with a specific terminal error for a pre-existing hard-invalid deck.json', async () => {

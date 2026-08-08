@@ -48,6 +48,7 @@ function builtProject(): SlideProject {
     createdAt: 0,
     updatedAt: 0,
     phase: 'plan_ready',
+    mode: 'plan',
     canvas: '16:9',
     messages: [{ id: 'u1', role: 'user', content: 'my deck', createdAt: 0 }],
     files: [
@@ -208,6 +209,48 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(h.active!.messages.some((m) => Array.isArray((m as unknown as { toolCalls?: unknown }).toolCalls))).toBe(false);
     // plan skill + its references were loaded for the session
     expect(calls()).toBe(3);
+  });
+
+  it('createFromPrompt applies the passed mode to the new project (defaults to plan)', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'planning',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+brief\n' } }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+design\n' } }),
+          ),
+          toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' })),
+        ],
+      }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    // Explicit agent mode → new project carries it.
+    await agent.createFromPrompt('a deck', 'agent');
+    expect(h.active?.mode).toBe('agent');
+
+    // Fresh agent, no mode arg → defaults to plan.
+    const h2 = makeHost();
+    const agent2 = createSlideAgent(h2.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+    await agent2.createFromPrompt('another deck');
+    expect(h2.active?.mode).toBe('plan');
   });
 
   it('forwards deps.toolOptions.mcpTools into the plan session tool list (US-029)', async () => {
@@ -712,6 +755,332 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
       ),
     ).toBe(true);
   });
+
+  it('runs ONE corrective build round with an error_context turn when the deck fails verification', async () => {
+    const skills = makeSkillFetcher();
+    // Phase 1: build a dangling slideOrder id (02 has no HTML). Phase 2
+    // (corrective): add 02.html. Each phase = 2 model turns (tools then stop).
+    const { transport, calls, seenMessages } = makeTransport([
+      // phase 1, round 1
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01","02"]}\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>One</section>\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      // phase 1, round 2 (stop)
+      () => ({ content: 'Deck built.', toolCalls: [] }),
+      // corrective round (phase 2), round 1
+      () => ({
+        content: 'fixing',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/02.html',
+                diff: '@@\n+<section>Two</section>\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      // corrective round (phase 2), round 2 (stop)
+      () => ({ content: 'Fixed 02.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.runBuild();
+
+    expect(calls()).toBe(4); // 2 rounds per phase × 2 phases (initial + corrective)
+    // The corrective round's messages carry an error_context user turn naming the issue.
+    const correctiveMessages = seenMessages[2] ?? [];
+    expect(
+      correctiveMessages.some(
+        (m) => m.role === 'user' && m.content.includes('[verification]') && m.content.includes('02'),
+      ),
+    ).toBe(true);
+    // The corrective round started from the just-produced files (02.html now present).
+    expect(h.phase).toBe('ready');
+    expect(h.active?.files.some((f) => f.path === '/slides/02.html')).toBe(true);
+    expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Fixed 02.')).toBe(
+      true,
+    );
+  });
+
+  it('does NOT run a third round when the corrective round still fails verification (cap of 1)', async () => {
+    const skills = makeSkillFetcher();
+    // Phase 1: build a dangling 02 id. Phase 2 (corrective): produces nothing
+    // new, so the deck still fails verifyDeck — and must NOT trigger a third round.
+    const { transport, calls } = makeTransport([
+      // phase 1, round 1
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01","02"]}\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>One</section>\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      // phase 1, round 2 (stop)
+      () => ({ content: 'Deck built.', toolCalls: [] }),
+      // corrective round (phase 2), no new output → still dangling
+      () => ({ content: 'Deck built again.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.runBuild();
+
+    expect(calls()).toBe(3); // initial phase (2) + corrective phase (1) — no third phase
+    // Surfaces the verification failure with the specific dangling id.
+    expect(
+      h.active?.messages.some(
+        (m) => m.role === 'error' && m.content.includes('failed verification') && m.content.includes('02'),
+      ),
+    ).toBe(true);
+  });
+
+  it('continues the prior edit-session context across follow-ups (Phase 4)', async () => {
+    const skills = makeSkillFetcher();
+    const prior: APIMessage[] = [
+      { role: 'user', content: 'make the title font bold' },
+      { role: 'assistant', content: 'Bolded the title.' },
+    ];
+    const { transport, seenMessages } = makeTransport([
+      () => ({ content: 'Reverted the bold.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      mode: 'plan',
+      editTranscript: prior,
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.sendFollowUp('I did not like that');
+
+    // The edit session starts from the system prompt + prior edit transcript + the
+// new message — so the model sees what the previous follow-up changed. (The
+// agent loop appends the model's reply to the same array; assert the segment
+// after the injected system message.)
+    const firstMessages = seenMessages[0] ?? [];
+    expect(firstMessages[1]?.role).toBe('user');
+    expect(firstMessages.slice(1, prior.length + 2)).toEqual([
+      ...prior,
+      { role: 'user', content: 'I did not like that' },
+    ]);
+    // The completed edit lands a fresh editTranscript on the project.
+    expect(h.active?.editTranscript).toBeDefined();
+  });
+
+  it('starts a fresh edit session with a single message when there is no prior edit context', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({ content: 'Done.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      mode: 'plan',
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.sendFollowUp('first follow-up');
+
+    const firstMessages = seenMessages[0] ?? [];
+    // No prior edit context: the first user message (after the injected system
+    // prompt) is the new follow-up, and no prior-edit content leaked in.
+    expect(firstMessages[1]).toEqual({ role: 'user', content: 'first follow-up' });
+    expect(firstMessages.some((m) => m.content === 'make the title font bold')).toBe(false);
+  });
+
+  it('flips the project mode to agent when the user clicks Build', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/slides/01.html',
+                diff: '@@\n+<section>Hello</section>\n',
+              },
+            }),
+          ),
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'create_file',
+                path: '/deck.json',
+                diff: '@@\n+{"title":"Coffee","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: 'Built.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    // A plan-mode project (mode 'plan', plan_ready) — the user clicks Build.
+    h.host.landProject({ ...builtProject(), mode: 'plan' });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.runBuild();
+
+    // The landed project reflects agent mode (execution), so the toggle shows Agent.
+    expect(h.active?.mode).toBe('agent');
+  });
+
+it('surfaces verification issues on a truncated edit whose deck fails verification', async () => {
+    const skills = makeSkillFetcher();
+    // Single tool call per round + maxRounds 1 → the edit truncates. The patch
+    // makes deck.json reference a dangling id (02 with no 02.html) → verifyDeck
+    // fails, so the truncated branch must surface the specific issues (not the
+    // generic max-rounds copy).
+    const { transport } = makeTransport([
+      () => ({
+        content: 'editing',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'update_file',
+                path: '/deck.json',
+                diff: '@@\n-{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01","02"]}\n',
+              },
+            }),
+          ),
+        ],
+      }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      mode: 'plan',
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{}' },
+        {
+          path: '/deck.json',
+          content: '{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}',
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 1,
+    });
+
+    await agent.sendFollowUp('add a slide');
+
+    // Truncated edit + failed verification → surfaces the specific dangling id,
+    // not the generic max-rounds copy.
+    expect(
+      h.active?.messages.some(
+        (m) =>
+          m.role === 'error' &&
+          m.content.includes('failed verification') &&
+          m.content.includes('02'),
+      ),
+    ).toBe(true);
+    expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);
+  });
 });
 
 describe('deriveSlideTitle', () => {
@@ -928,6 +1297,7 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
       createdAt: 0,
       updatedAt: 0,
       phase: 'error',
+      mode: 'plan',
       canvas: null,
       messages: [
         { id: 'u1', role: 'user', content: 'a coffee deck', createdAt: 0 },
@@ -978,6 +1348,7 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
       createdAt: 0,
       updatedAt: 0,
       phase: 'error',
+      mode: 'plan',
       canvas: null,
       messages: [
         { id: 'u1', role: 'user', content: 'a coffee deck for instagram', createdAt: 0 },
@@ -1086,6 +1457,7 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
       createdAt: 0,
       updatedAt: 0,
       phase: 'error',
+      mode: 'plan',
       canvas: null,
       messages: [
         { id: 'u1', role: 'user', content: 'deck brief', createdAt: 0 },
@@ -1107,6 +1479,7 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
       createdAt: 0,
       updatedAt: 0,
       phase: 'plan_ready',
+      mode: 'plan',
       canvas: '16:9',
       messages: [
         { id: 'u1', role: 'user', content: 'deck brief', createdAt: 0 },
@@ -1134,6 +1507,7 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
       createdAt: 0,
       updatedAt: 0,
       phase: 'plan_ready',
+      mode: 'plan',
       canvas: '16:9',
       messages: [{ id: 'u1', role: 'user', content: 'make it 12 slides', createdAt: 0 }],
       files: [],

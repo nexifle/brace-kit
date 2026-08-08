@@ -212,12 +212,13 @@ export interface DeckJsonValidation {
  * checks (theme path exists, slideOrder ids have backing HTML) are excluded:
  * the projection already degrades those gracefully.
  *
- * Only FORMAT-critical fields are gated: the `aspect` key (forbidden), any
- * unknown top-level field outside the contract (`title`, `description`, `canvas`,
- * `theme`, `slideOrder`), `canvas` (must be a colon preset), and `slideOrder`
- * (must be an array of ids). `title` and `theme` presence is intentionally NOT
- * gated — the projection degrades their absence gracefully ("Untitled deck" /
- * unstyled) and theme-less decks are an accepted, existing behavior.
+ * Only FORMAT-critical required values are gated as hard errors: `canvas` (must
+ * be a colon preset) and `slideOrder` (must be an array of ids). Extra top-level
+ * keys and the deprecated `aspect` key are ADVISORY warnings — the projection
+ * ignores them, so they never block a write. `title` and `theme` presence is
+ * intentionally NOT gated — the projection degrades their absence gracefully
+ * ("Untitled deck" / unstyled) and theme-less decks are an accepted, existing
+ * behavior.
  */
 export function validateDeckJson(files: SlideFile[]): DeckJsonValidation {
   const deckJson = getSlideFile(files, '/deck.json');
@@ -256,21 +257,23 @@ export function validateDeckJson(files: SlideFile[]): DeckJsonValidation {
   if (Object.prototype.hasOwnProperty.call(obj, 'aspect')) {
     issues.push({
       code: 'ASPECT_FORBIDDEN',
-      severity: 'error',
+      // Advisory only: the projection ignores `aspect`. Extra keys are allowed
+      // as long as the required values are correct — never a hard rejection.
+      severity: 'warning',
       message:
-        "The 'aspect' key is not part of the contract — model the ratio with the 'canvas' preset key and remove 'aspect'.",
+        "The 'aspect' key is ignored — model the ratio with the 'canvas' preset key and remove 'aspect'.",
     });
   }
-  // Contract allows exactly: title, description, canvas, theme, slideOrder.
-  // Any other top-level key is outside the contract (the projection ignores it).
-  // 'aspect' is excluded because it is reported separately with a specific message.
+  // The contract names these keys, but the agent MAY add more top-level fields
+  // (the projection ignores unknown keys) as long as the required values are
+  // correct. Unknown keys are advisory, never a hard rejection.
   const allowed = new Set(['title', 'description', 'canvas', 'theme', 'slideOrder']);
   const unknown = Object.keys(obj).filter((k) => !allowed.has(k) && k !== 'aspect');
   if (unknown.length > 0) {
     issues.push({
       code: 'UNKNOWN_FIELD',
-      severity: 'error',
-      message: `deck.json contains fields outside the contract: ${unknown.join(', ')}. Allowed: title, description, canvas, theme, slideOrder.`,
+      severity: 'warning',
+      message: `deck.json has extra fields the projection ignores: ${unknown.join(', ')}. Keep the required title, description, canvas, theme, slideOrder correct.`,
     });
   }
   if (!isSlideCanvas(obj.canvas)) {
@@ -303,6 +306,24 @@ export function validateDeckJson(files: SlideFile[]): DeckJsonValidation {
       });
     }
   }
+  // `theme` must be an absolute file path (e.g. `/theme.css`) that the
+  // projection can resolve against the VFS — never a bare token like `"dark"`.
+  // A MISSING theme stays valid (unstyled deck degrades gracefully); a PRESENT
+  // but non-path theme is a hard contract violation (build/projection can't
+  // consume it). This gate stops a plan phase from landing a deck.json the
+  // build phase would reject.
+  if (
+    obj.theme !== undefined &&
+    (typeof obj.theme !== 'string' ||
+      obj.theme.length === 0 ||
+      !obj.theme.startsWith('/'))
+  ) {
+    issues.push({
+      code: 'INVALID_THEME',
+      severity: 'error',
+      message: `theme must be an absolute file path like '/theme.css' (got ${JSON.stringify(obj.theme)}).`,
+    });
+  }
 
   return { ok: issues.length === 0, issues };
 }
@@ -315,6 +336,82 @@ export function hasHardDeckJsonErrors(validation: DeckJsonValidation): boolean {
 /** Join issues into a short bullet block, e.g. "- canvas: must be one of ...". */
 export function formatDeckJsonIssues(issues: DeckJsonIssue[]): string {
   return issues.map((i) => `- ${i.message}`).join('\n');
+}
+
+/**
+ * Deterministic post-build/edit self-check that a deck is renderable (Phase 1
+ * verification loop). Complements {@link validateDeckJson} by adding the
+ * referential checks the validator deliberately excludes: dangling slideOrder
+ * ids (no backing HTML), forbidden slide JavaScript, and a missing theme or
+ * per-slide CSS.
+ *
+ * Hard issues set `ok:false` and drive the corrective round. Per-slide CSS and
+ * theme are SOFT warnings only — the projection and {@link composeSlideHtml}
+ * already degrade their absence gracefully (unstyled but renderable), so they
+ * never flip `ok`. A dangling id (slide with no HTML at all), zero slides,
+ * slide JavaScript, or a deck.json hard violation is hard.
+ */
+export function verifyDeck(files: SlideFile[]): { ok: boolean; issues: string[] } {
+  const issues: string[] = [];
+  let hard = false;
+  const map = slidesToMap(files);
+
+  // 1. deck.json contract — hard violations are authoritative.
+  const v = validateDeckJson(files);
+  const deckHard = v.issues.filter((i) => i.severity === 'error');
+  if (deckHard.length > 0) {
+    hard = true;
+    issues.push('deck.json contract violations:\n' + formatDeckJsonIssues(deckHard));
+  }
+
+  // Raw slideOrder + theme from deck.json (NOT the ghost-filtered projection).
+  let slideOrder: string[] = [];
+  let theme: string | undefined;
+  const deckJson = map.get('/deck.json');
+  if (deckJson) {
+    try {
+      const parsed = JSON.parse(deckJson) as { slideOrder?: unknown; theme?: unknown };
+      if (Array.isArray(parsed?.slideOrder)) {
+        slideOrder = parsed.slideOrder.filter(
+          (id): id is string => typeof id === 'string' && Boolean(id),
+        );
+      }
+      if (typeof parsed?.theme === 'string') theme = parsed.theme;
+    } catch {
+      // INVALID_JSON already reported by validateDeckJson.
+    }
+  }
+
+  // 2. At least one slide.
+  if (slideOrder.length === 0) {
+    hard = true;
+    issues.push('deck.json slideOrder is empty — a renderable deck needs at least one slide.');
+  }
+
+  // 3. No dangling ids (missing HTML is hard), and no slide JavaScript.
+  for (const id of slideOrder) {
+    const htmlPath = slideHtmlPath(id);
+    const cssPath = `/slides/${id}${SLIDE_CSS_EXT}`;
+    if (!map.has(htmlPath)) {
+      hard = true;
+      issues.push(`Slide ${id} is in slideOrder but has no HTML at ${htmlPath}.`);
+    }
+    if (!map.has(cssPath)) {
+      issues.push(`Slide ${id} is in slideOrder but has no CSS at ${cssPath}.`);
+    }
+    const html = map.get(htmlPath);
+    if (html && html.includes('<script')) {
+      hard = true;
+      issues.push(`Slide ${id} contains a <script> tag — slide JavaScript is forbidden.`);
+    }
+  }
+
+  // 4. Soft: theme referenced by deck.json must exist.
+  if (theme && !map.has(theme)) {
+    issues.push(`deck.json theme references ${theme}, which is missing.`);
+  }
+
+  return { ok: !hard, issues };
 }
 
 

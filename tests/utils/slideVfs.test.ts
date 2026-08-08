@@ -22,6 +22,7 @@ import {
   validateDeckJson,
   formatDeckJsonIssues,
   hasHardDeckJsonErrors,
+  verifyDeck,
 } from '../../src/utils/slideVfs.ts';
 
 
@@ -351,6 +352,25 @@ describe('validateDeckJson', () => {
     expect(v.issues.map((i) => i.code)).toContain('INVALID_SLIDE_ORDER');
   });
 
+  test('rejects a theme value that is not an absolute path (INVALID_THEME)', () => {
+    // A bare color keyword like "dark" is NOT a file path and must be rejected
+    // so a plan phase can't land a deck.json the build phase can't consume.
+    const v = validateDeckJson(deckFiles('{"title":"T","canvas":"16:9","theme":"dark","slideOrder":["01"]}'));
+    expect(v.ok).toBe(false);
+    expect(v.issues.map((i) => i.code)).toContain('INVALID_THEME');
+    expect(v.issues.find((i) => i.code === 'INVALID_THEME')?.severity).toBe('error');
+  });
+
+  test('accepts an absolute-path theme and a missing theme', () => {
+    const withPath = validateDeckJson(deckFiles('{"title":"T","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}'));
+    expect(withPath.ok).toBe(true);
+    expect(withPath.issues.map((i) => i.code)).not.toContain('INVALID_THEME');
+
+    const noTheme = validateDeckJson(deckFiles('{"title":"T","canvas":"16:9","slideOrder":["01"]}'));
+    expect(noTheme.ok).toBe(true);
+    expect(noTheme.issues.map((i) => i.code)).not.toContain('INVALID_THEME');
+  });
+
   test('flags non-string slideOrder entries as INVALID_SLIDE_ORDER_ENTRY', () => {
     const v = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":["01",2]}'));
     expect(v.ok).toBe(false);
@@ -389,12 +409,15 @@ describe('validateDeckJson severity classification', () => {
     expect(hasHardDeckJsonErrors(missing)).toBe(false);
   });
 
-  test('unknown field, aspect, and invalid JSON are hard errors', () => {
+  test('unknown field and aspect are advisory warnings; invalid JSON is a hard error', () => {
+    // Extra top-level fields are allowed (projection ignores them) — advisory only.
     const unknown = validateDeckJson(deckFiles('{"canvas":"16:9","slideOrder":["01"],"slides":[]}'));
-    expect(unknown.issues.find((i) => i.code === 'UNKNOWN_FIELD')?.severity).toBe('error');
+    expect(unknown.issues.find((i) => i.code === 'UNKNOWN_FIELD')?.severity).toBe('warning');
+    expect(hasHardDeckJsonErrors(unknown)).toBe(false);
 
     const aspect = validateDeckJson(deckFiles('{"aspect":"16:9","canvas":"16:9","slideOrder":["01"]}'));
-    expect(aspect.issues.find((i) => i.code === 'ASPECT_FORBIDDEN')?.severity).toBe('error');
+    expect(aspect.issues.find((i) => i.code === 'ASPECT_FORBIDDEN')?.severity).toBe('warning');
+    expect(hasHardDeckJsonErrors(aspect)).toBe(false);
 
     const badJson = validateDeckJson(deckFiles('{ not json'));
     expect(badJson.issues[0]?.severity).toBe('error');
@@ -440,5 +463,84 @@ describe('formatDeckJsonIssues', () => {
 
   test('returns empty string for no issues', () => {
     expect(formatDeckJsonIssues([])).toBe('');
+  });
+});
+
+describe('verifyDeck', () => {
+  const validFiles = (): SlideFile[] => [
+    {
+      path: '/deck.json',
+      content: JSON.stringify({ title: 'T', canvas: '16:9', theme: '/theme.css', slideOrder: ['01', '02'] }),
+    },
+    { path: '/theme.css', content: ':root{}' },
+    { path: '/slides/01.html', content: '<section>one</section>' },
+    { path: '/slides/01.css', content: 'section{}' },
+    { path: '/slides/02.html', content: '<section>two</section>' },
+    { path: '/slides/02.css', content: 'section{}' },
+  ];
+
+  test('valid deck → ok:true with no issues', () => {
+    const r = verifyDeck(validFiles());
+    expect(r.ok).toBe(true);
+    expect(r.issues).toEqual([]);
+  });
+
+  test('dangling slideOrder id (missing HTML) → hard issue naming the id', () => {
+    const files = validFiles().filter((f) => f.path !== '/slides/01.html');
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(false);
+    expect(r.issues.join('\n')).toContain('01');
+    expect(r.issues.join('\n')).toContain('/slides/01.html');
+  });
+
+  test('missing per-slide CSS → soft warning only, ok stays true', () => {
+    const files = validFiles().filter((f) => f.path !== '/slides/02.css');
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(true);
+    expect(r.issues.join('\n')).toContain('/slides/02.css');
+  });
+
+  test('slideOrder id missing both HTML and CSS → flags both paths', () => {
+    const files = validFiles().filter(
+      (f) => f.path !== '/slides/02.html' && f.path !== '/slides/02.css',
+    );
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(false);
+    expect(r.issues.join('\n')).toContain('/slides/02.html');
+    expect(r.issues.join('\n')).toContain('/slides/02.css');
+  });
+
+  test('slide .html containing <script → hard issue', () => {
+    const files = validFiles();
+    const idx = files.findIndex((f) => f.path === '/slides/01.html');
+    files[idx] = { path: '/slides/01.html', content: '<script>alert(1)</script><section>x</section>' };
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(false);
+    expect(r.issues.join('\n')).toContain('<script>');
+  });
+
+  test('empty slideOrder → hard issue', () => {
+    const files = [
+      { path: '/deck.json', content: JSON.stringify({ title: 'T', canvas: '16:9', slideOrder: [] }) },
+    ];
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(false);
+    expect(r.issues.join('\n')).toContain('slideOrder is empty');
+  });
+
+  test('deck.json contract violation → hard issue surfaced', () => {
+    const files = [
+      { path: '/deck.json', content: '{ not json' },
+    ];
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(false);
+    expect(r.issues.join('\n')).toContain('not valid JSON');
+  });
+
+  test('missing referenced theme → soft warning only, ok stays true', () => {
+    const files = validFiles().filter((f) => f.path !== '/theme.css');
+    const r = verifyDeck(files);
+    expect(r.ok).toBe(true);
+    expect(r.issues.join('\n')).toContain('/theme.css');
   });
 });

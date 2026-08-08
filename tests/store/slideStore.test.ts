@@ -19,6 +19,7 @@ function makeProject(overrides: Partial<SlideProject> = {}): SlideProject {
     createdAt: 1000,
     updatedAt: 2000,
     phase: 'idle',
+    mode: 'plan',
     canvas: '16:9',
     messages: [],
     files: [
@@ -62,6 +63,23 @@ describe('slideStore', () => {
     expect(s.currentSlideIndex).toBe(0);
     expect(s.messages).toEqual([]);
     expect(s.panelView).toBe('split');
+  });
+
+  it('setProjectMode stores a default when no active project, and per-project mode when one exists', () => {
+    // No active project: records the selection as the default for new decks.
+    useSlideStore.getState().setProjectMode('agent');
+    expect(useSlideStore.getState().defaultMode).toBe('agent');
+    expect(useSlideStore.getState().activeProject).toBeNull();
+
+    // With an active project: sets + persists the per-project mode.
+    useSlideStore.getState().setActiveProjectData(makeProject());
+    useSlideStore.getState().setProjectMode('agent');
+    expect(useSlideStore.getState().activeProject?.mode).toBe('agent');
+
+    // Selecting a different default is still possible when a project is active
+    // (the toggle binds to the active project's mode, not the default).
+    useSlideStore.getState().setProjectMode('plan');
+    expect(useSlideStore.getState().activeProject?.mode).toBe('plan');
   });
 
 

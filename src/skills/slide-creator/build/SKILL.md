@@ -87,6 +87,12 @@ it to the matching pixel dimensions and safe-zone from the design system.
 - **HTML + CSS only.** No slide JavaScript, no `<script>` tags whatsoever; no
   external frameworks. Self-contained static slides only. If an emergency
   requires interactivity, it must be CSS-only.
+- **Google Fonts in `/theme.css`** — the font families named in `/design.md`'s
+  Typography section MUST be loaded from Google Fonts. Convert the `<link>`
+  snippet recorded in `/design.md` to an `@import url("<the href URL>");` placed
+  at the very top of `/theme.css` (extract the `href` value from the recorded
+  `<link>`; drop the `preconnect` lines). Use only those families for all slide
+  type. Never use a system font or a family not recorded in `/design.md`.
 - **Everything self-contained enough to render standalone** in the sandboxed
   preview: shared styles live in `/theme.css`, slide-local styles in the
   slide's `.css`, and slide markup in the `.html`. Each slide root should carry

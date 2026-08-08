@@ -157,6 +157,8 @@ export interface SlideProject {
   createdAt: number;
   updatedAt: number;
   phase: SlidePhase;
+  /** Lovable-style mode: 'plan' stops for approval on plan_ready; 'agent' auto-continues to build. */
+  mode: 'plan' | 'agent';
   /** Canvas aspect. Null until the user answers a canvas ask / submit_plan. */
   canvas: SlideCanvas | null;
   /** Main transcript entries (kept short — see PRD US-012). */
@@ -175,6 +177,12 @@ export interface SlideProject {
    * (US-..). Undefined until the first plan round completes.
    */
   planTranscript?: APIMessage[];
+  /**
+   * The isolated edit-session conversation from the last completed follow-up round,
+   * persisted so a subsequent follow-up CONTINUES the same context (the prior round's
+   * edits are visible to the model) instead of starting blank. Mirrors planTranscript.
+   */
+  editTranscript?: APIMessage[];
 }
 
 

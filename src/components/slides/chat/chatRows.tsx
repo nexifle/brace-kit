@@ -105,7 +105,7 @@ export function AgentReasoningRow({
             {live ? (
               <span
                 aria-hidden
-                className="ml-0.5 inline-block h-3 w-0.5 translate-y-0.5 animate-pulse bg-primary align-middle"
+                className="ml-0.5 inline-block h-3 w-0.5 translate-y-0.5 animate-pulse bg-primary"
               />
             ) : null}
           </p>

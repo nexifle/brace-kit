@@ -12,6 +12,7 @@ function project(phase: SlideProject['phase'] = 'idle'): SlideProject {
     createdAt: 0,
     updatedAt: 0,
     phase,
+    mode: 'plan',
     canvas: '16:9',
     messages: [],
     files: [],

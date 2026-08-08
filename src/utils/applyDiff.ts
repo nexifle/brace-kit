@@ -81,6 +81,8 @@ function normalise(s: string): string {
         case '\u2014':
         case '\u2015':
         case '\u2212':
+        case '\uFF0D': // fullwidth hyphen-minus — emitted by some models for "—"
+        case '\uFE63': // small hyphen-minus
           return '-';
         case '\u2018':
         case '\u2019':
@@ -486,6 +488,13 @@ interface Replacement {
   start: number;
   oldLen: number;
   newLines: string[];
+  /**
+   * In-line substring replacement for a single-line file: replace the
+   * (normalized-matched) substring `old` within `lines[start]` with `next`.
+   * Set when whole-line matching fails but the pattern is a substring of a
+   * file line (models often match just the changing part of single-line JSON).
+   */
+  inline?: { old: string; next: string };
 }
 
 function computeReplacements(
@@ -497,7 +506,21 @@ function computeReplacements(
   let lineIndex = 0;
   for (const chunk of chunks) {
     if (chunk.changeContext !== null) {
-      const idx = seekSequence(originalLines, [chunk.changeContext], lineIndex, false);
+      // The `@@` context is a hint that must exist somewhere in the file. Try
+      // exact line, then substring (models often echo only the changing
+      // fragment of a single-line file like /deck.json). Reject only when the
+      // context is absent entirely — never silently continue past a wrong
+      // context, so a model that references a nonexistent heading is corrected.
+      let idx = seekSequence(originalLines, [chunk.changeContext], lineIndex, false);
+      if (idx === null && chunk.changeContext.length > 0) {
+        const normCtx = normalise(chunk.changeContext);
+        for (let i = lineIndex; i < originalLines.length; i++) {
+          if (normalise(originalLines[i]).includes(normCtx)) {
+            idx = i;
+            break;
+          }
+        }
+      }
       if (idx === null) {
         return { rej: true, error: `Failed to find context '${chunk.changeContext}' in ${path}` };
       }
@@ -525,6 +548,37 @@ function computeReplacements(
     if (found !== null) {
       replacements.push({ start: found, oldLen: pattern.length, newLines: [...newSlice] });
       lineIndex = found + pattern.length;
+    } else if (pattern.length === 1) {
+      // Whole-line matching failed. Fall back to a substring match for a
+      // single-line pattern (models often match just the changing part of a
+      // single-line file like /deck.json). Since `normalise` is 1:1 per
+      // character, the normalized index maps directly onto the original line.
+      const pat = pattern[0];
+      const normPat = normalise(pat);
+      let inlineFound = -1;
+      if (normPat.length > 0) {
+        for (let i = 0; i < originalLines.length; i++) {
+          if (normalise(originalLines[i]).includes(normPat)) {
+            inlineFound = i;
+            break;
+          }
+        }
+      }
+      if (inlineFound !== -1) {
+        const next = newSlice.length > 0 ? newSlice.join('\n') : '';
+        replacements.push({
+          start: inlineFound,
+          oldLen: 0,
+          newLines: [],
+          inline: { old: pat, next },
+        });
+        lineIndex = inlineFound + 1;
+      } else {
+        return {
+          rej: true,
+          error: `Failed to find expected lines in ${path}:\n${chunk.oldLines.join('\n')}`,
+        };
+      }
     } else {
       return {
         rej: true,
@@ -538,7 +592,17 @@ function computeReplacements(
 
 function applyReplacements(lines: string[], replacements: Replacement[]): string[] {
   const ordered = [...replacements].sort((a, b) => b.start - a.start);
-  for (const { start, oldLen, newLines } of ordered) {
+  for (const { start, oldLen, newLines, inline } of ordered) {
+    if (inline) {
+      // In-line substring replacement: map the normalized pattern back onto the
+      // original line (normalise is 1:1 per code point) and swap the substring.
+      const line = lines[start];
+      const idx = normalise(line).indexOf(normalise(inline.old));
+      if (idx !== -1) {
+        lines[start] = line.slice(0, idx) + inline.next + line.slice(idx + inline.old.length);
+      }
+      continue;
+    }
     for (let i = 0; i < oldLen; i++) {
       if (start < lines.length) lines.splice(start, 1);
     }

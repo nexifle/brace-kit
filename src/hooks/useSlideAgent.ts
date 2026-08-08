@@ -18,6 +18,13 @@ import { supportsFunctionCalling } from '../providers/presets.ts';
 import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
+import { SLIDE_CANVAS_PRESETS } from '../types/slides.ts';
+import {
+  composeSlideHtml,
+  projectDeckSlides,
+  rebuildDeckProjection,
+} from '../utils/slideVfs.ts';
+import type { SandboxParentToSandbox, SandboxToParent } from '../utils/slideRendererProtocol.ts';
 import type { MCPTool } from '../types/index.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
@@ -67,6 +74,7 @@ export function useSlideAgent() {
         patchActivity: (id, partial) => slideStore.patchActivity(id, partial),
         getActivity: () => useSlideStore.getState().activity,
         recordRound: (files, label) => slideStore.commitRound(files, label),
+        verifyRender: (files) => probeRenderSlides(files),
       },
       {
         // Live provider/model/key from main store — same pattern as canFunctionCall
@@ -100,6 +108,11 @@ export function useSlideAgent() {
     );
   }
 
+  // Stable reference — after the lazy init above TS narrows agentRef.current to
+  // non-null here; capture it so closures (the wrapped createFromPrompt) don't
+  // re-open the nullability.
+  const agent = agentRef.current;
+
   // Keep the slide sessions' MCP tool set in sync with the main store (US-029):
   // re-fetches + filters whenever the master switches or the server list changes
   // so a session reflects the same configured MCP tools as main chat. Mutating
@@ -125,13 +138,17 @@ export function useSlideAgent() {
   }, [enableTools, enableMCP, mcpServers]);
 
   return {
-    createFromPrompt: agentRef.current.createFromPrompt,
-    runBuild: agentRef.current.runBuild,
-    sendFollowUp: agentRef.current.sendFollowUp,
-    retryFailedPhase: agentRef.current.retryFailedPhase,
-    answerAsk: agentRef.current.answerAsk,
-    stop: agentRef.current.stop,
-    canUseFunctionCalling: agentRef.current.canUseFunctionCalling,
+    createFromPrompt: (prompt: string) =>
+      agent.createFromPrompt(
+        prompt,
+        useSlideStore.getState().defaultMode,
+      ),
+    runBuild: agent.runBuild,
+    sendFollowUp: agent.sendFollowUp,
+    retryFailedPhase: agent.retryFailedPhase,
+    answerAsk: agent.answerAsk,
+    stop: agent.stop,
+    canUseFunctionCalling: agent.canUseFunctionCalling,
   };
 }
 
@@ -148,6 +165,99 @@ async function fetchSlideMCPTools(): Promise<MCPTool[]> {
   const enabledServers = state.mcpServers.filter((s) => s.enabled !== false);
   const res = await chrome.runtime.sendMessage({ type: 'MCP_LIST_TOOLS' });
   return filterMCPTools(res?.tools ?? [], enabledServers);
+}
+
+/**
+ * Best-effort render probe (Phase 1 verification loop): mount a hidden sandbox
+ * iframe, wait for `ready`, render each deck slide via {@link composeSlideHtml}
+ * at the deck's canvas resolution, and return the ids whose `render` does not
+ * ack within a per-slide timeout. On ANY infrastructure failure (sandbox not
+ * ready, timeout, throw) it resolves `[]` — the probe is best-effort and never
+ * a hard blocker; the deterministic VFS `verifyDeck` is the authoritative
+ * corrective trigger.
+ */
+async function probeRenderSlides(files: SlideFile[]): Promise<string[]> {
+  const deck = rebuildDeckProjection(files);
+  const slides = projectDeckSlides(files, deck);
+  if (slides.length === 0 || !deck.canvas) return [];
+  const { width, height } = SLIDE_CANVAS_PRESETS[deck.canvas];
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText =
+    'position:fixed;left:-9999px;top:0;width:1px;height:1px;border:0;visibility:hidden;pointer-events:none;';
+  iframe.setAttribute('sandbox', 'allow-scripts');
+  iframe.src = chrome.runtime.getURL('slide-renderer.html');
+  document.body.appendChild(iframe);
+
+  const failed: string[] = [];
+  try {
+    const win = iframe.contentWindow;
+    if (!win) return [];
+
+    // Wait for the sandbox `ready` (or a short hard timeout). Unavailable
+    // sandbox -> skip the probe entirely (never flag every slide as failed).
+    const ready = new Promise<void>((resolve) => {
+      const onReady = (event: MessageEvent) => {
+        const msg = event.data as Partial<SandboxToParent>;
+        if (event.source === win && msg?.fromSandbox === true && msg.type === 'ready') {
+          window.removeEventListener('message', onReady);
+          resolve();
+        }
+      };
+      window.addEventListener('message', onReady);
+    });
+    let sandboxReady = false;
+    try {
+      await Promise.race([
+        ready,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('sandbox not ready')), 6000),
+        ),
+      ]);
+      sandboxReady = true;
+    } catch {
+      // fallthrough
+    }
+    if (!sandboxReady) return [];
+
+    let seq = 0;
+    const requestId = () => `slide-probe-${Date.now()}-${++seq}`;
+    const render = (html: string): Promise<void> =>
+      new Promise((resolve, reject) => {
+        const id = requestId();
+        const onReply = (event: MessageEvent) => {
+          const msg = event.data as Partial<SandboxToParent>;
+          if (event.source !== win || msg?.fromSandbox !== true) return;
+          if (msg.type === 'rendered' && msg.requestId === id) {
+            clearTimeout(timer);
+            window.removeEventListener('message', onReply);
+            resolve();
+          }
+        };
+        const timer = setTimeout(() => {
+          window.removeEventListener('message', onReply);
+          reject(new Error('render timed out'));
+        }, 5000);
+        window.addEventListener('message', onReply);
+        win.postMessage(
+          { type: 'render', html, width, height, requestId: id } as SandboxParentToSandbox,
+          '*',
+        );
+      });
+
+    for (const slide of slides) {
+      try {
+        await render(composeSlideHtml(files, slide, deck));
+      } catch {
+        failed.push(slide.id);
+      }
+    }
+  } catch {
+    return [];
+  } finally {
+    iframe.remove();
+  }
+  return failed;
 }
 
 /**

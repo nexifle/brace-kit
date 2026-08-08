@@ -66,6 +66,9 @@ The single shared stylesheet implementing `/design.md`. Key conventions:
 - Include baseline canvas sizing + safe-zone margins, type scale, spacing,
   shared radius/shadow vocabulary, and classes for the shared element families
   (gradient shape, dot pattern, stat slab, card, tag chip, progress, …).
+- Load the deck's fonts from Google Fonts: put the `@import url("…")` for the
+  families recorded in `/design.md` at the top of `/theme.css`, before any other
+  rules. Google Fonts is the only allowed external CSS resource.
 - Slides import/use it through the theme path set in `deck.json` `theme`.
 
 ## Hard constraints (why this contract matters)

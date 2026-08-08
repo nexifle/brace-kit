@@ -29,7 +29,11 @@ data-forward tech aesthetic with a neon accent").
 - (2–5 colors max, used deliberately)
 
 ## Typography
-- Fonts: <max 2 fonts> — <role for each>
+- Fonts: <max 2 Google Fonts families> — <role for each> (MUST be Google Fonts;
+  system fonts are not allowed)
+- Google Fonts import link: <the exact assets `<link>` snippet from
+  fonts.google.com for the families above, e.g.
+  `<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">`>
 - Sizes: headline / body / accent (≥40px headline on a 1080-wide canvas; scale
   with the canvas)
 - Hierarchy: <how the 2–3 levels are weighted>

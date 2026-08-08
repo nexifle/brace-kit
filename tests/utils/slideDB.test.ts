@@ -28,6 +28,7 @@ const project = (id: string, title = `Project ${id}`): SlideProject => ({
   createdAt: 1000,
   updatedAt: 2000,
   phase: 'plan',
+  mode: 'plan',
   canvas: '16:9',
   messages: [
     { id: 'm1', role: 'user', content: 'Build a deck', createdAt: 1000 },
@@ -76,6 +77,29 @@ describe('slideDB project CRUD', () => {
 
   test('get returns null for a missing project', async () => {
     expect(await getSlideProject('nope')).toBeNull();
+  });
+
+  test('persists and restores editTranscript and defaults mode to plan when absent', async () => {
+    const p = project('p_edit');
+    // No editTranscript, no mode -> mode defaults to 'plan' on load.
+    await saveSlideProject(p);
+    let loaded = await getSlideProject('p_edit');
+    expect(loaded!.mode).toBe('plan');
+    expect(loaded!.editTranscript).toBeUndefined();
+
+    // With editTranscript + mode agent -> both round-trip.
+    const withEdit: SlideProject = {
+      ...p,
+      mode: 'agent',
+      editTranscript: [
+        { role: 'user', content: 'make the font bold' },
+        { role: 'assistant', content: 'Done.' },
+      ],
+    };
+    await saveSlideProject(withEdit);
+    loaded = await getSlideProject('p_edit');
+    expect(loaded!.mode).toBe('agent');
+    expect(loaded!.editTranscript).toEqual(withEdit.editTranscript);
   });
 
   test('overwriting a project replaces its data (upsert)', async () => {

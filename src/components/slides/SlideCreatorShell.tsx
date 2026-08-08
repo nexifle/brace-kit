@@ -292,6 +292,46 @@ function PhaseChip({ busy, label }: { busy: boolean; label: string }) {
   );
 }
 
+/* Plan/Agent mode toggle (Lovable-style). Agent mode auto-continues plan -> build;
+   plan docs (brief.md, design.md, deck.json) are ALWAYS written in both modes. */
+function ModeToggle() {
+  const activeProject = useSlideStore((s) => s.activeProject);
+  const setProjectMode = useSlideStore((s) => s.setProjectMode);
+  const defaultMode = useSlideStore((s) => s.defaultMode);
+  const sessionStatus = useSlideStore((s) => s.sessionStatus);
+  const mode = activeProject?.mode ?? defaultMode;
+  const disabled = sessionStatus === 'running';
+  const options: Array<{ value: 'plan' | 'agent'; label: string; title: string }> = [
+    { value: 'plan', label: 'Plan', title: 'Plan mode: review and approve the plan before building' },
+    { value: 'agent', label: 'Agent', title: 'Agent mode: auto-build after planning (plan docs are still written)' },
+  ];
+  return (
+    <div
+      className="flex items-center shrink-0 rounded-md border border-border/80 bg-muted/50 p-0.5"
+      role="group"
+      aria-label="Slide Creator mode"
+    >
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          disabled={disabled}
+          title={o.title}
+          aria-pressed={mode === o.value}
+          onClick={() => setProjectMode(o.value)}
+          className={`px-2 h-6 rounded text-2xs font-semibold transition-colors ${
+            mode === o.value
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ==================================================================== */
 /* Wide chat rail — v0 full step stream + floating composer              */
 /* ==================================================================== */
@@ -357,6 +397,7 @@ function ChatRail({
                     <span className="text-sm font-medium text-foreground truncate" title={title}>
                       {title}
                     </span>
+                    <ModeToggle />
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
                     <button
@@ -454,6 +495,7 @@ function ChatDock({
           <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             Conversation
           </span>
+          <ModeToggle />
           <button
             type="button"
             onClick={onToggle}

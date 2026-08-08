@@ -27,6 +27,14 @@ Follow the bundled templates (`references/brief-template.md`,
 `references/design-template.md`) and draw the decorative system from
 `references/element-palette.md`.
 
+**Style words belong in `/design.md`, never in `/deck.json`'s `theme` field.**
+A user phrase like "dark theme", "light theme", "bold", "minimal", or "vibrant"
+describes the *visual style* — record it in `/design.md`'s color palette /
+visual-style section. The `theme` field in `/deck.json` is a **stylesheet file
+path** (e.g. `/theme.css`) that the build phase sets; it is NOT a color or style
+keyword. Never write a style word (e.g. `"dark"`) into `theme` — the harness
+rejects it.
+
 ## If this is a follow-up revision (docs already exist)
 
 When `/brief.md` and `/design.md` are already present in the workspace (this is a
@@ -112,7 +120,10 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
   - `/design.md`
   - `/deck.json` (deck meta only — set the `canvas` preset key plus title; not
     slide HTML). **Only write `canvas` after the user has chosen it** (prompt
-    or `ask` answer). Never invent a size.
+    or `ask` answer). Never invent a size. **Do NOT write `theme` or
+    `slideOrder`** — the build phase owns those (theme is a stylesheet path,
+    not a color keyword; slideOrder comes from the slides it builds). A bare
+    `theme` value like `"dark"` violates the deck contract and is rejected.
 - **You MUST NOT write `/slides/**`** (no slide HTML/CSS). That is the build
   phase's job. Any attempt to create or patch a file under `/slides/` is denied
   by the harness and returns `status: failed`.
@@ -186,6 +197,13 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
   prompt wants a rich, designed deck. A bold "editorial, lots of empty space"
   brief may rightly use almost none. Judge per prompt; never garnish for its own
   sake. Every slide should still get ≥1 visual anchor so none is bare text.
+- **Fonts MUST be Google Fonts** — every font family named in `/design.md`'s
+  Typography section must be a Google Fonts family, and the section MUST also
+  record the exact Google Fonts assets `<link>` import snippet for those
+  families (from fonts.google.com). Never choose a system font, and never leave
+  a font choice without its import link. If the user's requested brand font is
+  not on Google Fonts, pick the closest Google Fonts family and note the
+  substitution in `/design.md`.
 - **One visual system** — `design.md` defines the single shared system; variants
   differ in content/layout (brief.md), never in the design system.
 

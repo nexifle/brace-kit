@@ -87,6 +87,8 @@ export interface SlideStoreState {
   rounds: SlideRound[];
   /** Index into `rounds` currently active; -1 when no rounds exist. */
   roundIndex: number;
+  /** UI-level default Plan/Agent mode applied to newly created projects (no active project yet). */
+  defaultMode: 'plan' | 'agent';
 
 
   // --- selection / project lifecycle ---
@@ -100,6 +102,8 @@ export interface SlideStoreState {
     },
   ) => void;
   setPhase: (phase: SlidePhase) => void;
+  /** Set the active project's Plan/Agent mode (persisted). */
+  setProjectMode: (mode: 'plan' | 'agent') => void;
   /**
    * Set session status and derive `busy` from it.
    * Clears streaming buffers when leaving `running` via stop/error/done/idle/waiting_user.
@@ -195,6 +199,7 @@ const INITIAL_STATE = {
   panelView: 'split' as SlidePanelView,
   rounds: [] as SlideRound[],
   roundIndex: -1 as number,
+  defaultMode: 'plan' as 'plan' | 'agent',
 };
 
 /**
@@ -294,6 +299,16 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
 
 
   setPhase: (phase) => set({ phase }),
+
+  setProjectMode: (mode) =>
+    set((state) => {
+      // No active project yet (fresh/new deck): record the selection as the
+      // default so the next created project inherits it.
+      if (!state.activeProject) return { defaultMode: mode };
+      const nextProject = { ...state.activeProject, mode };
+      saveSlideProject(nextProject).catch(() => {});
+      return { activeProject: nextProject };
+    }),
 
   setSessionStatus: (sessionStatus) =>
     set((state) => {

@@ -148,24 +148,31 @@ function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
 }
 
 /**
- * Model-visible feedback appended to a successful /deck.json apply_patch result
- * for SOFT (warning) issues only — incomplete-but-progressible fields like a
- * missing canvas or slideOrder the build agent finalizes later. Hard (error)
- * violations are rejected by {@link dispatchApplyPatch} before adoption, so they
- * never reach this helper. Returns a warning block, or null when there are no
- * warnings. Build/edit only — plan-phase stub deck.json must not warn.
+ * Model-visible lint appended to a /deck.json apply_patch result (build/edit).
+ * Unlike the old strict rejection, the write is ALWAYS adopted — this helper
+ * only reports what's wrong so the model can fix it on its next turn. It
+ * surfaces every contract issue (hard and soft) as advisory feedback: wrong
+ * required values (canvas, slideOrder, theme, invalid JSON) and extra keys the
+ * projection ignores. A deleted deck.json is reported too, since the agent is
+ * allowed to delete it. Returns null when deck.json is absent-but-untouched in
+ * plan (stub must not warn) or contract-clean.
  */
-export function deckJsonWriteFeedback(
+export function deckJsonLint(
   files: import('../types/slides.ts').SlideFile[],
   phase: SlidePatchPhase,
 ): string | null {
   if (phase !== 'build' && phase !== 'edit') return null;
-  if (!getSlideFile(files, '/deck.json')) return null;
+  const deck = getSlideFile(files, '/deck.json');
+  if (!deck) {
+    // deck.json was deleted (allowed). Tell the agent the deck is now empty so
+    // it can recreate it — this is advisory, not a rejection.
+    return '\n\n[deck.json lint] /deck.json is missing — the deck currently has no metadata. Recreate it with title, canvas, theme, and slideOrder to make the deck renderable.';
+  }
   const v = validateDeckJson(files);
-  const soft = v.issues.filter((i) => i.severity === 'warning');
-  if (soft.length === 0) return null;
+  if (v.issues.length === 0) return null;
   return (
-    '\n\n[deck.json contract] not blocking, but note:\n' + formatDeckJsonIssues(soft)
+    '\n\n[deck.json lint] deck.json was saved but has issues to fix:\n' +
+    formatDeckJsonIssues(v.issues)
   );
 }
 
@@ -173,11 +180,13 @@ export function deckJsonWriteFeedback(
  * Dispatch `apply_patch` for a phase: parse flat or nested args, apply under
  * the phase allowlist, adopt files on success, emit activity.
  *
- * A /deck.json write that produces a HARD contract violation (extra fields,
- * forbidden aspect, wrong canvas value, malformed slideOrder, invalid JSON) is
- * REJECTED — the file is not adopted and the model gets a failed result telling
- * it what to fix, so a wrong deck.json is never created. Soft violations (missing
- * canvas/slideOrder the agent finalizes later) are applied with a warning.
+ * A /deck.json write is ALWAYS adopted, even when it violates the contract.
+ * Strict rejection was brittle — models repeatedly failed on deck.json edits
+ * (wrong context lines, refused deletes) and got stuck retrying. Instead the
+ * write lands and {@link deckJsonLint} reports exactly what's wrong (wrong
+ * values, extra keys, deleted file) so the model can fix it next turn. Deleting
+ * /deck.json is allowed. Missing canvas/slideOrder the agent finalizes later are
+ * fine and merely noted.
  */
 function dispatchApplyPatch(
   toolCall: ToolCall,
@@ -201,25 +210,12 @@ function dispatchApplyPatch(
   }
 
   const isDeck = safeSlidePath(op.path) === '/deck.json';
-  const v = isDeck ? validateDeckJson(result.files) : null;
-  const hard = v?.issues.filter((i) => i.severity === 'error') ?? [];
-  if (hard.length > 0) {
-    // Reject the write: do NOT adopt result.files, so currentFiles keeps the
-    // pre-write state and the wrong deck.json never lands.
-    const msg =
-      'Error: deck.json was not updated — it violates the deck contract:\n' +
-      formatDeckJsonIssues(hard) +
-      '\nFix deck.json and retry the write.';
-    emitter.failed(row, msg);
-    return { content: msg };
-  }
-
   currentFiles.length = 0;
   currentFiles.push(...result.files);
   onFilesChange?.(currentFiles);
   emitter.complete(row);
   if (op.path) emitter.fileChanged(op.type, op.path, round, toolCall.id);
-  const extra = isDeck ? deckJsonWriteFeedback(currentFiles, phase) : null;
+  const extra = isDeck ? deckJsonLint(currentFiles, phase) : null;
   return { content: extra ? result.output + extra : result.output };
 }
 
@@ -872,11 +868,14 @@ function mapBuildResult(
       const slideCount = deckSlideCount(files);
       const truncated = !!result.truncated;
       const v = validateDeckJson(files);
-      // Surface a specific error only for HARD contract violations (extra fields,
-      // forbidden aspect, wrong canvas, malformed slideOrder, invalid JSON). Soft
-      // warnings (missing canvas/slideOrder, which degrade gracefully) do not block.
-      // A deck.json entirely absent is a plain no-deliverable and keeps the generic
-      // narration.
+      // Surface a specific error only for HARD contract violations: invalid
+      // JSON/non-object, a present-but-wrong canvas, a present-but-malformed
+      // slideOrder, or a non-path theme. Extra top-level keys and the `aspect`
+      // key are advisory (the projection ignores them) and do NOT block
+      // readiness — the agent may add properties as long as the required values
+      // are correct. Soft warnings (missing canvas/slideOrder, which degrade
+      // gracefully) do not block. A deck.json entirely absent is a plain
+      // no-deliverable and keeps the generic narration (deleting it is allowed).
       const hasDeck = !!getSlideFile(files, '/deck.json');
       const contractError =
         !truncated && hasDeck && hasHardDeckJsonErrors(v)
@@ -954,6 +953,8 @@ export interface EditPhaseResult {
   truncated?: boolean;
   /** Model rounds completed when the phase ended. */
   rounds?: number;
+  /** The edit session conversation (minus the leading system message), for continuation. */
+  transcript?: APIMessage[];
 }
 
 /**
@@ -983,7 +984,9 @@ export async function runEditPhase(
       ? maxRoundsNoDeliverable('edit', mapped.rounds, mapped.slideCount)
       : PHASE_NO_DELIVERABLE.edit,
   });
-  return mapped;
+  // Carry the edit conversation (minus the leading system message) so a
+  // subsequent follow-up continues the same context (mirrors planTranscript).
+  return { ...mapped, transcript: stripSystemMessage(result.messages) };
 }
 
 /**
