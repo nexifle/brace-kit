@@ -4,6 +4,7 @@ import { useSlideStore } from '../../src/store/slideStore.ts';
 import {
   clearAllSlideProjects,
   getSlideActivity,
+  getSlideProject,
   saveSlideActivity,
   saveSlideProject,
   setLastActiveSlideProject,
@@ -594,6 +595,24 @@ describe('slideStore', () => {
     const s = useSlideStore.getState();
     expect(s.phase).toBe('build');
     expect(s.activeProject?.phase).toBe('build');
+  });
+
+  it('setPhase persists the phase to the active project so a later restore keeps it', async () => {
+    // Regression: agent-mode auto-build calls setPhase('build') but the project
+    // was not persisted, so navigating away and back restored phase 'plan_ready'
+    // and re-shown the plan panel during the build. setPhase must persist.
+    const project = makeProject({ id: 'proj_phase', phase: 'plan_ready' });
+    await saveSlideProject(project);
+    useSlideStore.getState().setActiveProjectData(makeProject({ id: 'proj_phase', phase: 'plan_ready' }));
+
+    useSlideStore.getState().setPhase('build');
+    expect(useSlideStore.getState().phase).toBe('build');
+    expect(useSlideStore.getState().activeProject?.phase).toBe('build');
+
+    // Re-navigate (fresh store) and restore the last-active project: the
+    // persisted phase must be 'build', not the stale 'plan_ready'.
+    const restored = await getSlideProject('proj_phase');
+    expect(restored?.phase).toBe('build');
   });
 
   it('restoreLastActiveProject hydrates the last-active project from slideDB', async () => {

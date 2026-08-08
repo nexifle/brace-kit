@@ -132,37 +132,39 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
         </p>
       </div>
 
-      {/* Chips */}
+      {/* Chips — for canvas questions show the canonical labeled presets only;
+          the agent's bare-key options would duplicate the same four ratios. */}
       {(chips.length > 0 || canvasChips.length > 0) && (
         <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
-          {canvasChips.map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => submitChip(key)}
-              className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-all duration-150 ${
-                answer === key
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              {SLIDE_CANVAS_PRESETS[key].label}
-            </button>
-          ))}
-          {chips.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => submitChip(chip)}
-              className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-all duration-150 ${
-                answer === chip
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              {chip}
-            </button>
-          ))}
+          {isCanvas
+            ? canvasChips.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => submitChip(key)}
+                  className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-all duration-150 ${
+                    answer === key
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  {SLIDE_CANVAS_PRESETS[key].label}
+                </button>
+              ))
+            : chips.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => submitChip(chip)}
+                  className={`flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-all duration-150 ${
+                    answer === chip
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  {chip}
+                </button>
+              ))}
         </div>
       )}
 

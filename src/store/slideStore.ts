@@ -298,7 +298,13 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     }),
 
 
-  setPhase: (phase) => set({ phase }),
+  setPhase: (phase) =>
+    set((state) => {
+      if (!state.activeProject || state.activeProject.phase === phase) return { phase };
+      const nextProject = { ...state.activeProject, phase, updatedAt: Date.now() };
+      saveSlideProject(nextProject).catch(() => {});
+      return { phase, activeProject: nextProject };
+    }),
 
   setProjectMode: (mode) =>
     set((state) => {

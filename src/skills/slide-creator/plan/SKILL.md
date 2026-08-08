@@ -166,6 +166,11 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
 
   Do not write plan files and do not call `submit_plan` until that answer is
   received. There is **no default canvas**.
+- **Keep the `question` concise — do NOT re-list the ratios in the question
+  text.** The allowed size options are rendered as labeled chips in the UI, so a
+  question like "What slide size / aspect ratio should this deck use?" is enough.
+  Never spell out "16:9, 4:5, 9:16, 1:1" or add per-ratio descriptions in the
+  question — that duplicates the chips and clutters the prompt.
 - For other facts: **ask only for information the user hasn't already provided**.
   If the prompt already states slide count, audience, goal, style, or brand
   assets, do NOT re-ask — use what was given.
@@ -177,6 +182,11 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
   or continue while a question is outstanding.
 - Do not ask merely to postpone a non-canvas decision you can reasonably infer.
   Canvas is the exception: never infer a size.
+- **Questions go through `ask` ONLY — never as trailing prose.** If you need an
+  answer at any point, call `ask` before `submit_plan`. Never end your summary
+  or the phase with a question or a "please confirm X / Y / Z" list. A question
+  at the end that isn't an `ask` tool call is a bug: either ask it properly
+  (with `ask`) or treat it as settled and state your assumption.
 
 
 ## Guidelines baked into `/brief.md` and `/design.md`
@@ -227,5 +237,10 @@ Give a short plain-language summary:
 - The niche/audience/goal assumptions you made (flag anything you guessed).
 - The one-line concept and the deck arc.
 - Where the two files are saved (`/brief.md`, `/design.md`).
-- Any question the user should answer before the build phase starts (brand
-  colors, logo, exact imagery).
+
+**Do NOT end the summary (or the plan phase) with questions or a "before we
+build, confirm X / Y / Z" list.** If you genuinely need an answer (brand colors,
+logo, exact imagery, slide count, etc.), that fact was missing and you should
+have already asked it with the `ask` tool BEFORE calling `submit_plan` — never
+leave it as trailing prose. The summary states what was decided and what you
+assumed; it asks nothing.
