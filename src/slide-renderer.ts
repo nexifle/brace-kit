@@ -86,7 +86,9 @@ async function capture(req: Extract<SandboxParentToSandbox, { type: 'capture' }>
       pixelRatio: 1,
       cacheBust: false,
       backgroundColor: backgroundColor ?? '#ffffff',
-      skipFonts: true,
+      // Embed slide @font-face (already data-URL-inlined by the parent) so exported
+      // text metrics match the preview; sandbox does no network fetch (FR-18).
+      skipFonts: false,
     });
   } finally {
     stage.style.width = previous.width;
