@@ -42,7 +42,7 @@ const project = (id: string, title = `Project ${id}`): SlideProject => ({
     id: 'ask1',
     toolCallId: 'tc1',
     sessionRef: 'plan',
-    payload: { question: 'Canvas?', options: ['16:9'], field: 'canvas' },
+    payload: { questions: [{ id: 'q1', text: 'Canvas?', options: ['16:9'], field: 'canvas' }] },
     createdAt: 1500,
   },
 });
@@ -70,7 +70,7 @@ describe('slideDB project CRUD', () => {
       { path: '/brief.md', content: '# Brief' },
       { path: '/design.md', content: '# Design' },
     ]);
-    expect(loaded!.pendingAsk?.payload.question).toBe('Canvas?');
+    expect(loaded!.pendingAsk?.payload.questions[0].text).toBe('Canvas?');
     expect(loaded!.pendingAsk?.toolCallId).toBe('tc1');
     expect(loaded!.createdAt).toBe(1000);
   });

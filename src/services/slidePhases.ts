@@ -55,6 +55,7 @@ import {
   validateDeckJson,
 } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
+import { normalizeAskPayload } from '../utils/slideAsk.ts';
 import {
   askAnsweredLabel,
   connectingActivityLabel,
@@ -77,9 +78,22 @@ import {
 
 /** Arguments accepted by the `ask` tool (PRD Appendix A). */
 interface AskArgs {
+  /** Multi-question form (preferred). */
+  questions?: Array<{
+    id?: string;
+    question?: string;
+    text?: string;
+    options?: string[];
+    multiple?: boolean;
+    freeText?: boolean;
+    field?: SlidePendingAsk['payload']['questions'][number]['field'];
+  }>;
+  /** Legacy single-question form. */
   question?: string;
   options?: string[];
-  field?: SlidePendingAsk['payload']['field'];
+  multiple?: boolean;
+  freeText?: boolean;
+  field?: SlidePendingAsk['payload']['questions'][number]['field'];
 }
 
 /** Arguments accepted by `submit_plan` (FR-12). */
@@ -1189,15 +1203,15 @@ function stripSystemMessage(messages: APIMessage[]): APIMessage[] {
 function buildPendingAsk(toolCall: ToolCall): SlidePendingAsk {
   const parsed = args<AskArgs>(toolCall);
   const now = Date.now();
+  const payload =
+    normalizeAskPayload(parsed) ??
+    // Fallback so a malformed/empty call still suspends with a usable prompt.
+    normalizeAskPayload({ question: 'Could you clarify?' })!;
   return {
     id: `ask_${now}_${Math.random().toString(36).slice(2, 7)}`,
     toolCallId: toolCall.id,
     sessionRef: 'plan' as SlidePhase,
-    payload: {
-      question: typeof parsed.question === 'string' ? parsed.question : 'Could you clarify?',
-      options: Array.isArray(parsed.options) ? parsed.options : undefined,
-      field: parsed.field,
-    },
+    payload,
     createdAt: now,
   };
 }

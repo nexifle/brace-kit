@@ -115,18 +115,52 @@ const APPLY_PATCH_TOOL: MCPTool = {
 const ASK_TOOL: MCPTool = {
   name: 'ask',
   description:
-    'Ask the user a question and wait for their answer. Use when clarification is needed (canvas, slide count, audience, style, brand). User response is the tool result. Suspends the session until answered.',
+    'Ask the user one or more questions and wait for their answers. Use when clarification is needed (canvas, slide count, audience, style, brand). Each question may offer options (provide "options"); set "multiple": true to let the user pick several options, and "freeText": true to also let the user type their own answer. User responses are the tool result. Suspends the session until answered.',
   inputSchema: {
     type: 'object',
     properties: {
-      question: { type: 'string' },
+      questions: {
+        type: 'array',
+        description:
+          'One or more questions to ask at once. Each item: { question, options?, multiple?, freeText?, field? }.',
+        items: {
+          type: 'object',
+          properties: {
+            question: { type: 'string', description: 'The question text.' },
+            options: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Selectable choices. Omit for a free-text-only answer.',
+            },
+            multiple: {
+              type: 'boolean',
+              description: 'When true with options, the user may select several (multi-select).',
+            },
+            freeText: {
+              type: 'boolean',
+              description:
+                'When true with options, also show a free-text input so the user can add their own answer.',
+            },
+            field: {
+              type: 'string',
+              description: 'canvas | slide_count | audience | topic | style | brand | other',
+            },
+          },
+          required: ['question'],
+        },
+      },
+      question: {
+        type: 'string',
+        description: 'Legacy single-question form. Prefer "questions" for multiple at once.',
+      },
       options: { type: 'array', items: { type: 'string' } },
+      multiple: { type: 'boolean' },
+      freeText: { type: 'boolean' },
       field: {
         type: 'string',
         description: 'canvas | slide_count | audience | topic | style | brand | other',
       },
     },
-    required: ['question'],
   },
 };
 

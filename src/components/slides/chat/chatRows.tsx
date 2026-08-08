@@ -7,11 +7,12 @@ import {
   ChevronDown,
   ChevronRight,
   FileCode2,
+  HelpCircle,
   Loader2,
   X,
   Wrench,
 } from 'lucide-react';
-import type { SlideActivityEvent } from '../../../types/slides.ts';
+import type { SlideActivityEvent, SlideAskQuestion } from '../../../types/slides.ts';
 import type { SlideChatItem } from '../../../utils/slideChatItems.ts';
 import {
   formatThoughtDuration,
@@ -454,6 +455,72 @@ export function AgentGroup({
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Pair each question with the user's answer. A single question stores the bare
+ * answer ("16:9"); a multi-question ask stores a JSON object keyed by question id.
+ */
+function pairAskAnswers(
+  questions: SlideAskQuestion[],
+  answer: string,
+): Array<{ question: SlideAskQuestion; answer: string }> {
+  if (questions.length <= 1) {
+    return [{ question: questions[0], answer: answer.trim() }];
+  }
+  let map: Record<string, string | string[]> = {};
+  try {
+    const parsed = JSON.parse(answer);
+    if (parsed && typeof parsed === 'object') map = parsed;
+  } catch {
+    // Unparseable multi-question answer — fall through to a single combined row.
+  }
+  return questions.map((q) => {
+    const v = map[q.id];
+    const text = Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : '';
+    return { question: q, answer: text };
+  });
+}
+
+/** Claude-Code-style question + answer card for a completed `ask` tool call. */
+export function AskResultCard({
+  item,
+}: {
+  item: Extract<SlideChatItem, { type: 'ask_result' }>;
+}) {
+  const rows = pairAskAnswers(item.questions, item.answer);
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card/60 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      <div className="flex items-center gap-2 border-b border-border/70 bg-primary/5 px-3.5 py-2">
+        <span className="flex items-center justify-center h-6 w-6 rounded-lg bg-success/15 text-success shrink-0">
+          <CheckCircle2 size={14} />
+        </span>
+        <span className="text-2xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Answered
+        </span>
+      </div>
+      <div className="space-y-2.5 px-3.5 py-3">
+        {rows.map(({ question, answer }, i) => (
+          <div key={question.id} className="space-y-1">
+            <div className="flex items-start gap-1.5">
+              {rows.length > 1 && (
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                  {i + 1}
+                </span>
+              )}
+              <p className="text-[13px] font-medium leading-snug text-foreground">
+                {question.text}
+              </p>
+            </div>
+            <p className="flex items-start gap-1.5 pl-0 text-[13px] leading-snug text-muted-foreground">
+              <HelpCircle size={13} className="mt-0.5 shrink-0" />
+              <span className="break-words">{answer || '—'}</span>
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

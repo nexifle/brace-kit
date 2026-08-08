@@ -523,6 +523,10 @@ export function createSlideAgent(
     }
 
     host.recordAnswer(projectId, answer);
+    // Re-read the active project AFTER recording the answer so the resumed
+    // session's landProject spreads carry the ask message (otherwise the stale
+    // pre-answer snapshot would drop it from the transcript).
+    const current = host.getActiveProject() ?? project;
     if (blockPhase(project)) return;
 
     const systemPrompt = await phaseSystemPrompt('plan', project);
@@ -561,7 +565,7 @@ export function createSlideAgent(
       state.paused = result.paused ?? null;
       host.clearStreaming?.();
       const next: SlideProject = {
-        ...project,
+        ...current,
         files: result.files,
         pendingAsk: result.pendingAsk,
         updatedAt: Date.now(),
@@ -576,7 +580,7 @@ export function createSlideAgent(
       host.setPendingAsk(null);
       const canvas = pickCanvas(project.canvas, result.canvasChoice);
       const next: SlideProject = {
-        ...project,
+        ...current,
         files: result.files,
         phase: 'plan_ready',
         canvas,
@@ -603,7 +607,7 @@ export function createSlideAgent(
 
     if (result.status === 'done') {
       state.paused = null;
-      landNoDeliverable(project, result.files, result.content, 'plan', 'plan');
+      landNoDeliverable(current, result.files, result.content, 'plan', 'plan');
       return;
     }
 
@@ -611,7 +615,7 @@ export function createSlideAgent(
       state.paused = null;
       host.setPendingAsk(null);
       const next: SlideProject = {
-        ...project,
+        ...current,
         files: result.files,
         phase: 'error',
         pendingAsk: undefined,

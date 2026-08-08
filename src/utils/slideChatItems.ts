@@ -1,5 +1,6 @@
 import type {
   SlideActivityEvent,
+  SlideAskQuestion,
   SlideMainMessage,
   SlidePhase,
   SlideSessionStatus,
@@ -12,6 +13,13 @@ import { isMaxRoundsFailureLabel } from '../services/slidePhases.ts';
 
 export type SlideChatItem =
   | { type: 'user'; id: string; content: string; ts?: number }
+  | {
+      type: 'ask_result';
+      id: string;
+      questions: SlideAskQuestion[];
+      answer: string;
+      ts?: number;
+    }
   | {
       type: 'reasoning';
       id: string;
@@ -87,6 +95,9 @@ const OMIT_AS_ROW: Partial<Record<SlideActivityEvent['type'], true>> = {
   // model_round_* handled specially → durable "Thought for Ns" rows
   // file ops render as file_card; apply_patch tool row is redundant when
   // file_written/file_deleted follow — still show tool rows for non-file tools.
+  // ask_answered is redundant with the completed ask_result card (which already
+  // shows the question + answer under an "Answered" header).
+  ask_answered: true,
 };
 
 
@@ -469,12 +480,22 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
         drainActBuffer();
         flushPendingFooters();
         usedMessageIds.add(m.id);
-        items.push({
-          type: 'user',
-          id: `user_${m.id}`,
-          content: m.content,
-          ts: m.createdAt,
-        });
+        items.push(
+          m.role === 'ask' && m.ask
+            ? {
+                type: 'ask_result',
+                id: `ask_${m.id}`,
+                questions: m.ask.questions,
+                answer: m.content,
+                ts: m.createdAt,
+              }
+            : {
+                type: 'user',
+                id: `user_${m.id}`,
+                content: m.content,
+                ts: m.createdAt,
+              },
+        );
       } else if (isErrorMessage(m)) {
         // Errors still before the footer (part of the response body).
         drainActBuffer();

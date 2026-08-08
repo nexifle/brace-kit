@@ -104,7 +104,7 @@ describe('slideStore', () => {
       toolCallId: 'tc_1',
       sessionRef: 'plan' as const,
       createdAt: 123,
-      payload: { question: 'Which canvas?', field: 'canvas' as const },
+      payload: { questions: [{ id: 'q1', text: 'Which canvas?', field: 'canvas' as const }] },
     };
     const project = makeProject({ pendingAsk: ask });
     useSlideStore.getState().setActiveProjectData(project);
@@ -113,7 +113,7 @@ describe('slideStore', () => {
     expect(s.pendingAsk?.question).toBeUndefined();
     expect(s.pendingAsk?.id).toBe('ask_1');
     expect(s.pendingAsk?.projectId).toBe('proj_1');
-    expect(s.pendingAsk?.payload.question).toBe('Which canvas?');
+    expect(s.pendingAsk?.payload.questions[0].text).toBe('Which canvas?');
   });
 
   it('setActiveProjectData clears activity when switching projects without a feed', () => {
@@ -338,7 +338,7 @@ describe('slideStore', () => {
       toolCallId: 'tc_1',
       sessionRef: 'plan' as const,
       createdAt: 123,
-      payload: { question: 'Which canvas?', field: 'canvas' as const },
+      payload: { questions: [{ id: 'q1', text: 'Which canvas?', field: 'canvas' as const }] },
     };
     useSlideStore.getState().setActiveProjectData(makeProject({ pendingAsk: ask }));
     const s = useSlideStore.getState();
@@ -500,8 +500,8 @@ describe('slideStore', () => {
     s.setBusy(true);
     expect(useSlideStore.getState().busy).toBe(true);
 
-    s.setPendingAsk({ id: 'a', toolCallId: 't', sessionRef: 'plan', createdAt: 1, payload: { question: 'Q' }, projectId: 'p' });
-    expect(useSlideStore.getState().pendingAsk?.payload.question).toBe('Q');
+    s.setPendingAsk({ id: 'a', toolCallId: 't', sessionRef: 'plan', createdAt: 1, payload: { questions: [{ id: 'q1', text: 'Q' }] }, projectId: 'p' });
+    expect(useSlideStore.getState().pendingAsk?.payload.questions[0].text).toBe('Q');
 
     s.setMessages([{ id: 'm1', role: 'user', content: 'hi', createdAt: 1 }]);
     expect(useSlideStore.getState().messages).toHaveLength(1);
@@ -513,13 +513,13 @@ describe('slideStore', () => {
     expect(useSlideStore.getState().panelView).toBe('preview');
   });
 
-  it('answerAsk clears the pending ask and appends the answer to the transcript', () => {
+  it('answerAsk clears the pending ask and appends an ask message with question + answer', () => {
     const ask = {
       id: 'ask_1',
       toolCallId: 'tc_1',
       sessionRef: 'plan' as const,
       createdAt: 123,
-      payload: { question: 'Which canvas?', field: 'canvas' as const },
+      payload: { questions: [{ id: 'q1', text: 'Which canvas?', field: 'canvas' as const }] },
     };
     useSlideStore.getState().setActiveProjectData(makeProject({ pendingAsk: ask }));
     expect(useSlideStore.getState().pendingAsk).not.toBeNull();
@@ -529,8 +529,9 @@ describe('slideStore', () => {
     const s = useSlideStore.getState();
     expect(s.pendingAsk).toBeNull();
     expect(s.messages).toHaveLength(1);
-    expect(s.messages[0].role).toBe('user');
+    expect(s.messages[0].role).toBe('ask');
     expect(s.messages[0].content).toBe('4:5');
+    expect(s.messages[0].ask?.questions).toEqual([{ id: 'q1', text: 'Which canvas?', field: 'canvas' }]);
     expect(s.activeProject?.pendingAsk).toBeUndefined();
     expect(s.activeProject?.messages).toHaveLength(1);
   });
@@ -625,7 +626,7 @@ describe('slideStore', () => {
         toolCallId: 'tc_r',
         sessionRef: 'plan' as const,
         createdAt: 2,
-        payload: { question: 'Canvas?', field: 'canvas', options: ['16:9', '4:5'] },
+        payload: { questions: [{ id: 'q1', text: 'Canvas?', field: 'canvas', options: ['16:9', '4:5'] }] },
       },
     });
     await saveSlideProject(project);
@@ -641,7 +642,7 @@ describe('slideStore', () => {
     expect(s.activeProject?.messages).toHaveLength(1);
     // pending ask is re-shown on the restored project
     expect(s.pendingAsk?.projectId).toBe('proj_restore');
-    expect(s.pendingAsk?.payload.question).toBe('Canvas?');
+    expect(s.pendingAsk?.payload.questions[0].text).toBe('Canvas?');
     // deck projection rebuilt from restored VFS
     expect(s.deckSlides.map((sl) => sl.id)).toEqual(['01', '02']);
   });
@@ -706,7 +707,7 @@ describe('slideStore', () => {
         toolCallId: 'tc_1',
         sessionRef: 'plan',
         createdAt: 1000,
-        payload: { question: 'Canvas?', field: 'canvas' },
+        payload: { questions: [{ id: 'q1', text: 'Canvas?', field: 'canvas' }] },
       },
     });
     // The suspended ask emits a running activity row; stopping must settle it.
@@ -945,7 +946,7 @@ describe('slideStore', () => {
         id: 'ask1',
         toolCallId: 'tc1',
         sessionRef: 'plan',
-        payload: { question: 'Canvas?', options: ['16:9'], field: 'canvas' },
+        payload: { questions: [{ id: 'q1', text: 'Canvas?', options: ['16:9'], field: 'canvas' }] },
         createdAt: 1500,
         projectId: 'proj_1',
       });

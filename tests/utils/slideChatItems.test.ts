@@ -170,6 +170,90 @@ describe('buildSlideChatItems — full step retention', () => {
     expect(items.some((x) => x.type === 'plan_card')).toBe(false);
   });
 
+  it('renders answered ask messages as ask_result cards, not user bubbles', () => {
+    const items = buildSlideChatItems({
+      messages: [
+        msg({
+          id: 'ask1',
+          role: 'ask',
+          content: '4:5',
+          createdAt: 1,
+          ask: { questions: [{ id: 'q1', text: 'Which canvas?', field: 'canvas' }] },
+        }),
+      ],
+      activity: [],
+      sessionStatus: 'idle',
+      phase: 'plan_ready',
+      pendingAsk: false,
+    });
+    const cards = items.filter((x) => x.type === 'ask_result');
+    expect(cards.length).toBe(1);
+    expect(cards[0]).toMatchObject({
+      questions: [{ id: 'q1', text: 'Which canvas?', field: 'canvas' }],
+      answer: '4:5',
+    });
+    expect(items.some((x) => x.type === 'user')).toBe(false);
+  });
+
+  it('omits the ask_answered action row (redundant with the ask_result card)', () => {
+    const items = buildSlideChatItems({
+      messages: [
+        msg({
+          id: 'ask1',
+          role: 'ask',
+          content: '4:5',
+          createdAt: 1,
+          ask: { questions: [{ id: 'q1', text: 'Which canvas?', field: 'canvas' }] },
+        }),
+      ],
+      activity: [
+        ev({ id: 'ps', type: 'phase_started', phase: 'plan', ts: 1, status: 'running' }),
+        ev({
+          id: 'ask_ev',
+          type: 'ask_answered',
+          label: 'Answer received',
+          ts: 3,
+          status: 'completed',
+        }),
+      ],
+      sessionStatus: 'idle',
+      phase: 'plan_ready',
+      pendingAsk: false,
+    });
+    expect(
+      items.some((x) => x.type === 'action' && x.event.label === 'Answer received'),
+    ).toBe(false);
+  });
+
+  it('renders a multi-question ask_result and keeps ordinary user messages as bubbles', () => {
+    const items = buildSlideChatItems({
+      messages: [
+        msg({ id: 'u1', role: 'user', content: 'Make a deck', createdAt: 1 }),
+        msg({
+          id: 'ask2',
+          role: 'ask',
+          content: JSON.stringify({ q1: '16:9', q2: ['minimal', 'vibrant'] }),
+          createdAt: 2,
+          ask: {
+            questions: [
+              { id: 'q1', text: 'Canvas?', options: ['16:9', '4:5'] },
+              { id: 'q2', text: 'Styles?', options: ['minimal', 'vibrant', 'neon'], multiple: true },
+            ],
+          },
+        }),
+      ],
+      activity: [],
+      sessionStatus: 'idle',
+      phase: 'plan_ready',
+      pendingAsk: false,
+    });
+    const cards = items.filter((x) => x.type === 'ask_result');
+    expect(cards.length).toBe(1);
+    expect(cards[0].answer).toBe(JSON.stringify({ q1: '16:9', q2: ['minimal', 'vibrant'] }));
+    expect(cards[0].questions).toHaveLength(2);
+    expect(items.some((x) => x.type === 'user' && x.id === 'user_u1')).toBe(true);
+  });
+
   it('includes live running tool + live reasoning while session running', () => {
     // Live reasoning only while model_round is still open (last activity row).
     const openRound: SlideActivityEvent[] = [
@@ -596,16 +680,18 @@ describe('buildSlideChatItems — full step retention', () => {
       activity: [
         ev({ id: 'ps', type: 'phase_started', phase: 'plan', ts: 1, status: 'running' }),
         ev({
-          id: 'ask1',
-          type: 'ask_started',
-          label: 'Asking you a question',
+          id: 'sp1',
+          type: 'tool_started',
+          toolName: 'submit_plan',
+          label: 'Submitting plan',
           ts: 2,
           status: 'running',
         }),
         ev({
-          id: 'ask1',
-          type: 'ask_answered',
-          label: 'Answer received',
+          id: 'sp1',
+          type: 'tool_finished',
+          toolName: 'submit_plan',
+          label: 'Submitting plan',
           ts: 3,
           status: 'completed',
         }),

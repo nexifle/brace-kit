@@ -4,7 +4,14 @@ import {
   createSlideAgent,
   deriveSlideTitle,
 } from '../../src/services/slideOrchestrator.ts';
-import type { SlideProject, SlideFile, SlideActivityEvent } from '../../src/types/slides.ts';
+import type {
+  SlideActivityEvent,
+  SlideAskPayload,
+  SlideMainMessage,
+  SlidePendingAsk,
+  SlideProject,
+  SlideFile,
+} from '../../src/types/slides.ts';
 import type { APIMessage, ProviderConfig, ToolCall } from '../../src/types/index.ts';
 import type { AgentChatResponse } from '../../src/services/agentSession.ts';
 
@@ -106,6 +113,27 @@ function makeHost() {
     },
     recordAnswer: (projectId: string, answer: string) => {
       answered.push({ projectId, answer });
+      // Mirror the real store's answerAsk: append an ask message (question +
+      // answer) to the active project so landProject spreads don't drop it.
+      if (active && active.id === projectId) {
+        const pending = pendingAsk as
+          | (SlidePendingAsk & { payload?: SlideAskPayload })
+          | null;
+        const askMsg: SlideMainMessage = {
+          id: `askans_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          role: 'ask',
+          content: answer,
+          ...(pending?.payload?.questions
+            ? { ask: { questions: pending.payload.questions } }
+            : {}),
+          createdAt: Date.now(),
+        };
+        active = {
+          ...active,
+          pendingAsk: undefined,
+          messages: [...active.messages, askMsg],
+        };
+      }
     },
     refreshDeckFromFiles: (_files: SlideFile[]) => {},
     markStopped: () => {
@@ -300,7 +328,7 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     await agent.createFromPrompt('a deck');
 
     expect(h.pendingAsk).not.toBeNull();
-    expect(h.active?.pendingAsk?.payload.field).toBe('canvas');
+    expect(h.active?.pendingAsk?.payload.questions[0].field).toBe('canvas');
     expect(h.active?.phase).toBe('plan'); // phase unchanged, waiting on user
   });
 
@@ -354,6 +382,16 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
       ),
     ).toBe(true);
     expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);
+    // The answered ask (question + answer) must survive the resumed session's
+    // landProject — it used to be dropped by the stale pre-answer snapshot.
+    expect(
+      h.active?.messages.some(
+        (m) =>
+          m.role === 'ask' &&
+          m.content === '16:9' &&
+          m.ask?.questions[0]?.text === 'Canvas?',
+      ),
+    ).toBe(true);
   });
 
   it('surfaces an error message in the transcript when planning fails', async () => {
@@ -1151,7 +1189,7 @@ describe('createSlideAgent — stop generation (US-027)', () => {
         toolCallId: 'tc_1',
         sessionRef: 'plan',
         createdAt: 0,
-        payload: { question: 'Canvas?', field: 'canvas' },
+        payload: { questions: [{ id: 'q1', text: 'Canvas?', field: 'canvas' }] },
       },
     });
     const agent = createSlideAgent(h.host, {

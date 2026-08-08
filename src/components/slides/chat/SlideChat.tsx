@@ -16,6 +16,7 @@ import {
   AgentProse,
   AgentReasoningRow,
   AgentTurnFooter,
+  AskResultCard,
   ChatUserBubble,
 } from './chatRows.tsx';
 
@@ -203,6 +204,8 @@ export function SlideChat({
     switch (item.type) {
       case 'user':
         return <ChatUserBubble content={item.content} />;
+      case 'ask_result':
+        return <AskResultCard item={item} />;
       case 'reasoning':
         return <AgentReasoningRow item={item} />;
       case 'prose':

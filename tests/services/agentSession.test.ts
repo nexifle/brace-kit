@@ -42,7 +42,9 @@ function pendingAsk(question = 'Canvas?'): SlidePendingAsk {
     id: 'ask_1',
     toolCallId: 'tc_ask',
     sessionRef: 'plan',
-    payload: { question, options: ['16:9', '4:5'], field: 'canvas' },
+    payload: {
+      questions: [{ id: 'q1', text: question, options: ['16:9', '4:5'], field: 'canvas' }],
+    },
     createdAt: Date.now(),
   };
 }

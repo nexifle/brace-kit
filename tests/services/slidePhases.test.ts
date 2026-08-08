@@ -236,9 +236,9 @@ describe('runPlanPhase', () => {
     expect(calls()).toBe(1);
     expect(result.status).toBe('waiting_user');
     expect(result.pendingAsk).toBeTruthy();
-    expect(result.pendingAsk?.payload.field).toBe('canvas');
-    expect(result.pendingAsk?.payload.question).toBe('Canvas?');
-    expect(result.pendingAsk?.payload.options).toEqual(['16:9', '4:5']);
+    expect(result.pendingAsk?.payload.questions[0].field).toBe('canvas');
+    expect(result.pendingAsk?.payload.questions[0].text).toBe('Canvas?');
+    expect(result.pendingAsk?.payload.questions[0].options).toEqual(['16:9', '4:5']);
   });
 
   it('routes list_files and read_file without errors and completes as partial done', async () => {
@@ -340,7 +340,7 @@ describe('plan ask pause/resume state machine (US-016)', () => {
     expect(result.status).toBe('waiting_user');
     expect(result.pendingAsk).toBeTruthy();
     expect(result.pendingAsk?.toolCallId).toBe(askId);
-    expect(result.pendingAsk?.payload.field).toBe('canvas');
+    expect(result.pendingAsk?.payload.questions[0].field).toBe('canvas');
     expect(result.paused).toBeTruthy();
     // the /brief.md patch applied before the suspend is on the result VFS
     expect(result.files.some((f) => f.path === '/brief.md')).toBe(true);

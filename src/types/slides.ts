@@ -128,11 +128,30 @@ export type SlideAskField =
   | 'brand'
   | 'other';
 
+/**
+ * One question within an `ask` payload. `multiple: true` renders as multi-select
+ * checkboxes; otherwise single-select chips (or free text when no `options`).
+ * `freeText: true` additionally shows a free-text input alongside the options so
+ * the user can add a custom answer ("other").
+ */
+export interface SlideAskQuestion {
+  /** Stable id used to key the user's answer in the resume payload. */
+  id: string;
+  /** The question text. */
+  text: string;
+  /** Choice options; when present the question renders as selectable chips. */
+  options?: string[];
+  /** True = the user may select multiple options (multi-select). */
+  multiple?: boolean;
+  /** True = offer a free-text "add your own" input alongside the options. */
+  freeText?: boolean;
+  /** Field the question targets, used to surface contextual chips (e.g. canvas). */
+  field?: SlideAskField;
+}
+
 /** Payload delivered by the `ask` tool (see PRD Appendix A). */
 export interface SlideAskPayload {
-  question: string;
-  options?: string[];
-  field?: SlideAskField;
+  questions: SlideAskQuestion[];
 }
 
 /** A suspended question the plan session is waiting on the user to answer. */
@@ -141,7 +160,6 @@ export interface SlidePendingAsk {
   id: string;
   /** Id of the tool call that triggered the suspend, to resume with its result. */
   toolCallId: string;
-  /** Reference to the suspended session (e.g. phase name) for resuming. */
   sessionRef: SlidePhase;
   payload: SlideAskPayload;
   createdAt: number;
@@ -192,6 +210,12 @@ export interface SlideMainMessage {
   role: 'user' | 'assistant' | 'system' | 'ask' | 'summary' | 'error';
   content: string;
   createdAt: number;
+  /**
+   * For `role: 'ask'` messages: the question(s) that were asked, so the rail can
+   * render a polished question + answer card (Claude-Code-style tool result).
+   * `content` holds the user's answer.
+   */
+  ask?: { questions: SlideAskQuestion[] };
 }
 
 // ==================== Agentic UI runtime (Amendment A.3 / A.5) ====================

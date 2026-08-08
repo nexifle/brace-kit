@@ -651,6 +651,7 @@ export type {
   SlideMainMessage,
   SlideAskField,
   SlideAskPayload,
+  SlideAskQuestion,
   SlidePendingAsk,
   SlidePhase,
   SlideProject,

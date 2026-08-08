@@ -398,10 +398,13 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
   answerAsk: (projectId, answer, _attachments) =>
     set((state) => {
       if (!state.activeProject || state.activeProject.id !== projectId) return {};
+      const pending = state.pendingAsk;
       const message: SlideMainMessage = {
         id: `askans_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        role: 'user',
+        role: 'ask',
         content: answer,
+        // Carry the question(s) so the rail can render a question + answer card.
+        ...(pending ? { ask: { questions: pending.payload.questions } } : {}),
         createdAt: Date.now(),
       };
       return {
