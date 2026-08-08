@@ -32,8 +32,10 @@ export function SlideFilmstrip({
   const canvas = useSlideStore((s) => s.canvas);
 
   const rendererRef = useRef<SlideRendererHandle | null>(null);
-  const pendingCaptureRef = useRef(false);
-  const cancelledRef = useRef(false);
+  /** True while a capture loop is running (serializes renderer access). */
+  const capturingRef = useRef(false);
+  /** Set when a newer capture is requested while one is in flight -> re-run after. */
+  const recaptureRequestedRef = useRef(false);
   /** htmlPath -> data URL (or 'pending' while being captured). */
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const thumbsRef = useRef<Record<string, string>>({});
@@ -46,6 +48,17 @@ export function SlideFilmstrip({
   const canvasKey = canvas ?? deck.canvas;
   const preset = canvasKey ? SLIDE_CANVAS_PRESETS[canvasKey] : null;
 
+  // Latest-state mirrors so an in-flight (or re-run) capture reads the newest
+  // deck, not the render in which `captureAll` was created.
+  const activeProjectRef = useRef(activeProject);
+  activeProjectRef.current = activeProject;
+  const deckSlidesRef = useRef(deckSlides);
+  deckSlidesRef.current = deckSlides;
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
+  const presetRef = useRef(preset);
+  presetRef.current = preset;
+
 
   const commitThumbs = (patch: Record<string, string>) => {
     thumbsRef.current = { ...thumbsRef.current, ...patch };
@@ -53,32 +66,43 @@ export function SlideFilmstrip({
   };
 
   const captureAll = async () => {
-    const r = rendererRef.current;
-    if (!r || !activeProject || !preset || pendingCaptureRef.current) return;
-    pendingCaptureRef.current = true;
-    cancelledRef.current = false;
+    // A capture is already running; mark that we must re-run with the newest deck
+    // after the current one finishes. Never drop the request.
+    if (capturingRef.current) {
+      recaptureRequestedRef.current = true;
+      return;
+    }
+    capturingRef.current = true;
     onCapturingChangeRef.current?.(true);
     try {
-      for (const slide of deckSlides) {
-        if (cancelledRef.current) return;
-        const key = slide.htmlPath;
-        if (thumbsRef.current[key]) continue; // already captured
-        if (thumbsRef.current[key] === 'pending') continue;
-        const html = composeSlideHtml(activeProject.files, slide, deck);
-        const w = preset.width;
-        const h = preset.height;
+      do {
+        recaptureRequestedRef.current = false;
+        const r = rendererRef.current;
+        const proj = activeProjectRef.current;
+        const slides = deckSlidesRef.current;
+        const d = deckRef.current;
+        const p = presetRef.current;
+        if (!r || !proj || !p) break;
+        for (const slide of slides) {
+          if (recaptureRequestedRef.current) break;
+          const key = slide.htmlPath;
+          // Skip only committed thumbs; a 'pending' key is either being captured
+          // in this run or was abandoned by an aborted run — retry it either way.
+          if (thumbsRef.current[key] && thumbsRef.current[key] !== 'pending') continue;
 
-        try {
-          commitThumbs({ [key]: 'pending' });
-          await r.render(html, w, h);
-          const dataUrl = await r.capture(w, h);
-          if (!cancelledRef.current) commitThumbs({ [key]: dataUrl });
-        } catch {
-          // Best-effort: leave the numbered placeholder; never throw.
+          try {
+            commitThumbs({ [key]: 'pending' });
+            const html = composeSlideHtml(proj.files, slide, d);
+            await r.render(html, p.width, p.height);
+            const dataUrl = await r.capture(p.width, p.height);
+            if (!recaptureRequestedRef.current) commitThumbs({ [key]: dataUrl });
+          } catch {
+            // Best-effort: leave the numbered placeholder; never throw.
+          }
         }
-      }
+      } while (recaptureRequestedRef.current);
     } finally {
-      pendingCaptureRef.current = false;
+      capturingRef.current = false;
       onCapturingChangeRef.current?.(false);
     }
   };
@@ -87,13 +111,11 @@ export function SlideFilmstrip({
   const deckVersion = activeProject?.updatedAt ?? 0;
   useEffect(() => {
     if (!activeProject || deckSlides.length === 0) return;
-    cancelledRef.current = true; // supersede any in-flight capture
     const timer = setTimeout(() => {
       if (busy) return; // wait until the build/edit settles
       void captureAll();
     }, CAPTURE_DEBOUNCE_MS);
     return () => {
-      cancelledRef.current = true;
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
