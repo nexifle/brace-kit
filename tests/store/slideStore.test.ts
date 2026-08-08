@@ -709,6 +709,16 @@ describe('slideStore', () => {
         payload: { question: 'Canvas?', field: 'canvas' },
       },
     });
+    // The suspended ask emits a running activity row; stopping must settle it.
+    useSlideStore.getState().pushActivity({
+      id: 'ask_1',
+      type: 'ask_started',
+      status: 'running',
+      ts: 1000,
+      phase: 'plan',
+      toolCallId: 'tc_1',
+      label: 'Asking you a question',
+    });
     useSlideStore.getState().setBusy(true);
 
     useSlideStore.getState().markStopped();
@@ -719,6 +729,9 @@ describe('slideStore', () => {
     expect(s.pendingAsk).toBeNull();
     expect(s.activeProject?.stopped).toBe(true);
     expect(s.activeProject?.pendingAsk).toBeUndefined();
+    // The running ask row is settled to cancelled so the rail stops animating.
+    expect(s.activity.find((ev) => ev.id === 'ask_1')?.status).toBe('cancelled');
+    expect(s.activity.every((ev) => ev.status !== 'running')).toBe(true);
   });
 
   it('setActiveProjectData restores the persisted activity feed (US-047)', () => {

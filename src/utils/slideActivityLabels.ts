@@ -133,6 +133,20 @@ export function toolFailedLabel(reason: string, runningLabel?: string): string {
 }
 
 /**
+ * tool_finished cancelled: replace the running present-continuous label with a
+ * cancelled past-tense one (e.g. "Asking you a question" -> "Question canceled").
+ * Falls back to a generic "Canceled" for unknown labels.
+ */
+export function cancelledLabel(runningLabel?: string): string {
+  const label = (runningLabel ?? '').trim();
+  if (!label) return 'Canceled';
+  if (label === askStartedLabel()) return 'Question canceled';
+  // "Listing project files" -> "Canceled: Listing project files" reads poorly;
+  // prefer a terse generic for anything we don't have an explicit mapping for.
+  return 'Canceled';
+}
+
+/**
  * Build the normative `tool_started` label from tool name + optional args.
  * Unknown tools fall through to MCP-style `Running {name}`.
  */

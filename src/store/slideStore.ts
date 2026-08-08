@@ -430,20 +430,34 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     }),
 
   markStopped: () =>
-    set((state) => ({
-      busy: false,
-      sessionStatus: 'stopped' as SlideSessionStatus,
-      pendingAsk: null,
-      streamingText: '',
-      streamingReasoning: '',
-      activeProject: state.activeProject
-        ? {
-            ...state.activeProject,
-            stopped: true,
-            pendingAsk: undefined,
-          }
-        : null,
-    })),
+    set((state) => {
+      // Any in-flight activity rows (e.g. a suspended `ask` tool call) must be
+      // marked cancelled so the rail stops showing their running spinner.
+      const hadRunning = state.activity.some((ev) => ev.status === 'running');
+      const activity = capSlideActivity(
+        state.activity.map((ev) =>
+          ev.status === 'running' ? { ...ev, status: 'cancelled' as const } : ev,
+        ),
+      );
+      if (state.activeProjectId && hadRunning) {
+        persistActivity(state.activeProjectId, activity);
+      }
+      return {
+        busy: false,
+        sessionStatus: 'stopped' as SlideSessionStatus,
+        pendingAsk: null,
+        streamingText: '',
+        streamingReasoning: '',
+        activity,
+        activeProject: state.activeProject
+          ? {
+              ...state.activeProject,
+              stopped: true,
+              pendingAsk: undefined,
+            }
+          : null,
+      };
+    }),
 
   deleteProject: async (projectId) => {
     await deleteSlideProject(projectId);

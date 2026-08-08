@@ -3,6 +3,7 @@ import {
   applyPatchOpLabel,
   askAnsweredLabel,
   askStartedLabel,
+  cancelledLabel,
   connectingActivityLabel,
   fileDeletedLabel,
   fileWrittenLabel,
@@ -105,6 +106,12 @@ describe('slideActivityLabels (Amendment A.5)', () => {
     const label = toolFailedLabel(long);
     expect(label.startsWith('Failed: ')).toBe(true);
     expect(label.length).toBeLessThanOrEqual('Failed: '.length + 80);
+  });
+
+  it('tool_finished cancelled label rewrites the ask label', () => {
+    expect(cancelledLabel(askStartedLabel())).toBe('Question canceled');
+    expect(cancelledLabel('Listing project files')).toBe('Canceled');
+    expect(cancelledLabel()).toBe('Canceled');
   });
 
   it('file_written / file_deleted use past-tense card titles', () => {

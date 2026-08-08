@@ -8,7 +8,7 @@ import {
   ChevronRight,
   FileCode2,
   Loader2,
-  Minus,
+  X,
   Wrench,
 } from 'lucide-react';
 import type { SlideActivityEvent } from '../../../types/slides.ts';
@@ -20,6 +20,7 @@ import {
 import { slideTouchSymbol } from '../../../utils/slideFilesTouched.ts';
 import {
   applyPatchOpDoneLabel,
+  cancelledLabel,
   type SlidePatchOpLabel,
 } from '../../../utils/slideActivityLabels.ts';
 import { MarkdownBody } from '../../message/MarkdownBody.tsx';
@@ -149,7 +150,7 @@ function statusIcon(status: SlideActivityEvent['status']) {
     return <AlertCircle size={13} className="text-destructive dark:text-red-300" />;
   }
   if (status === 'cancelled') {
-    return <Minus size={13} className="text-muted-foreground" />;
+    return <X size={13} className="text-warning" />;
   }
   return <CheckCircle2 size={13} className="text-success/80" />;
 }
@@ -166,6 +167,8 @@ export function AgentActionRow({
     !(event.label && event.detail && event.label.endsWith(event.detail))
       ? event.detail
       : null;
+  const label =
+    event.status === 'cancelled' ? cancelledLabel(event.label) : event.label;
 
   return (
     <div
@@ -179,7 +182,7 @@ export function AgentActionRow({
       <span className="min-w-0 flex-1">
         <span className="inline-flex items-center gap-1.5">
           <Wrench size={12} className="opacity-50" />
-          <span className="break-words">{event.label}</span>
+          <span className="break-words">{label}</span>
         </span>
         {detail ? (
           <span className="mt-0.5 block whitespace-pre-wrap break-words text-[12px] opacity-70">
