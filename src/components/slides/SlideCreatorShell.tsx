@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   History,
   Loader2,
+  BookOpen,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
@@ -30,6 +31,7 @@ import { ExportDeck } from './ExportDeck.tsx';
 import { RoundHistory } from './RoundHistory.tsx';
 import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
+import { PlanDocs } from './PlanDocs.tsx';
 import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
 import { SlideChat } from './chat/SlideChat.tsx';
 import { SlideChatComposer } from './chat/SlideChatComposer.tsx';
@@ -602,6 +604,7 @@ export function SlideCreatorShell() {
   const [chatOpen, setChatOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
 
   const handleNew = () => {
     setHistoryOpen(false);
@@ -638,6 +641,20 @@ export function SlideCreatorShell() {
             <PhaseChip busy={busy && !!activeProject} label={phaseLabel} />
           </div>
         </div>
+        {(activeProject?.files ?? []).some((f) => f.path === '/brief.md' || f.path === '/design.md') ? (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setDocsOpen(true)}
+              className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Read the brief &amp; design"
+              aria-label="Open project brief and design"
+            >
+              <BookOpen size={15} />
+              <span className="hidden sm:inline">Docs</span>
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <div className="relative flex min-h-0 flex-1">
@@ -682,6 +699,8 @@ export function SlideCreatorShell() {
           </>
         )}
       </div>
+
+      <PlanDocs open={docsOpen} onClose={() => setDocsOpen(false)} />
     </div>
   );
 }
