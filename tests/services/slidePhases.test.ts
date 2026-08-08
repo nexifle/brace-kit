@@ -5,7 +5,6 @@ import {
   hasValidPlanFiles,
   runBuildPhase,
   runEditPhase,
-  deckJsonLint,
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
@@ -641,7 +640,6 @@ describe('runBuildPhase', () => {
         toolCalls: [
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/theme.css', diff: '@@\n+body{color:#111}\n' } })),
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section class="slide">Hello</section>\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"Coffee Deck","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
         ],
       }),
       () => ({ content: 'Deck complete.' }),
@@ -706,16 +704,6 @@ describe('runBuildPhase', () => {
                 type: 'create_file',
                 path: '/slides/01.html',
                 diff: '@@\n+<section>One</section>\n',
-              },
-            }),
-          ),
-          toolCall(
-            'apply_patch',
-            JSON.stringify({
-              operation: {
-                type: 'create_file',
-                path: '/deck.json',
-                diff: '@@\n+{"title":"T","canvas":"16:9","slideOrder":["01"]}\n',
               },
             }),
           ),
@@ -845,13 +833,12 @@ describe('runEditPhase', () => {
     expect(seenSystem).toContain('/design.md (approved)');
   });
 
-  it('adds a new slide via create_file and updates deck.json slideOrder', async () => {
+  it('adds a new slide via create_file and the harness grows deck.json slideOrder', async () => {
     const { transport } = makeTransport([
       () => ({
         content: 'adding slide 02',
         toolCalls: [
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/02.html', diff: '@@\n+<section class="slide">\n+  Second\n+</section>\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'update_file', path: '/deck.json', diff: '@@\n-    "01"\n+    "01",\n+    "02"\n' } })),
         ],
       }),
       () => ({ content: 'Added.' }),
@@ -1128,7 +1115,7 @@ describe('activity events for tool calls (US-036)', () => {
     expect(answered[0].status).toBe('completed');
   });
 
-  it('build phase emits tool_started + file_written rows for deck files', async () => {
+  it('build phase emits tool_started + file_written rows for slide/theme files', async () => {
     const { sink, events } = captureActivity();
     const buildFiles = makeFiles([
       { path: '/brief.md', content: '# brief' },
@@ -1139,7 +1126,6 @@ describe('activity events for tool calls (US-036)', () => {
         content: 'building',
         toolCalls: [
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>Hello</section>\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
         ],
       }),
       () => ({ content: 'done.' }),
@@ -1155,10 +1141,11 @@ describe('activity events for tool calls (US-036)', () => {
     });
 
     expect(result.status).toBe('ready');
-    expect(events.filter((e) => e.type === 'tool_started' && e.status === 'completed').length).toBe(2);
+    expect(events.filter((e) => e.type === 'tool_started' && e.status === 'completed').length).toBe(1);
     const written = events.filter((e) => e.type === 'file_written');
     expect(written.map((e) => e.path)).toContain('/slides/01.html');
-    expect(written.map((e) => e.path)).toContain('/deck.json');
+    // /deck.json is code-generated, not an apply_patch write — no file_written row.
+    expect(written.map((e) => e.path)).not.toContain('/deck.json');
     expect(written.every((e) => e.phase === 'build')).toBe(true);
   });
 
@@ -1272,7 +1259,6 @@ describe('phase lifecycle activity events (US-037)', () => {
         content: 'building',
         toolCalls: [
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>Hello</section>\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
         ],
       }),
       () => ({ content: 'done.' }),
@@ -1437,83 +1423,15 @@ describe('phase lifecycle activity events (US-037)', () => {
   });
 });
 
-describe('deckJsonLint', () => {
-  const deckFiles = (content: string): SlideFile[] => [
-    { path: '/deck.json', content },
-  ];
-
-  it('reports a missing canvas (soft) in build', () => {
-    const out = deckJsonLint(
-      // canvas missing → warning (degradable); no hard errors.
-      deckFiles('{"title":"T","slideOrder":["01"]}'),
-      'build',
-    );
-    expect(out).not.toBeNull();
-    expect(out).toContain('[deck.json lint]');
-    expect(out).toContain('canvas');
-  });
-
-  it('reports in edit too (edit applies the same gate)', () => {
-    const out = deckJsonLint(
-      deckFiles('{"title":"T","slideOrder":["01"]}'),
-      'edit',
-    );
-    expect(out).not.toBeNull();
-    expect(out).toContain('canvas');
-  });
-
-  it('returns null for a plan-phase deck.json (plan stub must not lint)', () => {
-    const out = deckJsonLint(
-      deckFiles('{"title":"T","slideOrder":["01"]}'),
-      'plan',
-    );
-    expect(out).toBeNull();
-  });
-
-  it('returns null for a contract-valid deck.json (silent)', () => {
-    const out = deckJsonLint(
-      deckFiles('{"title":"T","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}'),
-      'build',
-    );
-    expect(out).toBeNull();
-  });
-
-  it('reports a hard violation as advisory (write is adopted, not rejected)', () => {
-    // canvas 16_9 is a hard error; the write is adopted but the lint surfaces it.
-    const out = deckJsonLint(
-      deckFiles('{"title":"T","canvas":"16_9","slideOrder":["01"]}'),
-      'build',
-    );
-    expect(out).not.toBeNull();
-    expect(out).toContain('16_9');
-    expect(out).toContain('issues to fix');
-  });
-
-  it('reports an extra unknown field as advisory (allowed, projection ignores it)', () => {
-    const out = deckJsonLint(
-      deckFiles('{"title":"T","canvas":"16:9","slideOrder":["01"],"slides":[]}'),
-      'build',
-    );
-    expect(out).not.toBeNull();
-    expect(out).toContain('slides');
-    expect(out).toContain('issues to fix');
-  });
-
-  it('reports a deleted deck.json instead of returning null', () => {
-    const out = deckJsonLint([], 'build');
-    expect(out).not.toBeNull();
-    expect(out).toContain('/deck.json is missing');
-  });
-});
-
-describe('runBuildPhase deck.json contract enforcement', () => {
-  it('adopts a deck.json write with a hard violation (lint, not rejection)', async () => {
+describe('runBuildPhase deck.json code ownership', () => {
+  it('rejects a deck.json write and generates a valid code-owned deck.json', async () => {
     const { transport } = makeTransport([
       () => ({
-        content: 'writing',
+        content: 'building',
         toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/theme.css', diff: '@@\n+body{}\n' } })),
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>One</section>\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"T","canvas":"16_9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"T","canvas":"16:9","slideOrder":["01"]}\n' } })),
         ],
       }),
       () => ({ content: 'finished' }),
@@ -1530,22 +1448,29 @@ describe('runBuildPhase deck.json contract enforcement', () => {
       transport,
     });
 
-    // The hard-invalid deck.json is ADOPTED (no write-time rejection); the lint
-    // surfaces the issue and the terminal gate still flags it as not-ready.
-    expect(result.files.find((f) => f.path === '/deck.json')).toBeTruthy();
-    // /slides/01.html was accepted too.
-    expect(result.files.find((f) => f.path === '/slides/01.html')).toBeTruthy();
-    // Wrong canvas is a hard error at the terminal gate → done with the error.
-    expect(result.status).toBe('done');
+    // The deck.json write is REJECTED (code-owned), yet the deck is still valid:
+    // the harness generates deck.json from the slide files (theme.css → theme,
+    // 01.html → slideOrder ["01"]), so the run completes ready.
+    expect(result.status).toBe('ready');
     expect(result.slideCount).toBe(1);
-    expect(result.error).toContain('16_9');
+    const deck = result.files.find((f) => f.path === '/deck.json');
+    expect(deck).toBeTruthy();
+    expect(deck?.content).toContain('"01"');
+    expect(deck?.content).toContain('/theme.css');
+    // the agent's hand-written canvas was NOT adopted — the harness owns the shape
+    expect(deck?.content).not.toContain('"16:9"');
   });
 
-  it('marks done with a specific terminal error for a pre-existing hard-invalid deck.json', async () => {
-    // Deck.json is pre-seeded (e.g. inherited from plan or a prior run) with a
-    // hard violation; the model finishes without touching it. The terminal gate
-    // must surface the specific reason.
+  it('self-heals a pre-existing malformed deck.json on the first build patch', async () => {
+    // A legacy/hand-written deck.json that is invalid JSON is regenerated the
+    // moment the build agent makes any patch (dispatchApplyPatch re-syncs).
     const { transport } = makeTransport([
+      () => ({
+        content: 'building',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/02.html', diff: '@@\n+<section>Two</section>\n' } })),
+        ],
+      }),
       () => ({ content: 'finished' }),
     ]);
 
@@ -1557,14 +1482,18 @@ describe('runBuildPhase deck.json contract enforcement', () => {
         { path: '/brief.md', content: 'brief' },
         { path: '/design.md', content: 'design' },
         { path: '/slides/01.html', content: '<section>One</section>' },
-        { path: '/deck.json', content: '{"title":"T","canvas":"16_9","theme":"/theme.css","slideOrder":["01"]}' },
+        { path: '/deck.json', content: '{broken json' },
       ]),
       transport,
     });
 
-    expect(result.status).toBe('done');
-    expect(result.slideCount).toBe(1);
-    expect(result.error).toContain('canvas');
-    expect(result.error).toContain('16_9');
+    expect(result.status).toBe('ready');
+    expect(result.slideCount).toBe(2);
+    const deck = result.files.find((f) => f.path === '/deck.json');
+    expect(deck).toBeTruthy();
+    // valid JSON regenerated with both slides in natural order
+    expect(() => JSON.parse(deck!.content)).not.toThrow();
+    expect(deck?.content).toContain('"01"');
+    expect(deck?.content).toContain('"02"');
   });
 });

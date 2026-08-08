@@ -81,17 +81,17 @@ describe('parseApplyPatchArgs', () => {
 });
 
 describe('applyPatchHarness allowlists', () => {
-  test('plan allowlist is brief/design/deck meta only', () => {
+  test('plan allowlist is brief/design only (deck.json is code-owned)', () => {
     const a = allowlistForPhase('plan');
     expect(a).toContain('/brief.md');
     expect(a).toContain('/design.md');
-    expect(a).toContain('/deck.json');
+    expect(a).not.toContain('/deck.json');
     expect(a).not.toContain('/theme.css');
   });
 
-  test('build allowlist is deck/theme/slides only', () => {
+  test('build allowlist is theme/slides only (deck.json is code-owned)', () => {
     const a = allowlistForPhase('build');
-    expect(a).toContain('/deck.json');
+    expect(a).not.toContain('/deck.json');
     expect(a).toContain('/theme.css');
     expect(a).toContain('/slides/');
     expect(a).not.toContain('/brief.md');
@@ -107,6 +107,18 @@ describe('applyPatchHarness allowlists', () => {
 
   test('main phase cannot patch anything', () => {
     expect(allowlistForPhase('main')).toEqual([]);
+  });
+
+  test('deck.json is not writable in any phase (code-owned)', () => {
+    for (const phase of ['plan', 'build', 'edit'] as const) {
+      const res = applyPatchOperation([], phase, {
+        type: 'create_file',
+        path: '/deck.json',
+        diff: '+{}\n',
+      });
+      expect(res.status).toBe('failed');
+      if (res.status === 'failed') expect(res.output).toContain('/deck.json');
+    }
   });
 });
 

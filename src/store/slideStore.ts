@@ -17,6 +17,7 @@ import {
   projectDeckSlides,
   rebuildDeckProjection,
   slidesToMap,
+  syncDeckJson,
   upsertSlideFile,
 } from '../utils/slideVfs.ts';
 import {
@@ -548,13 +549,13 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     }
     const next = {
       ...s.activeProject,
-      files: s.rounds[index].files,
+      files: syncDeckJson(s.rounds[index].files),
       updatedAt: Date.now(),
     };
     saveSlideProject(next).catch(() => {});
     saveSlideRounds(projectId, s.rounds, index).catch(() => {});
     set({ activeProject: next, roundIndex: index });
-    get().setActiveDeckFromVfs(s.rounds[index].files);
+    get().setActiveDeckFromVfs(next.files);
   },
 
   setDeck: (activeDeck) =>

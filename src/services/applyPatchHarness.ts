@@ -154,9 +154,10 @@ function coerceObject(value: unknown): Record<string, unknown> | null {
 
 // ==================== Phase allowlists ====================
 
-const ALLOWED_DECK_META = '/deck.json';
-const ALLOWED_PLAN_FILES: string[] = ['/brief.md', '/design.md', ALLOWED_DECK_META];
-const ALLOWED_BUILD_PREFIXES: string[] = ['/slides/', '/theme.css', ALLOWED_DECK_META];
+// `/deck.json` is code-owned ({@link syncDeckJson}) and deliberately NOT in any
+// allowlist: the agent can list/read it but never patch it.
+const ALLOWED_PLAN_FILES: string[] = ['/brief.md', '/design.md'];
+const ALLOWED_BUILD_PREFIXES: string[] = ['/slides/', '/theme.css'];
 const ALLOWED_EDIT_FILES: string[] = ['/brief.md', '/design.md'];
 
 /**

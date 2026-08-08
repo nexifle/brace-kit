@@ -9,7 +9,7 @@ import {
   saveSlideProject,
   setLastActiveSlideProject,
 } from '../../src/utils/slideDB.ts';
-import type { SlideProject } from '../../src/types/slides.ts';
+import type { SlideProject, SlideFile } from '../../src/types/slides.ts';
 import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../../src/types/slides.ts';
 
 
@@ -833,16 +833,31 @@ describe('slideStore', () => {
   });
 
   describe('undo/redo rounds', () => {
+    // deck.json in these fixtures is already the exact code-generated canonical
+    // form, so restoreRound's syncDeckJson normalization is a no-op and the
+    // restored files equals the committed files array.
+    const canonicalDeck = `{
+  "title": "Test Deck",
+  "slideOrder": [
+    "01",
+    "02"
+  ],
+  "canvas": "16:9"
+}`;
     const r1Files = [
-      { path: '/deck.json', content: JSON.stringify({ title: 'Test Deck', slideOrder: ['01', '02'], canvas: '16:9' }) },
+      { path: '/deck.json', content: canonicalDeck },
       { path: '/slides/01.html', content: '<h1>One</h1>' },
       { path: '/slides/02.html', content: '<h1>Two</h1>' },
     ];
     const r2Files = [
-      { path: '/deck.json', content: JSON.stringify({ title: 'Test Deck', slideOrder: ['01', '02'], canvas: '16:9' }) },
+      { path: '/deck.json', content: canonicalDeck },
       { path: '/slides/01.html', content: '<h1>One v2</h1>' },
       { path: '/slides/02.html', content: '<h1>Two</h1>' },
     ];
+    // restoreRound normalizes deck.json via upsert, which moves it to the end of
+    // the array — compare file sets order-insensitively.
+    const sortFiles = (files: SlideFile[]) =>
+      [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
     it('commitRound appends checkpoints and advances roundIndex', () => {
       useSlideStore.getState().setActiveProjectData(makeProject());
@@ -877,7 +892,7 @@ describe('slideStore', () => {
 
       const s = useSlideStore.getState();
       expect(s.roundIndex).toBe(0);
-      expect(s.activeProject?.files).toEqual(r1Files);
+      expect(sortFiles(s.activeProject?.files ?? [])).toEqual(sortFiles(r1Files));
       expect(s.activeDeck?.slideOrder).toEqual(['01', '02']);
       expect(s.deckSlides.map((sl) => sl.id)).toEqual(['01', '02']);
       expect(s.deckSlides[0]?.htmlPath).toBe('/slides/01.html');
@@ -911,11 +926,11 @@ describe('slideStore', () => {
 
       await useSlideStore.getState().restoreRound('proj_1', 0);
       expect(useSlideStore.getState().roundIndex).toBe(0);
-      expect(useSlideStore.getState().activeProject?.files).toEqual(r1Files);
+      expect(sortFiles(useSlideStore.getState().activeProject?.files ?? [])).toEqual(sortFiles(r1Files));
 
       await useSlideStore.getState().restoreRound('proj_1', 1);
       expect(useSlideStore.getState().roundIndex).toBe(1);
-      expect(useSlideStore.getState().activeProject?.files).toEqual(r2Files);
+      expect(sortFiles(useSlideStore.getState().activeProject?.files ?? [])).toEqual(sortFiles(r2Files));
 
       // Restoring the current round is a no-op.
       await useSlideStore.getState().restoreRound('proj_1', 1);
@@ -953,6 +968,36 @@ describe('slideStore', () => {
       await useSlideStore.getState().restoreRound('proj_1', 0);
       expect(useSlideStore.getState().roundIndex).toBe(1);
       expect(useSlideStore.getState().activeProject?.files).toEqual(r2Files);
+    });
+
+    it('restoreRound self-heals a legacy hand-written deck.json (regression)', async () => {
+      useSlideStore.getState().setActiveProjectData(makeProject());
+      // A legacy round whose deck.json is dangling-invalid (references a slide
+      // with no HTML) is normalized on restore: slideOrder derived from the
+      // actual slide files, remaining meta preserved.
+      const legacyRound = [
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Legacy', canvas: '16:9', slideOrder: ['01', '99'] }),
+        },
+        { path: '/slides/01.html', content: '<h1>One</h1>' },
+      ];
+      useSlideStore.getState().commitRound(legacyRound, 'Legacy round');
+      // A second round makes roundIndex=1 so restoring index 0 actually runs.
+      useSlideStore.getState().commitRound(r1Files, 'Round 2');
+
+      await useSlideStore.getState().restoreRound('proj_1', 0);
+
+      const s = useSlideStore.getState();
+      const deck = s.activeProject?.files.find((f) => f.path === '/deck.json');
+      expect(deck).toBeTruthy();
+      const parsed = JSON.parse(deck!.content);
+      // dangling id 99 dropped, 01 kept, meta preserved
+      expect(parsed.slideOrder).toEqual(['01']);
+      expect(parsed.title).toBe('Legacy');
+      expect(parsed.canvas).toBe('16:9');
+      // projection built from the normalized files shows exactly the real slide
+      expect(s.deckSlides.map((sl) => sl.id)).toEqual(['01']);
     });
   });
 });

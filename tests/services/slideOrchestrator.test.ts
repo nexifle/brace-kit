@@ -691,9 +691,9 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     expect(h.activity.some((e) => e.type === 'file_written')).toBe(true);
   });
 
-  it('treats HTML-without-projectable-deck as build failure, not success', async () => {
-    // Regression: counting /slides/*.html alone claimed "Deck built with 5 slides"
-    // while mapBuildResult/activity correctly said no renderable deck (no deck.json).
+  it('auto-generates deck.json when the agent builds HTML without writing it', async () => {
+    // Code ownership: the agent writes only slide files; the harness derives
+    // deck.json (slideOrder = the slide ids), so the deck is ready.
     const skills = makeSkillFetcher();
     const { transport } = makeTransport([
       () => ({
@@ -719,7 +719,7 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
               },
             }),
           ),
-          // intentionally no /deck.json → slideOrder empty
+          // intentionally no /deck.json — the harness generates it
         ],
       }),
       () => ({ content: 'Deck built with 2 slides.' }),
@@ -735,24 +735,16 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
 
     await agent.runBuild();
 
-    expect(h.phase).toBe('error');
-    // Never claim success via summary; model claim may be assistant narration only.
-    expect(h.active?.messages.some((m) => m.role === 'summary' && /Deck built/.test(m.content))).toBe(
-      false,
-    );
+    expect(h.phase).toBe('ready');
+    const deck = h.active?.files.find((f) => f.path === '/deck.json');
+    expect(deck).toBeTruthy();
+    expect(deck?.content).toContain('"01"');
+    expect(deck?.content).toContain('"02"');
     expect(
       h.active?.messages.some(
         (m) => m.role === 'assistant' && m.content === 'Deck built with 2 slides.',
       ),
     ).toBe(true);
-    expect(
-      h.active?.messages.some(
-        (m) =>
-          m.role === 'error' && m.content.includes('without producing a renderable deck'),
-      ),
-    ).toBe(true);
-    expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);
-    expect(h.activity.some((e) => e.type === 'phase_completed')).toBe(false);
   });
 
   it('surfaces the specific deck.json contract violation instead of the generic no-deliverable copy', async () => {
@@ -796,8 +788,8 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
 
   it('runs ONE corrective build round with an error_context turn when the deck fails verification', async () => {
     const skills = makeSkillFetcher();
-    // Phase 1: build a dangling slideOrder id (02 has no HTML). Phase 2
-    // (corrective): add 02.html. Each phase = 2 model turns (tools then stop).
+    // Phase 1: build a slide with a forbidden <script> → verifyDeck fails.
+    // Phase 2 (corrective): remove the script. Each phase = 2 model turns.
     const { transport, calls, seenMessages } = makeTransport([
       // phase 1, round 1
       () => ({
@@ -808,18 +800,8 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
             JSON.stringify({
               operation: {
                 type: 'create_file',
-                path: '/deck.json',
-                diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01","02"]}\n',
-              },
-            }),
-          ),
-          toolCall(
-            'apply_patch',
-            JSON.stringify({
-              operation: {
-                type: 'create_file',
                 path: '/slides/01.html',
-                diff: '@@\n+<section>One</section>\n',
+                diff: '@@\n+<section>One</section>\n+<script>alert(1)</script>\n',
               },
             }),
           ),
@@ -835,16 +817,16 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
             'apply_patch',
             JSON.stringify({
               operation: {
-                type: 'create_file',
-                path: '/slides/02.html',
-                diff: '@@\n+<section>Two</section>\n',
+                type: 'update_file',
+                path: '/slides/01.html',
+                diff: '@@\n-<script>alert(1)</script>\n',
               },
             }),
           ),
         ],
       }),
       // corrective round (phase 2), round 2 (stop)
-      () => ({ content: 'Fixed 02.', toolCalls: [] }),
+      () => ({ content: 'Fixed 01.', toolCalls: [] }),
     ]);
 
     const h = makeHost();
@@ -862,21 +844,20 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     const correctiveMessages = seenMessages[2] ?? [];
     expect(
       correctiveMessages.some(
-        (m) => m.role === 'user' && m.content.includes('[verification]') && m.content.includes('02'),
+        (m) => m.role === 'user' && m.content.includes('[verification]') && m.content.includes('script'),
       ),
     ).toBe(true);
-    // The corrective round started from the just-produced files (02.html now present).
+    // The corrective round started from the just-produced files (script removed).
     expect(h.phase).toBe('ready');
-    expect(h.active?.files.some((f) => f.path === '/slides/02.html')).toBe(true);
-    expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Fixed 02.')).toBe(
-      true,
-    );
+    expect(h.active?.files.find((f) => f.path === '/slides/01.html')?.content.includes('<script')).toBe(false);
+    expect(h.active?.messages.some((m) => m.role === 'assistant' && m.content === 'Fixed 01.')).toBe(true);
   });
 
   it('does NOT run a third round when the corrective round still fails verification (cap of 1)', async () => {
     const skills = makeSkillFetcher();
-    // Phase 1: build a dangling 02 id. Phase 2 (corrective): produces nothing
-    // new, so the deck still fails verifyDeck — and must NOT trigger a third round.
+    // Phase 1: build a slide with a forbidden <script>. Phase 2 (corrective):
+    // produces nothing new, so the deck still fails verifyDeck — and must NOT
+    // trigger a third round.
     const { transport, calls } = makeTransport([
       // phase 1, round 1
       () => ({
@@ -887,18 +868,8 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
             JSON.stringify({
               operation: {
                 type: 'create_file',
-                path: '/deck.json',
-                diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01","02"]}\n',
-              },
-            }),
-          ),
-          toolCall(
-            'apply_patch',
-            JSON.stringify({
-              operation: {
-                type: 'create_file',
                 path: '/slides/01.html',
-                diff: '@@\n+<section>One</section>\n',
+                diff: '@@\n+<section>One</section>\n+<script>alert(1)</script>\n',
               },
             }),
           ),
@@ -906,7 +877,7 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
       }),
       // phase 1, round 2 (stop)
       () => ({ content: 'Deck built.', toolCalls: [] }),
-      // corrective round (phase 2), no new output → still dangling
+      // corrective round (phase 2), no new output → script still present
       () => ({ content: 'Deck built again.', toolCalls: [] }),
     ]);
 
@@ -921,10 +892,10 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     await agent.runBuild();
 
     expect(calls()).toBe(3); // initial phase (2) + corrective phase (1) — no third phase
-    // Surfaces the verification failure with the specific dangling id.
+    // Surfaces the verification failure with the specific forbidden script.
     expect(
       h.active?.messages.some(
-        (m) => m.role === 'error' && m.content.includes('failed verification') && m.content.includes('02'),
+        (m) => m.role === 'error' && m.content.includes('failed verification') && m.content.includes('script'),
       ),
     ).toBe(true);
   });
@@ -1074,8 +1045,8 @@ it('surfaces verification issues on a truncated edit whose deck fails verificati
             JSON.stringify({
               operation: {
                 type: 'update_file',
-                path: '/deck.json',
-                diff: '@@\n-{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01","02"]}\n',
+                path: '/slides/01.html',
+                diff: '@@\n <section>Hi</section>\n+<script>alert(1)</script>\n',
               },
             }),
           ),
@@ -1107,14 +1078,14 @@ it('surfaces verification issues on a truncated edit whose deck fails verificati
 
     await agent.sendFollowUp('add a slide');
 
-    // Truncated edit + failed verification → surfaces the specific dangling id,
-    // not the generic max-rounds copy.
+    // Truncated edit + failed verification → surfaces the specific forbidden
+    // script, not the generic max-rounds copy.
     expect(
       h.active?.messages.some(
         (m) =>
           m.role === 'error' &&
           m.content.includes('failed verification') &&
-          m.content.includes('02'),
+          m.content.includes('script'),
       ),
     ).toBe(true);
     expect(h.activity.some((e) => e.type === 'phase_failed')).toBe(true);

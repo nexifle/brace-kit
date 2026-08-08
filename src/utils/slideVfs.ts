@@ -180,6 +180,108 @@ export function deckSlideCount(files: SlideFile[]): number {
   return rebuildDeckProjection(files).slideOrder.length;
 }
 
+// ==================== Deck.json code ownership ====================
+
+/** Meta overrides for {@link syncDeckJson}; an omitted key preserves the current value. */
+export interface DeckMeta {
+  /** Override title. Omit to preserve the existing deck.json title (default 'Untitled deck'). */
+  title?: string;
+  /** Override canvas. Omit to preserve the existing deck.json canvas. */
+  canvas?: SlideCanvas;
+  /** Override description. Omit to preserve the existing deck.json description. */
+  description?: string;
+}
+
+/** Ids of every existing slide HTML file (basename minus `.html`), flat paths only. */
+export function collectSlideIds(files: SlideFile[]): string[] {
+  const map = slidesToMap(files);
+  const ids: string[] = [];
+  for (const path of map.keys()) {
+    if (!path.startsWith('/slides/') || !path.endsWith(SLIDE_HTML_EXT)) continue;
+    const id = path.slice('/slides/'.length, -SLIDE_HTML_EXT.length);
+    if (id.length === 0 || id.includes('/')) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Numeric-aware string compare (natsort): maximal digit-runs compare as numbers,
+ * non-digit runs as strings, and a number sorts before a string on a mismatch.
+ * Gives `01 < 02 < 10` and `step-1 < step-2 < step-10`.
+ */
+export function naturalCompare(a: string, b: string): number {
+  const tokenize = (s: string): string[] => Array.from(s.match(/\d+|\D+/g) ?? [s]);
+  const at = tokenize(a);
+  const bt = tokenize(b);
+  const len = Math.max(at.length, bt.length);
+  for (let i = 0; i < len; i++) {
+    const x = at[i];
+    const y = bt[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const xn = /^\d+$/.test(x) ? Number(x) : Number.NaN;
+    const yn = /^\d+$/.test(y) ? Number(y) : Number.NaN;
+    if (!Number.isNaN(xn) && !Number.isNaN(yn)) {
+      if (xn !== yn) return xn - yn;
+    } else if (!Number.isNaN(xn)) {
+      return -1; // number sorts before string
+    } else if (!Number.isNaN(yn)) {
+      return 1;
+    } else if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Regenerate `/deck.json` deterministically from the actual VFS slide files.
+ * `slideOrder` = natural-sorted ids of every `/slides/*.html` (a slide's id is its
+ * basename minus `.html` — same round-trip {@link slideHtmlPath} uses, so ANY
+ * basename the agent chooses is a valid id); `theme` = `/theme.css` when present;
+ * `title`/`canvas`/`description` come from `meta` when given, else are preserved
+ * from the current deck.json (defaults when absent or unparseable). Always emits
+ * valid JSON — a malformed or legacy hand-written deck.json self-heals. Returns a
+ * new array; never mutates `files`.
+ */
+export function syncDeckJson(files: SlideFile[], meta?: DeckMeta): SlideFile[] {
+  const map = slidesToMap(files);
+
+  const slideOrder = collectSlideIds(files).sort(naturalCompare);
+
+  let current: Record<string, unknown> = {};
+  const deckJson = map.get('/deck.json');
+  if (deckJson) {
+    try {
+      const p: unknown = JSON.parse(deckJson);
+      if (p && typeof p === 'object' && !Array.isArray(p)) current = p as Record<string, unknown>;
+    } catch {
+      current = {};
+    }
+  }
+
+  const title =
+    meta?.title ?? (typeof current.title === 'string' && current.title.length > 0
+      ? current.title
+      : 'Untitled deck');
+  const description =
+    meta?.description ??
+    (typeof current.description === 'string' && current.description.length > 0
+      ? current.description
+      : undefined);
+  const canvas = meta?.canvas ?? (isSlideCanvas(current.canvas) ? current.canvas : undefined);
+  const theme = map.has('/theme.css') ? '/theme.css' : undefined;
+
+  const deck: Record<string, unknown> = { title, slideOrder };
+  if (description !== undefined) deck.description = description;
+  if (canvas !== undefined) deck.canvas = canvas;
+  if (theme !== undefined) deck.theme = theme;
+
+  return upsertSlideFile(files, '/deck.json', JSON.stringify(deck, null, 2));
+}
+
+
 // ==================== Deck.json contract validation ====================
 
 /** A single deck.json contract violation (structural/shape only). */

@@ -143,7 +143,6 @@ describe('US-048 black-box activity regression guard', () => {
         content: 'building',
         toolCalls: [
           toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>Hello</section>\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"t","canvas":"16:9","theme":"/theme.css","slideOrder":["01"]}\n' } })),
         ],
       }),
       () => ({ content: 'done.' }),
@@ -160,7 +159,8 @@ describe('US-048 black-box activity regression guard', () => {
 
     expect(result.status).toBe('ready');
     assertBlackBoxFeed(events);
-    expect(events.filter((e) => e.type === 'file_written').length).toBe(2);
+    // only the slide is an apply_patch write; deck.json is code-generated, not a file_written row
+    expect(events.filter((e) => e.type === 'file_written').length).toBe(1);
   });
 
   it('edit: a simulated follow-up that patches the deck emits the full feed', async () => {

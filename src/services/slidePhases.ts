@@ -51,7 +51,7 @@ import {
   formatDeckJsonIssues,
   getSlideFile,
   hasHardDeckJsonErrors,
-  safeSlidePath,
+  syncDeckJson,
   validateDeckJson,
 } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
@@ -162,45 +162,14 @@ function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
 }
 
 /**
- * Model-visible lint appended to a /deck.json apply_patch result (build/edit).
- * Unlike the old strict rejection, the write is ALWAYS adopted — this helper
- * only reports what's wrong so the model can fix it on its next turn. It
- * surfaces every contract issue (hard and soft) as advisory feedback: wrong
- * required values (canvas, slideOrder, theme, invalid JSON) and extra keys the
- * projection ignores. A deleted deck.json is reported too, since the agent is
- * allowed to delete it. Returns null when deck.json is absent-but-untouched in
- * plan (stub must not warn) or contract-clean.
- */
-export function deckJsonLint(
-  files: import('../types/slides.ts').SlideFile[],
-  phase: SlidePatchPhase,
-): string | null {
-  if (phase !== 'build' && phase !== 'edit') return null;
-  const deck = getSlideFile(files, '/deck.json');
-  if (!deck) {
-    // deck.json was deleted (allowed). Tell the agent the deck is now empty so
-    // it can recreate it — this is advisory, not a rejection.
-    return '\n\n[deck.json lint] /deck.json is missing — the deck currently has no metadata. Recreate it with title, canvas, theme, and slideOrder to make the deck renderable.';
-  }
-  const v = validateDeckJson(files);
-  if (v.issues.length === 0) return null;
-  return (
-    '\n\n[deck.json lint] deck.json was saved but has issues to fix:\n' +
-    formatDeckJsonIssues(v.issues)
-  );
-}
-
-/**
  * Dispatch `apply_patch` for a phase: parse flat or nested args, apply under
  * the phase allowlist, adopt files on success, emit activity.
  *
- * A /deck.json write is ALWAYS adopted, even when it violates the contract.
- * Strict rejection was brittle — models repeatedly failed on deck.json edits
- * (wrong context lines, refused deletes) and got stuck retrying. Instead the
- * write lands and {@link deckJsonLint} reports exactly what's wrong (wrong
- * values, extra keys, deleted file) so the model can fix it next turn. Deleting
- * /deck.json is allowed. Missing canvas/slideOrder the agent finalizes later are
- * fine and merely noted.
+ * After a successful build/edit patch the VFS is re-synced via
+ * {@link syncDeckJson}: `/deck.json` is code-owned, its `slideOrder` recomputed
+ * from the actual `/slides/*.html` files and `theme` from `/theme.css`, so the
+ * deck is always valid no matter how many slides the agent created or deleted.
+ * Plan is docs-only and produces no slides, so it does not sync.
  */
 function dispatchApplyPatch(
   toolCall: ToolCall,
@@ -223,14 +192,17 @@ function dispatchApplyPatch(
     return { content: result.output };
   }
 
-  const isDeck = safeSlidePath(op.path) === '/deck.json';
   currentFiles.length = 0;
   currentFiles.push(...result.files);
+  if (phase === 'build' || phase === 'edit') {
+    const synced = syncDeckJson(currentFiles);
+    currentFiles.length = 0;
+    currentFiles.push(...synced);
+  }
   onFilesChange?.(currentFiles);
   emitter.complete(row);
   if (op.path) emitter.fileChanged(op.type, op.path, round, toolCall.id);
-  const extra = isDeck ? deckJsonLint(currentFiles, phase) : null;
-  return { content: extra ? result.output + extra : result.output };
+  return { content: result.output };
 }
 
 /**

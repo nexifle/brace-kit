@@ -31,7 +31,7 @@ import {
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
 import type { AgentTransport, AgentAbortFn, StreamDelta } from './agentSession.ts';
-import { isSlideCanvas, rebuildDeckProjection, verifyDeck } from '../utils/slideVfs.ts';
+import { isSlideCanvas, rebuildDeckProjection, syncDeckJson, verifyDeck } from '../utils/slideVfs.ts';
 import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
@@ -441,7 +441,7 @@ export function createSlideAgent(
       const canvas = pickCanvas(project.canvas, result.canvasChoice);
       const next: SlideProject = {
         ...project,
-        files: result.files,
+        files: syncDeckJson(result.files, { title: project.title, canvas: canvas ?? undefined }),
         phase: 'plan_ready',
         canvas,
         pendingAsk: undefined,
@@ -581,7 +581,7 @@ export function createSlideAgent(
       const canvas = pickCanvas(project.canvas, result.canvasChoice);
       const next: SlideProject = {
         ...current,
-        files: result.files,
+        files: syncDeckJson(result.files, { title: project.title, canvas: canvas ?? undefined }),
         phase: 'plan_ready',
         canvas,
         pendingAsk: undefined,

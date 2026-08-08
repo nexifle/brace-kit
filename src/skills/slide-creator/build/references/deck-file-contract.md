@@ -1,15 +1,16 @@
 # Deck File Contract — `/deck.json` + slide files
 
-The Build phase must produce files the projection and sandbox renderer can
-consume deterministically. Follow this contract exactly. **Do not add fields
-beyond those listed** — the projection reads exactly these keys and silently
-ignores (or rejects) anything else. A missing `canvas` degrades to the default
-`16:9` with NO error, and a missing `theme` means slides get no shared
-stylesheet — so keep the keys correct and present.
+The deck must be files the projection and sandbox renderer can consume
+deterministically. **`/deck.json` is maintained automatically by the harness
+and MUST NOT be written by the agent** — it is regenerated after every
+build/edit patch. The agent's job is to produce the slide files and `/theme.css`
+correctly; `deck.json` is derived from them. The contract below documents the
+shape the harness produces (so the agent can read it and confirm state), the
+per-slide-file rules that must hold, and the `/theme.css` conventions.
 
-## `/deck.json`
+## `/deck.json` (code-generated — read-only for the agent)
 
-A JSON object with exactly these fields:
+A JSON object the harness writes with exactly these fields:
 
 ```json
 {
@@ -23,28 +24,30 @@ A JSON object with exactly these fields:
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `title` | string | yes | Deck title shown in the UI. |
-| `description` | string | optional | Short one-liner. |
-| `canvas` | string | yes | The **colon-form aspect preset key** only: `16:9`, `4:5`, `9:16`, or `1:1`. This is what the projection resolves to pixel width/height + the safe zone. |
-| `theme` | string | yes | The **file path** to the shared stylesheet that this deck can load, e.g. `/theme.css`. The projection checks the path exists in the project; if it doesn't, no shared theme is applied. |
-| `slideOrder` | string[] | yes | Ordered slide ids, e.g. `["01","02"]`. Each id maps to `/slides/{id}.html` (+ `.css`). |
+| `title` | string | yes | Deck title shown in the UI. Seeded from the approved plan; otherwise `"Untitled deck"`. |
+| `description` | string | optional | Short one-liner. Preserved if present. |
+| `canvas` | string | yes | The **colon-form aspect preset key** only: `16:9`, `4:5`, `9:16`, or `1:1`. Set from the user's plan-phase canvas choice. |
+| `theme` | string | yes | The **file path** to the shared stylesheet, pinned to `/theme.css` when that file exists (omitted otherwise). |
+| `slideOrder` | string[] | yes | Slide ids in **natural (numeric-aware) sorted order** of the actual `/slides/*.html` basenames — derived, never hand-written. |
 
-### Contract rules
+### Contract rules (how the harness derives /deck.json)
 
-- **No `aspect` key.** The aspect ratio is modelled ONLY by the `canvas`
-  preset key above. A stray `aspect` field is silently ignored — say "set the
-  `canvas` preset" instead.
-- **`canvas` is the colon key**, e.g. `"16:9"`, NEVER an underscore form
-  (`16_9`) or an object `{width,height}`. Invalid values silently degrade to
-  the default `16:9`.
-- **`slideOrder` ids must match existing `/slides/{id}.html` files.**
-  `slideOrder` is filtered to ids that have a backing HTML file, so a dangling
-  id is skipped (and an empty list means an empty deck). Keep the list exactly
-  in reading order.
+- `slideOrder` = the ids of every existing `/slides/{id}.html` file (id = the
+  filename minus `.html`), sorted numerically-aware (`01 < 02 < 10`,
+  `step-1 < step-2 < step-10`). A slide's deck position is its filename's sort
+  position; to reorder, renumber a slide's id. A deleted `.html` drops out of
+  the deck automatically — dangling ids are impossible by construction.
+- `theme` is pinned to `/theme.css`; a deck without that file is unstyled but
+  renderable.
+- `canvas`/`title` come from the user's plan choices; `description` is preserved
+  if the deck already had one.
 
 ## Per-slide files
 
-Each slide id `NN` (e.g. `01`) produces two sibling files:
+Each slide id `NN` (e.g. `01`) produces two sibling files. Use sequential
+zero-padded ids (`01`, `02`, `03`, …) so deck order is predictable; a slide's
+id is its filename without `.html`, and any basename the agent chooses becomes
+a valid id (deck order is the natural sort of those basenames):
 
 - **`/slides/NN.html`** — that slide's markup: root slide node, headline,
   supporting copy, visual/elements, CTA/progress per `/brief.md`. It should be
@@ -73,9 +76,10 @@ The single shared stylesheet implementing `/design.md`. Key conventions:
 
 ## Hard constraints (why this contract matters)
 
-- **Missing/malformed `deck.json` → empty deck.** The projection does not
-  throw; it degrades. If the deck shows no slides, check `deck.json` parses,
-  `slideOrder` ids exist, and paths are correct.
-- **Missing theme path → unstyled deck.** Set `theme` to a path that actually
-  exists in the project.
+- **`/deck.json` named/ordered by the slide files.** The harness recomputes it
+  after every build/edit patch, so the deck is always exactly the set of
+  `/slides/*.html` files in natural sort order. If the deck shows the wrong
+  slides, the slide files themselves are wrong — not `deck.json`.
+- **Missing theme path → unstyled deck.** Create `/theme.css` so the deck has a
+  shared stylesheet; `deck.json` picks it up automatically.
 - **No `<script>`.** Everything is static HTML + CSS.

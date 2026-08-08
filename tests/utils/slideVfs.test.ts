@@ -23,6 +23,8 @@ import {
   formatDeckJsonIssues,
   hasHardDeckJsonErrors,
   verifyDeck,
+  syncDeckJson,
+  naturalCompare,
 } from '../../src/utils/slideVfs.ts';
 
 
@@ -542,5 +544,115 @@ describe('verifyDeck', () => {
     const r = verifyDeck(files);
     expect(r.ok).toBe(true);
     expect(r.issues.join('\n')).toContain('/theme.css');
+  });
+});
+
+describe('naturalCompare', () => {
+  test('orders numeric ids numerically, not lexically', () => {
+    const ids = ['10', '01', '02'];
+    expect([...ids].sort(naturalCompare)).toEqual(['01', '02', '10']);
+  });
+
+  test('orders non-NN names numerically-aware', () => {
+    const ids = ['step-10', 'step-1', 'step-2'];
+    expect([...ids].sort(naturalCompare)).toEqual(['step-1', 'step-2', 'step-10']);
+  });
+
+  test('is deterministic for mixed names', () => {
+    const ids = ['hero', '01', 'a2', 'a10'];
+    expect([...ids].sort(naturalCompare)).toEqual(['01', 'a2', 'a10', 'hero']);
+  });
+});
+
+describe('syncDeckJson', () => {
+  test('derives slideOrder from existing slide files, pins theme, preserves meta', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/03.html', content: '<section>3</section>' },
+      { path: '/slides/03.css', content: 'body{}' },
+      { path: '/slides/01.html', content: '<section>1</section>' },
+      { path: '/theme.css', content: ':root{}' },
+      {
+        path: '/deck.json',
+        content: JSON.stringify({ title: 'T', canvas: '16:9', description: 'd' }),
+      },
+    ];
+    const out = syncDeckJson(files);
+    const deck = JSON.parse(out.find((f) => f.path === '/deck.json')!.content);
+    expect(deck.slideOrder).toEqual(['01', '03']);
+    expect(deck.theme).toBe('/theme.css');
+    expect(deck.title).toBe('T');
+    expect(deck.canvas).toBe('16:9');
+    expect(deck.description).toBe('d');
+  });
+
+  test('meta overrides canvas/title/description and preserves the rest', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>1</section>' },
+      { path: '/deck.json', content: JSON.stringify({ title: 'T', canvas: '16:9', description: 'd' }) },
+    ];
+    const out = syncDeckJson(files, { canvas: '4:5', title: 'New' });
+    const deck = JSON.parse(out.find((f) => f.path === '/deck.json')!.content);
+    expect(deck.canvas).toBe('4:5');
+    expect(deck.title).toBe('New');
+    expect(deck.description).toBe('d');
+  });
+
+  test('sorts out-of-order creation and defaults when no deck.json exists', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/02.html', content: '<section>2</section>' },
+      { path: '/slides/01.html', content: '<section>1</section>' },
+    ];
+    const out = syncDeckJson(files);
+    const deck = JSON.parse(out.find((f) => f.path === '/deck.json')!.content);
+    expect(deck.slideOrder).toEqual(['01', '02']);
+    expect(deck.title).toBe('Untitled deck');
+    expect('canvas' in deck).toBe(false);
+    expect('theme' in deck).toBe(false);
+  });
+
+  test('natural order for badly-named files', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/step-10.html', content: '<section>10</section>' },
+      { path: '/slides/step-2.html', content: '<section>2</section>' },
+      { path: '/slides/step-1.html', content: '<section>1</section>' },
+    ];
+    const out = syncDeckJson(files);
+    const deck = JSON.parse(out.find((f) => f.path === '/deck.json')!.content);
+    expect(deck.slideOrder).toEqual(['step-1', 'step-2', 'step-10']);
+  });
+
+  test('regenerates a malformed deck.json into valid JSON', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>1</section>' },
+      { path: '/deck.json', content: '{ broken json' },
+    ];
+    const out = syncDeckJson(files);
+    const deckRaw = out.find((f) => f.path === '/deck.json')!.content;
+    expect(() => JSON.parse(deckRaw)).not.toThrow();
+    const deck = JSON.parse(deckRaw);
+    expect(deck.slideOrder).toEqual(['01']);
+    expect(deck.title).toBe('Untitled deck');
+  });
+
+  test('drops a deleted slide and ignores orphan css', () => {
+    // 02.html deleted; 02.css orphan remains and must NOT be in slideOrder.
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>1</section>' },
+      { path: '/slides/02.css', content: 'body{}' },
+      { path: '/deck.json', content: JSON.stringify({ title: 'T', canvas: '16:9', slideOrder: ['01', '02'] }) },
+    ];
+    const out = syncDeckJson(files);
+    const deck = JSON.parse(out.find((f) => f.path === '/deck.json')!.content);
+    expect(deck.slideOrder).toEqual(['01']);
+    expect(deck.title).toBe('T');
+    expect(deck.canvas).toBe('16:9');
+  });
+
+  test('returns a new array and never mutates the input', () => {
+    const files: SlideFile[] = [{ path: '/slides/01.html', content: '<section>1</section>' }];
+    const before = JSON.stringify(files);
+    const out = syncDeckJson(files);
+    expect(out).not.toBe(files);
+    expect(JSON.stringify(files)).toBe(before);
   });
 });
