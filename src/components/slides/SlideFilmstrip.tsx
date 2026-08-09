@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSlideStore } from '../../store/slideStore.ts';
 import { SLIDE_CANVAS_PRESETS } from '../../types/index.ts';
 import { composeSlideHtml, rebuildDeckProjection } from '../../utils/slideVfs.ts';
@@ -137,9 +138,31 @@ export function SlideFilmstrip({
         <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           Slides
         </span>
-        <span className="text-2xs text-muted-foreground/60">
-          {deckSlides.length}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="text-2xs tabular-nums text-muted-foreground/60">
+            {currentSlideIndex + 1} / {deckSlides.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => selectSlide(Math.max(currentSlideIndex - 1, 0))}
+            disabled={currentSlideIndex <= 0}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+            title="Previous slide (Left)"
+            aria-label="Previous slide"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => selectSlide(Math.min(currentSlideIndex + 1, deckSlides.length - 1))}
+            disabled={currentSlideIndex >= deckSlides.length - 1}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+            title="Next slide (Right)"
+            aria-label="Next slide"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
       </div>
       <div
         className="flex items-center gap-2 overflow-x-auto px-3 py-2.5"
@@ -160,7 +183,7 @@ export function SlideFilmstrip({
               onClick={() => selectSlide(i)}
               className={`group relative flex w-16 shrink-0 flex-col overflow-hidden rounded-lg border transition-all duration-200 outline-none ${
                 active
-                  ? 'border-primary ring-2 ring-primary/30'
+                  ? 'border-primary ring-2 ring-primary shadow-[0_2px_10px_-2px_var(--color-primary)/45] scale-[1.05]'
                   : 'border-border hover:border-border/80 hover:bg-muted/60'
               }`}
               style={{
@@ -170,6 +193,9 @@ export function SlideFilmstrip({
               }}
 
             >
+              {active && (
+                <span className="absolute inset-x-0 top-0 z-10 h-[3px] bg-primary" aria-hidden />
+              )}
               {thumb && thumb !== 'pending' ? (
                 <img
                   src={thumb}

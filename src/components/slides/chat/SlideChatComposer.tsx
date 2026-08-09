@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import type { SlideSessionStatus } from '../../../types/slides.ts';
 import { slideComposerCanSend } from '../../../utils/slideComposer.ts';
@@ -18,6 +18,7 @@ export function SlideChatComposer({
   blockedHint,
   seedText,
   seedKey,
+  focusKey,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
@@ -28,8 +29,11 @@ export function SlideChatComposer({
   /** When seedKey changes, value is replaced with seedText. */
   seedText?: string;
   seedKey?: number;
+  /** When focusKey changes, the composer textarea is focused (empty-state CTA). */
+  focusKey?: number;
 }) {
   const [value, setValue] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const running = sessionStatus === 'running';
   const waiting = sessionStatus === 'waiting_user';
   const typed = slideComposerCanSend(sessionStatus);
@@ -40,6 +44,11 @@ export function SlideChatComposer({
     if (seedKey == null) return;
     if (seedText != null) setValue(seedText);
   }, [seedKey, seedText]);
+
+  useEffect(() => {
+    if (focusKey == null) return;
+    textareaRef.current?.focus();
+  }, [focusKey]);
 
   function submit() {
     if (!canSend || !value.trim()) return;
@@ -76,6 +85,7 @@ export function SlideChatComposer({
       ) : (
         <div className="relative rounded-xl border border-border bg-card shadow-[0_8px_30px_-12px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/15">
           <textarea
+            ref={textareaRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {

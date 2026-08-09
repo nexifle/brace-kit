@@ -6,14 +6,13 @@ import {
   PanelLeftOpen,
   Plus,
   Presentation,
-  ChevronDown,
-  ChevronUp,
-  ChevronLeft,
-  ChevronRight,
   ArrowUpRight,
   History,
+  FolderOpen,
   Loader2,
   BookOpen,
+  MessageSquare,
+  type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
@@ -21,15 +20,13 @@ import { useSlideAgent } from '../../hooks/useSlideAgent.ts';
 import { Btn } from '../ui/Btn.tsx';
 import { Logo } from '../ui/Logo.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
-import { slideComposerCanSend, slideComposerPlaceholder } from '../../utils/slideComposer.ts';
+import { slideComposerPlaceholder } from '../../utils/slideComposer.ts';
 import { collectFilesTouched } from '../../utils/slideFilesTouched.ts';
 import { useElementSize } from '../../hooks/index.ts';
 import { fitBox } from '../../utils/slideFit.ts';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
-import { ExportDeck } from './ExportDeck.tsx';
-import { RoundHistory } from './RoundHistory.tsx';
-import { SlideCodeViewer } from './SlideCodeViewer.tsx';
+import { PreviewActions } from './PreviewActions.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 import { PlanDocs } from './PlanDocs.tsx';
 import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
@@ -42,7 +39,7 @@ const NARROW_BREAKPOINT = 820;
 /** v0-style chat rail width. */
 const RAIL_WIDTH = 400;
 
-function PreviewCanvas() {
+function PreviewCanvas({ onStartDeck }: { onStartDeck?: () => void }) {
   const canvas = useSlideStore((s) => s.canvas);
   const busy = useSlideStore((s) => s.busy);
   // Layout-only frame when size is unset — not a chosen project canvas.
@@ -113,7 +110,7 @@ function PreviewCanvas() {
                   variant="outline"
                   size="sm"
                   className="rounded-full! gap-1.5 mt-1 opacity-80"
-                  onClick={() => {}}
+                  onClick={onStartDeck}
                 >
                   Start a deck
                   <ArrowUpRight size={14} />
@@ -141,136 +138,120 @@ function PreviewPane({
   showRailToggle,
   railOpen,
   onToggleRail,
-  compact = false,
+  hideHeader = false,
+  onStartDeck,
 }: {
   showRailToggle?: boolean;
   railOpen?: boolean;
   onToggleRail?: () => void;
-  /** Narrow/sidebar layout: collapse the round chrome to an icon + popover. */
-  compact?: boolean;
+  /** Render only the preview body + filmstrip; the header moves to the toggle bar. */
+  hideHeader?: boolean;
+  /** Focus the composer from the empty-state CTA. */
+  onStartDeck?: () => void;
 }) {
+  const activeProject = useSlideStore((s) => s.activeProject);
+  const deckSlides = useSlideStore((s) => s.deckSlides);
+  const busy = useSlideStore((s) => s.busy);
+  const [capturingThumbs, setCapturingThumbs] = useState(false);
+  const hasDeck = !!activeProject && deckSlides.length > 0;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {!hideHeader && (
+        <div className="flex items-center justify-between pl-2 pr-3 h-11 border-b border-border/70 bg-background/70 backdrop-blur-sm shrink-0">
+          <div className="flex items-center gap-1 min-w-0">
+            {showRailToggle && (
+              <button
+                type="button"
+                onClick={onToggleRail}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title={railOpen ? 'Hide chat' : 'Show chat'}
+                aria-label={railOpen ? 'Hide chat' : 'Show chat'}
+              >
+                {railOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+              </button>
+            )}
+            <span className="pl-1 text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Preview
+            </span>
+            <PreviewStatusBadges />
+            {capturingThumbs && !busy && (
+              <span
+                className="ml-1 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground"
+                role="status"
+              >
+                <Loader2 size={10} className="animate-spin" />
+                Capturing thumbnails…
+              </span>
+            )}
+          </div>
+
+          <PreviewActions />
+        </div>
+      )}
+
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {hasDeck ? <SlidePreview /> : <PreviewCanvas onStartDeck={onStartDeck} />}
+      </div>
+
+      {hasDeck && <SlideFilmstrip onCapturingChange={setCapturingThumbs} />}
+    </div>
+  );
+}
+
+/** Live · updating pill for the preview header / narrow toggle bar. */
+function PreviewStatusBadges() {
   const busy = useSlideStore((s) => s.busy);
   const activity = useSlideStore((s) => s.activity);
   const filesTouched = useMemo(() => collectFilesTouched(activity).length, [activity]);
   const liveUpdating = busy && filesTouched > 0;
-  const activeProject = useSlideStore((s) => s.activeProject);
-  const deckSlides = useSlideStore((s) => s.deckSlides);
-  const currentSlideIndex = useSlideStore((s) => s.currentSlideIndex);
-  const selectSlide = useSlideStore((s) => s.selectSlide);
-  const canvas = useSlideStore((s) => s.canvas);
-  const preset = canvas ? SLIDE_CANVAS_PRESETS[canvas] : null;
-
-  const hasDeck = !!activeProject && deckSlides.length > 0;
-  const [capturingThumbs, setCapturingThumbs] = useState(false);
-  const position = hasDeck
-    ? `${Math.min(currentSlideIndex + 1, deckSlides.length)} / ${deckSlides.length}`
-    : null;
-
-  const goNext = () => selectSlide(Math.min(currentSlideIndex + 1, deckSlides.length - 1));
-  const goPrev = () => selectSlide(Math.max(currentSlideIndex - 1, 0));
-
+  if (!liveUpdating) return null;
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center justify-between pl-2 pr-3 h-11 border-b border-border/70 bg-background/70 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-1 min-w-0">
-          {showRailToggle && (
-            <button
-              type="button"
-              onClick={onToggleRail}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title={railOpen ? 'Hide chat' : 'Show chat'}
-              aria-label={railOpen ? 'Hide chat' : 'Show chat'}
-            >
-              {railOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-            </button>
-          )}
-          <span className="pl-1 text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Preview
-          </span>
-          {liveUpdating && (
-            <span
-              className="ml-1 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-2xs font-medium text-primary"
-              role="status"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-              Live · updating
-            </span>
-          )}
-          {capturingThumbs && !busy && (
-            <span
-              className="ml-1 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground"
-              role="status"
-            >
-              <Loader2 size={10} className="animate-spin" />
-              Capturing thumbnails…
-            </span>
-          )}
-        </div>
+    <span
+      className="ml-1 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-2xs font-medium text-primary"
+      role="status"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+      Live · updating
+    </span>
+  );
+}
 
-        <div className="flex items-center gap-2 min-w-0">
-          {hasDeck && <RoundHistory compact={compact} />}
-          {hasDeck && <ExportDeck />}
-          {hasDeck && <SlideCodeViewer />}
-          {hasDeck ? (
-            <div className="flex items-center gap-2 min-w-0">
-              {preset ? (
-                <span
-                  className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
-                  title={`${preset.label} · ${preset.width}×${preset.height} (export / canvas size)`}
-                >
-                  {preset.width}×{preset.height}
-                </span>
-              ) : (
-                <span className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium text-muted-foreground">
-                  Size not set
-                </span>
-              )}
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  disabled={currentSlideIndex <= 0}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-                  title="Previous slide (Left)"
-                  aria-label="Previous slide"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                <span className="min-w-[3.5rem] text-center text-2xs tabular-nums text-muted-foreground">
-                  {position}
-                </span>
-                <button
-                  type="button"
-                  onClick={goNext}
-                  disabled={currentSlideIndex >= deckSlides.length - 1}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-                  title="Next slide (Right)"
-                  aria-label="Next slide"
-                >
-                  <ChevronRight size={15} />
-                </button>
-              </div>
-            </div>
-          ) : busy && !liveUpdating ? (
-            <span className="flex items-center gap-1.5 text-2xs font-medium text-primary">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-              Rendering
-            </span>
-          ) : (
-            <span className="text-2xs text-muted-foreground/50">
-              {preset ? `${preset.label} · ${preset.width}×${preset.height}` : 'Choose a slide size to continue'}
-            </span>
-          )}
-
-        </div>
-      </div>
-
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {hasDeck ? <SlidePreview /> : <PreviewCanvas />}
-      </div>
-
-      {hasDeck && <SlideFilmstrip onCapturingChange={setCapturingThumbs} />}
+/** Narrow sidebar: switch the main area between the slide preview and the chat. */
+function SegmentedToggle({
+  value,
+  onChange,
+}: {
+  value: 'preview' | 'chat';
+  onChange: (v: 'preview' | 'chat') => void;
+}) {
+  const options: Array<{ value: 'preview' | 'chat'; label: string; icon: LucideIcon; title: string }> = [
+    { value: 'preview', label: 'Preview', icon: Presentation, title: 'Show slide preview' },
+    { value: 'chat', label: 'Chat', icon: MessageSquare, title: 'Show conversation' },
+  ];
+  return (
+    <div
+      className="flex items-center shrink-0 rounded-none border border-border/80 bg-muted/50 p-0.5"
+      role="group"
+      aria-label="Slide Creator view"
+    >
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          title={o.title}
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={`flex items-center gap-1 px-2 h-6 rounded-none text-2xs font-semibold transition-colors ${
+            value === o.value
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <o.icon size={12} />
+          <span>{o.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -307,7 +288,7 @@ function ModeToggle() {
   ];
   return (
     <div
-      className="flex items-center shrink-0 rounded-md border border-border/80 bg-muted/50 p-0.5"
+      className="flex items-center shrink-0 rounded-none border border-border/80 bg-muted/50 p-0.5"
       role="group"
       aria-label="Slide Creator mode"
     >
@@ -319,7 +300,7 @@ function ModeToggle() {
           title={o.title}
           aria-pressed={mode === o.value}
           onClick={() => setProjectMode(o.value)}
-          className={`px-2 h-6 rounded text-2xs font-semibold transition-colors ${
+          className={`px-2 h-6 rounded-none text-2xs font-semibold transition-colors ${
             mode === o.value
               ? 'bg-primary text-primary-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -458,159 +439,6 @@ function ChatRail({
 }
 
 /* ==================================================================== */
-/* Narrow chat drawer                                                    */
-/* ==================================================================== */
-
-function ChatDock({
-  open,
-  onToggle,
-  onSend,
-  onStop,
-  onBuild,
-  onAnswer,
-  onRetry,
-  placeholder,
-  blocked,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  onSend: (text: string) => void;
-  onStop: () => void;
-  onBuild: () => void;
-  onAnswer: (projectId: string, answer: string) => void;
-  onRetry?: () => void;
-  placeholder: string;
-  blocked?: boolean;
-}) {
-  const sessionStatus = useSlideStore((s) => s.sessionStatus);
-  const [dockValue, setDockValue] = useState('');
-  const running = sessionStatus === 'running';
-  const waiting = sessionStatus === 'waiting_user';
-  const canType = slideComposerCanSend(sessionStatus) && !blocked;
-
-  if (open) {
-    return (
-      <div className="absolute inset-x-0 bottom-0 z-20 flex h-[62%] flex-col rounded-t-2xl border-t border-border bg-background shadow-[0_-8px_40px_-8px_rgba(0,0,0,0.3)] animate-in slide-in-from-bottom-full duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:animate-none">
-        <div className="flex items-center justify-between px-4 h-11 border-b border-border/70 shrink-0">
-          <span className="text-2xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Conversation
-          </span>
-          <ModeToggle />
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <ChevronDown size={15} />
-            View deck
-          </button>
-        </div>
-
-        <SlideChat onBuild={onBuild} onAnswer={onAnswer} onRetry={onRetry} blocked={blocked} />
-        <SlideChatComposer
-          onSend={onSend}
-          onStop={onStop}
-          sessionStatus={sessionStatus}
-          placeholder={placeholder}
-          blocked={blocked}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="absolute inset-x-3 bottom-3 z-20 flex items-end gap-2 rounded-2xl border border-border bg-background/95 backdrop-blur-md px-2.5 py-2 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.3)] animate-in fade-in slide-in-from-bottom-2 duration-300 motion-reduce:animate-none">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex items-center justify-center w-7 h-7 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-        title="Open conversation"
-        aria-label="Open conversation"
-      >
-        <ChevronUp size={15} />
-      </button>
-      {waiting ? (
-        <>
-          <span className="flex h-7 flex-1 min-w-0 items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 size={13} className="shrink-0 animate-spin text-primary" />
-            <span className="truncate">Waiting for your answer</span>
-          </span>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary transition-all duration-200 hover:bg-primary/20 active:scale-90"
-            title="Answer the question"
-            aria-label="Answer the question"
-          >
-            <ArrowUpRight size={13} />
-          </button>
-        </>
-      ) : (
-        <>
-          <input
-            value={dockValue}
-            onChange={(e) => setDockValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (running) return;
-                if (!canType || !dockValue.trim()) return;
-                onSend(dockValue);
-                setDockValue('');
-              }
-            }}
-            disabled={!canType && !running}
-            placeholder={running ? 'Generating…' : placeholder}
-            className="h-7 flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none disabled:opacity-60"
-          />
-          {running ? (
-            <button
-              type="button"
-              onClick={onStop}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
-              title="Stop"
-              aria-label="Stop generating"
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <rect x="6" y="6" width="12" height="12" rx="1.5" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                if (!canType || !dockValue.trim()) return;
-                onSend(dockValue);
-                setDockValue('');
-              }}
-              disabled={!canType || !dockValue.trim()}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-30"
-              title="Send"
-              aria-label="Send"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <path d="M12 19V5" />
-                <path d="m5 12 7-7 7 7" />
-              </svg>
-            </button>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ==================================================================== */
 /* Shell                                                                 */
 /* ==================================================================== */
 
@@ -626,10 +454,20 @@ export function SlideCreatorShell() {
     void useSlideStore.getState().restoreLastActiveProject();
   }, []);
 
+  const narrow = width !== 0 && width < NARROW_BREAKPOINT;
+  const panelView = useSlideStore((s) => s.panelView);
+  const setPanelView = useSlideStore((s) => s.setPanelView);
+  const pendingAsk = useSlideStore((s) => s.pendingAsk);
+  // Narrow collapses the default 'split' view to the deck preview.
+  const narrowView = panelView === 'chat' ? 'chat' : 'preview';
+
   const promptPlaceholder = slideComposerPlaceholder(activeProject, phase, sessionStatus);
 
   const handleSend = (text: string) => {
     if (!text.trim()) return;
+    // In narrow mode the conversation is a separate view — bring the user to it
+    // so they can see the assistant's reply as soon as they send.
+    if (narrow && narrowView === 'preview') setPanelView('chat');
     if (activeProject) {
       void agent.sendFollowUp(text);
     } else {
@@ -642,11 +480,17 @@ export function SlideCreatorShell() {
   const back = () => store.closeSlideCreator();
   const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
 
-  const narrow = width !== 0 && width < NARROW_BREAKPOINT;
-  const [chatOpen, setChatOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
+  const [composerFocusKey, setComposerFocusKey] = useState(0);
+  const [seedText, setSeedText] = useState<string | undefined>();
+  const [seedKey, setSeedKey] = useState(0);
+
+  // A blocking ask lives in the chat transcript (AskPrompt) — bring the user to it.
+  useEffect(() => {
+    if (narrow && pendingAsk) setPanelView('chat');
+  }, [narrow, pendingAsk, setPanelView]);
 
   const handleNew = () => {
     setHistoryOpen(false);
@@ -683,8 +527,31 @@ export function SlideCreatorShell() {
             <PhaseChip busy={busy && !!activeProject} label={phaseLabel} />
           </div>
         </div>
-        {(activeProject?.files ?? []).some((f) => f.path === '/brief.md' || f.path === '/design.md') ? (
-          <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          {narrow && (
+            <>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((o) => !o)}
+                aria-pressed={historyOpen}
+                className={`flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${historyOpen ? 'bg-muted text-foreground' : ''}`}
+                title="Previous decks"
+                aria-label="Previous decks"
+              >
+                <FolderOpen size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={handleNew}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="New deck"
+                aria-label="New deck"
+              >
+                <Plus size={15} />
+              </button>
+            </>
+          )}
+          {(activeProject?.files ?? []).some((f) => f.path === '/brief.md' || f.path === '/design.md') ? (
             <button
               type="button"
               onClick={() => setDocsOpen(true)}
@@ -695,24 +562,67 @@ export function SlideCreatorShell() {
               <BookOpen size={15} />
               <span className="hidden sm:inline">Docs</span>
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
 
       <div className="relative flex min-h-0 flex-1">
         {narrow ? (
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            <PreviewPane compact />
-            <ChatDock
-              open={chatOpen}
-              onToggle={() => setChatOpen((o) => !o)}
+            {/* View toggle bar */}
+            <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-background/70 px-2.5 backdrop-blur-sm">
+              <div className="flex min-w-0 items-center gap-2">
+                <SegmentedToggle
+                  value={narrowView}
+                  onChange={(v) => {
+                    setHistoryOpen(false);
+                    setPanelView(v);
+                  }}
+                />
+                {narrowView === 'preview' && <PreviewStatusBadges />}
+              </div>
+              {historyOpen ? null : narrowView === 'preview' ? (
+                <PreviewActions compact />
+              ) : (
+                <div className="flex shrink-0 items-center gap-1">
+                  <ModeToggle />
+                </div>
+              )}
+            </div>
+
+            {/* Main area */}
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {historyOpen ? (
+                <SlideProjectList open onClose={() => setHistoryOpen(false)} onNew={handleNew} />
+              ) : narrowView === 'preview' ? (
+                <PreviewPane
+                  hideHeader
+                  onStartDeck={() => setComposerFocusKey((k) => k + 1)}
+                />
+              ) : (
+                <SlideChat
+                  onBuild={() => void agent.runBuild()}
+                  onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
+                  onRetry={() => void agent.retryFailedPhase()}
+                  blocked={blocked}
+                  onFillComposer={(text) => {
+                    setSeedText(text);
+                    setSeedKey((k) => k + 1);
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Always-visible composer */}
+            <SlideChatComposer
               onSend={handleSend}
               onStop={handleStop}
-              onBuild={() => void agent.runBuild()}
-              onAnswer={(projectId, answer) => void agent.answerAsk(projectId, answer)}
-              onRetry={() => void agent.retryFailedPhase()}
+              sessionStatus={sessionStatus}
               placeholder={promptPlaceholder}
               blocked={blocked}
+              seedText={seedText}
+              seedKey={seedKey}
+              focusKey={composerFocusKey}
             />
           </div>
         ) : (
