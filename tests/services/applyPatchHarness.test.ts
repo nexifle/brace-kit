@@ -72,6 +72,38 @@ describe('parseApplyPatchArgs', () => {
     });
   });
 
+  test('accepts flat rename_file args', () => {
+    const res = parseApplyPatchArgs({
+      type: 'rename_file',
+      path: '/slides/03.html',
+      newPath: '/slides/04.html',
+    });
+    expect(res).toEqual({
+      ok: true,
+      operation: { type: 'rename_file', path: '/slides/03.html', newPath: '/slides/04.html' },
+    });
+  });
+
+  test('accepts nested rename_file operation', () => {
+    const res = parseApplyPatchArgs({
+      operation: { type: 'rename_file', path: '/slides/03.html', newPath: '/slides/04.html' },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.operation).toEqual({
+      type: 'rename_file',
+      path: '/slides/03.html',
+      newPath: '/slides/04.html',
+    });
+  });
+
+  test('rename_file requires newPath', () => {
+    const res = parseApplyPatchArgs({ type: 'rename_file', path: '/slides/03.html' });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain('newPath');
+  });
+
   test('fails clearly when type/path missing', () => {
     const res = parseApplyPatchArgs({ path: '/brief.md', diff: '+x\n' });
     expect(res.ok).toBe(false);
@@ -255,6 +287,83 @@ describe('applyPatchHarness delete_file', () => {
     expect(res.status).toBe('failed');
     if (res.status !== 'failed') return;
     expect(res.output).toContain('File not found');
+  });
+});
+
+describe('applyPatchHarness rename_file', () => {
+  test('renames an existing file and preserves its content', () => {
+    const res = applyPatchOperation(
+      files({ '/slides/03.html': '<section>three</section>\n' }),
+      'build',
+      { type: 'rename_file', path: '/slides/03.html', newPath: '/slides/04.html' },
+    );
+    expect(res.status).toBe('completed');
+    if (res.status !== 'completed') return;
+    expect(res.output).toContain('Renamed');
+    expect(res.files).toHaveLength(1);
+    expect(res.files[0].path).toBe('/slides/04.html');
+    expect(res.files[0].content).toBe('<section>three</section>\n');
+  });
+
+  test('renames only the single given path (css sibling untouched)', () => {
+    const fs = files({
+      '/slides/03.html': '<section>three</section>\n',
+      '/slides/03.css': '/* three */\n',
+    });
+    const res = applyPatchOperation(fs, 'build', {
+      type: 'rename_file',
+      path: '/slides/03.html',
+      newPath: '/slides/04.html',
+    });
+    expect(res.status).toBe('completed');
+    if (res.status !== 'completed') return;
+    const map = toMap(res.files);
+    expect(map['/slides/04.html']).toBeDefined();
+    expect(map['/slides/03.css']).toBe('/* three */\n'); // .css stays at 03
+  });
+
+  test('fails when source path is missing', () => {
+    const res = applyPatchOperation(files({}), 'edit', {
+      type: 'rename_file',
+      path: '/slides/03.html',
+      newPath: '/slides/04.html',
+    });
+    expect(res.status).toBe('failed');
+    if (res.status !== 'failed') return;
+    expect(res.output).toContain('File not found');
+  });
+
+  test('fails when target path already exists', () => {
+    const res = applyPatchOperation(
+      files({ '/slides/03.html': '<p>a</p>\n', '/slides/04.html': '<p>b</p>\n' }),
+      'build',
+      { type: 'rename_file', path: '/slides/03.html', newPath: '/slides/04.html' },
+    );
+    expect(res.status).toBe('failed');
+    if (res.status !== 'failed') return;
+    expect(res.output).toContain('File already exists');
+  });
+
+  test('fails when target is outside the phase allowlist', () => {
+    const res = applyPatchOperation(files({ '/slides/03.html': '<p>a</p>\n' }), 'build', {
+      type: 'rename_file',
+      path: '/slides/03.html',
+      newPath: '/brief.md',
+    });
+    expect(res.status).toBe('failed');
+    if (res.status !== 'failed') return;
+    expect(res.output).toContain('not allowed in build phase');
+  });
+
+  test('fails on an invalid target path', () => {
+    const res = applyPatchOperation(files({ '/slides/03.html': '<p>a</p>\n' }), 'build', {
+      type: 'rename_file',
+      path: '/slides/03.html',
+      newPath: '/slides/../../etc/passwd',
+    });
+    expect(res.status).toBe('failed');
+    if (res.status !== 'failed') return;
+    expect(res.output).toBe('Error: Invalid newPath: /slides/03.html');
   });
 });
 

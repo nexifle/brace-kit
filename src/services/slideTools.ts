@@ -5,11 +5,15 @@
 // read/orient tools (`list_files`, `read_file`) and the plan finish signal
 // (`submit_plan`).
 //
-// Invariant (FR-11b): `apply_patch` is the ONLY tool in this public set that
-// can mutate VFS files. `list_files` / `read_file` are read-only; `ask` is
-// HITL (suspends the session); `submit_plan` declares the plan phase complete.
-// Any future VFS-mutating helper must route through `apply_patch`, never fork
-// its own write tool.
+// Invariant (FR-11b): VFS mutation is centralized and explicit. `apply_patch`
+// is the primary mutator (create/update/delete/rename). `reorder_slides` is a
+// second, tightly-scoped mutator that ONLY renames `/slides/*.{html,css}` via
+// `reorderSlideFiles` — it never writes arbitrary paths, never traverses, and
+// never mutates the input array. `list_files` / `read_file` are read-only;
+// `ask` is HITL (suspends the session); `submit_plan` declares the plan phase
+// complete. Any future VFS-mutating helper must route through `apply_patch` or
+// be added as an explicit, allowlist-bounded exception like `reorder_slides` —
+// never fork an unbounded write tool.
 
 import type { MCPTool, ProviderConfig } from '../types/index.ts';
 import type { SlidePatchPhase } from './applyPatchHarness.ts';
@@ -79,12 +83,14 @@ const READ_FILE_TOOL: MCPTool = {
 const APPLY_PATCH_TOOL: MCPTool = {
   name: 'apply_patch',
   description:
-    'Create, update, or delete ONE project file per call (sole write tool). ' +
+    'Create, update, delete, or rename ONE project file per call (sole write tool). ' +
     'Pass flat arguments — NOT nested under "operation": ' +
     '{ "type": "create_file", "path": "/brief.md", "diff": "+# Title\\n+body\\n" }. ' +
     'create_file: full new file; every content line in diff starts with "+". ' +
     'update_file: V4A hunks with "@@" and " "/"+"/"-" lines; read_file first. ' +
-    'delete_file: path only (omit diff). Prefer small focused patches.',
+    'delete_file: path only (omit diff). ' +
+    'rename_file: path + newPath (omit diff); renames one file in place — prefer the reorder_slides tool for reordering slides. ' +
+    'Prefer small focused patches.',
   inputSchema: {
     type: 'object',
     // Flat schema matches how models call function tools (and OpenAI operation
@@ -92,20 +98,25 @@ const APPLY_PATCH_TOOL: MCPTool = {
     properties: {
       type: {
         type: 'string',
-        enum: ['create_file', 'update_file', 'delete_file'],
+        enum: ['create_file', 'update_file', 'delete_file', 'rename_file'],
         description:
-          'create_file = new path (fails if exists); update_file = patch existing; delete_file = remove path.',
+          'create_file = new path (fails if exists); update_file = patch existing; delete_file = remove path; rename_file = move path to newPath.',
       },
       path: {
         type: 'string',
         description: 'Absolute project path, e.g. /slides/01.html or /brief.md',
+      },
+      newPath: {
+        type: 'string',
+        description:
+          'Target absolute path for rename_file (e.g. /slides/04.html). Omit for other ops.',
       },
       diff: {
         type: 'string',
         description:
           'V4A diff body. create_file: one "+" line per file line, e.g. "+line one\\n+line two\\n". ' +
           'update_file: "@@" sections with context (" "), additions ("+"), deletions ("-"). ' +
-          'Omit for delete_file.',
+          'Omit for delete_file / rename_file.',
       },
     },
     required: ['type', 'path'],
@@ -183,6 +194,23 @@ const SUBMIT_PLAN_TOOL: MCPTool = {
   },
 };
 
+const REORDER_SLIDES_TOOL: MCPTool = {
+  name: 'reorder_slides',
+  description:
+    'Reorder the deck. Pass "order": the current slide ids listed in the desired final sequence. The harness renames the slide files to sequential ids (01,02,03,...) to match, shifting affected slides in place — use this to insert a slide mid-deck or change slide order WITHOUT deleting and recreating slides. Create a new slide first with create_file under any non-colliding id (e.g. "zz"), then include that id in "order".',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      order: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Current slide ids in desired final order.',
+      },
+    },
+    required: ['order'],
+  },
+};
+
 // ==================== Tool set access ====================
 
 /** All slide creator tools, keyed by name. `apply_patch` is the sole mutator. */
@@ -190,6 +218,7 @@ export const SLIDE_BUILTIN_TOOLS: Record<string, MCPTool> = {
   list_files: LIST_FILES_TOOL,
   read_file: READ_FILE_TOOL,
   apply_patch: APPLY_PATCH_TOOL,
+  reorder_slides: REORDER_SLIDES_TOOL,
   ask: ASK_TOOL,
   submit_plan: SUBMIT_PLAN_TOOL,
 };
@@ -199,9 +228,9 @@ export function getAllSlideTools(): MCPTool[] {
   return Object.values(SLIDE_BUILTIN_TOOLS);
 }
 
-/** True if `name` is a slide tool that mutates the VFS (currently only apply_patch). */
+/** True if `name` is a slide tool that mutates the VFS (apply_patch + reorder_slides). */
 export function isSlideVfsMutator(name: string): boolean {
-  return name === 'apply_patch';
+  return name === 'apply_patch' || name === 'reorder_slides';
 }
 
 /**
@@ -230,8 +259,8 @@ export function shouldEnableGoogleSearch(
  * Resolve the allowlisted set of slide tool NAMES for a phase.
  *
  * - plan:  read tools + apply_patch + ask + submit_plan
- * - build: read tools + apply_patch (no ask / no submit_plan)
- * - edit:  read tools + apply_patch (follow-ups are pure patches)
+ * - build: read tools + apply_patch + reorder_slides (no ask / no submit_plan)
+ * - edit:  read tools + apply_patch + reorder_slides (follow-ups are pure patches)
  * - main:  read-only tools only (orchestrator may orient but never mutate)
  *
  * When `enableGoogleSearch` is passed true (US-028), `google_search` is appended
@@ -249,9 +278,9 @@ export function getToolsForPhaseNames(
       case 'plan':
         return ['list_files', 'read_file', 'apply_patch', 'ask', 'submit_plan'];
       case 'build':
-        return ['list_files', 'read_file', 'apply_patch'];
+        return ['list_files', 'read_file', 'apply_patch', 'reorder_slides'];
       case 'edit':
-        return ['list_files', 'read_file', 'apply_patch'];
+        return ['list_files', 'read_file', 'apply_patch', 'reorder_slides'];
       case 'main':
       default:
         return ['list_files', 'read_file'];

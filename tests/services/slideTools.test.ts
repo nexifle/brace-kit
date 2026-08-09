@@ -18,6 +18,7 @@ describe('slideTools definitions', () => {
     expect(toolNames).toContain('list_files');
     expect(toolNames).toContain('read_file');
     expect(toolNames).toContain('apply_patch');
+    expect(toolNames).toContain('reorder_slides');
     expect(toolNames).toContain('ask');
     expect(toolNames).toContain('submit_plan');
   });
@@ -30,9 +31,9 @@ describe('slideTools definitions', () => {
     }
   });
 
-  test('only apply_patch is a VFS mutator', () => {
+  test('only apply_patch and reorder_slides are VFS mutators', () => {
     for (const name of Object.keys(SLIDE_BUILTIN_TOOLS)) {
-      expect(isSlideVfsMutator(name)).toBe(name === 'apply_patch');
+      expect(isSlideVfsMutator(name)).toBe(name === 'apply_patch' || name === 'reorder_slides');
     }
   });
 });
@@ -52,16 +53,16 @@ describe('getToolsForPhase', () => {
     expect(names(tools)).toContain('ask');
   });
 
-  test('build has read + apply_patch, without ask or submit_plan', () => {
+  test('build has read + apply_patch + reorder_slides, without ask or submit_plan', () => {
     const tools = getToolsForPhase('build');
-    expect(names(tools)).toEqual(['list_files', 'read_file', 'apply_patch']);
+    expect(names(tools)).toEqual(['list_files', 'read_file', 'apply_patch', 'reorder_slides']);
     expect(names(tools)).not.toContain('ask');
     expect(names(tools)).not.toContain('submit_plan');
   });
 
-  test('edit has read + apply_patch', () => {
+  test('edit has read + apply_patch + reorder_slides', () => {
     const tools = getToolsForPhase('edit');
-    expect(names(tools)).toEqual(['list_files', 'read_file', 'apply_patch']);
+    expect(names(tools)).toEqual(['list_files', 'read_file', 'apply_patch', 'reorder_slides']);
   });
 
   test('main is read-only (no mutator, no ask)', () => {
@@ -74,11 +75,12 @@ describe('getToolsForPhase', () => {
     expect(getToolsForPhaseNames('bogus' as never)).toEqual(['list_files', 'read_file']);
   });
 
-  test('every allowlisted phase keeps apply_patch as the sole mutator', () => {
+  test('every allowlisted phase limits mutators to apply_patch + reorder_slides', () => {
     for (const phase of ['plan', 'build', 'edit'] as const) {
       const tools = getToolsForPhase(phase);
       const mutators = tools.filter((t) => isSlideVfsMutator(t.name));
-      expect(mutators.map((t) => t.name)).toEqual(['apply_patch']);
+      const expected = phase === 'plan' ? ['apply_patch'] : ['apply_patch', 'reorder_slides'];
+      expect(mutators.map((t) => t.name)).toEqual(expected);
     }
   });
 });

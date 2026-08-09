@@ -9,10 +9,10 @@ export interface SlideFileTouch {
   /** Absolute VFS path, e.g. `/slides/01.html`. */
   path: string;
   /** The `apply_patch` operation type that wrote/deleted this path. */
-  op: 'create_file' | 'update_file' | 'delete_file';
+  op: 'create_file' | 'update_file' | 'delete_file' | 'rename_file';
 }
 
-/** Strip glyph for a patch op (A.9): `+` create, `~` update, `-` delete. */
+/** Strip glyph for a patch op (A.9): `+` create, `~` update/rename, `-` delete. */
 export function slideTouchSymbol(op: SlideFileTouch['op']): '+' | '~' | '-' {
   switch (op) {
     case 'create_file':
@@ -20,6 +20,7 @@ export function slideTouchSymbol(op: SlideFileTouch['op']): '+' | '~' | '-' {
     case 'delete_file':
       return '-';
     case 'update_file':
+    case 'rename_file':
     default:
       return '~';
   }

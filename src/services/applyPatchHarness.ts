@@ -9,10 +9,10 @@
 //   4. dispatches onto the V4A apply diff from `src/utils/applyDiff.ts`
 //
 // Operations mirror the PRD Appendix C portable function tool:
-// `create_file` | `update_file` | `delete_file`. Each call returns a Codex-style
-// `{ status: "completed" | "failed", output }` so a model can recover from
-// failures. Atomicity is per-operation (FR-30): multiple apply_patch calls in
-// one turn are applied sequentially, each with its own result.
+// `create_file` | `update_file` | `delete_file` | `rename_file`. Each call returns
+// a Codex-style `{ status: "completed" | "failed", output }` so a model can
+// recover from failures. Atomicity is per-operation (FR-30): multiple apply_patch
+// calls in one turn are applied sequentially, each with its own result.
 
 import type { SlideFile } from '../types/index.ts';
 import {
@@ -31,7 +31,8 @@ import { applyDiff } from '../utils/applyDiff.ts';
 export type SlidePatchOperation =
   | { type: 'create_file'; path: string; diff: string }
   | { type: 'update_file'; path: string; diff: string }
-  | { type: 'delete_file'; path: string };
+  | { type: 'delete_file'; path: string }
+  | { type: 'rename_file'; path: string; newPath: string };
 
 /** Phases that gate which paths a patch is allowed to touch. */
 export type SlidePatchPhase = 'plan' | 'build' | 'edit' | 'main';
@@ -46,7 +47,7 @@ export type ParseApplyPatchArgsResult =
   | { ok: true; operation: SlidePatchOperation }
   | { ok: false; error: string };
 
-const PATCH_OP_TYPES = new Set(['create_file', 'update_file', 'delete_file']);
+const PATCH_OP_TYPES = new Set(['create_file', 'update_file', 'delete_file', 'rename_file']);
 
 /**
  * Normalize raw tool-call JSON into a {@link SlidePatchOperation}.
@@ -68,7 +69,7 @@ export function parseApplyPatchArgs(raw: unknown): ParseApplyPatchArgsResult {
       ok: false,
       error:
         'Error: apply_patch args must be a JSON object. ' +
-        'Use flat fields: { "type": "create_file"|"update_file"|"delete_file", "path": "/file", "diff": "..." } ' +
+        'Use flat fields: { "type": "create_file"|"update_file"|"delete_file"|"rename_file", "path": "/file", "diff": "..." } ' +
         '(or nest the same object under "operation").',
     };
   }
@@ -82,7 +83,7 @@ export function parseApplyPatchArgs(raw: unknown): ParseApplyPatchArgsResult {
       candidate = nested;
     } else if (typeof root.operation === 'string' && PATCH_OP_TYPES.has(root.operation) && typeof root.path === 'string') {
       // Mis-nested: { operation: "create_file", path, diff }
-      candidate = { type: root.operation, path: root.path, diff: root.diff };
+      candidate = { type: root.operation, path: root.path, diff: root.diff, newPath: root.newPath };
     } else if (nested) {
       candidate = nested;
     } else if (!('type' in root) && !('path' in root)) {
@@ -99,12 +100,13 @@ export function parseApplyPatchArgs(raw: unknown): ParseApplyPatchArgsResult {
   const type = typeof candidate.type === 'string' ? candidate.type : undefined;
   const path = typeof candidate.path === 'string' ? candidate.path : undefined;
   const diff = typeof candidate.diff === 'string' ? candidate.diff : undefined;
+  const newPath = typeof candidate.newPath === 'string' ? candidate.newPath : undefined;
 
   if (!type || !PATCH_OP_TYPES.has(type)) {
     return {
       ok: false,
       error:
-        `Error: apply_patch requires type to be one of create_file, update_file, delete_file` +
+        `Error: apply_patch requires type to be one of create_file, update_file, delete_file, rename_file` +
         (type ? ` (got "${type}")` : '') +
         '. Example: { "type": "create_file", "path": "/brief.md", "diff": "+# Title\\n" }',
     };
@@ -118,6 +120,15 @@ export function parseApplyPatchArgs(raw: unknown): ParseApplyPatchArgsResult {
 
   if (type === 'delete_file') {
     return { ok: true, operation: { type: 'delete_file', path } };
+  }
+  if (type === 'rename_file') {
+    if (!newPath || newPath.length === 0) {
+      return {
+        ok: false,
+        error: 'Error: apply_patch rename_file requires a non-empty "newPath" (target absolute project path).',
+      };
+    }
+    return { ok: true, operation: { type: 'rename_file', path, newPath } };
   }
   // create_file / update_file — diff required (empty string fails in harness)
   if (diff === undefined) {
@@ -217,6 +228,8 @@ export function applyPatchOperation(
       return updateFile(files, path, operation.diff);
     case 'delete_file':
       return deleteFile(files, path);
+    case 'rename_file':
+      return renameFile(files, path, safeSlidePath(operation.newPath), phase);
     default:
       return { status: 'failed', output: `Error: Unknown operation type` };
   }
@@ -312,5 +325,43 @@ function deleteFile(files: SlideFile[], path: string): ApplyPatchResult {
     status: 'completed',
     output: `Deleted ${path}`,
     files: removeSlideFile(files, path),
+  };
+}
+
+function renameFile(
+  files: SlideFile[],
+  path: string,
+  newPath: string | null,
+  phase: SlidePatchPhase,
+): ApplyPatchResult {
+  if (!newPath) {
+    return {
+      status: 'failed',
+      output: `Error: Invalid newPath: ${path}`,
+    };
+  }
+  if (!pathAllowed(newPath, allowlistForPhase(phase))) {
+    return {
+      status: 'failed',
+      output: `Error: Path not allowed in ${phase} phase for rename target: ${newPath}`,
+    };
+  }
+  const current = getSlideFile(files, path);
+  if (!current) {
+    return {
+      status: 'failed',
+      output: `Error: File not found: ${path}. Use create_file to add it first.`,
+    };
+  }
+  if (getSlideFile(files, newPath)) {
+    return {
+      status: 'failed',
+      output: `Error: File already exists: ${newPath}.`,
+    };
+  }
+  return {
+    status: 'completed',
+    output: `Renamed ${path} → ${newPath}`,
+    files: upsertSlideFile(removeSlideFile(files, path), newPath, current.content),
   };
 }

@@ -5,7 +5,7 @@
 
 export type SlideActivityPhase = 'plan' | 'build' | 'edit';
 
-export type SlidePatchOpLabel = 'create_file' | 'update_file' | 'delete_file';
+export type SlidePatchOpLabel = 'create_file' | 'update_file' | 'delete_file' | 'rename_file';
 
 const CONNECTING_LABEL = 'Connecting to model…';
 
@@ -71,6 +71,8 @@ export function applyPatchOpLabel(op: SlidePatchOpLabel, path: string): string {
       return `Updating ${p}`;
     case 'delete_file':
       return `Deleting ${p}`;
+    case 'rename_file':
+      return `Renaming ${p}`;
   }
 }
 
@@ -84,6 +86,8 @@ export function applyPatchOpDoneLabel(op: SlidePatchOpLabel, path: string): stri
       return `Updated ${p}`;
     case 'delete_file':
       return `Deleted ${p}`;
+    case 'rename_file':
+      return `Renamed ${p}`;
   }
 }
 
@@ -171,6 +175,8 @@ export function toolStartedLabel(
       return askStartedLabel();
     case 'submit_plan':
       return submitPlanLabel();
+    case 'reorder_slides':
+      return 'Reordering slides';
     case 'google_search':
       return googleSearchLabel(args?.query ?? '');
     default:
@@ -179,7 +185,7 @@ export function toolStartedLabel(
 }
 
 /** file_written success card — past tense (running apply_patch stays present). */
-export function fileWrittenLabel(op: 'create_file' | 'update_file', path: string): string {
+export function fileWrittenLabel(op: 'create_file' | 'update_file' | 'rename_file', path: string): string {
   return applyPatchOpDoneLabel(op, path);
 }
 

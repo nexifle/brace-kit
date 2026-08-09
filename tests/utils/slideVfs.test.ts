@@ -25,6 +25,7 @@ import {
   verifyDeck,
   syncDeckJson,
   naturalCompare,
+  reorderSlideFiles,
 } from '../../src/utils/slideVfs.ts';
 
 
@@ -654,5 +655,231 @@ describe('syncDeckJson', () => {
     const out = syncDeckJson(files);
     expect(out).not.toBe(files);
     expect(JSON.stringify(files)).toBe(before);
+  });
+});
+
+describe('reorderSlideFiles', () => {
+  /** Deck 01..05 plus a freshly-created `zz` slide (the mid-deck insert target). */
+  function deckWithZz(): SlideFile[] {
+    return [
+      { path: '/slides/01.html', content: '<section>one</section>' },
+      { path: '/slides/01.css', content: '/* one */' },
+      { path: '/slides/02.html', content: '<section>two</section>' },
+      { path: '/slides/02.css', content: '/* two */' },
+      { path: '/slides/03.html', content: '<section>three</section>' },
+      { path: '/slides/03.css', content: '/* three */' },
+      { path: '/slides/04.html', content: '<section>four</section>' },
+      { path: '/slides/04.css', content: '/* four */' },
+      { path: '/slides/05.html', content: '<section>five</section>' },
+      { path: '/slides/05.css', content: '/* five */' },
+      { path: '/slides/zz.html', content: '<section>new-mid</section>' },
+      { path: '/slides/zz.css', content: '/* new-mid */' },
+      { path: '/theme.css', content: ':root{}' },
+      { path: '/deck.json', content: JSON.stringify({ title: 'T', canvas: '16:9', slideOrder: ['01', '02', '03', '04', '05', 'zz'] }) },
+    ];
+  }
+
+  function idsOf(files: SlideFile[]): string[] {
+    return files
+      .filter((f) => f.path.startsWith('/slides/') && f.path.endsWith('.html'))
+      .map((f) => f.path.slice(8, -5));
+  }
+
+  function contentAt(files: SlideFile[], path: string): string {
+    return files.find((f) => f.path === path)!.content;
+  }
+
+  test('insert-in-middle: renames 03..05 to 04..06 and places zz at 03, content preserved', () => {
+    const files = deckWithZz();
+    const r = reorderSlideFiles(files, ['01', '02', 'zz', '03', '04', '05']);
+    expect(r.ok).toBe(true);
+    expect([...idsOf(r.files!)].sort(naturalCompare)).toEqual(['01', '02', '03', '04', '05', '06']);
+
+    // The new slide's content lands at 03.
+    expect(contentAt(r.files!, '/slides/03.html')).toBe('<section>new-mid</section>');
+    expect(contentAt(r.files!, '/slides/03.css')).toBe('/* new-mid */');
+
+    // Old 03 → 04, 04 → 05, 05 → 06 with content intact (no rewrite).
+    expect(contentAt(r.files!, '/slides/04.html')).toBe('<section>three</section>');
+    expect(contentAt(r.files!, '/slides/04.css')).toBe('/* three */');
+    expect(contentAt(r.files!, '/slides/05.html')).toBe('<section>four</section>');
+    expect(contentAt(r.files!, '/slides/06.html')).toBe('<section>five</section>');
+
+    // Unchanged slides keep their content.
+    expect(contentAt(r.files!, '/slides/01.html')).toBe('<section>one</section>');
+    expect(contentAt(r.files!, '/slides/02.html')).toBe('<section>two</section>');
+
+    // Non-slide files untouched.
+    expect(r.files!.some((f) => f.path === '/theme.css')).toBe(true);
+    expect(r.files!.some((f) => f.path === '/deck.json')).toBe(true);
+  });
+
+  test('reverse order: full renumbering to 01..05', () => {
+    const files = deckWithZz();
+    const r = reorderSlideFiles(files, ['05', '04', '03', '02', '01', 'zz']);
+    expect(r.ok).toBe(true);
+    expect([...idsOf(r.files!)].sort(naturalCompare)).toEqual(['01', '02', '03', '04', '05', '06']);
+    expect(contentAt(r.files!, '/slides/01.html')).toBe('<section>five</section>');
+    expect(contentAt(r.files!, '/slides/02.html')).toBe('<section>four</section>');
+    expect(contentAt(r.files!, '/slides/03.html')).toBe('<section>three</section>');
+    expect(contentAt(r.files!, '/slides/04.html')).toBe('<section>two</section>');
+    expect(contentAt(r.files!, '/slides/05.html')).toBe('<section>one</section>');
+    expect(contentAt(r.files!, '/slides/06.html')).toBe('<section>new-mid</section>');
+  });
+
+  test('idempotent identity order: no-op renumber to same ids', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>1</section>' },
+      { path: '/slides/02.html', content: '<section>2</section>' },
+    ];
+    const r = reorderSlideFiles(files, ['01', '02']);
+    expect(r.ok).toBe(true);
+    expect([...idsOf(r.files!)].sort(naturalCompare)).toEqual(['01', '02']);
+    expect(contentAt(r.files!, '/slides/01.html')).toBe('<section>1</section>');
+    expect(contentAt(r.files!, '/slides/02.html')).toBe('<section>2</section>');
+  });
+
+  test('missing id → error listing current ids', () => {
+    const files = deckWithZz();
+    const r = reorderSlideFiles(files, ['01', '02', '03', '04', '05']); // omits zz
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('missing zz');
+    expect(r.error).toContain("Current ids:");
+  });
+
+  test('extra/unknown id → error', () => {
+    const files = deckWithZz();
+    const r = reorderSlideFiles(files, ['01', '02', '03', '04', '05', 'zz', 'nope']);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('unknown nope');
+  });
+
+  test('duplicate id → error', () => {
+    const files = deckWithZz();
+    const r = reorderSlideFiles(files, ['01', '01', '02', '03', '04', '05']);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('contains duplicate ids');
+  });
+
+  test('empty order → error', () => {
+    const files = deckWithZz();
+    const r = reorderSlideFiles(files, []);
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('non-empty "order"');
+  });
+
+  test('10+ slides keep 10/11 zero-padding', () => {
+    const files: SlideFile[] = Array.from({ length: 12 }, (_, i) => ({
+      path: `/slides/${String(i + 1).padStart(2, '0')}.html`,
+      content: `<section>${i + 1}</section>`,
+    }));
+    const order = idsOf(files).reverse();
+    const r = reorderSlideFiles(files, order);
+    expect(r.ok).toBe(true);
+    expect([...idsOf(r.files!)].sort(naturalCompare)).toEqual(['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']);
+    expect(contentAt(r.files!, '/slides/10.html')).toBe('<section>3</section>');
+    expect(contentAt(r.files!, '/slides/11.html')).toBe('<section>2</section>');
+    expect(contentAt(r.files!, '/slides/12.html')).toBe('<section>1</section>');
+    // renames reports every changed slide (old id → new id), html-canonical,
+    // in source-file order (01 first)
+    expect(r.renames).toEqual([
+      { from: '01', to: '12' },
+      { from: '02', to: '11' },
+      { from: '03', to: '10' },
+      { from: '04', to: '09' },
+      { from: '05', to: '08' },
+      { from: '06', to: '07' },
+      { from: '07', to: '06' },
+      { from: '08', to: '05' },
+      { from: '09', to: '04' },
+      { from: '10', to: '03' },
+      { from: '11', to: '02' },
+      { from: '12', to: '01' },
+    ]);
+  });
+
+  test('ids containing dots are renumbered (id is basename minus extension)', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>one</section>' },
+      { path: '/slides/foo.bar.html', content: '<section>dotted</section>' },
+      { path: '/slides/02.html', content: '<section>two</section>' },
+    ];
+    const r = reorderSlideFiles(files, ['01', 'foo.bar', '02']);
+    expect(r.ok).toBe(true);
+    expect([...idsOf(r.files!)].sort(naturalCompare)).toEqual(['01', '02', '03']);
+    // foo.bar now occupies id 02
+    expect(contentAt(r.files!, '/slides/02.html')).toBe('<section>dotted</section>');
+    expect(contentAt(r.files!, '/slides/03.html')).toBe('<section>two</section>');
+    expect(r.renames).toEqual([
+      { from: 'foo.bar', to: '02' },
+      { from: '02', to: '03' },
+    ]);
+  });
+
+  test('orphan .css is preserved when unclaimed, not clobbered by a rename', () => {
+    // Deck 01,02,zz + an orphan /slides/03.css (no 03.html). Reorder places zz→02,
+    // 02→03, so 02.css is renamed onto /slides/03.css — the orphan must not be
+    // blindly overwritten by that rename (it is superseded, not clobbered mid-flight).
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>one</section>' },
+      { path: '/slides/02.html', content: '<section>two</section>' },
+      { path: '/slides/02.css', content: '/* two */' },
+      { path: '/slides/zz.html', content: '<section>new</section>' },
+      { path: '/slides/zz.css', content: '/* new */' },
+      { path: '/slides/03.css', content: '/* orphan */' },
+    ];
+    const r = reorderSlideFiles(files, ['01', 'zz', '02']);
+    expect(r.ok).toBe(true);
+    // 02.css (renamed) wins the /slides/03.css path; the orphan is superseded.
+    expect(contentAt(r.files!, '/slides/03.css')).toBe('/* two */');
+    // the orphan's slot is not double-written: exactly one file holds 03.css
+    expect(r.files!.filter((f) => f.path === '/slides/03.css').length).toBe(1);
+  });
+
+  test('orphan .css is preserved at its own path when no rename claims it', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>one</section>' },
+      { path: '/slides/02.html', content: '<section>two</section>' },
+      { path: '/slides/07.css', content: '/* orphan */' },
+    ];
+    const r = reorderSlideFiles(files, ['01', '02']);
+    expect(r.ok).toBe(true);
+    expect(contentAt(r.files!, '/slides/07.css')).toBe('/* orphan */');
+    expect(r.renames).toEqual([]);
+  });
+
+  test('rename to identical path is a no-op and reports no renames', () => {
+    const files: SlideFile[] = [
+      { path: '/slides/01.html', content: '<section>a</section>' },
+      { path: '/slides/01.css', content: '/* a */' },
+    ];
+    const r = reorderSlideFiles(files, ['01']);
+    expect(r.ok).toBe(true);
+    expect(r.renames).toEqual([]);
+    expect(contentAt(r.files!, '/slides/01.html')).toBe('<section>a</section>');
+  });
+
+  test('single-slide deck reorders trivially', () => {
+    const files: SlideFile[] = [{ path: '/slides/01.html', content: '<section>solo</section>' }];
+    const r = reorderSlideFiles(files, ['01']);
+    expect(r.ok).toBe(true);
+    expect(idsOf(r.files!)).toEqual(['01']);
+    expect(r.renames).toEqual([]);
+  });
+
+  test('returns a new array and never mutates the input', () => {
+    const files = deckWithZz();
+    const before = JSON.stringify(files);
+    const r = reorderSlideFiles(files, ['01', '02', 'zz', '03', '04', '05']);
+    expect(r.ok).toBe(true);
+    expect(r.files).not.toBe(files);
+    expect(JSON.stringify(files)).toBe(before);
+  });
+
+  test('rejects a non-array or non-string order', () => {
+    const files = deckWithZz();
+    expect(reorderSlideFiles(files, '01,02,zz,03,04,05').ok).toBe(false);
+    expect(reorderSlideFiles(files, [1, 2]).ok).toBe(false);
+    expect(reorderSlideFiles(files, ['01', '02', 'zz', '03', '04', 5]).ok).toBe(false);
   });
 });

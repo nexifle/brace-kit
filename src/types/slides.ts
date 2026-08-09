@@ -263,7 +263,7 @@ export interface SlideActivityEvent {
    */
   content?: string;
   path?: string;
-  patchOp?: 'create_file' | 'update_file' | 'delete_file';
+  patchOp?: 'create_file' | 'update_file' | 'delete_file' | 'rename_file';
   filesTouched?: number;
 }
 

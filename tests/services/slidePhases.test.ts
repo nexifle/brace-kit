@@ -859,6 +859,62 @@ describe('runEditPhase', () => {
     expect(result.files.find((f) => f.path === '/deck.json')?.content).toContain('"01"');
   });
 
+  it('inserts a slide mid-deck via create_file + reorder_slides without deleting slides', async () => {
+    const deck = makeFiles([
+      { path: '/brief.md', content: '# Coffee deck' },
+      { path: '/design.md', content: 'Dark theme, 16:9.' },
+      { path: '/theme.css', content: 'body{}' },
+      { path: '/slides/01.html', content: '<section>one</section>' },
+      { path: '/slides/01.css', content: '/* one */' },
+      { path: '/slides/02.html', content: '<section>two</section>' },
+      { path: '/slides/02.css', content: '/* two */' },
+      { path: '/slides/03.html', content: '<section>three</section>' },
+      { path: '/slides/04.html', content: '<section>four</section>' },
+      { path: '/slides/05.html', content: '<section>five</section>' },
+      {
+        path: '/deck.json',
+        content: JSON.stringify({
+          title: 'Coffee Deck',
+          canvas: '16:9',
+          theme: '/theme.css',
+          slideOrder: ['01', '02', '03', '04', '05'],
+        }),
+      },
+    ]);
+
+    const { transport } = makeTransport([
+      () => ({
+        content: 'inserting a new slide 3',
+        toolCalls: [
+          // create the new slide under a placeholder id, then reorder to slot it at 3
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/zz.html', diff: '@@\n+<section>new-mid</section>\n' } })),
+          toolCall('reorder_slides', JSON.stringify({ order: ['01', '02', 'zz', '03', '04', '05'] })),
+        ],
+      }),
+      () => ({ content: 'Inserted.' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files: deck,
+      transport,
+    });
+
+    expect(result.status).toBe('ready');
+    const deckJson = JSON.parse(result.files.find((f) => f.path === '/deck.json')!.content);
+    expect(deckJson.slideOrder).toEqual(['01', '02', '03', '04', '05', '06']);
+    // the new slide's content is now at id 03
+    expect(result.files.find((f) => f.path === '/slides/03.html')?.content).toContain('new-mid');
+    // shifted slides keep their original content (renamed, not rewritten)
+    expect(result.files.find((f) => f.path === '/slides/04.html')?.content).toContain('three');
+    expect(result.files.find((f) => f.path === '/slides/05.html')?.content).toContain('four');
+    expect(result.files.find((f) => f.path === '/slides/06.html')?.content).toContain('five');
+    // no slide was deleted during the reorder
+    expect(result.files.some((f) => f.path === '/slides/zz.html')).toBe(false);
+  });
+
   it('returns status done when the edit leaves no renderable deck', async () => {
     const { transport } = makeTransport([
       () => ({

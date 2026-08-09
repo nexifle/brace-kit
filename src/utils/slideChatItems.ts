@@ -34,7 +34,7 @@ export type SlideChatItem =
       id: string;
       label: string;
       paths: string[];
-      op?: 'create_file' | 'update_file' | 'delete_file';
+      op?: 'create_file' | 'update_file' | 'delete_file' | 'rename_file';
       detail?: string;
       eventIds: string[];
       status: SlideActivityEvent['status'];
@@ -151,7 +151,7 @@ export function countPhaseStats(
 ): PhaseWindowStats {
   let actionCount = 0;
   let roundCount = 0;
-  const files = new Map<string, 'create_file' | 'update_file' | 'delete_file'>();
+  const files = new Map<string, 'create_file' | 'update_file' | 'delete_file' | 'rename_file'>();
   const tools = new Set<string>();
 
   for (let i = start; i <= endInclusive; i++) {
@@ -175,7 +175,7 @@ export function countPhaseStats(
       (ev.type === 'file_written' || ev.type === 'file_deleted') &&
       ev.path
     ) {
-      const op: 'create_file' | 'update_file' | 'delete_file' =
+      const op: 'create_file' | 'update_file' | 'delete_file' | 'rename_file' =
         ev.patchOp ??
         (ev.type === 'file_deleted' ? 'delete_file' : 'update_file');
       // Last write wins for op classification of a path.

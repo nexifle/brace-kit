@@ -70,6 +70,13 @@ it to the matching pixel dimensions and safe-zone from the design system.
   its `.css`). Its id automatically drops out of `deck.json` `slideOrder` — do
   not try to edit `deck.json` (the harness rejects it); the projection has no
   ghost slides by construction.
+- **`reorder_slides` for inserting mid-deck or changing order** — do NOT
+  delete-and-recreate existing slides to shift their position (that rewrites
+  full content). Instead `create_file` the new slide under any non-colliding
+  id (e.g. `zz`), then call `reorder_slides { order: [...] }` listing the
+  current slide ids in the desired final sequence; the harness renames the
+  slide files to sequential ids (`01`, `02`, …) in place. Re-read the deck
+  after reordering to confirm the new ids.
 - **Prefer minimal diffs over full-file rewrites** — small, focused patches,
   one meaningful change per `apply_patch` call. Keep patches surgical.
 - **Never invent paths outside the build layout.** You may write ONLY these

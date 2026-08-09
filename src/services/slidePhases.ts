@@ -47,10 +47,13 @@ import {
   type SlidePatchOperation,
 } from './applyPatchHarness.ts';
 import {
+  collectSlideIds,
   deckSlideCount,
   formatDeckJsonIssues,
   getSlideFile,
   hasHardDeckJsonErrors,
+  reorderSlideFiles,
+  slideHtmlPath,
   syncDeckJson,
   validateDeckJson,
 } from '../utils/slideVfs.ts';
@@ -203,6 +206,54 @@ function dispatchApplyPatch(
   emitter.complete(row);
   if (op.path) emitter.fileChanged(op.type, op.path, round, toolCall.id);
   return { content: result.output };
+}
+
+/**
+ * Dispatch `reorder_slides`: parse `order` (current slide ids in the desired
+ * final sequence), renumber the slide files in place via
+ * {@link reorderSlideFiles}, adopt files, re-sync deck.json, emit activity.
+ *
+ * `reorder_slides` is an explicit, tightly-scoped second VFS mutator (see the
+ * FR-11b note in `slideTools.ts`): it only renames `/slides/*.{html,css}` — a
+ * subset of the build/edit allowlists — never writes arbitrary paths, and
+ * never mutates the input array. It deliberately does NOT route through
+ * `applyPatchOperation` because a reorder is a multi-file atomic rename rather
+ * than a single patch; it is listed in `isSlideVfsMutator` so the phase runners
+ * and activity feed treat it as a mutation.
+ */
+function dispatchReorderSlides(
+  toolCall: ToolCall,
+  round: number,
+  phase: SlidePatchPhase,
+  currentFiles: import('../types/slides.ts').SlideFile[],
+  onFilesChange: ((files: import('../types/slides.ts').SlideFile[]) => void) | undefined,
+  emitter: ReturnType<typeof createActivityEmitter>,
+): { content: string } {
+  const row = emitter.started(toolCall, round);
+  const result = reorderSlideFiles(currentFiles, args<{ order?: unknown }>(toolCall).order);
+  if (!result.ok || !result.files) {
+    emitter.failed(row, result.error ?? 'Error: reorder_slides failed.');
+    return { content: result.error ?? 'Error: reorder_slides failed.' };
+  }
+
+  currentFiles.length = 0;
+  currentFiles.push(...result.files);
+  if (phase === 'build' || phase === 'edit') {
+    const synced = syncDeckJson(currentFiles);
+    currentFiles.length = 0;
+    currentFiles.push(...synced);
+  }
+  onFilesChange?.(currentFiles);
+  emitter.complete(row);
+
+  // Emit a file_written row only for slides whose path actually changed.
+  const ids = collectSlideIds(result.files);
+  for (const { to } of result.renames ?? []) {
+    emitter.fileChanged('rename_file', slideHtmlPath(to), round, toolCall.id);
+  }
+  return {
+    content: `Reordered slides to: [${ids.join(', ')}]`,
+  };
 }
 
 /**
@@ -776,6 +827,15 @@ function buildBuildSession(params: BuildPhaseParams) {
           params.onFilesChange,
           emitter,
         );
+      case 'reorder_slides':
+        return dispatchReorderSlides(
+          toolCall,
+          round,
+          'build',
+          currentFiles,
+          params.onFilesChange,
+          emitter,
+        );
       case 'google_search':
         return emitExternalActivity(params, emitter, toolCall, round);
       default:
@@ -1006,6 +1066,15 @@ function buildEditSession(params: EditPhaseParams) {
       }
       case 'apply_patch':
         return dispatchApplyPatch(
+          toolCall,
+          round,
+          'edit',
+          currentFiles,
+          params.onFilesChange,
+          emitter,
+        );
+      case 'reorder_slides':
+        return dispatchReorderSlides(
           toolCall,
           round,
           'edit',

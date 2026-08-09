@@ -851,6 +851,24 @@ describe('countPhaseStats / duration formatters', () => {
     });
   });
 
+  it('classifies a rename_file file_written row as filesUpdated', () => {
+    const activity = [
+      ev({ id: 'ps', type: 'phase_started', ts: 0 }),
+      ev({ id: 'r1', type: 'model_round_started', round: 1, ts: 1, status: 'completed' }),
+      ev({ id: 't1', type: 'tool_started', toolName: 'reorder_slides', ts: 2 }),
+      ev({ id: 'f1', type: 'file_written', path: '/slides/04.html', patchOp: 'rename_file', ts: 3 }),
+    ];
+    expect(countPhaseStats(activity, 0, 3)).toEqual({
+      actionCount: 1,
+      fileCount: 1,
+      filesCreated: 0,
+      filesUpdated: 1,
+      filesDeleted: 0,
+      roundCount: 1,
+      toolNames: ['reorder_slides'],
+    });
+  });
+
 
   it('formats durations', () => {
     expect(formatWorkedDuration(3_000)).toBe('3s');

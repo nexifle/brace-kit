@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  applyPatchOpDoneLabel,
   applyPatchOpLabel,
   askAnsweredLabel,
   askStartedLabel,
@@ -58,10 +59,13 @@ describe('slideActivityLabels (Amendment A.5)', () => {
     expect(modelRoundLabel(12)).toBe('Round 12');
   });
 
-  it('apply_patch create/update/delete labels', () => {
+  it('apply_patch create/update/delete/rename labels', () => {
     expect(applyPatchOpLabel('create_file', '/brief.md')).toBe('Creating /brief.md');
     expect(applyPatchOpLabel('update_file', '/design.md')).toBe('Updating /design.md');
     expect(applyPatchOpLabel('delete_file', '/slides/a.html')).toBe('Deleting /slides/a.html');
+    expect(applyPatchOpLabel('rename_file', '/slides/03.html')).toBe('Renaming /slides/03.html');
+    expect(applyPatchOpDoneLabel('rename_file', '/slides/03.html')).toBe('Renamed /slides/03.html');
+    expect(fileWrittenLabel('rename_file', '/slides/03.html')).toBe('Renamed /slides/03.html');
   });
 
   it('read_file / list_files / ask / submit_plan', () => {
@@ -95,6 +99,7 @@ describe('slideActivityLabels (Amendment A.5)', () => {
     expect(toolStartedLabel('list_files')).toBe('Listing project files');
     expect(toolStartedLabel('ask')).toBe('Asking you a question');
     expect(toolStartedLabel('submit_plan')).toBe('Submitting plan');
+    expect(toolStartedLabel('reorder_slides')).toBe('Reordering slides');
     expect(toolStartedLabel('google_search', { query: 'react slides' })).toBe(
       'Searching: react slides',
     );

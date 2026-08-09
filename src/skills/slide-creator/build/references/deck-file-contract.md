@@ -35,8 +35,13 @@ A JSON object the harness writes with exactly these fields:
 - `slideOrder` = the ids of every existing `/slides/{id}.html` file (id = the
   filename minus `.html`), sorted numerically-aware (`01 < 02 < 10`,
   `step-1 < step-2 < step-10`). A slide's deck position is its filename's sort
-  position; to reorder, renumber a slide's id. A deleted `.html` drops out of
-  the deck automatically — dangling ids are impossible by construction.
+  position; to reorder, renumber a slide's id. The `reorder_slides` tool does
+  this automatically — pass the current slide ids in the desired order and it
+  renames the slide files to sequential ids (`01`, `02`, …) in place, shifting
+  affected slides without rewriting their content. A bare `rename_file` op is
+  also available via `apply_patch` for single-file renames. A deleted `.html`
+  drops out of the deck automatically — dangling ids are impossible by
+  construction.
 - `theme` is pinned to `/theme.css`; a deck without that file is unstyled but
   renderable.
 - `canvas`/`title` come from the user's plan choices; `description` is preserved

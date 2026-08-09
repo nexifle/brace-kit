@@ -20,9 +20,10 @@ function row(partial: Partial<SlideActivityEvent>): SlideActivityEvent {
 }
 
 describe('slideTouchSymbol', () => {
-  it('maps create/update/delete to +/~/-', () => {
+  it('maps create/update/delete/rename to +/~/-', () => {
     expect(slideTouchSymbol('create_file')).toBe('+');
     expect(slideTouchSymbol('update_file')).toBe('~');
+    expect(slideTouchSymbol('rename_file')).toBe('~');
     expect(slideTouchSymbol('delete_file')).toBe('-');
   });
 });

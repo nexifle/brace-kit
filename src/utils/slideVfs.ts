@@ -235,6 +235,144 @@ export function naturalCompare(a: string, b: string): number {
   return 0;
 }
 
+// ==================== Reorder ====================
+
+/** Result of {@link reorderSlideFiles}: reordered files, or a recover error. */
+export interface ReorderSlidesResult {
+  ok: boolean;
+  error?: string;
+  /** New files array when ok; the input array is never mutated. */
+  files?: SlideFile[];
+  /** Slides whose id actually changed (old id → new id), html-canonical. */
+  renames?: Array<{ from: string; to: string }>;
+}
+
+/**
+ * Split a slide basename (or `/slides/…` tail) into its id + extension when it
+ * is a slide file. Ids may contain dots (`foo.bar.html` → id `foo.bar`) but
+ * never a slash — mirroring {@link collectSlideIds}. Returns null for non-slide
+ * files.
+ */
+function slideIdAndExt(basename: string): { id: string; ext: string } | null {
+  for (const ext of [SLIDE_HTML_EXT, SLIDE_CSS_EXT]) {
+    if (basename.endsWith(ext)) {
+      const id = basename.slice(0, -ext.length);
+      if (id.length > 0 && !id.includes('/')) return { id, ext };
+    }
+  }
+  return null;
+}
+
+/**
+ * Renumber slide files so their natural-sorted ids match `order` (the current
+ * ids in the desired final sequence). Target ids are sequential zero-padded
+ * (`01`, `02`, … `10`, `11`, …) matching the build/edit skills convention. This
+ * is how a mid-deck insert / reorder is done WITHOUT deleting and recreating
+ * slides: files are renamed in place, so content is preserved by construction.
+ *
+ * Every slide `.html`/`.css` is first staged to a unique temp path (vacating
+ * its original path), then written to its final path — so a bijection like
+ * `03→04` while `04→05` never clobbers an in-flight value, and an orphan `.css`
+ * (no matching `.html`) never blocks a slide renamed onto its path. Slide
+ * renames always win; an orphan is preserved only when no slide claims its
+ * path. Non-slide files (`/theme.css`, `/deck.json`, `/brief.md`,
+ * `/design.md`) are left untouched. Returns a new array; never mutates
+ * `files`.
+ */
+export function reorderSlideFiles(
+  files: SlideFile[],
+  order: unknown,
+): ReorderSlidesResult {
+  const currentIds = collectSlideIds(files);
+
+  if (!Array.isArray(order) || order.length === 0) {
+    return {
+      ok: false,
+      error: `Error: reorder_slides requires a non-empty "order" array of current slide ids. Current ids: [${currentIds.join(', ')}]`,
+    };
+  }
+  if (order.some((id) => typeof id !== 'string' || id.length === 0)) {
+    return {
+      ok: false,
+      error: `Error: reorder_slides "order" must contain only non-empty string ids. Current ids: [${currentIds.join(', ')}]`,
+    };
+  }
+
+  const orderSet = new Set(order);
+  const currentSet = new Set(currentIds);
+  if (orderSet.size !== order.length) {
+    return {
+      ok: false,
+      error: `Error: reorder_slides "order" contains duplicate ids. Current ids: [${currentIds.join(', ')}]`,
+    };
+  }
+  const missing = currentIds.filter((id) => !orderSet.has(id));
+  const extra = order.filter((id) => !currentSet.has(id));
+  if (missing.length > 0 || extra.length > 0) {
+    const parts: string[] = [];
+    if (missing.length > 0) parts.push(`missing ${missing.join(', ')}`);
+    if (extra.length > 0) parts.push(`unknown ${extra.join(', ')}`);
+    return {
+      ok: false,
+      error: `Error: reorder_slides "order" must be a permutation of current slide ids (${parts.join('; ')}). Current ids: [${currentIds.join(', ')}]`,
+    };
+  }
+
+  // Target ids: sequential zero-padded to the width of the deck size.
+  const width = Math.max(2, String(order.length).length);
+  const newIdFor = new Map<string, string>();
+  order.forEach((id, i) => newIdFor.set(id, String(i + 1).padStart(width, '0')));
+
+  // Phase 1: stage every slide html/css to a unique temp path, vacating all
+  // original slide paths so no in-flight value is clobbered. Non-slide files
+  // pass through untouched.
+  const map = slidesToMap(files);
+  const tempPrefix = '/slides/.reorder-tmp-';
+  const staged = new Map<string, string>();
+  for (const [path, content] of map) {
+    const basename = path.startsWith('/slides/') ? path.slice('/slides/'.length) : path;
+    const parsed = slideIdAndExt(basename);
+    if (!parsed) {
+      staged.set(path, content);
+      continue;
+    }
+    staged.set(`${tempPrefix}${parsed.id}${parsed.ext}`, content);
+  }
+
+  // Phase 2a: place slide renames at their final paths (slides always win their
+  // target path over an orphan). Record html slides whose id changed.
+  const resultMap = new Map<string, string>();
+  const renames: Array<{ from: string; to: string }> = [];
+  for (const [path, content] of staged) {
+    if (!path.startsWith(tempPrefix)) continue;
+    const parsed = slideIdAndExt(path.slice(tempPrefix.length));
+    if (!parsed) continue;
+    const newId = newIdFor.get(parsed.id);
+    if (newId === undefined) continue; // orphan — restored in phase 2b
+    resultMap.set(`/slides/${newId}${parsed.ext}`, content);
+    if (parsed.ext === SLIDE_HTML_EXT && parsed.id !== newId) {
+      renames.push({ from: parsed.id, to: newId });
+    }
+  }
+
+  // Phase 2b: restore non-slide files and orphan slide files — an orphan keeps
+  // its original path only when no slide rename claimed it.
+  for (const [path, content] of staged) {
+    if (!path.startsWith(tempPrefix)) {
+      resultMap.set(path, content);
+      continue;
+    }
+    const parsed = slideIdAndExt(path.slice(tempPrefix.length));
+    if (!parsed) continue;
+    const newId = newIdFor.get(parsed.id);
+    if (newId !== undefined) continue; // already placed in 2a
+    const original = `/slides/${parsed.id}${parsed.ext}`;
+    if (!resultMap.has(original)) resultMap.set(original, content);
+  }
+
+  return { ok: true, files: slideMapToFiles(resultMap), renames };
+}
+
 /**
  * Regenerate `/deck.json` deterministically from the actual VFS slide files.
  * `slideOrder` = natural-sorted ids of every `/slides/*.html` (a slide's id is its

@@ -65,6 +65,13 @@ truth, not your memory of how the deck was built.
   every content line MUST start with `+` (V4A create body), not bare HTML.
 - **`delete_file` for removals.** When a slide must go, delete its HTML (+ its
   `.css`). Its id drops out of `slideOrder` automatically.
+- **`reorder_slides` for inserting mid-deck or changing order.** Do NOT
+  delete-and-recreate existing slides just to shift their position — that
+  rewrites full content. `create_file` the new slide under any non-colliding id
+  (e.g. `zz`), then `reorder_slides { order: [...] }` listing the current slide
+  ids in the desired final sequence; the harness renames the slide files to
+  sequential ids (`01`, `02`, …) in place. Re-read the deck after reordering to
+  confirm the new ids.
 - **Never write outside the edit allowlist.** You may write ONLY these paths:
   - `/theme.css`
   - `/slides/**` (each slide's `.html` and `.css`)

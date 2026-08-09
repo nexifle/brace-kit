@@ -202,6 +202,47 @@ describe('US-048 black-box activity regression guard', () => {
     expect(deleted[0].path).toBe('/slides/01.html');
   });
 
+  it('edit: a reorder_slides call emits a started→completed row plus file_written rows', async () => {
+    const { sink, events } = captureActivity();
+    const editFiles: SlideFile[] = [
+      { path: '/brief.md', content: '# brief' },
+      { path: '/design.md', content: 'design' },
+      { path: '/theme.css', content: 'body{}' },
+      { path: '/slides/01.html', content: '<section>one</section>' },
+      { path: '/slides/02.html', content: '<section>two</section>' },
+      { path: '/slides/zz.html', content: '<section>new</section>' },
+      {
+        path: '/deck.json',
+        content: JSON.stringify({ title: 't', canvas: '16:9', theme: '/theme.css', slideOrder: ['01', '02', 'zz'] }),
+      },
+    ];
+    const { transport } = makeTransport([
+      () => ({
+        content: 'reordering',
+        toolCalls: [
+          toolCall('reorder_slides', JSON.stringify({ order: ['01', 'zz', '02'] })),
+        ],
+      }),
+      () => ({ content: 'done.' }),
+    ]);
+
+    const result = await runEditPhase({
+      systemPrompt: 'edit skill',
+      messages: [userMsg],
+      providerConfig,
+      files: editFiles,
+      transport,
+      onActivity: sink,
+    });
+
+    expect(result.status).toBe('ready');
+    assertBlackBoxFeed(events);
+    const reorderRow = events.find((e) => e.type === 'tool_started' && e.toolName === 'reorder_slides');
+    expect(reorderRow?.status).toBe('completed');
+    // only slides whose path changed emit a rename row: 01 stays put, zz→02 and 02→03
+    expect(events.filter((e) => e.type === 'file_written' && e.patchOp === 'rename_file').length).toBe(2);
+  });
+
   it('plan ask: an unresolved tool stays running (waiting_user) yet the phase still emitted feeds', async () => {
     const { sink, events } = captureActivity();
     const { transport, callCount: calls } = makeTransport([
