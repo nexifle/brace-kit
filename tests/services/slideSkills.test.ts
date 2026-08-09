@@ -65,4 +65,13 @@ describe('loadSlideSkill', () => {
     const fetcher = fetcherFrom({});
     await expect(loadSlideSkill('edit', { fetcher })).rejects.toThrow(/not found: edit\/SKILL\.md/);
   });
+
+  it('appends the shared terse chat-output block to every phase prompt', async () => {
+    for (const phase of ['plan', 'build', 'edit'] as const) {
+      const prompt = await loadSlideSkill(phase, {
+        fetcher: fetcherFrom({ [`${phase}/SKILL.md`]: `${phase} skill body` }),
+      });
+      expect(prompt).toContain('Terse chat output (token-efficient)');
+    }
+  });
 });

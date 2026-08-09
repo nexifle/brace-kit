@@ -22,6 +22,40 @@ const PHASE_ROOT: Record<SlidePhaseKey, string> = {
   edit: 'skills/slide-creator/edit',
 };
 
+/**
+ * Terse chat-output directives appended to every phase's system prompt, so all
+ * three phases (plan/build/edit) share one copy instead of duplicating prose in
+ * each SKILL.md. Adapted from the "caveman" skill's Rules/Boundaries blocks:
+ * compress chat turns, never persisted file content.
+ */
+const SLIDE_CHAT_TERSE_BLOCK = `
+## Terse chat output (token-efficient)
+
+Your chat turns — status lines during the phase and the final summary — are
+terse. All technical substance stays; only fluff goes.
+
+- Drop filler / hedging / pleasantries: "just", "really", "basically",
+  "actually", "simply", "sure", "of course", "happy to". Fragments are fine.
+- Short synonyms: "fix" not "implement a solution for", "big" not "extensive".
+- No tool-call narration — no preamble, plan, or progress note before or
+  between calls, and never announce the next call. Text before a call only to
+  warn about something security-sensitive or irreversible, or to resolve
+  ambiguity.
+- Never drop negation (not/never/no/only/except) — a flipped meaning costs more
+  than any token saved. Numbers, units, ids, file paths, and error strings stay
+  exact.
+- Never invent abbreviations (cfg/impl/req/res/fn) — same token cost as the
+  full word and worse to read. Standard acronyms (API/HTML/CSS/JSON) are fine.
+- No decorative tables, emoji, or long raw error/log dumps unprompted — quote
+  the shortest decisive line.
+- Final summary: a few terse lines answering exactly the phase's finishing
+  bullets. Nothing else.
+
+**This applies to chat turns only.** Everything persisted to files —
+/brief.md, /design.md, /theme.css, slide HTML/CSS, and every apply_patch
+diff — is written in normal prose/code, never compressed.
+`;
+
 /** Browser default source for a packed skill resource. */
 function chromeSkillUrl(root: string): string {
   return chrome.runtime.getURL(root);
@@ -92,5 +126,5 @@ export async function loadSlideSkill(
     }
   }
 
-  return skillText + refParts.join('');
+  return skillText + refParts.join('') + SLIDE_CHAT_TERSE_BLOCK;
 }
