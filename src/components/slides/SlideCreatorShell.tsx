@@ -12,6 +12,7 @@ import {
   Loader2,
   BookOpen,
   MessageSquare,
+  ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
@@ -478,6 +479,16 @@ export function SlideCreatorShell() {
   const handleStop = () => agent.stop();
   const blocked = !agent.canUseFunctionCalling();
   const back = () => store.closeSlideCreator();
+  const openInTab = async () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('tab.html') + '?open=slide-creator' });
+    // Close the side panel so only the standalone tab stays open.
+    try {
+      const win = await chrome.windows.getCurrent();
+      await chrome.sidePanel.close({ windowId: win.id! });
+    } catch {
+      // Panel may not be closable (e.g. Chrome flag disabled) — ignore.
+    }
+  };
   const phaseLabel = activeProject ? (SLIDE_PHASE_STATUS_COPY[phase] ?? 'Plan') : 'Idle';
 
   const [railOpen, setRailOpen] = useState(true);
@@ -528,6 +539,17 @@ export function SlideCreatorShell() {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {store.mode === 'sidebar' && (
+            <button
+              type="button"
+              onClick={openInTab}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Open in new tab"
+              aria-label="Open in new tab"
+            >
+              <ExternalLink size={15} />
+            </button>
+          )}
           {narrow && (
             <>
               <button

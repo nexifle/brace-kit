@@ -183,6 +183,7 @@ export const useStore = create<AppState>((set, get) => ({
   preferences: {
     toolMessageDisplay: 'detailed',
     startOnWelcome: false,
+    slideCreatorTabSuggestionDismissed: false,
   },
 
   // Text Selection UI Settings

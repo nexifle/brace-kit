@@ -348,6 +348,8 @@ export interface SecuritySettings {
 export interface Preferences {
   toolMessageDisplay: 'detailed' | 'compact';
   startOnWelcome: boolean;
+  /** When true, the "open Slide Creator in a new tab" suggestion is never shown again. */
+  slideCreatorTabSuggestionDismissed: boolean;
 }
 
 // ==================== Streaming State ====================
