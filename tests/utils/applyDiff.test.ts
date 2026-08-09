@@ -76,10 +76,20 @@ describe('applyDiff create (mode: create)', () => {
     });
   });
 
-  test('rejects mixed + and bare content lines', () => {
+  test('recovers mixed + and bare content lines (model dropped + on a line)', () => {
     const res = applyDiff('', '+# Title\nplain line without plus\n', 'create');
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain('Invalid Add File Line');
+    expect(res).toEqual({ ok: true, text: '# Title\nplain line without plus\n' });
+  });
+
+  test('recovers when the arrow line loses its + prefix', () => {
+    const diff =
+      '+# Design\n+\n+## Color Palette\n' +
+      '+  - `primary`: #6f4e37\n' +
+      '  - `gradient shape`: primary `#6f4e37` \u2192 cream `#F7F2EC`, diagonal\n' +
+      '+  - `accent`: #E8A33D\n';
+    const res = applyDiff('', diff, 'create');
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain('`gradient shape`: primary `#6f4e37` \u2192 cream `#F7F2EC`');
   });
 
   test('rejects an empty create diff', () => {

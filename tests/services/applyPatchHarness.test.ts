@@ -159,6 +159,21 @@ describe('applyPatchHarness create_file', () => {
     expect(res.files[0].content).toBe('# Design\nPalette: dark\n');
   });
 
+  test('creates /design.md when a + prefix is dropped on the arrow line', () => {
+    const res = applyPatchOperation([], 'plan', {
+      type: 'create_file',
+      path: '/design.md',
+      diff:
+        '+# Design\n+\n+## Color Palette\n' +
+        '+  - `primary`: #6f4e37\n' +
+        '  - `gradient shape`: primary `#6f4e37` \u2192 cream `#F7F2EC`, diagonal\n',
+    });
+    expect(res.status).toBe('completed');
+    if (res.status !== 'completed') return;
+    expect(res.files[0].content).toContain('# Design');
+    expect(res.files[0].content).toContain('`gradient shape`: primary `#6f4e37` \u2192 cream `#F7F2EC`');
+  });
+
   test('fails when create_file targets an existing path', () => {
     const res = applyPatchOperation(
       files({ '/slides/01.html': '<section>old</section>\n' }),

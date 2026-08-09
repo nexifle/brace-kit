@@ -690,17 +690,14 @@ export function parseCreateDiff(diff: string): ApplyDiffResult {
     return { ok: true, text: withTrailingNewline(body) };
   }
 
-  // Mixed: some '+' lines and some bare/'-'/' ' lines — ambiguous. Fail loudly
-  // so the model re-emits a clean create diff.
-  const bad = contentLines.find((l) => !l.startsWith('+') && l.length > 0);
-  return {
-    ok: false,
-    error:
-      `Invalid Add File Line: '${bad ?? ''}'. ` +
-      `create_file diffs must use one '+' line per file line ` +
-      `(e.g. "+# Title\\n+- bullet\\n+paragraph"), or omit all '+' prefixes and ` +
-      `pass the raw file body.`,
-  };
+  // Mixed: some '+' lines and some bare lines. Models often drop the '+'
+  // on a single content line (commonly a long line or one containing a
+  // multibyte arrow like →). In create mode every line is content, so
+  // strip '+' where present and keep bare lines verbatim; bare '- ' / '  - '
+  // lines are markdown lists or indentation, not update hunks (create_file
+  // has no deletion semantics).
+  const body = contentLines.map((l) => (l.startsWith('+') ? l.slice(1) : l)).join('\n');
+  return { ok: true, text: withTrailingNewline(body) };
 }
 
 /**
