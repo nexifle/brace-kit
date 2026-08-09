@@ -237,25 +237,18 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
       const deck = rebuildDeckProjection(project.files);
       const slides = projectDeckSlides(project.files, deck);
       // Activity lives outside SlideProject (own slideDB store). Orchestrator
-      // landProject only ships SlideProject fields — never wipe the live feed
-      // when re-landing the SAME project mid/after a phase. Explicit
-      // `project.activity` (restore from FullSlideProject) always wins; a
-      // different project id without a feed starts empty.
+      // landProject ships SlideProject fields but may carry a stale
+      // activity/rounds snapshot (from getActiveProject() after a restore) —
+      // never wipe the live feed when re-landing the SAME project mid/after a
+      // phase. Live feed is authoritative; explicit activity/rounds only win on
+      // first load / project switch (sameProject === false).
       const sameProject = state.activeProjectId === project.id;
-      const activity =
-        project.activity !== undefined
-          ? project.activity
-          : sameProject
-            ? state.activity
-            : [];
-      // Rounds likewise live outside SlideProject (own slideDB store). Mid-phase
-      // landProject ships only SlideProject fields, so `rounds` stays undefined
-      // and the live history is preserved; getSlideProject's FullSlideProject
-      // carries them explicitly and wins on open/reload.
-      const rounds =
-        project.rounds !== undefined ? project.rounds : sameProject ? state.rounds : [];
-      const roundIndex =
-        project.roundIndex !== undefined ? project.roundIndex : state.roundIndex;
+      const activity = sameProject ? state.activity : project.activity ?? [];
+      // Rounds likewise live outside SlideProject (own slideDB store). Same
+      // rule: preserve the live history on same-project land; explicit rounds
+      // (getSlideProject's FullSlideProject) win on open/reload/switch.
+      const rounds = sameProject ? state.rounds : project.rounds ?? [];
+      const roundIndex = sameProject ? state.roundIndex : project.roundIndex ?? state.roundIndex;
       // Mid-phase landProject (e.g. appendMessage user turn at edit start) must
       // NOT clear sessionStatus/busy — that drops the composer out of Generating
       // / Stop while the agent is still running. Preserve only while same project

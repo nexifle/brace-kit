@@ -211,7 +211,7 @@ describe('slideStore', () => {
     expect(s.messages).toHaveLength(1);
   });
 
-  it('setActiveProjectData prefers explicit activity=[] over the live feed (restore)', () => {
+  it('setActiveProjectData keeps the live feed on a same-project land carrying stale activity', () => {
     const store = useSlideStore.getState();
     store.setActiveProjectData(makeProject({ id: 'proj_1' }));
     store.pushActivity({
@@ -224,9 +224,43 @@ describe('slideStore', () => {
       label: 'Updated /theme.css',
     });
 
-    // FullSlideProject restore can ship an empty capped feed — must not keep stale live rows.
+    // A same-project land (orchestrator sourcing from getActiveProject() after a
+    // restore) can carry a stale activity snapshot — it must NOT clobber the live
+    // feed. Explicit activity only wins on first load / project switch.
     store.setActiveProjectData({ ...makeProject({ id: 'proj_1' }), activity: [] });
-    expect(useSlideStore.getState().activity).toEqual([]);
+    expect(useSlideStore.getState().activity).toEqual([expect.objectContaining({ id: 'live' })]);
+  });
+
+  it('restore-then-round does not lose streamed tool calls on the round-end land (regression)', () => {
+    const store = useSlideStore.getState();
+    // Restore on open: activeProjectId is null, so the explicit FullSlideProject
+    // activity feed is adopted (first load).
+    const staleFeed = [
+      { id: 'e1', type: 'phase_started' as const, status: 'completed' as const, ts: 1, phase: 'build' as const, label: 'Building' },
+    ];
+    store.setActiveProjectData({ ...makeProject({ id: 'sp_build' }), activity: staleFeed });
+    expect(useSlideStore.getState().activeProject?.activity).toEqual(staleFeed);
+
+    // The round streams a tool call into the live feed.
+    store.pushActivity({
+      id: 't1',
+      type: 'tool_started' as const,
+      status: 'running' as const,
+      ts: 2,
+      phase: 'build' as const,
+      label: 'Writing /slides/01.html',
+      toolName: 'apply_patch',
+      path: '/slides/01.html',
+    });
+    expect(useSlideStore.getState().activity.map((e) => e.id)).toEqual(['e1', 't1']);
+
+    // Round-end land sources from getActiveProject() → { ...current } spreads the
+    // stale .activity snapshot. The live feed must survive.
+    const current = useSlideStore.getState().activeProject as NonNullable<
+      ReturnType<typeof useSlideStore.getState>['activeProject']
+    >;
+    store.setActiveProjectData({ ...current, phase: 'ready', updatedAt: Date.now() });
+    expect(useSlideStore.getState().activity.map((e) => e.id)).toEqual(['e1', 't1']);
   });
 
   it('orchestrator-style completion keeps tool rows when landing assistant text', () => {
