@@ -239,6 +239,139 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(calls()).toBe(3);
   });
 
+  it('fires generateTitle once after the first plan completes', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'drafting',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+title: Coffee for Teams\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+dark theme\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '4:5' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+
+    const h = makeHost();
+    const titled: string[] = [];
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+      generateTitle: (id) => titled.push(id),
+    });
+
+    await agent.createFromPrompt('a coffee deck');
+
+    expect(h.phase).toBe('plan_ready');
+    // Fired exactly once, for the just-landed project (gate: !autoTitled).
+    expect(titled).toEqual([h.active!.id]);
+  });
+
+  it('skips generateTitle when the project is already autoTitled', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      () => ({
+        content: 'revising',
+        toolCalls: [
+          toolCall(
+            'apply_patch',
+            JSON.stringify({
+              operation: {
+                type: 'update_file',
+                path: '/brief.md',
+                diff: '@@\n-# Coffee deck\n+# Coffee deck — 12 slides\n',
+              },
+            }),
+          ),
+        ],
+      }),
+      () => ({ content: 'Revised plan ready.' }),
+    ]);
+
+    const h = makeHost();
+    // plan_ready with plan files only — no built deck yet. Already auto-titled
+    // (e.g. by a prior plan round), so a re-plan must NOT fire generateTitle.
+    h.host.landProject({ ...builtProject(), autoTitled: true });
+
+    const titled: string[] = [];
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+      generateTitle: (id) => titled.push(id),
+    });
+
+    await agent.sendFollowUp('make it 12 slides instead of 8');
+
+    expect(h.phase).toBe('plan_ready');
+    expect(titled).toEqual([]);
+  });
+
+  it('preserves the auto-title when the build lands after the title write (agent-mode race)', async () => {
+    const skills = makeSkillFetcher();
+    const { transport } = makeTransport([
+      // plan round 1
+      () => ({
+        content: 'drafting',
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+brief\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+design\n' } })),
+          toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' })),
+        ],
+      }),
+      // plan final text
+      () => ({ content: 'Plan complete.' }),
+      // build round 1 — yield to the macrotask queue first so the deferred
+      // title write (scheduled by generateTitle) lands mid-build, AFTER runBuild
+      // captured the provisional snapshot but BEFORE this round's landing.
+      async () => {
+        await new Promise((r) => setTimeout(r, 0));
+        return {
+          content: 'building',
+          toolCalls: [
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/slides/01.html', diff: '@@\n+<section>Hi</section>\n' } })),
+            toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/deck.json', diff: '@@\n+{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}\n' } })),
+          ],
+        };
+      },
+      // build final text
+      () => ({ content: 'Deck complete.' }),
+    ]);
+
+    const h = makeHost();
+    const titled: string[] = [];
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+      generateTitle: (id) => {
+        titled.push(id);
+        // Simulate the real hook's async write landing mid-build (after runBuild
+        // captured the provisional snapshot, before the build lands).
+        setTimeout(() => {
+          const active = h.host.getActiveProject();
+          if (active && active.id === id) {
+            h.host.landProject({ ...active, title: 'Coffee Teams', autoTitled: true });
+          }
+        }, 0);
+      },
+    });
+
+    await agent.createFromPrompt('a deck', 'agent');
+
+    // The build landed AFTER the title write — it must not revert the title or
+    // reset autoTitled from the stale start-of-build snapshot.
+    expect(h.phase).toBe('ready');
+    expect(titled).toEqual([h.active!.id]);
+    expect(h.active?.title).toBe('Coffee Teams');
+    expect(h.active?.autoTitled).toBe(true);
+  });
+
   it('createFromPrompt applies the passed mode to the new project (defaults to plan)', async () => {
     const skills = makeSkillFetcher();
     const { transport } = makeTransport([

@@ -101,6 +101,7 @@ export interface StoredSlideProject {
   canvas: SlideProject['canvas'];
   pendingAsk?: SlideProject['pendingAsk'];
   stopped?: boolean;
+  autoTitled?: boolean;
 }
 
 /** The full project as persisted across the stores. */
@@ -140,6 +141,7 @@ function toMetadata(project: SlideProject): StoredSlideProject {
     canvas: project.canvas,
     pendingAsk: project.pendingAsk,
     stopped: project.stopped,
+    autoTitled: project.autoTitled,
   };
 }
 
@@ -367,6 +369,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
       canvas: metadata.canvas,
       pendingAsk: metadata.pendingAsk,
       stopped: metadata.stopped,
+      autoTitled: metadata.autoTitled,
       messages: messagesRec?.messages ?? [],
       files: filesRec?.files ?? [],
       activity: activityRec?.activity ?? [],

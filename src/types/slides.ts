@@ -187,6 +187,8 @@ export interface SlideProject {
   pendingAsk?: SlidePendingAsk;
   /** Set when generation was stopped by the user for clean UI state. */
   stopped?: boolean;
+  /** Set once the harness has auto-titled the project (replacing the provisional prompt-derived title). */
+  autoTitled?: boolean;
   /**
    * The isolated plan-session conversation (user + assistant + tool turns, no
    * leading system message) from the last completed plan round. Persisted so a

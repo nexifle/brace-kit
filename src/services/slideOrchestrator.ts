@@ -190,6 +190,13 @@ export interface SlideAgentDeps {
    */
   getChatOptions?: () => Record<string, unknown> | object;
 
+  /**
+   * Fire-and-forget LLM auto-title for a just-planned project (implemented by
+   * the hook via chrome.runtime; absent in unit tests). Called once per project,
+   * gated on `!project.autoTitled`.
+   */
+  generateTitle?: (projectId: string) => void;
+
 }
 
 
@@ -369,7 +376,7 @@ export function createSlideAgent(
     customError?: string,
   ): void {
     let next: SlideProject = {
-      ...base,
+      ...(host.getActiveProject() ?? base),
       files,
       phase: projectPhase,
       pendingAsk: undefined,
@@ -452,6 +459,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('plan_ready');
+      if (!next.autoTitled) deps.generateTitle?.(next.id);
       appendMessage(next, assistantOrFallback(result.content, 'Plan ready — review the brief and design, then build.'));
       // Agent mode auto-continues into build; plan docs are already written.
       if (next.mode === 'agent') {
@@ -590,6 +598,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('plan_ready');
+      if (!next.autoTitled) deps.generateTitle?.(next.id);
       appendMessage(
         next,
         assistantOrFallback(
@@ -747,23 +756,37 @@ export function createSlideAgent(
     state.abort = null;
     host.setBusy(false);
 
+    /**
+     * Build the landing project for a build round. Re-reads the freshest active
+     * project instead of the start-of-build snapshot so a concurrent auto-title
+     * (which lands mid-build in agent mode) is never reverted, and re-syncs
+     * deck.json.title with the current project title so the export basename
+     * matches the chat-rail title.
+     */
+    function buildLanding(files: SlideFile[], patch: Partial<SlideProject>): SlideProject {
+      const current = host.getActiveProject() ?? project;
+      return {
+        ...current,
+        files: syncDeckJson(files, { title: current.title }),
+        updatedAt: Date.now(),
+        ...patch,
+      };
+    }
+
     if (result.status === 'ready') {
       if (verifyFailed) {
         const slides = result.slideCount ?? 0;
-        const next: SlideProject = {
-          ...project,
-          files: result.files,
+        const next = buildLanding(result.files, {
           phase: slides > 0 ? 'ready' : 'error',
           pendingAsk: undefined,
-          updatedAt: Date.now(),
-        };
+        });
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
         emitVerifyFailed('build', verifyIssues);
         if (slides > 0) {
           recordRound(
-            result.files,
+            next.files,
             `Deck built · ${slides} slide${slides === 1 ? '' : 's'} (needs review)`,
           );
         }
@@ -773,19 +796,16 @@ export function createSlideAgent(
         );
         return;
       }
-      const next: SlideProject = {
-        ...project,
-        files: result.files,
+      const next = buildLanding(result.files, {
         phase: 'ready',
         pendingAsk: undefined,
-        updatedAt: Date.now(),
-      };
+      });
       host.landProject(next);
       host.setPhase('ready');
       // slideCount comes from the same mapBuildResult projection as the activity feed.
       const slides = result.slideCount ?? 0;
       recordRound(
-        result.files,
+        next.files,
         slides > 0 ? `Deck built · ${slides} slide${slides === 1 ? '' : 's'}` : 'Deck built',
       );
       appendMessage(
@@ -803,20 +823,17 @@ export function createSlideAgent(
     if (result.status === 'done') {
       if (result.truncated) {
         const slides = result.slideCount ?? 0;
-        const next: SlideProject = {
-          ...project,
-          files: result.files,
+        const next = buildLanding(result.files, {
           // Keep previewable phase if something projects; still error that run was incomplete.
           phase: slides > 0 ? 'ready' : 'error',
           pendingAsk: undefined,
-          updatedAt: Date.now(),
-        };
+        });
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
         if (slides > 0) {
           recordRound(
-            result.files,
+            next.files,
             `Deck built (partial) · ${slides} slide${slides === 1 ? '' : 's'}`,
           );
         }
@@ -842,7 +859,7 @@ export function createSlideAgent(
     }
 
     if (result.status === 'error') {
-      const next: SlideProject = { ...project, files: result.files, phase: 'error', updatedAt: Date.now() };
+      const next = buildLanding(result.files, { phase: 'error' });
       host.landProject(next);
       host.setPhase('error');
       appendMessage(next, makeMsg('error', result.error || 'Build failed.'));
@@ -850,13 +867,12 @@ export function createSlideAgent(
 
     if (result.status === 'cancelled') {
       // Keep the partially-built deck files (stop() already narrated + cleared busy).
-      host.landProject({
-        ...project,
-        files: result.files,
-        stopped: true,
-        pendingAsk: undefined,
-        updatedAt: Date.now(),
-      });
+      host.landProject(
+        buildLanding(result.files, {
+          stopped: true,
+          pendingAsk: undefined,
+        }),
+      );
     }
   }
 

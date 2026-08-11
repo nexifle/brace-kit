@@ -14,7 +14,7 @@ import type { StreamDelta } from '../services/agentSession.ts';
 import { shouldEnableGoogleSearch } from '../services/slideTools.ts';
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
-import { supportsFunctionCalling } from '../providers/presets.ts';
+import { isGeminiImageModel, isXAIImageModel, supportsFunctionCalling } from '../providers/presets.ts';
 import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
@@ -23,9 +23,11 @@ import {
   composeSlideHtml,
   projectDeckSlides,
   rebuildDeckProjection,
+  syncDeckJson,
 } from '../utils/slideVfs.ts';
 import type { SandboxParentToSandbox, SandboxToParent } from '../utils/slideRendererProtocol.ts';
 import type { MCPTool } from '../types/index.ts';
+import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
 export function useSlideAgent() {
@@ -101,6 +103,11 @@ export function useSlideAgent() {
             // main-chat streaming toggle as a hard off switch.
             stream: true,
           }),
+        // Auto-title the project after its first plan completes (gated inside
+        // the orchestrator on `!autoTitled`). Fire-and-forget.
+        generateTitle: (projectId) => {
+          void generateSlideProjectTitle(projectId);
+        },
 
 
       }
@@ -150,6 +157,69 @@ export function useSlideAgent() {
     stop: agent.stop,
     canUseFunctionCalling: agent.canUseFunctionCalling,
   };
+}
+
+/**
+ * Auto-title a slide project once its first plan completes, replacing the
+ * provisional prompt-derived title with a short LLM title from the deck prompt
+ * (mirrors chat's `generateConversationTitle`). Gated on `!project.autoTitled`
+ * so re-plans never re-title. Fire-and-forget from the orchestrator; the active
+ * project is re-read right before writing so a concurrently-landed build/edit
+ * round's files are not clobbered by a stale snapshot.
+ */
+export async function generateSlideProjectTitle(projectId: string): Promise<void> {
+  const project = useSlideStore.getState().activeProject;
+  if (!project || project.id !== projectId || project.autoTitled) return;
+
+  // Title messages: only user messages, first 2 + last 1 (deduplicated), 300
+  // chars each — same heuristic as chat's auto-title.
+  const allUserMessages = project.messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content.trim().slice(0, 300))
+    .filter((c) => c.length > 0);
+  const firstTwo = allUserMessages.slice(0, 2);
+  const lastOne = allUserMessages.length > 2 ? [allUserMessages[allUserMessages.length - 1]] : [];
+  const deduped = [...firstTwo, ...lastOne.filter((c) => !firstTwo.includes(c))];
+  if (deduped.length === 0) return;
+
+  try {
+    const providerConfig = useStore.getState().providerConfig;
+    // Image-generation models can't produce a text title. The function-calling
+    // gate lets non-Gemini image models through (only Gemini is checked at the
+    // gate), so fall back to a text-capable model from the same provider —
+    // mirroring chat's generateConversationTitle.
+    const currentModel = providerConfig.model || '';
+    const titleProviderConfig =
+      isGeminiImageModel(currentModel)
+        ? { ...providerConfig, model: 'gemini-3.6-flash' }
+        : providerConfig.providerId === 'xai' && isXAIImageModel(currentModel)
+          ? { ...providerConfig, model: 'grok-4.5' }
+          : providerConfig;
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'TITLE_GENERATE',
+      messages: [
+        { role: 'system', content: TITLE_GENERATION_SYSTEM_PROMPT },
+        ...deduped.map((content) => ({ role: 'user', content })),
+      ],
+      providerConfig: titleProviderConfig,
+    });
+
+    if (!response?.title || response.error) return;
+    const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
+
+    // Re-read the active project at write time so we don't clobber a build/edit
+    // round that landed while the title request was in flight.
+    const current = useSlideStore.getState().activeProject;
+    if (!current || current.id !== projectId || current.autoTitled) return;
+    const files = syncDeckJson(current.files, { title });
+    const next = { ...current, title, autoTitled: true, files };
+    setLastActiveSlideProject(next.id);
+    saveSlideProject(next).catch(() => {});
+    useSlideStore.getState().setActiveProjectData(next);
+  } catch (e) {
+    console.error('[generateSlideProjectTitle] Failed:', e);
+  }
 }
 
 /**
