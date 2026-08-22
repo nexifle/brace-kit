@@ -86,9 +86,16 @@ export function useSlideAgent() {
         // and getChatOptions. A static providerConfig here would freeze the first
         // render's selection for the entire agent lifetime (custom provider bug).
         getProviderConfig: () => useStore.getState().providerConfig,
-        // Spread external-tool sharing (google_search enablement + MCP execution)
-        // computed from live main-store settings so sub-agents mirror main chat.
+        // External-tool sharing (google_search / Grok web_search / MCP).
+        // Flags are recomputed at each phase request so a provider switch is
+        // reflected — same live-read pattern as getProviderConfig.
         toolOptions: toolOptionsRef.current,
+        getToolOptions: () => {
+          if (toolOptionsRef.current) {
+            refreshSlideToolOptions(toolOptionsRef.current);
+          }
+          return toolOptionsRef.current ?? undefined;
+        },
         // Live function-calling check (US-032): read the CURRENT provider/model
         // from the main store so a model switch is reflected instantly, even
         // though the agent instance itself is created once.

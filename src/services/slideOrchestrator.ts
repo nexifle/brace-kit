@@ -178,6 +178,12 @@ export interface SlideAgentDeps {
   /** External tool (google_search / MCP) sharing for sub-agent sessions (US-028/029). */
   toolOptions?: SlideToolOptions;
   /**
+   * Live tool options at request time. Prefer this over the static `toolOptions`
+   * snapshot so a provider switch (e.g. OpenAI → Grok) injects `web_search`
+   * on the next phase turn instead of freezing the first-render flags.
+   */
+  getToolOptions?: () => SlideToolOptions | undefined;
+  /**
    * Whether the active model can drive the tool loop (US-032). Defaults to the
    * pure provider check (`supportsFunctionCalling`); inject a live store-backed
    * checker from the hook so it reflects the current model instantly.
@@ -253,6 +259,10 @@ export function createSlideAgent(
     const opts = deps.getChatOptions?.() ?? {};
     return opts as Record<string, unknown>;
   };
+
+  /** Live search/MCP flags — never freeze the first-render snapshot. */
+  const toolOptions = (): SlideToolOptions | undefined =>
+    deps.getToolOptions?.() ?? deps.toolOptions;
 
 
 
@@ -418,7 +428,7 @@ export function createSlideAgent(
       maxRounds: deps.maxRounds,
       transport: deps.transport,
       abortRequest: deps.abortRequest,
-      toolOptions: deps.toolOptions,
+      toolOptions: toolOptions(),
       onDelta: streamDelta,
       onRoundStart: prepareStream,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
@@ -555,7 +565,7 @@ export function createSlideAgent(
         maxRounds: deps.maxRounds,
         transport: deps.transport,
         abortRequest: deps.abortRequest,
-        toolOptions: deps.toolOptions,
+        toolOptions: toolOptions(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
@@ -748,7 +758,7 @@ export function createSlideAgent(
         maxRounds: deps.maxRounds,
         transport: deps.transport,
         abortRequest: deps.abortRequest,
-        toolOptions: deps.toolOptions,
+        toolOptions: toolOptions(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
@@ -982,7 +992,7 @@ export function createSlideAgent(
         maxRounds: deps.maxRounds,
         transport: deps.transport,
         abortRequest: deps.abortRequest,
-        toolOptions: deps.toolOptions,
+        toolOptions: toolOptions(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
@@ -1169,7 +1179,7 @@ export function createSlideAgent(
         maxRounds: deps.maxRounds,
         transport: deps.transport,
         abortRequest: deps.abortRequest,
-        toolOptions: deps.toolOptions,
+        toolOptions: toolOptions(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),

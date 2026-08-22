@@ -444,6 +444,54 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(first).toContain('google_search');
   });
 
+  it('forwards enableGrokWebSearch into the plan session tool list', async () => {
+    const skills = makeSkillFetcher();
+    const offeredNames: string[][] = [];
+    const transport = async (request: { tools: { name: string }[] }) => {
+      offeredNames.push(request.tools.map((t) => t.name));
+      return { content: 'done.' } as AgentChatResponse;
+    };
+
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      toolOptions: { enableGrokWebSearch: true },
+    });
+
+    await agent.createFromPrompt('a deck');
+
+    const first = offeredNames[0];
+    expect(first).toContain('web_search');
+    expect(first[first.length - 1]).toBe('web_search');
+    expect(first).toContain('submit_plan');
+  });
+
+  it('reads getToolOptions at request time so a late Grok enablement is not frozen', async () => {
+    const skills = makeSkillFetcher();
+    const offeredNames: string[][] = [];
+    const transport = async (request: { tools: { name: string }[] }) => {
+      offeredNames.push(request.tools.map((t) => t.name));
+      return { content: 'done.' } as AgentChatResponse;
+    };
+
+    const live: { enableGrokWebSearch?: boolean } = {};
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      toolOptions: live,
+      getToolOptions: () => live,
+    });
+
+    live.enableGrokWebSearch = true;
+    await agent.createFromPrompt('a deck');
+
+    expect(offeredNames[0]).toContain('web_search');
+  });
+
   it('suspends with a pending ask on an ask tool call, then records the answer', async () => {
     const skills = makeSkillFetcher();    const { transport } = makeTransport([
       () => ({
