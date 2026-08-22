@@ -86,6 +86,24 @@ const LIST_FILES_TOOL: MCPTool = {
   },
 };
 
+const LOAD_SKILL_TOOL: MCPTool = {
+  name: 'load_skill',
+  description:
+    'Load a packed phase skill document into this session (SKILL.md or a catalog references/*.md). ' +
+    'Not a project file — use read_file for VFS paths like /brief.md. Call SKILL.md before writing files. Read-only.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description:
+          'Catalog id: "SKILL.md" or "references/<file>.md" (e.g. "references/brief-template.md").',
+      },
+    },
+    required: ['name'],
+  },
+};
+
 const READ_FILE_TOOL: MCPTool = {
   name: 'read_file',
   description:
@@ -239,6 +257,7 @@ const REORDER_SLIDES_TOOL: MCPTool = {
 export const SLIDE_BUILTIN_TOOLS: Record<string, MCPTool> = {
   list_files: LIST_FILES_TOOL,
   read_file: READ_FILE_TOOL,
+  load_skill: LOAD_SKILL_TOOL,
   apply_patch: APPLY_PATCH_TOOL,
   reorder_slides: REORDER_SLIDES_TOOL,
   ask: ASK_TOOL,
@@ -291,10 +310,10 @@ export function shouldEnableGrokWebSearch(
 /**
  * Resolve the allowlisted set of slide tool NAMES for a phase.
  *
- * - plan:  read tools + apply_patch + ask + submit_plan
- * - build: read tools + apply_patch + reorder_slides (no ask / no submit_plan)
- * - edit:  read tools + apply_patch + reorder_slides (follow-ups are pure patches)
- * - main:  read-only tools only (orchestrator may orient but never mutate)
+ * - plan:  read tools + load_skill + apply_patch + ask + submit_plan
+ * - build: read tools + load_skill + apply_patch + reorder_slides (no ask / no submit_plan)
+ * - edit:  read tools + load_skill + apply_patch + reorder_slides (follow-ups are pure patches)
+ * - main:  read-only VFS tools only (orchestrator may orient but never mutate)
  *
  * When `enableGoogleSearch` is passed true (US-028), `google_search` is appended
  * for plan — and for build/edit when the caller opts in — matching main chat's
@@ -310,11 +329,11 @@ export function getToolsForPhaseNames(
   const base: string[] = (() => {
     switch (phase) {
       case 'plan':
-        return ['list_files', 'read_file', 'apply_patch', 'ask', 'submit_plan'];
+        return ['list_files', 'read_file', 'load_skill', 'apply_patch', 'ask', 'submit_plan'];
       case 'build':
-        return ['list_files', 'read_file', 'apply_patch', 'reorder_slides'];
+        return ['list_files', 'read_file', 'load_skill', 'apply_patch', 'reorder_slides'];
       case 'edit':
-        return ['list_files', 'read_file', 'apply_patch', 'reorder_slides'];
+        return ['list_files', 'read_file', 'load_skill', 'apply_patch', 'reorder_slides'];
       case 'main':
       default:
         return ['list_files', 'read_file'];

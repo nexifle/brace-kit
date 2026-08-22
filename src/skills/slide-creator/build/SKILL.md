@@ -29,6 +29,10 @@ The brief and design are authoritative. If something is ambiguous, resolve it
 consistently with the stated concept and system — do NOT invent a second design
 system, and do NOT stall waiting for input (you have no `ask` tool in build).
 
+Packed references are **not** in the system prompt. `load_skill`
+`{ "name": "references/deck-file-contract.md" }` for the deck file contract
+before writing slides.
+
 ## Your outputs — the files you create
 
 You produce these files in the project, in dependency order:

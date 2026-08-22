@@ -1,9 +1,10 @@
 // ==================== Slide phase runners ====================
 //
 // Orchestrates a single slide-creator agent phase by driving the reusable
-// `runAgentSession` tool loop (src/services/agentSession.ts) with a phase
-// skill as the isolated session's system prompt and the phase's allowlisted
-// tool set (`getToolsForPhase` from slideTools.ts).
+// `runAgentSession` tool loop (src/services/agentSession.ts) with a compact
+// phase stub + skill catalog as the isolated session's system prompt and the
+// phase's allowlisted tool set (`getToolsForPhase` from slideTools.ts). Full
+// SKILL.md / references are pulled on demand via `load_skill`.
 //
 // The plan runner (US-015) is the first of these. It:
 //   - holds a mutable, in-memory VFS (`SlideFile[]`) that accumulates the
@@ -11,6 +12,7 @@
 //   - routes every model tool call client-side:
 //       * list_files  -> list VFS paths under a prefix
 //       * read_file   -> read one file's content
+//       * load_skill  -> packed phase SKILL.md / references (not VFS)
 //       * apply_patch -> `applyPatchOperation(files, 'plan', op)`; on success
 //                        adopts the returned NEW files array and notifies the
 //                        caller via `onFilesChange`
@@ -58,6 +60,11 @@ import {
   validateDeckJson,
 } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
+import {
+  loadSlideSkillResource,
+  type SlidePhaseKey,
+  type SlideSkillFetcher,
+} from './slideSkills.ts';
 import { normalizeAskPayload } from '../utils/slideAsk.ts';
 import {
   askAnsweredLabel,
@@ -149,6 +156,7 @@ interface ActivityArgs {
   path?: string;
   patchOp?: SlidePatchOpLabel;
   query?: string;
+  skillName?: string;
 }
 
 /** Parse the label-relevant bits from a tool call's `arguments` JSON. */
@@ -163,6 +171,7 @@ function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
         : undefined,
     patchOp: patch.ok ? (patch.operation.type as SlidePatchOpLabel) : undefined,
     query: typeof parsed?.query === 'string' ? (parsed.query as string) : undefined,
+    skillName: typeof parsed?.name === 'string' ? (parsed.name as string) : undefined,
   };
 }
 
@@ -482,6 +491,9 @@ export interface PlanPhaseParams {
   toolOptions?: SlideToolOptions;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
   onActivity?: SlideActivitySink;
+  /** Packed skill fetcher for `load_skill` (tests inject; production uses chrome URLs). */
+  skillFetcher?: SlideSkillFetcher;
+  skillBaseUrl?: string;
 }
 
 export type PlanPhaseStatus =
@@ -641,6 +653,8 @@ function buildPlanSession(params: PlanPhaseParams) {
         else emitter.complete(row);
         return { content };
       }
+      case 'load_skill':
+        return dispatchLoadSkill(toolCall, round, 'plan', params, emitter);
       case 'apply_patch':
         return dispatchApplyPatch(
           toolCall,
@@ -733,6 +747,9 @@ export interface BuildPhaseParams {
   toolOptions?: SlideToolOptions;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
   onActivity?: SlideActivitySink;
+  /** Packed skill fetcher for `load_skill`. */
+  skillFetcher?: SlideSkillFetcher;
+  skillBaseUrl?: string;
 }
 
 /**
@@ -825,6 +842,8 @@ function buildBuildSession(params: BuildPhaseParams) {
         else emitter.complete(row);
         return { content };
       }
+      case 'load_skill':
+        return dispatchLoadSkill(toolCall, round, 'build', params, emitter);
       case 'apply_patch':
         return dispatchApplyPatch(
           toolCall,
@@ -983,6 +1002,9 @@ export interface EditPhaseParams {
   toolOptions?: SlideToolOptions;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
   onActivity?: SlideActivitySink;
+  /** Packed skill fetcher for `load_skill`. */
+  skillFetcher?: SlideSkillFetcher;
+  skillBaseUrl?: string;
 }
 
 /**
@@ -1071,6 +1093,8 @@ function buildEditSession(params: EditPhaseParams) {
         else emitter.complete(row);
         return { content };
       }
+      case 'load_skill':
+        return dispatchLoadSkill(toolCall, round, 'edit', params, emitter);
       case 'apply_patch':
         return dispatchApplyPatch(
           toolCall,
@@ -1287,6 +1311,29 @@ function readFile(
   const file = getSlideFile(files, path);
   if (!file) return `Error: File not found: ${path}`;
   return file.content;
+}
+
+async function dispatchLoadSkill(
+  toolCall: ToolCall,
+  round: number,
+  phase: SlidePhaseKey,
+  params: { skillFetcher?: SlideSkillFetcher; skillBaseUrl?: string },
+  emitter: ReturnType<typeof createActivityEmitter>,
+): Promise<AgentToolDispatch> {
+  const row = emitter.started(toolCall, round);
+  const name = args<{ name?: string }>(toolCall).name;
+  if (!name?.trim()) {
+    const content = 'Error: load_skill requires a "name" argument.';
+    emitter.failed(row, content);
+    return { content };
+  }
+  const content = await loadSlideSkillResource(phase, name, {
+    ...(params.skillFetcher ? { fetcher: params.skillFetcher } : {}),
+    ...(params.skillBaseUrl ? { baseUrl: params.skillBaseUrl } : {}),
+  });
+  if (content.startsWith('Error:')) emitter.failed(row, content);
+  else emitter.complete(row);
+  return { content };
 }
 
 /** Safely parse the tool call's `arguments` JSON string. */

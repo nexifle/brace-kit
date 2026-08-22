@@ -269,6 +269,43 @@ describe('runPlanPhase', () => {
     expect(result.error).toBeUndefined();
   });
 
+  it('routes load_skill to packed skill resources, not the VFS', async () => {
+    const files = makeFiles([{ path: '/brief.md', content: 'vfs brief' }]);
+    const { transport } = makeTransport([
+      () => ({
+        toolCalls: [toolCall('load_skill', JSON.stringify({ name: 'SKILL.md' }))],
+      }),
+      () => ({ content: 'ok' }),
+    ]);
+    const fetcher = async (url: string) => {
+      if (url.endsWith('plan/SKILL.md') || url.includes('plan/SKILL.md')) {
+        return '---\nname: slide-creator-plan\ndescription: Plan.\n---\nfull plan skill body';
+      }
+      throw new Error(`not found: ${url}`);
+    };
+
+    let loaded = '';
+    const wrapping = async (msg: Parameters<NonNullable<PlanPhaseParams['transport']>>[0]) => {
+      const last = msg.messages?.[msg.messages.length - 1];
+      if (last && last.role === 'tool') {
+        loaded = typeof last.content === 'string' ? last.content : JSON.stringify(last.content ?? '');
+      }
+      return transport!(msg);
+    };
+
+    const result = await runPlanPhase({
+      systemPrompt: 'stub',
+      messages: [userMsg],
+      providerConfig,
+      files,
+      transport: wrapping,
+      skillFetcher: fetcher,
+    });
+    expect(result.status).toBe('done');
+    expect(loaded).toContain('full plan skill body');
+    expect(loaded).not.toContain('vfs brief');
+  });
+
   it('returns error status when the transport reports an error', async () => {
     const { transport } = makeTransport([() => ({ error: 'API key is required.' })]);
     const result = await runPlanPhase({

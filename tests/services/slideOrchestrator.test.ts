@@ -32,8 +32,9 @@ function makeSkillFetcher() {
       // the phase-relative key ("plan/SKILL.md") for lookup.
       const key = url.replace('skills://skills/slide-creator/', '');
       const store: Record<string, string> = {
-        'plan/SKILL.md': 'plan skill **refs here** (`references/brief-template.md`)',
-        'plan/references/brief-template.md': '# brief template',
+        'plan/SKILL.md':
+          '---\nname: slide-creator-plan\ndescription: Plan skill.\n---\nplan skill **refs here** (`references/brief-template.md`)',
+        'plan/references/brief-template.md': '# brief template\nSECRET_PALETTE_BODY',
         'build/SKILL.md': 'build skill',
         'edit/SKILL.md': 'edit skill',
       };
@@ -195,7 +196,7 @@ function makeHost() {
 describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
   it('creates a project, starts plan, and reaches plan_ready, keeping the transcript short', async () => {
     const skills = makeSkillFetcher();
-    const { transport, calls } = makeTransport([
+    const { transport, calls, seenMessages } = makeTransport([
       () => ({
         content: 'drafting',
         toolCalls: [
@@ -235,8 +236,12 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
     expect(h.active!.messages.length).toBeLessThanOrEqual(3);
     // tool calls are NOT copied into the main transcript
     expect(h.active!.messages.some((m) => Array.isArray((m as unknown as { toolCalls?: unknown }).toolCalls))).toBe(false);
-    // plan skill + its references were loaded for the session
     expect(calls()).toBe(3);
+    const sys = seenMessages[0]?.find((m) => m.role === 'system')?.content ?? '';
+    expect(sys).toContain('Skill catalog');
+    expect(sys).toContain('references/brief-template.md');
+    expect(sys).not.toContain('SECRET_PALETTE_BODY');
+    expect(sys).not.toContain('plan skill **refs here**');
   });
 
   it('fires generateTitle once after the first plan completes', async () => {

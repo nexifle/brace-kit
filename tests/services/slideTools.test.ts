@@ -18,6 +18,7 @@ describe('slideTools definitions', () => {
     const toolNames = names(tools);
     expect(toolNames).toContain('list_files');
     expect(toolNames).toContain('read_file');
+    expect(toolNames).toContain('load_skill');
     expect(toolNames).toContain('apply_patch');
     expect(toolNames).toContain('reorder_slides');
     expect(toolNames).toContain('ask');
@@ -40,11 +41,12 @@ describe('slideTools definitions', () => {
 });
 
 describe('getToolsForPhase', () => {
-  test('plan has read + apply_patch + ask + submit_plan', () => {
+  test('plan has read + load_skill + apply_patch + ask + submit_plan', () => {
     const tools = getToolsForPhase('plan');
     expect(getToolsForPhaseNames('plan')).toEqual([
       'list_files',
       'read_file',
+      'load_skill',
       'apply_patch',
       'ask',
       'submit_plan',
@@ -56,14 +58,26 @@ describe('getToolsForPhase', () => {
 
   test('build has read + apply_patch + reorder_slides, without ask or submit_plan', () => {
     const tools = getToolsForPhase('build');
-    expect(names(tools)).toEqual(['list_files', 'read_file', 'apply_patch', 'reorder_slides']);
+    expect(names(tools)).toEqual([
+      'list_files',
+      'read_file',
+      'load_skill',
+      'apply_patch',
+      'reorder_slides',
+    ]);
     expect(names(tools)).not.toContain('ask');
     expect(names(tools)).not.toContain('submit_plan');
   });
 
-  test('edit has read + apply_patch + reorder_slides', () => {
+  test('edit has read + load_skill + apply_patch + reorder_slides', () => {
     const tools = getToolsForPhase('edit');
-    expect(names(tools)).toEqual(['list_files', 'read_file', 'apply_patch', 'reorder_slides']);
+    expect(names(tools)).toEqual([
+      'list_files',
+      'read_file',
+      'load_skill',
+      'apply_patch',
+      'reorder_slides',
+    ]);
   });
 
   test('main is read-only (no mutator, no ask)', () => {
@@ -97,6 +111,7 @@ describe('google_search injection (US-028)', () => {
     expect(names(tools)).toEqual([
       'list_files',
       'read_file',
+      'load_skill',
       'apply_patch',
       'ask',
       'submit_plan',
@@ -150,6 +165,7 @@ describe('web_search (Grok) injection', () => {
     expect(names(tools)).toEqual([
       'list_files',
       'read_file',
+      'load_skill',
       'apply_patch',
       'ask',
       'submit_plan',

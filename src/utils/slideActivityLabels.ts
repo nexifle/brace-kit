@@ -95,6 +95,11 @@ export function readFileLabel(path: string): string {
   return `Reading ${path || '/'}`;
 }
 
+export function loadSkillLabel(name: string): string {
+  const n = name.trim();
+  return n ? `Loading skill ${n}` : 'Loading skill';
+}
+
 export function listFilesLabel(): string {
   return 'Listing project files';
 }
@@ -160,6 +165,7 @@ export function toolStartedLabel(
     path?: string;
     patchOp?: SlidePatchOpLabel;
     query?: string;
+    skillName?: string;
   },
 ): string {
   switch (toolName) {
@@ -169,6 +175,8 @@ export function toolStartedLabel(
     }
     case 'read_file':
       return readFileLabel(args?.path ?? '/');
+    case 'load_skill':
+      return loadSkillLabel(args?.skillName ?? args?.path ?? '');
     case 'list_files':
       return listFilesLabel();
     case 'ask':

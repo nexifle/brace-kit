@@ -25,7 +25,9 @@ Create two files in the project, side by side:
 Keep them focused: **brief = content & structure**, **design = look & feel**.
 Follow the bundled templates (`references/brief-template.md`,
 `references/design-template.md`) and draw the decorative system from
-`references/element-palette.md`.
+`references/element-palette.md`. Fetch each with `load_skill`
+(`{ "name": "references/brief-template.md" }`, etc.) — they are **not** already
+in the system prompt.
 
 **Style words belong in `/design.md`, never in `/deck.json`'s `theme` field.**
 A user phrase like "dark theme", "light theme", "bold", "minimal", or "vibrant"
@@ -65,10 +67,10 @@ research on the deck's topic and the niche **BEFORE** drafting. It materially
 changes the brief (slide count, hook structure, CTA placement) and the design
 (colors, fonts, vibe).
 
-- Read `references/deck-structure.md` — the slide-deck story arc you will lay
+- `load_skill` `references/deck-structure.md` — the slide-deck story arc you will lay
   your slides on. If research is available, refresh these principles with current
   sources before drafting — they are the durable baseline, not the last word.
-- Read `references/element-palette.md` — the element library you will draw from
+- `load_skill` `references/element-palette.md` — the element library you will draw from
   to make every slide visually rich, not just text.
 - Research the **topic/niche itself**: what the audience responds to, current
   visual language, competitors, tone. This is what makes the brief feel expert

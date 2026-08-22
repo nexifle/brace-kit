@@ -96,6 +96,7 @@ describe('slideActivityLabels (Amendment A.5)', () => {
       toolStartedLabel('apply_patch', { patchOp: 'create_file', path: '/theme.css' }),
     ).toBe('Creating /theme.css');
     expect(toolStartedLabel('read_file', { path: '/brief.md' })).toBe('Reading /brief.md');
+    expect(toolStartedLabel('load_skill', { skillName: 'SKILL.md' })).toBe('Loading skill SKILL.md');
     expect(toolStartedLabel('list_files')).toBe('Listing project files');
     expect(toolStartedLabel('ask')).toBe('Asking you a question');
     expect(toolStartedLabel('submit_plan')).toBe('Submitting plan');

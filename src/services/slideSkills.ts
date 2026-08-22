@@ -1,20 +1,33 @@
 // ==================== Slide phase skill loader ====================
 //
-// Loads the phase-skill markdown written in US-014/US-019/US-023 from the
-// packed extension's `dist/skills` tree at runtime and concatenates the skill's
-// `references/*` files into one system prompt for the isolated phase sub-agent.
+// Packed phase skills live under `dist/skills/slide-creator/{phase}/` (copied
+// by build.ts/dev.ts and exposed via `web_accessible_resources`). The isolated
+// phase agent does NOT receive the full SKILL.md + references in its system
+// prompt — that would dump tens of KB on every turn. Instead:
 //
-// The skills are copied verbatim by build.ts/dev.ts (`copyDirTree('src/skills',
-// 'dist/skills')`) and exposed via manifest `web_accessible_resources`, so this
-// loader fetches `chrome.runtime.getURL('skills/slide-creator/{phase}/SKILL.md')`
-// plus each `references/*.md` the SKILL.md references, and folds them into a
-// single prompt string. In tests (no `chrome`) the caller injects a
-// `fetcher` transport; see {@link SlideSkillFetcher}.
+//   1. `buildSlidePhaseStub` / `loadSlideSkill` produce a compact, byte-stable
+//      system prefix: always-on harness rules + a catalog of loadable docs.
+//   2. The agent fetches a body with the `load_skill` tool
+//      (`loadSlideSkillResource`), so unused references never enter context.
+//
+// In tests (no `chrome`) the caller injects a `fetcher` transport.
 
 export type SlidePhaseKey = 'plan' | 'build' | 'edit';
 
 /** Fetch a text resource by URL. Injectable so tests never need `chrome`. */
 export type SlideSkillFetcher = (url: string) => Promise<string>;
+
+export interface SlideSkillLoadOpts {
+  fetcher?: SlideSkillFetcher;
+  /** Override the runtime URL root (tests use a fake/dist path). */
+  baseUrl?: string;
+}
+
+export interface SlideSkillCatalogEntry {
+  /** Tool argument: `SKILL.md` or `references/<file>.md`. */
+  id: string;
+  description: string;
+}
 
 const PHASE_ROOT: Record<SlidePhaseKey, string> = {
   plan: 'skills/slide-creator/plan',
@@ -56,6 +69,49 @@ terse. All technical substance stays; only fluff goes.
 diff — is written in normal prose/code, never compressed.
 `;
 
+const PHASE_STUB: Record<SlidePhaseKey, string> = {
+  plan: `# Slide Creator — Plan phase
+
+You are the **planning** sub-agent. Produce \`/brief.md\` (per-slide content)
+and \`/design.md\` (whole-deck visual system). Do not write slide HTML/CSS.
+
+## Always-on harness rules
+
+- \`apply_patch\` is the ONLY write tool. Flat args: \`{ "type": "create_file"|"update_file"|"delete_file"|"rename_file", "path": "...", "diff": "..." }\`.
+- Writable paths: \`/brief.md\`, \`/design.md\` only. Never \`/slides/**\` or \`/deck.json\` (harness-owned).
+- Canvas is REQUIRED: one of \`16:9\`, \`4:5\`, \`9:16\`, \`1:1\`. If the user did not name one, first tool call is \`ask\` with \`field: "canvas"\` and those four options. No default.
+- Questions go through \`ask\` only. Finish with \`submit_plan\` (\`summary\` + \`canvas\`) once both files exist and every ask is answered.
+- **MUST** \`load_skill\` with \`name: "SKILL.md"\` before writing files. Load references the skill names the same way.
+`,
+  build: `# Slide Creator — Build phase
+
+You are the **build** sub-agent. Implement the approved \`/brief.md\` +
+\`/design.md\` as \`/theme.css\` and \`/slides/{id}.html\` + \`/slides/{id}.css\`.
+Do not re-plan. You have no \`ask\` / \`submit_plan\`.
+
+## Always-on harness rules
+
+- \`apply_patch\` is the ONLY write tool. Read-then-write. \`create_file\` for new paths; \`update_file\` for existing.
+- Writable paths: \`/theme.css\`, \`/slides/**\` only. Never \`/deck.json\` (harness-owned), never plan docs.
+- Slide ids: sequential zero-padded (\`01\`, \`02\`, …). Use \`reorder_slides\` to change order; do not rewrite content to shift slides.
+- HTML + CSS only — no \`<script>\`. Google Fonts via \`@import\` at the top of \`/theme.css\`.
+- **MUST** \`load_skill\` with \`name: "SKILL.md"\` before writing files. Load \`references/deck-file-contract.md\` the same way.
+`,
+  edit: `# Slide Creator — Edit phase
+
+You are the **edit** sub-agent. Apply the user's follow-up as a surgical
+change to an already-built deck. Do not rebuild from scratch. You have no
+\`ask\` / \`submit_plan\`.
+
+## Always-on harness rules
+
+- \`apply_patch\` is the ONLY write tool. Prefer small \`update_file\` diffs after \`read_file\`.
+- Writable paths: \`/theme.css\`, \`/slides/**\`; \`/brief.md\` and \`/design.md\` only if the user explicitly asks. Never \`/deck.json\`.
+- Use \`reorder_slides\` to change order. HTML + CSS only — no \`<script>\`.
+- **MUST** \`load_skill\` with \`name: "SKILL.md"\` before writing files.
+`,
+};
+
 /** Browser default source for a packed skill resource. */
 function chromeSkillUrl(root: string): string {
   return chrome.runtime.getURL(root);
@@ -67,64 +123,176 @@ function chromeSkillUrl(root: string): string {
  * (the fetcher is responsible for mapping it); otherwise use the real packed
  * resource URL (which requires `chrome`).
  */
-function baseUrlOf(
-  opts: { baseUrl?: string; fetcher?: SlideSkillFetcher },
-  root: string
-): string {
+function baseUrlOf(opts: SlideSkillLoadOpts, root: string): string {
   if (opts.baseUrl) return opts.baseUrl;
   if (opts.fetcher) return `${'skills'}://${root}`;
   return chromeSkillUrl(root);
 }
 
-/**
- * Load the full system prompt for a slide phase: the raw `SKILL.md` + all
- * `references/*` files it mentions, concatenated with clear delimiters so the
- * sub-agent can distinguish the skill body from any template/palette.
- *
- * Fetches via an injected `fetcher` (defaults to `fetch(...).then(r => r.text())`
- * on `chrome.runtime.getURL` resources). Missing reference files are skipped
- * non-fatally — the skill body alone is enough to run a phase.
- */
-export async function loadSlideSkill(
-  phase: SlidePhaseKey,
-  opts: {
-    fetcher?: SlideSkillFetcher;
-    /** Override the runtime URL root (tests use a fake/dist path). */
-    baseUrl?: string;
-  } = {}
-): Promise<string> {
-  const root = PHASE_ROOT[phase];
-  const base = baseUrlOf(opts, root);
-  const fetcher: SlideSkillFetcher =
+function fetcherOf(opts: SlideSkillLoadOpts): SlideSkillFetcher {
+  return (
     opts.fetcher ??
     ((url) =>
       fetch(url).then((r) => {
         if (!r.ok) throw new Error(`Failed to fetch skill resource: ${url} (${r.status})`);
         return r.text();
-      }));
-
-  const url = (rel: string) => `${base}/${rel}`;
-
-  const skillText = await fetcher(url('SKILL.md'));
-
-  // Collect every `references/<file>.md` the skill body mentions and load it.
-  const refNames = [...skillText.matchAll(/(?:`|\b)references\/([A-Za-z0-9._-]+\.md)/g)].map(
-    (m) => m[1]
+      }))
   );
+}
 
+function urlOf(opts: SlideSkillLoadOpts, phase: SlidePhaseKey, rel: string): string {
+  const base = baseUrlOf(opts, PHASE_ROOT[phase]);
+  return `${base}/${rel}`;
+}
+
+const REF_MENTION = /(?:`|\b)references\/([A-Za-z0-9._-]+\.md)/g;
+
+function mentionedRefs(skillText: string): string[] {
   const seen = new Set<string>();
-  const refParts: string[] = [];
-  for (const name of refNames) {
+  const out: string[] = [];
+  for (const m of skillText.matchAll(REF_MENTION)) {
+    const name = `references/${m[1]}`;
     if (seen.has(name)) continue;
     seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+function parseFrontmatter(text: string): { name?: string; description?: string } {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return {};
+  const block = m[1];
+  const name = block.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+  const description = block.match(/^description:\s*(.+)$/m)?.[1]?.trim();
+  return { ...(name ? { name } : {}), ...(description ? { description } : {}) };
+}
+
+function firstHeading(text: string): string {
+  const m = text.match(/^#\s+(.+)$/m);
+  return m?.[1]?.trim() ?? '';
+}
+
+/**
+ * Canonical resource id for `load_skill`. Rejects traversal / URLs / other
+ * phases. Accepts `SKILL.md`, `skill`, the YAML `name`, and `references/*.md`.
+ */
+export function normalizeSlideSkillName(
+  name: string,
+  catalogIds?: ReadonlySet<string>,
+  frontmatterName?: string,
+): string | null {
+  const raw = name.trim();
+  if (!raw) return null;
+  const n = raw.replace(/^\/+/, '');
+  if (n.includes('..') || n.includes('\\') || n.includes('://') || n.includes('\\0')) {
+    return null;
+  }
+  if (n === 'SKILL.md' || n === 'skill' || (frontmatterName && n === frontmatterName)) {
+    return 'SKILL.md';
+  }
+  if (/^references\/[A-Za-z0-9._-]+\.md$/.test(n)) return n;
+  if (catalogIds?.has(n)) return n;
+  return null;
+}
+
+/**
+ * Catalog of loadable docs for one phase: SKILL.md plus every `references/*.md`
+ * mentioned in the skill body. Missing reference files are still listed (the
+ * skill named them) with a filename fallback description.
+ */
+export async function listSlideSkillCatalog(
+  phase: SlidePhaseKey,
+  opts: SlideSkillLoadOpts = {},
+): Promise<SlideSkillCatalogEntry[]> {
+  const fetchText = fetcherOf(opts);
+  const skillText = await fetchText(urlOf(opts, phase, 'SKILL.md'));
+  const fm = parseFrontmatter(skillText);
+  const entries: SlideSkillCatalogEntry[] = [
+    {
+      id: 'SKILL.md',
+      description: fm.description || `${phase} phase skill`,
+    },
+  ];
+  for (const id of mentionedRefs(skillText)) {
+    let description = id.replace(/^references\//, '').replace(/\.md$/, '');
     try {
-      const text = await fetcher(url(`references/${name}`));
-      refParts.push(`\n\n--- references/${name} ---\n${text}`);
+      const text = await fetchText(urlOf(opts, phase, id));
+      description = firstHeading(text) || description;
     } catch {
-      // A missing `references/*` file is non-fatal — the skill prose can still
-      // command the phase. Silently skip rather than crash the loader.
+      // Missing ref is non-fatal for the catalog; load_skill will error later.
     }
+    entries.push({ id, description });
+  }
+  return entries;
+}
+
+/**
+ * Load one packed skill resource. Unknown / traversal names return an Error
+ * string (tool-result style) rather than throwing, so a bad model call cannot
+ * crash the session. Missing SKILL.md still throws from the fetcher when the
+ * catalog is built; a missing single resource here is an error string.
+ */
+export async function loadSlideSkillResource(
+  phase: SlidePhaseKey,
+  name: string,
+  opts: SlideSkillLoadOpts = {},
+): Promise<string> {
+  const fetchText = fetcherOf(opts);
+  let skillText: string | undefined;
+  let catalogIds: Set<string> | undefined;
+  let frontmatterName: string | undefined;
+  try {
+    skillText = await fetchText(urlOf(opts, phase, 'SKILL.md'));
+    const fm = parseFrontmatter(skillText);
+    frontmatterName = fm.name;
+    catalogIds = new Set(['SKILL.md', ...mentionedRefs(skillText)]);
+  } catch {
+    catalogIds = new Set(['SKILL.md']);
   }
 
-  return skillText + refParts.join('') + SLIDE_CHAT_TERSE_BLOCK;
+  const id = normalizeSlideSkillName(name, catalogIds, frontmatterName);
+  if (!id) {
+    return `Error: load_skill unknown name: ${name}. Use SKILL.md or a catalog references/*.md id.`;
+  }
+  if (catalogIds && !catalogIds.has(id)) {
+    return `Error: load_skill name not in this phase catalog: ${id}`;
+  }
+  if (id === 'SKILL.md' && skillText !== undefined) return skillText;
+  try {
+    return await fetchText(urlOf(opts, phase, id));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `Error: load_skill failed for ${id}: ${msg}`;
+  }
+}
+
+/** Compact always-on system prefix + catalog. Byte-stable for prompt caching. */
+export function buildSlidePhaseStub(
+  phase: SlidePhaseKey,
+  catalog: SlideSkillCatalogEntry[],
+): string {
+  const lines = catalog.map((e) => `- \`${e.id}\` — ${e.description}`);
+  const catalogBlock = `
+## Skill catalog (this phase only)
+
+Call \`load_skill\` with \`{ "name": "<id>" }\` to fetch a document. Do not
+assume reference bodies are already in context. Loaded text arrives as the
+tool result (not the system prompt).
+
+${lines.join('\n')}
+`;
+  return PHASE_STUB[phase] + catalogBlock + SLIDE_CHAT_TERSE_BLOCK;
+}
+
+/**
+ * Load the compact system prompt for a slide phase (stub + catalog + terse
+ * chat). Does **not** concatenate SKILL.md or reference bodies.
+ */
+export async function loadSlideSkill(
+  phase: SlidePhaseKey,
+  opts: SlideSkillLoadOpts = {},
+): Promise<string> {
+  const catalog = await listSlideSkillCatalog(phase, opts);
+  return buildSlidePhaseStub(phase, catalog);
 }

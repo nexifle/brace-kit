@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { loadSlideSkill } from '../../src/services/slideSkills.ts';
+import {
+  buildSlidePhaseStub,
+  listSlideSkillCatalog,
+  loadSlideSkill,
+  loadSlideSkillResource,
+  normalizeSlideSkillName,
+} from '../../src/services/slideSkills.ts';
 
 /** Serve skill resources from an in-memory map (no chrome/fetch). */
 function fetcherFrom(store: Record<string, string>) {
@@ -11,35 +17,67 @@ function fetcherFrom(store: Record<string, string>) {
   };
 }
 
-describe('loadSlideSkill', () => {
-  it('concatenates SKILL.md with every references/*.md it mentions', async () => {
-    const prompt = await loadSlideSkill('plan', {
-      fetcher: fetcherFrom({
-        'plan/SKILL.md':
-          'skill body here. Follow `references/brief-template.md` and `references/design-template.md`.',
-        'plan/references/brief-template.md': '# brief template',
-        'plan/references/design-template.md': '# design template',
-      }),
-    });
+const PLAN_SKILL = `---
+name: slide-creator-plan
+description: Planning phase skill.
+---
 
-    expect(prompt).toContain('skill body here');
-    expect(prompt).toContain('--- references/brief-template.md ---');
-    expect(prompt).toContain('# brief template');
-    expect(prompt).toContain('--- references/design-template.md ---');
-    expect(prompt).toContain('# design template');
+skill body here. Follow \`references/brief-template.md\` and \`references/design-template.md\`.
+`;
+
+describe('normalizeSlideSkillName', () => {
+  it('accepts SKILL.md, skill, and references/*.md', () => {
+    expect(normalizeSlideSkillName('SKILL.md')).toBe('SKILL.md');
+    expect(normalizeSlideSkillName('skill')).toBe('SKILL.md');
+    expect(normalizeSlideSkillName('references/brief-template.md')).toBe(
+      'references/brief-template.md',
+    );
+    expect(normalizeSlideSkillName('slide-creator-plan', undefined, 'slide-creator-plan')).toBe(
+      'SKILL.md',
+    );
   });
 
-  it('skips a missing references file non-fatally', async () => {
-    const prompt = await loadSlideSkill('build', {
-      // Only SKILL.md served; its references file is missing.
+  it('rejects traversal and URLs', () => {
+    expect(normalizeSlideSkillName('../edit/SKILL.md')).toBeNull();
+    expect(normalizeSlideSkillName('references/../../x.md')).toBeNull();
+    expect(normalizeSlideSkillName('https://evil.example/x.md')).toBeNull();
+    expect(normalizeSlideSkillName('')).toBeNull();
+  });
+});
+
+describe('listSlideSkillCatalog / loadSlideSkill', () => {
+  it('lists SKILL.md plus mentioned references without concatenating bodies into the stub', async () => {
+    const fetcher = fetcherFrom({
+      'plan/SKILL.md': PLAN_SKILL,
+      'plan/references/brief-template.md': '# brief template',
+      'plan/references/design-template.md': '# design template',
+    });
+
+    const catalog = await listSlideSkillCatalog('plan', { fetcher });
+    expect(catalog.map((e) => e.id)).toEqual([
+      'SKILL.md',
+      'references/brief-template.md',
+      'references/design-template.md',
+    ]);
+    expect(catalog[0].description).toContain('Planning phase');
+    expect(catalog[1].description).toBe('brief template');
+
+    const prompt = await loadSlideSkill('plan', { fetcher });
+    expect(prompt).toContain('Skill catalog');
+    expect(prompt).toContain('`references/brief-template.md`');
+    expect(prompt).toContain('Terse chat output (token-efficient)');
+    expect(prompt).not.toContain('skill body here');
+    expect(prompt).not.toContain('--- references/brief-template.md ---');
+    expect(prompt).not.toMatch(/^# brief template$/m);
+  });
+
+  it('still catalogs a missing references file (load_skill errors later)', async () => {
+    const catalog = await listSlideSkillCatalog('build', {
       fetcher: fetcherFrom({
         'build/SKILL.md': 'build skill. See `references/deck-file-contract.md`.',
       }),
     });
-
-    expect(prompt).toContain('build skill');
-    // The missing reference is ignored, not thrown.
-    expect(prompt).not.toContain('--- references/deck-file-contract.md ---');
+    expect(catalog.some((e) => e.id === 'references/deck-file-contract.md')).toBe(true);
   });
 
   it('dedupes repeated references in the skill body', async () => {
@@ -54,24 +92,58 @@ describe('loadSlideSkill', () => {
       throw new Error('missing ' + key);
     };
 
-    const prompt = await loadSlideSkill('plan', { fetcher });
-    expect(prompt).toContain('# palette');
-    // only one fetch for the deduped reference
+    const catalog = await listSlideSkillCatalog('plan', { fetcher });
+    expect(catalog.filter((e) => e.id.includes('element-palette')).length).toBe(1);
     const refFetches = fetchUrls.filter((u) => u.includes('element-palette'));
     expect(refFetches.length).toBe(1);
   });
 
-  it('propagates a missing SKILL.md as an error', async () => {
+  it('propagates a missing SKILL.md as an error when building the catalog', async () => {
     const fetcher = fetcherFrom({});
     await expect(loadSlideSkill('edit', { fetcher })).rejects.toThrow(/not found: edit\/SKILL\.md/);
   });
 
-  it('appends the shared terse chat-output block to every phase prompt', async () => {
+  it('appends the shared terse chat-output block to every phase stub', async () => {
     for (const phase of ['plan', 'build', 'edit'] as const) {
       const prompt = await loadSlideSkill(phase, {
         fetcher: fetcherFrom({ [`${phase}/SKILL.md`]: `${phase} skill body` }),
       });
       expect(prompt).toContain('Terse chat output (token-efficient)');
     }
+  });
+});
+
+describe('loadSlideSkillResource', () => {
+  const fetcher = fetcherFrom({
+    'plan/SKILL.md': PLAN_SKILL,
+    'plan/references/brief-template.md': '# brief template\nbody of template',
+  });
+
+  it('returns SKILL.md body', async () => {
+    const text = await loadSlideSkillResource('plan', 'SKILL.md', { fetcher });
+    expect(text).toContain('skill body here');
+  });
+
+  it('returns a reference body', async () => {
+    const text = await loadSlideSkillResource('plan', 'references/brief-template.md', { fetcher });
+    expect(text).toContain('body of template');
+  });
+
+  it('errors on traversal and unknown names without throwing', async () => {
+    const bad = await loadSlideSkillResource('plan', '../edit/SKILL.md', { fetcher });
+    expect(bad.startsWith('Error:')).toBe(true);
+    const unknown = await loadSlideSkillResource('plan', 'references/nope.md', { fetcher });
+    expect(unknown.startsWith('Error:')).toBe(true);
+  });
+});
+
+describe('buildSlidePhaseStub', () => {
+  it('does not embed catalog bodies', () => {
+    const stub = buildSlidePhaseStub('plan', [
+      { id: 'SKILL.md', description: 'Planning' },
+      { id: 'references/element-palette.md', description: 'Decorative Element Palette' },
+    ]);
+    expect(stub).toContain('`references/element-palette.md`');
+    expect(stub).not.toContain('Think of the slide canvas as a blank workspace');
   });
 });

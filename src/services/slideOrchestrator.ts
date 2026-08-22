@@ -348,13 +348,14 @@ export function createSlideAgent(
   }
 
   /**
-   * Compose the byte-stable system prompt for a phase run: the phase skill +
-   * a project-knowledge block + (optional) workspace rules. The prefix is
+   * Compose the byte-stable system prompt for a phase run: the compact phase
+   * stub + skill catalog (NOT the full SKILL.md / references) + a
+   * project-knowledge block + (optional) workspace rules. The prefix is
    * load-bearing for provider prompt caching — it MUST stay byte-identical
    * across every turn of the phase run, so build it ONCE per run and never
    * reorder or re-read it mid-conversation or the cache misses. All variable
-   * content (file reads, history, latest message, error_context) lives in the
-   * message tail, never here.
+   * content (file reads, load_skill results, history, latest message,
+   * error_context) lives in the message tail, never here.
    */
   async function phaseSystemPrompt(
     phaseKey: SlidePhaseKey,
@@ -433,6 +434,7 @@ export function createSlideAgent(
       onRoundStart: prepareStream,
       onFilesChange: (files) => host.refreshDeckFromFiles(files),
       onActivity: activitySink(),
+      ...(deps.skillFetcher ? { skillFetcher: deps.skillFetcher } : {}),
     });
 
     state.running = false;
@@ -570,6 +572,7 @@ export function createSlideAgent(
         onRoundStart: prepareStream,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
         onActivity: activitySink(),
+        ...(deps.skillFetcher ? { skillFetcher: deps.skillFetcher } : {}),
       },
       paused,
       answer
@@ -763,6 +766,7 @@ export function createSlideAgent(
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
         onActivity: activitySink(),
+        ...(deps.skillFetcher ? { skillFetcher: deps.skillFetcher } : {}),
       });
     };
 
@@ -997,6 +1001,7 @@ export function createSlideAgent(
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
         onActivity: activitySink(),
+        ...(deps.skillFetcher ? { skillFetcher: deps.skillFetcher } : {}),
       });
     };
 
@@ -1184,6 +1189,7 @@ export function createSlideAgent(
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
         onActivity: activitySink(),
+        ...(deps.skillFetcher ? { skillFetcher: deps.skillFetcher } : {}),
       });
     };
 
