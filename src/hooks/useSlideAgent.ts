@@ -36,6 +36,9 @@ export function useSlideAgent() {
   const enableTools = useStore((s) => s.enableTools);
   const enableMCP = useStore((s) => s.enableMCP);
   const mcpServers = useStore((s) => s.mcpServers);
+  const providerConfig = useStore((s) => s.providerConfig);
+  const enableGoogleSearchTool = useStore((s) => s.enableGoogleSearchTool);
+  const googleSearchApiKey = useStore((s) => s.googleSearchApiKey);
   const slideStore = useSlideStore();
 
   // The shared external-tool options for slide sub-agent sessions. Built once
@@ -120,13 +123,17 @@ export function useSlideAgent() {
   // re-open the nullability.
   const agent = agentRef.current;
 
-  // Keep the slide sessions' MCP tool set in sync with the main store (US-029):
-  // re-fetches + filters whenever the master switches or the server list changes
-  // so a session reflects the same configured MCP tools as main chat. Mutating
-  // `mcpTools` on the shared options object is safe because phase runners read
+  // Keep the slide sessions' MCP tool set + search-tool enablement in sync with
+  // the main store (US-029): re-fetches + filters MCP tools whenever the master
+  // switches or the server list changes, and recomputes google_search / Grok
+  // web_search flags so a provider switch after init is reflected. Mutating the
+  // shared options object in place is safe because phase runners read
   // `toolOptions` at call time.
   useEffect(() => {
     let cancelled = false;
+    if (toolOptionsRef.current) {
+      refreshSlideToolOptions(toolOptionsRef.current);
+    }
     fetchSlideMCPTools()
       .then((tools) => {
         if (!cancelled && toolOptionsRef.current) {
@@ -142,7 +149,7 @@ export function useSlideAgent() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: ref is stable
-  }, [enableTools, enableMCP, mcpServers]);
+  }, [enableTools, enableMCP, mcpServers, providerConfig, enableGoogleSearchTool, googleSearchApiKey]);
 
   return {
     createFromPrompt: (prompt: string) =>
@@ -384,4 +391,52 @@ function buildSlideToolOptions(): SlideToolOptions {
     };
   }
   return options;
+}
+
+/**
+ * Recompute the google_search / web_search (Grok) enablement flags on the shared
+ * `toolOptions` object. Unlike `getProviderConfig` / `getChatOptions` (which read
+ * live state inside closures), `toolOptions` is built once at init and only its
+ * `mcpTools` field is refreshed by an effect. Without re-evaluating these flags,
+ * a provider switch after init would leave the search tools stale (e.g. starting
+ * on OpenAI then switching to Grok would never expose `web_search`).
+ */
+function refreshSlideToolOptions(options: SlideToolOptions): void {
+  const state = useStore.getState();
+  const enableGoogleSearch = shouldEnableGoogleSearch({
+    providerId: state.providerConfig.providerId,
+    format: state.providerConfig.format,
+    enableGoogleSearchTool: state.enableGoogleSearchTool,
+    googleSearchApiKey: state.googleSearchApiKey,
+  });
+  const enableGrokWebSearch =
+    state.enableTools !== false && shouldEnableGrokWebSearch(state.providerConfig);
+
+  // Ensure the externalTool executor survives: if neither search nor MCP is
+  // active the executor is pointless, but if one becomes active we (re)create
+  // it. The executor itself is a stable chrome.runtime dispatch — safe to reuse.
+  const mcpEnabled = state.enableTools !== false && state.enableMCP !== false;
+  const needsExecutor = enableGoogleSearch || enableGrokWebSearch || mcpEnabled;
+  if (needsExecutor && !options.externalTool) {
+    options.externalTool = async ({ name, args }: { name: string; args: Record<string, unknown> }) => {
+      try {
+        const result = await chrome.runtime.sendMessage({
+          type: 'MCP_CALL_TOOL',
+          name,
+          arguments: args,
+        });
+        return {
+          content:
+            result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
+            JSON.stringify(result),
+          error: typeof result?.error === 'string' ? result.error : undefined,
+        };
+      } catch (e) {
+        return { error: `Error executing ${name}: ${(e as Error).message}` };
+      }
+    };
+  }
+
+  options.enableGoogleSearch = enableGoogleSearch || undefined;
+  options.enableGrokWebSearch = enableGrokWebSearch || undefined;
 }
