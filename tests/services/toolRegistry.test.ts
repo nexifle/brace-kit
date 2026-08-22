@@ -20,6 +20,12 @@ describe('Tool Registry Service', () => {
       expect(BUILTIN_TOOLS.CONTINUE_MESSAGE.description).toBeDefined();
       expect(BUILTIN_TOOLS.CONTINUE_MESSAGE.inputSchema).toBeDefined();
     });
+
+    test('has WEB_SEARCH tool with correct structure', () => {
+      expect(BUILTIN_TOOLS.WEB_SEARCH.name).toBe('web_search');
+      expect(BUILTIN_TOOLS.WEB_SEARCH.description).toBeDefined();
+      expect(BUILTIN_TOOLS.WEB_SEARCH.inputSchema).toBeDefined();
+    });
   });
 
   describe('getAllTools', () => {
@@ -121,6 +127,50 @@ describe('Tool Registry Service', () => {
       expect(tools[tools.length - 1].name).toBe('continue_message');
     });
 
+    test('includes web_search for grok provider when supportsFunctionCalling', () => {
+      const tools = getAllTools({
+        mcpTools: mockMcpTools,
+        enableGoogleSearchTool: false,
+        googleSearchApiKey: null,
+        supportsFunctionCalling: true,
+        isGemini: false,
+        providerId: 'grok',
+      });
+
+      // web_search + continue_message (both injected)
+      expect(tools).toHaveLength(4);
+      expect(tools.find((t) => t.name === 'web_search')).toBeDefined();
+      expect(tools.find((t) => t.name === 'continue_message')).toBeDefined();
+    });
+
+    test('does not include web_search for non-grok providers', () => {
+      const tools = getAllTools({
+        mcpTools: mockMcpTools,
+        enableGoogleSearchTool: false,
+        googleSearchApiKey: null,
+        supportsFunctionCalling: true,
+        isGemini: false,
+        providerId: 'openai',
+      });
+
+      expect(tools).toHaveLength(3); // 2 MCP + continue_message
+      expect(tools.find((t) => t.name === 'web_search')).toBeUndefined();
+    });
+
+    test('does not include web_search for grok when supportsFunctionCalling is false', () => {
+      const tools = getAllTools({
+        mcpTools: mockMcpTools,
+        enableGoogleSearchTool: false,
+        googleSearchApiKey: null,
+        supportsFunctionCalling: false,
+        isGemini: false,
+        providerId: 'grok',
+      });
+
+      expect(tools).toHaveLength(2); // only MCP tools
+      expect(tools.find((t) => t.name === 'web_search')).toBeUndefined();
+    });
+
     test('returns empty array when no tools', () => {
       const tools = getAllTools({
         mcpTools: [],
@@ -177,6 +227,10 @@ describe('Tool Registry Service', () => {
 
     test('returns true for continue_message', () => {
       expect(isBuiltinTool('continue_message')).toBe(true);
+    });
+
+    test('returns true for web_search', () => {
+      expect(isBuiltinTool('web_search')).toBe(true);
     });
 
     test('returns false for other tools', () => {

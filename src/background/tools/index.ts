@@ -6,11 +6,19 @@
 import type { MCPTool } from '../../types';
 import { GOOGLE_SEARCH_TOOL } from './definitions/google-search.tool';
 import { CONTINUE_MESSAGE_TOOL } from './definitions/continue-message.tool';
+import { GROK_WEB_SEARCH_TOOL } from './definitions/grok-web-search.tool';
 import { handleGoogleSearch } from './handlers/google-search.handler';
 import { handleContinueMessage } from './handlers/continue-message.handler';
+import { handleGrokWebSearch } from './handlers/grok-web-search.handler';
 
 export interface ToolExecutionContext {
   googleSearchApiKey?: string;
+  /** Resolved Grok OAuth bearer (only set for the `grok` provider). */
+  grokAccessToken?: string;
+  /** Grok model to use for the search call (e.g. "grok-4.5"). */
+  grokModel?: string;
+  /** Grok API base URL (e.g. "https://cli-chat-proxy.grok.com/v1"). */
+  grokApiUrl?: string;
 }
 
 export interface ToolResult {
@@ -26,17 +34,20 @@ export type ToolHandler = (
 const TOOL_DEFINITIONS: Record<string, MCPTool> = {
   google_search: GOOGLE_SEARCH_TOOL,
   continue_message: CONTINUE_MESSAGE_TOOL,
+  web_search: GROK_WEB_SEARCH_TOOL,
 };
 
 // Tool handlers map
 const TOOL_HANDLERS: Record<string, ToolHandler> = {
   google_search: handleGoogleSearch as ToolHandler,
   continue_message: handleContinueMessage as ToolHandler,
+  web_search: handleGrokWebSearch as ToolHandler,
 };
 
 export interface ToolDefinitionOptions {
   includeGoogleSearch?: boolean;
   includeContinueMessage?: boolean;
+  includeGrokWebSearch?: boolean;
 }
 
 /**
@@ -52,6 +63,9 @@ export function getToolDefinitions(options: ToolDefinitionOptions = {}): MCPTool
   }
   if (options.includeContinueMessage) {
     tools.push(CONTINUE_MESSAGE_TOOL);
+  }
+  if (options.includeGrokWebSearch) {
+    tools.push(GROK_WEB_SEARCH_TOOL);
   }
 
   return tools;
@@ -104,4 +118,4 @@ export function getToolDefinition(name: string): MCPTool | undefined {
 }
 
 // Re-export tool definitions for direct access
-export { GOOGLE_SEARCH_TOOL, CONTINUE_MESSAGE_TOOL };
+export { GOOGLE_SEARCH_TOOL, CONTINUE_MESSAGE_TOOL, GROK_WEB_SEARCH_TOOL };

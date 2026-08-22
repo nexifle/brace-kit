@@ -200,6 +200,7 @@ export function useTools() {
         googleSearchApiKey,
         supportsFunctionCalling: canUseFunctionCalling,
         isGemini,
+        providerId,
       });
     },
     [fetchMCPTools, supportsFunctionCalling]
