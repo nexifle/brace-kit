@@ -11,7 +11,7 @@ import { useStore } from '../store/index.ts';
 import { useSlideStore } from '../store/slideStore.ts';
 import { createSlideAgent } from '../services/slideOrchestrator.ts';
 import type { StreamDelta } from '../services/agentSession.ts';
-import { shouldEnableGoogleSearch } from '../services/slideTools.ts';
+import { shouldEnableGoogleSearch, shouldEnableGrokWebSearch } from '../services/slideTools.ts';
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
 import { isGeminiImageModel, isXAIImageModel, supportsFunctionCalling } from '../providers/presets.ts';
@@ -350,12 +350,15 @@ function buildSlideToolOptions(): SlideToolOptions {
     enableGoogleSearchTool: state.enableGoogleSearchTool,
     googleSearchApiKey: state.googleSearchApiKey,
   });
+  const enableGrokWebSearch =
+    state.enableTools !== false && shouldEnableGrokWebSearch(state.providerConfig);
   const mcpEnabled = state.enableTools !== false && state.enableMCP !== false;
 
   const options: SlideToolOptions = {};
   if (enableGoogleSearch) options.enableGoogleSearch = true;
+  if (enableGrokWebSearch) options.enableGrokWebSearch = true;
 
-  if (enableGoogleSearch || mcpEnabled) {
+  if (enableGoogleSearch || enableGrokWebSearch || mcpEnabled) {
     options.externalTool = async ({
       name,
       args,

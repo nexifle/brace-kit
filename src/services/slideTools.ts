@@ -21,14 +21,15 @@ import type { SlidePatchPhase } from './applyPatchHarness.ts';
 // Re-export for phase runners that type their tool-enablement params.
 export type { SlidePatchPhase };
 
-// ==================== External research tool ====================
+// ==================== External research tools ====================
 //
-// `google_search` is NOT part of the slide tool allowlist — it is injected on
-// top of the plan phase (and, when the caller opts in, build/edit) exactly when
-// the user enables Google Search in Settings (FR-10 / PRD US-013). It reuses the
-// shared background `MCP_CALL_TOOL` path that routes built-in tools to
-// `handleGoogleSearch`, mirroring main chat. The definition here is identical to
-// the background's GOOGLE_SEARCH_TOOL so the model sees a consistent schema.
+// `google_search` and `web_search` (Grok) are NOT part of the slide tool
+// allowlist — they are injected on top of the plan phase (and, when the caller
+// opts in, build/edit) exactly when the user enables them. They reuse the
+// shared background `MCP_CALL_TOOL` path that routes built-in tools to their
+// handlers, mirroring main chat. The definitions here are identical to the
+// background's GOOGLE_SEARCH_TOOL / GROK_WEB_SEARCH_TOOL so the model sees a
+// consistent schema.
 
 const GOOGLE_SEARCH_TOOL: MCPTool = {
   name: 'google_search',
@@ -40,6 +41,27 @@ const GOOGLE_SEARCH_TOOL: MCPTool = {
       query: {
         type: 'string',
         description: 'The search query to look up on the web',
+      },
+    },
+    required: ['query'],
+  },
+};
+
+const GROK_WEB_SEARCH_TOOL: MCPTool = {
+  name: 'web_search',
+  description:
+    'Search the web for up-to-date information. Returns a synthesized answer with source citations. Use for current events, recent docs, or any time-dependent facts.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'The search query to perform.',
+      },
+      allowed_domains: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional list of domains to restrict the search to.',
       },
     },
     required: ['query'],
@@ -256,6 +278,17 @@ export function shouldEnableGoogleSearch(
 }
 
 /**
+ * Whether the Grok `web_search` tool should be offered to a slide agent session,
+ * mirroring main chat's gate: only for the `grok` provider when function calling
+ * is supported. The tool reuses the Grok OAuth access token — no separate API key.
+ */
+export function shouldEnableGrokWebSearch(
+  providerConfig: Pick<ProviderConfig, 'providerId'>
+): boolean {
+  return providerConfig.providerId === 'grok';
+}
+
+/**
  * Resolve the allowlisted set of slide tool NAMES for a phase.
  *
  * - plan:  read tools + apply_patch + ask + submit_plan
@@ -265,13 +298,14 @@ export function shouldEnableGoogleSearch(
  *
  * When `enableGoogleSearch` is passed true (US-028), `google_search` is appended
  * for plan — and for build/edit when the caller opts in — matching main chat's
- * behaviour of offering the tool for non-Gemini providers. It is always injected
- * AFTER the slide tools so `google_search` stays external to the apply_patch
- * allowlist.
+ * behaviour of offering the tool for non-Gemini providers. When
+ * `enableGrokWebSearch` is passed true, `web_search` is appended for plan and
+ * build/edit. Both are always injected AFTER the slide tools so they stay
+ * external to the apply_patch allowlist.
  */
 export function getToolsForPhaseNames(
   phase: SlidePatchPhase,
-  options?: { enableGoogleSearch?: boolean }
+  options?: { enableGoogleSearch?: boolean; enableGrokWebSearch?: boolean }
 ): string[] {
   const base: string[] = (() => {
     switch (phase) {
@@ -287,8 +321,9 @@ export function getToolsForPhaseNames(
     }
   })();
 
-  if (options?.enableGoogleSearch && phase !== 'main') {
-    base.push('google_search');
+  if (phase !== 'main') {
+    if (options?.enableGoogleSearch) base.push('google_search');
+    if (options?.enableGrokWebSearch) base.push('web_search');
   }
   return base;
 }
@@ -299,12 +334,14 @@ export function getToolsForPhaseNames(
  */
 export function getToolsForPhase(
   phase: SlidePatchPhase,
-  options?: { enableGoogleSearch?: boolean }
+  options?: { enableGoogleSearch?: boolean; enableGrokWebSearch?: boolean }
 ): MCPTool[] {
   const toolNames = getToolsForPhaseNames(phase, options);
   return toolNames.map((name) =>
     name === 'google_search'
       ? GOOGLE_SEARCH_TOOL
-      : SLIDE_BUILTIN_TOOLS[name]
+      : name === 'web_search'
+        ? GROK_WEB_SEARCH_TOOL
+        : SLIDE_BUILTIN_TOOLS[name]
   ).filter((tool): tool is MCPTool => Boolean(tool));
 }

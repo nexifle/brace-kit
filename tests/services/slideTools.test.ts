@@ -6,6 +6,7 @@ import {
   getToolsForPhaseNames,
   isSlideVfsMutator,
   shouldEnableGoogleSearch,
+  shouldEnableGrokWebSearch,
 } from '../../src/services/slideTools.ts';
 import type { MCPTool } from '../../src/types/index.ts';
 
@@ -136,5 +137,53 @@ describe('google_search injection (US-028)', () => {
         googleSearchApiKey: 'key',
       })
     ).toBe(false);
+  });
+});
+
+describe('web_search (Grok) injection', () => {
+  test('plan does not offer web_search by default', () => {
+    expect(names(getToolsForPhase('plan'))).not.toContain('web_search');
+  });
+
+  test('plan offers web_search when enableGrokWebSearch is true, appended last', () => {
+    const tools = getToolsForPhase('plan', { enableGrokWebSearch: true });
+    expect(names(tools)).toEqual([
+      'list_files',
+      'read_file',
+      'apply_patch',
+      'ask',
+      'submit_plan',
+      'web_search',
+    ]);
+    const ws = tools.find((t) => t.name === 'web_search');
+    expect((ws?.inputSchema as { required?: string[] })?.required).toContain('query');
+  });
+
+  test('build/edit can opt in to web_search via the options flag', () => {
+    for (const phase of ['build', 'edit'] as const) {
+      const tools = getToolsForPhase(phase, { enableGrokWebSearch: true });
+      expect(names(tools)).toContain('web_search');
+    }
+    // main stays read-only even when the flag is passed.
+    expect(names(getToolsForPhase('main', { enableGrokWebSearch: true }))).toEqual([
+      'list_files',
+      'read_file',
+    ]);
+  });
+
+  test('google_search and web_search can both be injected', () => {
+    const tools = getToolsForPhase('plan', { enableGoogleSearch: true, enableGrokWebSearch: true });
+    expect(names(tools)).toContain('google_search');
+    expect(names(tools)).toContain('web_search');
+  });
+
+  test('web_search is never a VFS mutator', () => {
+    expect(isSlideVfsMutator('web_search')).toBe(false);
+  });
+
+  test('shouldEnableGrokWebSearch gates on the grok provider', () => {
+    expect(shouldEnableGrokWebSearch({ providerId: 'grok' })).toBe(true);
+    expect(shouldEnableGrokWebSearch({ providerId: 'openai' })).toBe(false);
+    expect(shouldEnableGrokWebSearch({ providerId: 'gemini' })).toBe(false);
   });
 });

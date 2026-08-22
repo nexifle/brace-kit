@@ -109,6 +109,8 @@ interface SubmitPlanArgs {
 export interface SlideToolOptions {
   /** Offer `google_search` to the session (injection replaces the default tools). */
   enableGoogleSearch?: boolean;
+  /** Offer the Grok `web_search` tool to the session (grok provider only). */
+  enableGrokWebSearch?: boolean;
   /**
    * Filtered MCP tool schemas from the user's configured servers (US-029),
    * fetched exactly like main chat and injected into the session's tool list
@@ -1315,6 +1317,7 @@ function getToolsForPhaseWithOptions(
 ): MCPTool[] {
   const base = getToolsForPhase(phase, {
     enableGoogleSearch: toolOptions?.enableGoogleSearch,
+    enableGrokWebSearch: toolOptions?.enableGrokWebSearch,
   });
   const slideNames = new Set(base.map((t) => t.name));
   const external = (toolOptions?.mcpTools ?? []).filter(
