@@ -699,9 +699,33 @@ export function composeSlideHtml(files: SlideFile[], slide: Slide, deck: SlideDe
     const css = map.get(slide.cssPath);
     if (css) styles.push(css);
   }
-  const html = map.get(slide.htmlPath) ?? '';
+  const html = rewriteUploadSrcs(map.get(slide.htmlPath) ?? '', files);
   const blocks = styles
-    .map((css) => `<style>\n${css}\n</style>`)
+    .map((css) => `<style>\n${rewriteUploadSrcs(css, files)}\n</style>`)
     .join('\n');
   return blocks ? `${blocks}\n${html}` : html;
+}
+
+/**
+ * Inline `/uploads/…` src/href/url() references to the stored file contents
+ * (data URLs for images) so sandbox innerHTML can display user attachments.
+ */
+export function rewriteUploadSrcs(html: string, files: SlideFile[]): string {
+  const prefix = '/uploads/';
+  const map = new Map<string, string>();
+  for (const f of files) {
+    const p = safeSlidePath(f.path) ?? f.path;
+    if (p.startsWith(prefix) && p.length > prefix.length) map.set(p, f.content);
+  }
+  if (map.size === 0) return html;
+
+  let out = html;
+  for (const [path, content] of map) {
+    const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const attrRe = new RegExp(`((?:src|href)\\s*=\\s*)(['"])${escaped}\\2`, 'gi');
+    out = out.replace(attrRe, (_m, prefixAttr: string, quote: string) => `${prefixAttr}${quote}${content}${quote}`);
+    const urlRe = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'gi');
+    out = out.replace(urlRe, (_m, quote: string) => `url(${quote}${content}${quote})`);
+  }
+  return out;
 }

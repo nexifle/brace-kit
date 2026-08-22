@@ -100,6 +100,7 @@ Before writing, pin down what the user actually wants:
 - **Purpose / goal** — education, lead gen, brand awareness, engagement, etc.
 - **Style direction** — any visual feel the user wants.
 - **Brand assets** — logo, colors, fonts the user wants applied.
+- **User uploads** — files the user attached live under `/uploads/` (listed in the user turn). Mention them in `/brief.md` / `/design.md` by path. Do **not** `apply_patch` `/uploads/**` (denied). Do **not** `read_file` image uploads (binary data URLs). Text uploads may be read if you need the body.
 
 ## How to structure the deck
 

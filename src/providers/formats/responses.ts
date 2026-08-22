@@ -6,7 +6,7 @@
  * provider, whose chat backend speaks this protocol.
  */
 
-import type { MCPTool, Message } from '../../types/index.ts';
+import type { MCPTool, Message, MessageContent } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
 import { xaiReasoningEffort } from '../utils/reasoning.ts';
@@ -53,7 +53,7 @@ export function formatResponses(
   // System messages become top-level instructions and are removed from input.
   const systemTexts = messages
     .filter((msg) => msg.role === 'system')
-    .map((msg) => msg.content)
+    .map((msg) => messagePlainText(msg.content as MessageContent))
     .filter((text) => text.length > 0);
 
   // Transform messages to Responses API input items.
@@ -65,7 +65,7 @@ export function formatResponses(
     if (msg.role === 'user') {
       input.push({
         role: 'user',
-        content: [{ type: 'input_text', text: msg.content }],
+        content: toResponsesUserContent(msg.content as MessageContent),
       });
     } else if (msg.role === 'assistant') {
       // Assistant messages carry only output_text content. Each tool call is
@@ -75,7 +75,7 @@ export function formatResponses(
       // with HTTP 422.
       input.push({
         role: 'assistant',
-        content: [{ type: 'output_text', text: msg.content || '' }],
+        content: [{ type: 'output_text', text: messagePlainText(msg.content as MessageContent) }],
       });
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const tc of msg.toolCalls) {
@@ -162,6 +162,39 @@ export function formatResponses(
       body: JSON.stringify(body),
     },
   };
+}
+
+/** Flatten Message.content to a single string (instructions / assistant output). */
+function messagePlainText(content: MessageContent): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((p) => p.type === 'text' && p.text)
+    .map((p) => p.text as string)
+    .join('\n');
+}
+
+/**
+ * Responses `input` user parts: `input_text` / `input_image`.
+ * Chat-completions `image_url` parts must not be nested as `text` — the Grok
+ * proxy 422s with `content[0]: invalid type: sequence, expected a string`.
+ */
+function toResponsesUserContent(content: MessageContent): Array<Record<string, unknown>> {
+  if (typeof content === 'string') {
+    return [{ type: 'input_text', text: content }];
+  }
+  if (!Array.isArray(content)) {
+    return [{ type: 'input_text', text: '' }];
+  }
+  const parts: Array<Record<string, unknown>> = [];
+  for (const p of content) {
+    if (p.type === 'text' && p.text) {
+      parts.push({ type: 'input_text', text: p.text });
+    } else if (p.type === 'image_url' && p.image_url?.url) {
+      parts.push({ type: 'input_image', image_url: p.image_url.url });
+    }
+  }
+  return parts.length > 0 ? parts : [{ type: 'input_text', text: '' }];
 }
 
 // ==================== Stream Parsing ====================

@@ -274,6 +274,16 @@ describe('composeSlideHtml', () => {
     const out = composeSlideHtml([one, slideCss], slide, deck);
     expect(out).not.toContain('<section');
   });
+
+  test('inlines /uploads image src on the slide', () => {
+    const html = {
+      path: '/slides/01.html',
+      content: '<section><img src="/uploads/logo.jpg" alt=""></section>',
+    };
+    const upload = { path: '/uploads/logo.jpg', content: 'data:image/jpeg;base64,QQ' };
+    const out = composeSlideHtml([one, slideCss, html, upload], slide, deck);
+    expect(out).toContain('src="data:image/jpeg;base64,QQ"');
+  });
 });
 
 function deckFiles(content: string): SlideFile[] {

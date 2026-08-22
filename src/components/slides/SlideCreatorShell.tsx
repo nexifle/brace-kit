@@ -33,6 +33,7 @@ import { PlanDocs } from './PlanDocs.tsx';
 import { usePhaseCompletionToast } from './usePhaseCompletionToast.ts';
 import { SlideChat } from './chat/SlideChat.tsx';
 import { SlideChatComposer } from './chat/SlideChatComposer.tsx';
+import type { SlidePendingAttachment } from '../../utils/slideUploads.ts';
 
 /** Below this container width we collapse to a single-pane + chat drawer. */
 const NARROW_BREAKPOINT = 820;
@@ -334,7 +335,7 @@ function ChatRail({
 }: {
   railOpen: boolean;
   onClose: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments?: SlidePendingAttachment[]) => void;
   onStop: () => void;
   onBuild: () => void;
   onAnswer: (projectId: string, answer: string) => void;
@@ -464,15 +465,19 @@ export function SlideCreatorShell() {
 
   const promptPlaceholder = slideComposerPlaceholder(activeProject, phase, sessionStatus);
 
-  const handleSend = (text: string) => {
-    if (!text.trim()) return;
+  const handleSend = (
+    text: string,
+    attachments?: SlidePendingAttachment[],
+  ) => {
+    const pending = (attachments ?? []).filter((a) => a.type !== 'error' && a.data);
+    if (!text.trim() && pending.length === 0) return;
     // In narrow mode the conversation is a separate view — bring the user to it
     // so they can see the assistant's reply as soon as they send.
     if (narrow && narrowView === 'preview') setPanelView('chat');
     if (activeProject) {
-      void agent.sendFollowUp(text);
+      void agent.sendFollowUp(text, pending);
     } else {
-      void agent.createFromPrompt(text);
+      void agent.createFromPrompt(text, pending);
     }
   };
 
@@ -573,13 +578,13 @@ export function SlideCreatorShell() {
               </button>
             </>
           )}
-          {(activeProject?.files ?? []).some((f) => f.path === '/brief.md' || f.path === '/design.md') ? (
+          {activeProject ? (
             <button
               type="button"
               onClick={() => setDocsOpen(true)}
               className="flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Read the brief &amp; design"
-              aria-label="Open project brief and design"
+              title="Brief, design, and uploaded files"
+              aria-label="Open project docs"
             >
               <BookOpen size={15} />
               <span className="hidden sm:inline">Docs</span>

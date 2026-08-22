@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import type { SlideSessionStatus } from '../../../types/slides.ts';
-import { slideComposerCanSend } from '../../../utils/slideComposer.ts';
+import { slideComposerCanSend, slideComposerHasPayload } from '../../../utils/slideComposer.ts';
+import type { SlidePendingAttachment } from '../../../utils/slideUploads.ts';
+import { MAX_SLIDE_COMPOSER_ATTACHMENTS } from '../../../utils/slideUploads.ts';
+import { useSlideComposerAttachments } from '../../../hooks/useSlideComposerAttachments.ts';
 import { ComposerPicker } from '../../ComposerPicker.tsx';
 import { ReasoningPopover } from '../../ReasoningPopover.tsx';
+import {
+  AttachmentChip,
+  AttachmentLightbox,
+  PaperclipButton,
+  toViewable,
+  type ViewableAttachment,
+} from './SlideAttachmentViews.tsx';
 
 /**
  * Slide rail composer: same provider + thinking controls as main chat
@@ -20,7 +30,7 @@ export function SlideChatComposer({
   seedKey,
   focusKey,
 }: {
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: SlidePendingAttachment[]) => void;
   onStop: () => void;
   sessionStatus: SlideSessionStatus;
   placeholder: string;
@@ -34,11 +44,15 @@ export function SlideChatComposer({
 }) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { attachments, valid, handleFileSelect, handlePaste, removeAttachment, clearAttachments, loading } =
+    useSlideComposerAttachments();
+  const [viewer, setViewer] = useState<ViewableAttachment | null>(null);
   const running = sessionStatus === 'running';
   const waiting = sessionStatus === 'waiting_user';
   const typed = slideComposerCanSend(sessionStatus);
   const disabled = !typed || blocked;
-  const canSend = typed && !blocked;
+  const canSend = typed && !blocked && !loading && slideComposerHasPayload(value, valid.length);
 
   useEffect(() => {
     if (seedKey == null) return;
@@ -50,10 +64,19 @@ export function SlideChatComposer({
     textareaRef.current?.focus();
   }, [focusKey]);
 
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const onPaste = (e: Event) => void handlePaste(e as ClipboardEvent);
+    el.addEventListener('paste', onPaste);
+    return () => el.removeEventListener('paste', onPaste);
+  }, [handlePaste]);
+
   function submit() {
-    if (!canSend || !value.trim()) return;
-    onSend(value);
+    if (!canSend) return;
+    onSend(value, valid);
     setValue('');
+    clearAttachments();
   }
 
   return (
@@ -83,7 +106,30 @@ export function SlideChatComposer({
           </button>
         </div>
       ) : (
-        <div className="relative rounded-xl border border-border bg-card shadow-[0_8px_30px_-12px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/15">
+        <div
+          className="relative rounded-xl border border-border bg-card shadow-[0_8px_30px_-12px_rgba(0,0,0,0.28)] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/15"
+          onDragOver={(e) => {
+            if (disabled) return;
+            e.preventDefault();
+          }}
+          onDrop={(e) => {
+            if (disabled) return;
+            e.preventDefault();
+            void handleFileSelect(e.dataTransfer.files);
+          }}
+        >
+          {attachments.length > 0 && (
+            <div className="flex items-center gap-1 px-2.5 pt-2">
+              {attachments.slice(0, MAX_SLIDE_COMPOSER_ATTACHMENTS).map((att) => (
+                <AttachmentChip
+                  key={att.id}
+                  att={toViewable(att)}
+                  onRemove={disabled ? undefined : () => removeAttachment(att.id)}
+                  onOpen={() => setViewer(toViewable(att))}
+                />
+              ))}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={value}
@@ -102,6 +148,21 @@ export function SlideChatComposer({
 
           {/* Toolbar: same controls as main InputArea (subset) */}
           <div className="relative flex items-center gap-1.5 px-2 pb-2 pt-0.5">
+            <PaperclipButton
+              disabled={disabled}
+              onClick={() => fileInputRef.current?.click()}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,.txt,text/plain"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void handleFileSelect(e.target.files);
+                e.target.value = '';
+              }}
+            />
             <ReasoningPopover />
             <div className="min-w-0 flex-1" />
             <ComposerPicker />
@@ -121,7 +182,7 @@ export function SlideChatComposer({
               <button
                 type="button"
                 onClick={submit}
-                disabled={disabled || !value.trim()}
+                disabled={!canSend}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale"
                 title="Send"
                 aria-label="Send"
@@ -145,6 +206,7 @@ export function SlideChatComposer({
           </div>
         </div>
       )}
+      <AttachmentLightbox att={viewer} onClose={() => setViewer(null)} />
     </div>
   );
 }

@@ -15,7 +15,22 @@ import type {
   APIMessage,
   ProviderConfig,
 } from '../types/index.ts';
-import type { SlideMainMessage, SlideProject, SlideCanvas, SlideFile } from '../types/slides.ts';
+import type {
+  SlideMainMessage,
+  SlideProject,
+  SlideCanvas,
+  SlideFile,
+  SlideUserAttachment,
+} from '../types/slides.ts';
+import type { SlidePendingAttachment } from '../utils/slideUploads.ts';
+import {
+  apiMessageText,
+  hydrateAttachments,
+  materializeUploads,
+  persistableAttachment,
+  slideApiUserMessage,
+  slideDisplayText,
+} from '../utils/slideUploads.ts';
 
 import {
   runPlanPhase,
@@ -55,19 +70,58 @@ export function deriveSlideTitle(prompt: string): string {
  * every plan round on the same context and makes the prior round a cacheable
  * prefix for the next (token savings).
  */
+function apiUserFromMainMessage(
+  m: SlideMainMessage,
+  files: SlideFile[],
+): APIMessage {
+  const atts = hydrateAttachments(m.attachments, files);
+  return slideApiUserMessage(m.content, atts);
+}
+
+/** True when an API user turn already carries vision `image_url` parts. */
+function hasVisionParts(content: APIMessage['content']): boolean {
+  return Array.isArray(content) && content.some((p) => p.type === 'image_url' && p.image_url?.url);
+}
+
+/**
+ * Re-attach vision parts onto a persisted plan transcript when a user turn was
+ * stored as a plain string (or lost its image_url parts) but the main
+ * transcript still has the uploads.
+ */
+function restoreVisionOnTranscript(
+  transcript: APIMessage[],
+  project: SlideProject,
+): APIMessage[] {
+  const mains = project.messages.filter((m) => m.role === 'user');
+  let i = 0;
+  return transcript.map((msg) => {
+    if (msg.role !== 'user') return msg;
+    const main = mains[i++];
+    if (!main?.attachments?.some((a) => a.type === 'image')) return msg;
+    if (hasVisionParts(msg.content)) return msg;
+    return apiUserFromMainMessage(main, project.files);
+  });
+}
+
 export function buildPlanSessionMessages(
   project: SlideProject,
   extraUser?: string,
 ): APIMessage[] {
   if (project.planTranscript?.length) {
-    const out = project.planTranscript.slice();
-    const newestUser =
-      extraUser?.trim() ||
-      [...project.messages].reverse().find((m) => m.role === 'user')?.content;
+    const out = restoreVisionOnTranscript(project.planTranscript, project);
+    const extra = extraUser?.trim();
+    const newestMain = [...project.messages].reverse().find((m) => m.role === 'user');
+    const newestMsg: APIMessage | undefined = extra
+      ? { role: 'user', content: extra }
+      : newestMain
+        ? apiUserFromMainMessage(newestMain, project.files)
+        : undefined;
+    const newestText = newestMsg ? apiMessageText(newestMsg.content) : '';
     const tail = out[out.length - 1];
-    if (newestUser && !(tail?.role === 'user' && tail.content === newestUser)) {
-      out.push({ role: 'user', content: newestUser });
-    } else if (!newestUser) {
+    const tailText = tail ? apiMessageText(tail.content) : '';
+    if (newestText && !(tail?.role === 'user' && tailText === newestText)) {
+      out.push(newestMsg!);
+    } else if (!newestText) {
       // No newer user turn (e.g. a bare retry over a transcript) — match the
       // fresh-plan fallback so the session still has an explicit instruction.
       out.push({
@@ -81,14 +135,14 @@ export function buildPlanSessionMessages(
   const out: APIMessage[] = [];
   for (const m of project.messages) {
     if (m.role !== 'user') continue;
-    const content = m.content.trim();
-    if (!content) continue;
-    out.push({ role: 'user', content });
+    const msg = apiUserFromMainMessage(m, project.files);
+    if (!apiMessageText(msg.content).trim()) continue;
+    out.push(msg);
   }
   const extra = extraUser?.trim();
   if (extra) {
     const last = out[out.length - 1];
-    if (!last || last.content !== extra) {
+    if (!last || apiMessageText(last.content) !== extra) {
       out.push({ role: 'user', content: extra });
     }
   }
@@ -101,12 +155,19 @@ export function buildPlanSessionMessages(
   return out;
 }
 
-function makeMsg(role: SlideMainMessage['role'], content: string): SlideMainMessage {
+function makeMsg(
+  role: SlideMainMessage['role'],
+  content: string,
+  attachments?: SlideUserAttachment[],
+): SlideMainMessage {
   return {
     id: `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     role,
     content,
     createdAt: Date.now(),
+    ...(attachments && attachments.length > 0
+      ? { attachments: attachments.map(persistableAttachment) }
+      : {}),
   };
 }
 
@@ -512,25 +573,29 @@ export function createSlideAgent(
   async function createFromPrompt(
     prompt: string,
     mode: 'plan' | 'agent' = 'plan',
+    pending?: SlidePendingAttachment[],
   ): Promise<void> {
     const text = prompt.trim();
-    if (!text) return;
+    const pendingList = (pending ?? []).filter((a) => a.type !== 'error' && a.data);
+    if (!text && pendingList.length === 0) return;
     const now = Date.now();
+    const { files, attachments } = materializeUploads([], pendingList);
+    const display = slideDisplayText(text, attachments.length);
     const project: SlideProject = {
       id: `sp_${now}_${Math.random().toString(36).slice(2, 7)}`,
-      title: deriveSlideTitle(text),
+      title: deriveSlideTitle(text || attachments[0]?.name || ''),
       createdAt: now,
       updatedAt: now,
       phase: 'plan',
       mode,
       canvas: null,
 
-      messages: [makeMsg('user', text)],
-      files: [],
+      messages: [makeMsg('user', display, attachments)],
+      files,
     };
     host.landProject(project);
     if (blockPhase(project)) return;
-    await runPlan(project, text);
+    await runPlan(project);
   }
 
   /** Resume a plan session that suspended on an `ask`. */
@@ -725,13 +790,18 @@ export function createSlideAgent(
    * Resume a stopped/failed build with the user's follow-up message, seeding the
    * prior build session's transcript so the model continues where it stopped.
    */
-  async function runBuildContinue(project: SlideProject, message: string): Promise<void> {
+  async function runBuildContinue(
+    project: SlideProject,
+    message: string,
+    attachments?: SlideUserAttachment[],
+  ): Promise<void> {
     if (state.running) return;
     if (blockPhase(project)) return;
     const prior = project.buildTranscript ?? [];
+    const hydrated = hydrateAttachments(attachments, project.files);
     await runBuildCore(project, [
       ...prior.slice(-40),
-      { role: 'user', content: message },
+      slideApiUserMessage(message, hydrated),
     ]);
   }
 
@@ -1129,17 +1199,29 @@ export function createSlideAgent(
    * Route a freeform composer message: re-plan until brief+design are valid,
    * otherwise run the edit phase (follow-ups on an existing deck/plan).
    */
-  async function sendFollowUp(text: string): Promise<void> {
-    const message = text.trim();
-    if (!message) return;
-    const project = host.getActiveProject();
-    if (!project || state.running) return;
-    if (blockPhase(project)) return;
+  async function sendFollowUp(
+    text: string,
+    pending?: SlidePendingAttachment[],
+  ): Promise<void> {
+    const pendingList = (pending ?? []).filter((a) => a.type !== 'error' && a.data);
+    const display = slideDisplayText(text, pendingList.length);
+    if (!display) return;
+    const project0 = host.getActiveProject();
+    if (!project0 || state.running) return;
+    if (blockPhase(project0)) return;
+
+    const { files, attachments } = materializeUploads(project0.files, pendingList);
+    const project: SlideProject =
+      files === project0.files ? project0 : { ...project0, files, updatedAt: Date.now() };
+    if (project !== project0) host.landProject(project);
+
+    const userMsg = makeMsg('user', display, attachments);
+    const apiUser = slideApiUserMessage(display, hydrateAttachments(attachments, files));
 
     if (shouldResumePlan(project)) {
       // Land the follow-up in the transcript, then re-plan with ALL user turns
       // (original deck prompt + this message) so the model isn't context-blind.
-      const next = appendMessage(project, makeMsg('user', message));
+      const next = appendMessage(project, userMsg);
       await runPlan(next);
       return;
     }
@@ -1150,8 +1232,8 @@ export function createSlideAgent(
     // while running, and a completed build lands `ready`/`error`, never `build`.
     // `mode` is already 'agent' (forced by the original runBuild).
     if (project.phase === 'build') {
-      const next = appendMessage(project, makeMsg('user', message));
-      await runBuildContinue(next, message);
+      const next = appendMessage(project, userMsg);
+      await runBuildContinue(next, display, attachments);
       return;
     }
 
@@ -1164,14 +1246,14 @@ export function createSlideAgent(
     prepareStream();
     host.setBusy(true);
 
-    appendMessage(project, makeMsg('user', message));
+    appendMessage(project, userMsg);
 
     // Continue the prior edit-session context (last 40 turns) so a follow-up
     // like "I didn't like that" sees what the previous follow-up changed.
-    const priorEdit = project.editTranscript ?? [];
+    const priorEdit = restoreVisionOnTranscript(project.editTranscript ?? [], project);
     const messages: APIMessage[] = priorEdit.length
-      ? [...priorEdit.slice(-40), { role: 'user', content: message }]
-      : [{ role: 'user', content: message }];
+      ? [...priorEdit.slice(-40), apiUser]
+      : [apiUser];
     const invoke = async (msgs: APIMessage[], files: SlideFile[]) => {
       prepareStream();
       return runEditPhase({
@@ -1228,7 +1310,7 @@ export function createSlideAgent(
         host.setPhase(next.phase);
         host.setPendingAsk(null);
         emitVerifyFailed('edit', verifyIssues);
-        if (slides > 0) recordRound(result.files, `${message} (needs review)`);
+        if (slides > 0) recordRound(result.files, `${display} (needs review)`);
         appendMessage(
           next,
           makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
@@ -1244,7 +1326,7 @@ export function createSlideAgent(
       };
       host.landProject(next);
       host.setPhase('ready');
-      recordRound(result.files, message);
+      recordRound(result.files, display);
       appendMessage(next, assistantOrFallback(result.content, 'Deck updated.'));
       return;
     }
@@ -1265,7 +1347,7 @@ export function createSlideAgent(
         host.setPhase(next.phase);
         host.setPendingAsk(null);
         if (slides > 0) {
-          recordRound(result.files, message);
+          recordRound(result.files, display);
         }
         const narration = result.content?.trim();
         let landed = next;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { SlideProject } from '../../src/types/slides.ts';
 import {
   slideComposerCanSend,
+  slideComposerHasPayload,
   slideComposerPlaceholder,
 } from '../../src/utils/slideComposer.ts';
 
@@ -68,5 +69,17 @@ describe('slideComposerCanSend (A.6 send window)', () => {
     for (const s of ['idle', 'done', 'stopped', 'error'] as const) {
       expect(slideComposerCanSend(s)).toBe(true);
     }
+  });
+});
+
+describe('slideComposerHasPayload', () => {
+  it('allows empty text when attachments exist', () => {
+    expect(slideComposerHasPayload('', 1)).toBe(true);
+    expect(slideComposerHasPayload('  ', 2)).toBe(true);
+  });
+
+  it('rejects empty text with no attachments', () => {
+    expect(slideComposerHasPayload('', 0)).toBe(false);
+    expect(slideComposerHasPayload('   ', 0)).toBe(false);
   });
 });

@@ -1768,6 +1768,108 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
     expect(msgs.map((m) => m.content)).toEqual(['deck brief', 'drafting', 'make it 12 slides']);
   });
 
+  it('buildPlanSessionMessages restores vision parts when the plan transcript lost image_url', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'plan_ready',
+      mode: 'plan',
+      canvas: '16:9',
+      messages: [
+        {
+          id: 'u1',
+          role: 'user',
+          content: 'logo deck',
+          createdAt: 0,
+          attachments: [
+            {
+              id: 'a1',
+              type: 'image',
+              name: 'logo.png',
+              path: '/uploads/logo.png',
+              preview: 'data:image/jpeg;base64,SMALL',
+            },
+          ],
+        },
+      ],
+      files: [{ path: '/uploads/logo.png', content: 'data:image/png;base64,ORIGINAL' }],
+      planTranscript: [{ role: 'user', content: 'logo deck' }],
+    };
+    const msgs = buildPlanSessionMessages(project);
+    const user = msgs.find((m) => m.role === 'user');
+    expect(Array.isArray(user?.content)).toBe(true);
+    const parts = user?.content as Array<{ type: string; image_url?: { url: string } }>;
+    expect(parts.some((p) => p.type === 'image_url' && p.image_url?.url === 'data:image/jpeg;base64,SMALL')).toBe(true);
+  });
+
+  it('createFromPrompt with only a txt attachment seeds /uploads and inlines the body', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+ok\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+ok\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+    await agent.createFromPrompt('', undefined, [
+      { id: 'a1', type: 'text', name: 'notes.txt', data: 'secret brief body' },
+    ]);
+    expect(h.active?.files.some((f) => f.path === '/uploads/notes.txt' && f.content === 'secret brief body')).toBe(true);
+    expect(h.active?.messages[0]?.attachments?.[0]?.path).toBe('/uploads/notes.txt');
+    const userTurn = seenMessages[0]?.find((m) => m.role === 'user');
+    expect(typeof userTurn?.content).toBe('string');
+    expect(String(userTurn?.content)).toContain('secret brief body');
+  });
+
+  it('createFromPrompt with an image uses multipart image_url', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+ok\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+ok\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+    });
+    await agent.createFromPrompt('', undefined, [
+      { id: 'img', type: 'image', name: 'hero.jpg', data: 'data:image/jpeg;base64,qq' },
+    ]);
+    const userTurn = seenMessages[0]?.find((m) => m.role === 'user');
+    expect(Array.isArray(userTurn?.content)).toBe(true);
+  });
+
+  it('createFromPrompt no-ops when prompt and attachments are empty', async () => {
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport: async () => ({ content: 'nope' }),
+      skillFetcher: makeSkillFetcher().fetcher,
+    });
+    await agent.createFromPrompt('');
+    expect(h.active).toBeNull();
+  });
+
   it('sendFollowUp uses edit when a built deck already exists', async () => {
     const skills = makeSkillFetcher();
     let usedEdit = false;

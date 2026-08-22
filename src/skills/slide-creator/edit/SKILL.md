@@ -102,6 +102,9 @@ truth, not your memory of how the deck was built.
   If you fix a typo or tune layout, keep the approved copy otherwise intact.
 - **Keep slides on-canvas** — respect the safe zone (no critical text clipped
   at the edges), keep the focal point, and scale type with the canvas.
+- **User uploads** live under `/uploads/`. Reference them with
+  `<img src="/uploads/…">` or `url(/uploads/…)`. Do not `apply_patch` those
+  paths, paste data URLs, or `read_file` image uploads.
 
 ## Finishing
 

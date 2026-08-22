@@ -113,11 +113,14 @@ it to the matching pixel dimensions and safe-zone from the design system.
 - **No full slide HTML in assistant chat text.** All markup/CSS is delivered
   exclusively via `apply_patch`. Chat turns stay short — status summaries and
   the plain-english wrap-up only.
-- **Images:** prefer no externally-hosted images (they must be inlined by the
-  parent for CORS-safe capture). Use the deck's color/shape/typographic
-  elements to satisfy image placeholders. If a real image is essential and
-  unavoidable, keep the URL external (the parent inlines it), never a
-  `file://`/`chrome://` reference.
+- **Images:** prefer user uploads under `/uploads/` (paths are listed on the
+  user turn). Use `<img src="/uploads/filename.ext">` or CSS
+  `url(/uploads/filename.ext)` — never paste data URLs into HTML/CSS, never
+  `apply_patch` `/uploads/**`, and never `read_file` image uploads. If no
+  upload fits, prefer the deck's color/shape/typographic elements over
+  externally-hosted images. If a real external image is essential, keep the
+  URL external (the parent inlines it), never a `file://`/`chrome://`
+  reference.
 - **Match the approved copy exactly** from `/brief.md` — real copy, exactly as
   approved. Do not improvise new headlines or drop the user's stated copy.
 - **One visual system on every slide**, per `/design.md`: same margins,

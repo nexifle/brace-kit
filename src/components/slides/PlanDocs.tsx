@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, Check, ClipboardEdit, FileText, X } from 'lucide-react';
+import { BookOpen, Check, ClipboardEdit, FileText, Files, X } from 'lucide-react';
+import { DeckUploadsPanel } from './chat/SlideAttachmentViews.tsx';
 import { useSlideStore } from '../../store/slideStore.ts';
 import { getSlideFile } from '../../utils/slideVfs.ts';
 import { renderMarkdown } from '../../utils/markdown.ts';
 import { Btn } from '../ui/Btn.tsx';
 
-type DocTab = 'brief' | 'design';
+type DocTab = 'brief' | 'design' | 'uploads';
 
-const PLAN_PATH: Record<DocTab, string> = {
+const PLAN_PATH: Record<'brief' | 'design', string> = {
   brief: '/brief.md',
   design: '/design.md',
 };
@@ -16,6 +17,7 @@ const PLAN_PATH: Record<DocTab, string> = {
 const TAB_META: Record<DocTab, { label: string; hint: string }> = {
   brief: { label: 'Brief', hint: 'Content & structure spec' },
   design: { label: 'Design', hint: 'Visual system & rules' },
+  uploads: { label: 'Uploads', hint: 'Attached txt and images in /uploads' },
 };
 
 /**
@@ -42,7 +44,7 @@ export function PlanDocs({ open, onClose }: { open: boolean; onClose: () => void
   const files = activeProject?.files ?? [];
 
   const fileContent = useMemo(
-    () => getSlideFile(files, PLAN_PATH[tab])?.content ?? '',
+    () => (tab === 'uploads' ? '' : getSlideFile(files, PLAN_PATH[tab])?.content ?? ''),
     [files, tab]
   );
 
@@ -76,7 +78,7 @@ export function PlanDocs({ open, onClose }: { open: boolean; onClose: () => void
   }
 
   function saveEdit() {
-    if (!editing) return;
+    if (!editing || tab === 'uploads') return;
     updatePlanFile(PLAN_PATH[tab], draft);
     setEditing(false);
     setDraft('');
@@ -111,7 +113,7 @@ export function PlanDocs({ open, onClose }: { open: boolean; onClose: () => void
               Project docs
             </h3>
             <p className="truncate text-2xs text-muted-foreground">
-              Brief &amp; design spec
+              Brief, design, and uploaded files
             </p>
           </div>
           <button
@@ -143,18 +145,26 @@ export function PlanDocs({ open, onClose }: { open: boolean; onClose: () => void
               aria-pressed={tab === key}
               title={TAB_META[key].hint}
             >
-              <FileText size={13} className={tab === key ? 'text-primary' : ''} />
+              {key === 'uploads' ? (
+                <Files size={13} className={tab === key ? 'text-primary' : ''} />
+              ) : (
+                <FileText size={13} className={tab === key ? 'text-primary' : ''} />
+              )}
               {TAB_META[key].label}
-              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground/80">
-                {wordCount}
-              </span>
+              {key !== 'uploads' && (
+                <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground/80">
+                  {wordCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
         {/* Body */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {editing ? (
+          {tab === 'uploads' ? (
+            <DeckUploadsPanel />
+          ) : editing ? (
             <textarea
               ref={textareaRef}
               value={draft}
@@ -221,15 +231,18 @@ export function PlanDocs({ open, onClose }: { open: boolean; onClose: () => void
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={beginEdit}
-                disabled={!fileContent.trim()}
-                className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ClipboardEdit size={13} />
-                Edit
-              </button>
+              {tab !== 'uploads' && (
+                <button
+                  type="button"
+                  onClick={beginEdit}
+                  disabled={!fileContent.trim()}
+                  className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ClipboardEdit size={13} />
+                  Edit
+                </button>
+              )}
+              {tab === 'uploads' && <span />}
               <Btn size="sm" variant="default" onClick={onClose} className="h-8">
                 Done
               </Btn>

@@ -4,6 +4,7 @@ import type {
   SlideMainMessage,
   SlidePhase,
   SlideSessionStatus,
+  SlideUserAttachment,
 } from '../types/slides.ts';
 import { isStreamingAgentActive } from './slideStreaming.ts';
 import { isMaxRoundsFailureLabel } from '../services/slidePhases.ts';
@@ -12,7 +13,7 @@ import { isMaxRoundsFailureLabel } from '../services/slidePhases.ts';
 /* ==================================================================== */
 
 export type SlideChatItem =
-  | { type: 'user'; id: string; content: string; ts?: number }
+  | { type: 'user'; id: string; content: string; ts?: number; attachments?: SlideUserAttachment[] }
   | {
       type: 'ask_result';
       id: string;
@@ -539,6 +540,7 @@ export function buildSlideChatItems(input: BuildSlideChatItemsInput): SlideChatI
                 id: `user_${m.id}`,
                 content: m.content,
                 ts: m.createdAt,
+                ...(m.attachments?.length ? { attachments: m.attachments } : {}),
               },
         );
       } else if (isErrorMessage(m)) {

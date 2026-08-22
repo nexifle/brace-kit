@@ -1,4 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useSlideStore } from '../../../store/slideStore.ts';
+import {
+  AttachmentChip,
+  AttachmentLightbox,
+  resolveUserAttachment,
+  type ViewableAttachment,
+} from './SlideAttachmentViews.tsx';
 import {
   Activity,
   AlertCircle,
@@ -12,7 +19,9 @@ import {
   X,
   Wrench,
 } from 'lucide-react';
-import type { SlideActivityEvent, SlideAskQuestion } from '../../../types/slides.ts';
+import type { SlideActivityEvent, SlideAskQuestion, SlideFile, SlideUserAttachment } from '../../../types/slides.ts';
+
+const EMPTY_FILES: SlideFile[] = [];
 import type { SlideChatItem } from '../../../utils/slideChatItems.ts';
 import {
   formatThoughtDuration,
@@ -29,12 +38,30 @@ import { MarkdownBody } from '../../message/MarkdownBody.tsx';
 /* Shared density tokens (v0-like within theme)                          */
 /* ==================================================================== */
 
-export function ChatUserBubble({ content }: { content: string }) {
+export function ChatUserBubble({
+  content,
+  attachments,
+}: {
+  content: string;
+  attachments?: SlideUserAttachment[];
+}) {
+  const files = useSlideStore((s) => s.activeProject?.files) ?? EMPTY_FILES;
+  const [viewer, setViewer] = useState<ViewableAttachment | null>(null);
+  const chips = (attachments ?? []).map((a) => resolveUserAttachment(a, files));
+
   return (
     <div className="flex justify-end">
       <div className="max-w-[90%] rounded-2xl rounded-br-md bg-primary/10 px-3.5 py-2 text-sm leading-relaxed text-foreground">
         <p className="whitespace-pre-wrap break-words">{content}</p>
+        {chips.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap justify-end gap-1">
+            {chips.map((att) => (
+              <AttachmentChip key={att.id} att={att} onOpen={() => setViewer(att)} />
+            ))}
+          </div>
+        )}
       </div>
+      <AttachmentLightbox att={viewer} onClose={() => setViewer(null)} />
     </div>
   );
 }

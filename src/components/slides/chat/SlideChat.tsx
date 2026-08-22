@@ -203,7 +203,7 @@ export function SlideChat({
   const renderItem = (item: SlideChatItem): ReactNode => {
     switch (item.type) {
       case 'user':
-        return <ChatUserBubble content={item.content} />;
+        return <ChatUserBubble content={item.content} attachments={item.attachments} />;
       case 'ask_result':
         return <AskResultCard item={item} />;
       case 'reasoning':

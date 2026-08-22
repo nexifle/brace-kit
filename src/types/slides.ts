@@ -78,6 +78,26 @@ export interface SlideFile {
   content: string;
 }
 
+/**
+ * A user-attached txt/image on a composer turn.
+ * After send, `path` is the harness-owned VFS location (`/uploads/…`).
+ * `data` is present on pending composer chips and when hydrating from VFS;
+ * persisted transcript messages store `{ id, type, name, path }` only.
+ */
+export interface SlideUserAttachment {
+  id: string;
+  type: 'image' | 'text';
+  name: string;
+  path: string;
+  /** Original file bytes as a data URL (VFS / lightbox). */
+  data?: string;
+  /**
+   * Resized JPEG for model vision + chips only. Never written to the VFS.
+   * Dropped when the transcript is persisted.
+   */
+  preview?: string;
+}
+
 /** A rendered slide in the deck (references ordered by `slideOrder`). */
 export interface Slide {
   /** Stable slide id, e.g. `01`. */
@@ -225,6 +245,8 @@ export interface SlideMainMessage {
    * `content` holds the user's answer.
    */
   ask?: { questions: SlideAskQuestion[] };
+  /** User-attached files for this turn (paths under `/uploads/`). */
+  attachments?: SlideUserAttachment[];
 }
 
 // ==================== Agentic UI runtime (Amendment A.3 / A.5) ====================

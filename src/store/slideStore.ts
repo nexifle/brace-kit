@@ -140,6 +140,8 @@ export interface SlideStoreState {
   answerAsk: (projectId: string, answer: string, attachments?: string[]) => void;
   /** Rebuild the deck projection from a fresh VFS (e.g. after build/edit). */
   setActiveDeckFromVfs: (files: SlideFile[]) => void;
+  /** Remove a user upload (`/uploads/…`) from the active project VFS. */
+  removeUploadedFile: (path: string) => void;
   /** Mark the in-flight phase as user-stopped: clear busy + streaming + any suspended ask. */
   markStopped: () => void;
   /**
@@ -425,6 +427,18 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
         activeProject: state.activeProject ? { ...state.activeProject, files } : null,
       };
     }),
+
+  removeUploadedFile: (path) => {
+    const state = get();
+    if (!state.activeProject) return;
+    if (!path.startsWith('/uploads/')) return;
+    const files = state.activeProject.files.filter((f) => f.path !== path);
+    if (files.length === state.activeProject.files.length) return;
+    const next = { ...state.activeProject, files, updatedAt: Date.now() };
+    saveSlideProject(next).catch(() => {});
+    get().setActiveDeckFromVfs(files);
+    set({ activeProject: next });
+  },
 
   markStopped: () =>
     set((state) => {

@@ -146,6 +146,26 @@ describe('Grok Responses Format', () => {
       });
     });
 
+    it('[REGRESSION] maps multimodal user content to input_text + input_image (not nested arrays)', () => {
+      const messages: Message[] = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Use this logo' },
+            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,qq' } },
+          ],
+        },
+      ];
+      const config = formatResponses(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+      const parts = body.input[0].content as Array<Record<string, unknown>>;
+      expect(parts).toEqual([
+        { type: 'input_text', text: 'Use this logo' },
+        { type: 'input_image', image_url: 'data:image/jpeg;base64,qq' },
+      ]);
+      expect(typeof parts[0].text).toBe('string');
+    });
+
     it('[REGRESSION] should not nest function_call inside assistant content (proxy ModelInput 422)', () => {
       const messages: Message[] = [
         {

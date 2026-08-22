@@ -37,3 +37,8 @@ export function slideComposerPlaceholder(
 export function slideComposerCanSend(sessionStatus: SlideSessionStatus): boolean {
   return sessionStatus !== 'running' && sessionStatus !== 'waiting_user';
 }
+
+/** Freeform send needs typed text and/or at least one valid pending attachment. */
+export function slideComposerHasPayload(text: string, validAttachmentCount: number): boolean {
+  return text.trim().length > 0 || validAttachmentCount > 0;
+}

@@ -18,6 +18,7 @@ import { isGeminiImageModel, isXAIImageModel, supportsFunctionCalling } from '..
 import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
+import type { SlidePendingAttachment } from '../utils/slideUploads.ts';
 import { SLIDE_CANVAS_PRESETS } from '../types/slides.ts';
 import {
   composeSlideHtml,
@@ -159,10 +160,11 @@ export function useSlideAgent() {
   }, [enableTools, enableMCP, mcpServers, providerConfig, enableGoogleSearchTool, googleSearchApiKey]);
 
   return {
-    createFromPrompt: (prompt: string) =>
+    createFromPrompt: (prompt: string, attachments?: SlidePendingAttachment[]) =>
       agent.createFromPrompt(
         prompt,
         useSlideStore.getState().defaultMode,
+        attachments,
       ),
     runBuild: agent.runBuild,
     sendFollowUp: agent.sendFollowUp,
