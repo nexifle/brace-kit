@@ -703,6 +703,30 @@ export function createSlideAgent(
     active.mode === 'agent' ? active : { ...active, mode: 'agent' as const };
     if (project !== active) host.landProject(project);
 
+    await runBuildCore(project, [
+      { role: 'user', content: 'Build the deck from the approved brief and design.' },
+    ]);
+  }
+
+  /**
+   * Resume a stopped/failed build with the user's follow-up message, seeding the
+   * prior build session's transcript so the model continues where it stopped.
+   */
+  async function runBuildContinue(project: SlideProject, message: string): Promise<void> {
+    if (state.running) return;
+    if (blockPhase(project)) return;
+    const prior = project.buildTranscript ?? [];
+    await runBuildCore(project, [
+      ...prior.slice(-40),
+      { role: 'user', content: message },
+    ]);
+  }
+
+  /** Shared execution core for an initial build and a resumed build. */
+  async function runBuildCore(
+    project: SlideProject,
+    messages: APIMessage[],
+  ): Promise<void> {
     state.verifyRetries = 0;
     const systemPrompt = await phaseSystemPrompt('build', project);
     const abort = new AbortController();
@@ -712,9 +736,6 @@ export function createSlideAgent(
     prepareStream();
     host.setBusy(true);
 
-    const messages: APIMessage[] = [
-      { role: 'user', content: 'Build the deck from the approved brief and design.' },
-    ];
     const invoke = async (msgs: APIMessage[], files: SlideFile[]) => {
       prepareStream();
       return runBuildPhase({
@@ -769,6 +790,7 @@ export function createSlideAgent(
         ...current,
         files: syncDeckJson(files, { title: current.title }),
         updatedAt: Date.now(),
+        buildTranscript: result.transcript ?? current.buildTranscript,
         ...patch,
       };
     }
@@ -1107,6 +1129,17 @@ export function createSlideAgent(
       return;
     }
 
+    // A stopped build (phase still 'build' after cancel) RESUMES the build with
+    // the stopped build's context, instead of a blank edit. `phase === 'build'`
+    // at this point can only mean a stopped build: sendFollowUp early-returns
+    // while running, and a completed build lands `ready`/`error`, never `build`.
+    // `mode` is already 'agent' (forced by the original runBuild).
+    if (project.phase === 'build') {
+      const next = appendMessage(project, makeMsg('user', message));
+      await runBuildContinue(next, message);
+      return;
+    }
+
     state.verifyRetries = 0;
     const systemPrompt = await phaseSystemPrompt('edit', project);
     const abort = new AbortController();
@@ -1289,6 +1322,8 @@ export function createSlideAgent(
     createFromPrompt,
     answerAsk,
     runBuild,
+    /** Resume a stopped build with the user's follow-up message. */
+    runBuildContinue,
     sendFollowUp,
     /** Re-run plan/build after a phase failure without a fake "continue" turn. */
     retryFailedPhase,

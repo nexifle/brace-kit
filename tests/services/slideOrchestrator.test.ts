@@ -1117,6 +1117,56 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     expect(firstMessages.some((m) => m.content === 'make the title font bold')).toBe(false);
   });
 
+  it('resumes a stopped build with its prior context instead of a blank edit', async () => {
+    const skills = makeSkillFetcher();
+    const prior: APIMessage[] = [
+      { role: 'user', content: 'Build the deck from the approved brief and design.' },
+      { role: 'assistant', content: 'Drafting slide 1.' },
+    ];
+    const { transport, seenMessages } = makeTransport([
+      () => ({ content: 'Continuing the build.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    // A stopped build: phase stays 'build', mode already 'agent' (forced by the
+    // original runBuild), plan files valid, with the stopped build's transcript.
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'build',
+      mode: 'agent',
+      stopped: true,
+      buildTranscript: prior,
+      files: [
+        ...builtProject().files,
+        { path: '/theme.css', content: ':root{}' },
+        {
+          path: '/deck.json',
+          content: '{"title":"Coffee","canvas":"16:9","slideOrder":["01"]}',
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+    });
+
+    await agent.sendFollowUp('make the title bolder');
+
+    // The resumed build session starts from the injected system prompt + prior
+    // build transcript + the new message — the model continues where it stopped.
+    const firstMessages = seenMessages[0] ?? [];
+    expect(firstMessages[1]?.role).toBe('user');
+    expect(firstMessages.slice(1, prior.length + 2)).toEqual([
+      ...prior,
+      { role: 'user', content: 'make the title bolder' },
+    ]);
+    // The resumed build lands a fresh buildTranscript on the project.
+    expect(h.active?.buildTranscript).toBeDefined();
+    expect(h.active?.phase).toBe('ready');
+  });
+
   it('flips the project mode to agent when the user clicks Build', async () => {
     const skills = makeSkillFetcher();
     const { transport } = makeTransport([

@@ -203,6 +203,13 @@ export interface SlideProject {
    * edits are visible to the model) instead of starting blank. Mirrors planTranscript.
    */
   editTranscript?: APIMessage[];
+  /**
+   * The isolated build-session conversation (no leading system message) from the
+   * last build round, persisted so a follow-up after a stopped/failed build
+   * RESUMES the same build context instead of starting a blank edit. Mirrors
+   * planTranscript/editTranscript. Undefined until the first build round starts.
+   */
+  buildTranscript?: APIMessage[];
 }
 
 

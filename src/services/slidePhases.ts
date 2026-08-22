@@ -756,6 +756,8 @@ export interface BuildPhaseResult {
   truncated?: boolean;
   /** Model rounds completed when the phase ended (useful for truncated copy). */
   rounds?: number;
+  /** The build session conversation (minus the leading system message), for continuation. */
+  transcript?: APIMessage[];
 }
 
 /**
@@ -786,7 +788,10 @@ export async function runBuildPhase(
       ? maxRoundsNoDeliverable('build', mapped.rounds, mapped.slideCount)
       : PHASE_NO_DELIVERABLE.build,
   });
-  return mapped;
+  // Carry the build conversation (minus the leading system message) so a
+  // follow-up after a stopped/failed build can continue the same context
+  // (mirrors planTranscript/editTranscript).
+  return { ...mapped, transcript: stripSystemMessage(result.messages) };
 }
 
 /**
