@@ -21,7 +21,16 @@ export interface SlideSkillLoadOpts {
   fetcher?: SlideSkillFetcher;
   /** Override the runtime URL root (tests use a fake/dist path). */
   baseUrl?: string;
+  /**
+   * Normalized skill ids already loaded this session. When set and the requested
+   * id is present, `loadSlideSkillResource` returns an already-loaded notice
+   * instead of the body. On a successful fetch the id is added to this Set.
+   */
+  alreadyLoaded?: Set<string>;
 }
+
+/** Prefix for duplicate load_skill tool results (not an Error). */
+export const ALREADY_LOADED_SKILL_PREFIX = 'Already loaded:';
 
 export interface SlideSkillCatalogEntry {
   /** Tool argument: `SKILL.md` or `references/<file>.md`. */
@@ -81,7 +90,7 @@ and \`/design.md\` (whole-deck visual system). Do not write slide HTML/CSS.
 - Writable paths: \`/brief.md\`, \`/design.md\` only. Never \`/slides/**\` or \`/deck.json\` (harness-owned).
 - Canvas is REQUIRED: one of \`16:9\`, \`4:5\`, \`9:16\`, \`1:1\`. If the user did not name one, first tool call is \`ask\` with \`field: "canvas"\` and those four options. No default.
 - Questions go through \`ask\` only. Finish with \`submit_plan\` (\`summary\` + \`canvas\`) once both files exist and every ask is answered.
-- **MUST** \`load_skill\` with \`name: "SKILL.md"\` before writing files. Load references the skill names the same way.
+- Load \`SKILL.md\` with \`load_skill\` **once** before the first write (and each reference once when needed). Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
 `,
   build: `# Slide Creator — Build phase
 
@@ -95,7 +104,7 @@ Do not re-plan. You have no \`ask\` / \`submit_plan\`.
 - Writable paths: \`/theme.css\`, \`/slides/**\` only. Never \`/deck.json\` (harness-owned), never plan docs.
 - Slide ids: sequential zero-padded (\`01\`, \`02\`, …). Use \`reorder_slides\` to change order; do not rewrite content to shift slides.
 - HTML + CSS only — no \`<script>\`. Google Fonts via \`@import\` at the top of \`/theme.css\`.
-- **MUST** \`load_skill\` with \`name: "SKILL.md"\` before writing files. Load \`references/deck-file-contract.md\` the same way.
+- Load \`SKILL.md\` with \`load_skill\` **once** before the first write (and \`references/deck-file-contract.md\` once when needed). Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
 `,
   edit: `# Slide Creator — Edit phase
 
@@ -108,7 +117,7 @@ change to an already-built deck. Do not rebuild from scratch. You have no
 - \`apply_patch\` is the ONLY write tool. Prefer small \`update_file\` diffs after \`read_file\`.
 - Writable paths: \`/theme.css\`, \`/slides/**\`; \`/brief.md\` and \`/design.md\` only if the user explicitly asks. Never \`/deck.json\`.
 - Use \`reorder_slides\` to change order. HTML + CSS only — no \`<script>\`.
-- **MUST** \`load_skill\` with \`name: "SKILL.md"\` before writing files.
+- Load \`SKILL.md\` with \`load_skill\` **once** before the first write. Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
 `,
 };
 
@@ -232,6 +241,9 @@ export async function listSlideSkillCatalog(
  * string (tool-result style) rather than throwing, so a bad model call cannot
  * crash the session. Missing SKILL.md still throws from the fetcher when the
  * catalog is built; a missing single resource here is an error string.
+ *
+ * When `opts.alreadyLoaded` contains the normalized id, returns an info notice
+ * (no body) and does not re-fetch. Successful fetches add the id to that Set.
  */
 export async function loadSlideSkillResource(
   phase: SlidePhaseKey,
@@ -258,13 +270,67 @@ export async function loadSlideSkillResource(
   if (catalogIds && !catalogIds.has(id)) {
     return `Error: load_skill name not in this phase catalog: ${id}`;
   }
-  if (id === 'SKILL.md' && skillText !== undefined) return skillText;
-  try {
-    return await fetchText(urlOf(opts, phase, id));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return `Error: load_skill failed for ${id}: ${msg}`;
+  if (opts.alreadyLoaded?.has(id)) {
+    return (
+      `${ALREADY_LOADED_SKILL_PREFIX} ${id}. ` +
+      'Body is already in this session from an earlier load_skill result — do not call load_skill again for this name.'
+    );
   }
+  let body: string;
+  if (id === 'SKILL.md' && skillText !== undefined) {
+    body = skillText;
+  } else {
+    try {
+      body = await fetchText(urlOf(opts, phase, id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return `Error: load_skill failed for ${id}: ${msg}`;
+    }
+  }
+  opts.alreadyLoaded?.add(id);
+  return body;
+}
+
+/**
+ * Seed a loaded-skill Set from prior transcript tool turns (resume / follow-up
+ * plan). Only successful body results count — Error / Already loaded do not.
+ */
+export function collectLoadedSkillIds(
+  messages: ReadonlyArray<{
+    role: string;
+    content?: unknown;
+    name?: string;
+    toolCallId?: string;
+    toolCalls?: ReadonlyArray<{ id: string; name: string; arguments: string }>;
+  }>,
+): Set<string> {
+  const loaded = new Set<string>();
+  const toolById = new Map<string, string>();
+  for (const m of messages) {
+    if (m.role === 'tool' && m.name === 'load_skill' && m.toolCallId && typeof m.content === 'string') {
+      toolById.set(m.toolCallId, m.content);
+    }
+  }
+  for (const m of messages) {
+    if (m.role !== 'assistant' || !m.toolCalls) continue;
+    for (const tc of m.toolCalls) {
+      if (tc.name !== 'load_skill') continue;
+      let rawName: string | undefined;
+      try {
+        rawName = (JSON.parse(tc.arguments) as { name?: string }).name;
+      } catch {
+        continue;
+      }
+      if (!rawName?.trim()) continue;
+      const result = toolById.get(tc.id);
+      if (!result || result.startsWith('Error:') || result.startsWith(ALREADY_LOADED_SKILL_PREFIX)) {
+        continue;
+      }
+      const id = normalizeSlideSkillName(rawName);
+      if (id) loaded.add(id);
+    }
+  }
+  return loaded;
 }
 
 /** Compact always-on system prefix + catalog. Byte-stable for prompt caching. */
@@ -278,7 +344,9 @@ export function buildSlidePhaseStub(
 
 Call \`load_skill\` with \`{ "name": "<id>" }\` to fetch a document. Do not
 assume reference bodies are already in context. Loaded text arrives as the
-tool result (not the system prompt).
+tool result (not the system prompt). Call each id **once** while its result
+remains in context — duplicates return an already-loaded notice (no body).
+After a context summary/compact, you may load again if you need the body.
 
 ${lines.join('\n')}
 `;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  ALREADY_LOADED_SKILL_PREFIX,
   buildSlidePhaseStub,
+  collectLoadedSkillIds,
   listSlideSkillCatalog,
   loadSlideSkill,
   loadSlideSkillResource,
@@ -135,6 +137,63 @@ describe('loadSlideSkillResource', () => {
     const unknown = await loadSlideSkillResource('plan', 'references/nope.md', { fetcher });
     expect(unknown.startsWith('Error:')).toBe(true);
   });
+
+  it('returns already-loaded notice and skips body on duplicate; clear allows reload', async () => {
+    const alreadyLoaded = new Set<string>();
+    const first = await loadSlideSkillResource('plan', 'SKILL.md', { fetcher, alreadyLoaded });
+    expect(first).toContain('skill body here');
+    expect(alreadyLoaded.has('SKILL.md')).toBe(true);
+
+    const second = await loadSlideSkillResource('plan', 'skill', { fetcher, alreadyLoaded });
+    expect(second.startsWith(ALREADY_LOADED_SKILL_PREFIX)).toBe(true);
+    expect(second).toContain('SKILL.md');
+    expect(second).not.toContain('skill body here');
+
+    alreadyLoaded.clear();
+    const third = await loadSlideSkillResource('plan', 'SKILL.md', { fetcher, alreadyLoaded });
+    expect(third).toContain('skill body here');
+  });
+
+  it('does not mark failed loads as already loaded', async () => {
+    const alreadyLoaded = new Set<string>();
+    const bad = await loadSlideSkillResource('plan', 'references/nope.md', {
+      fetcher,
+      alreadyLoaded,
+    });
+    expect(bad.startsWith('Error:')).toBe(true);
+    expect(alreadyLoaded.size).toBe(0);
+  });
+});
+
+describe('collectLoadedSkillIds', () => {
+  it('collects successful load_skill ids from a transcript', () => {
+    const ids = collectLoadedSkillIds([
+      { role: 'user', content: 'hi' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'a', name: 'load_skill', arguments: '{"name":"SKILL.md"}' },
+          { id: 'b', name: 'load_skill', arguments: '{"name":"references/brief-template.md"}' },
+          { id: 'c', name: 'load_skill', arguments: '{"name":"SKILL.md"}' },
+        ],
+      },
+      { role: 'tool', toolCallId: 'a', name: 'load_skill', content: 'skill body' },
+      {
+        role: 'tool',
+        toolCallId: 'b',
+        name: 'load_skill',
+        content: 'Error: load_skill failed',
+      },
+      {
+        role: 'tool',
+        toolCallId: 'c',
+        name: 'load_skill',
+        content: `${ALREADY_LOADED_SKILL_PREFIX}SKILL.md. notice`,
+      },
+    ]);
+    expect([...ids]).toEqual(['SKILL.md']);
+  });
 });
 
 describe('buildSlidePhaseStub', () => {
@@ -145,5 +204,13 @@ describe('buildSlidePhaseStub', () => {
     ]);
     expect(stub).toContain('`references/element-palette.md`');
     expect(stub).not.toContain('Think of the slide canvas as a blank workspace');
+  });
+
+  it('tells the agent to load each skill once and allow reload after compact', () => {
+    const stub = buildSlidePhaseStub('plan', [{ id: 'SKILL.md', description: 'Planning' }]);
+    expect(stub).toContain('**once**');
+    expect(stub).toContain('Do **not** reload');
+    expect(stub).toContain('already-loaded notice');
+    expect(stub).toContain('context summary/compact');
   });
 });

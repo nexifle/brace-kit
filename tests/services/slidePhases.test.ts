@@ -306,6 +306,162 @@ describe('runPlanPhase', () => {
     expect(loaded).not.toContain('vfs brief');
   });
 
+  it('returns already-loaded notice (no body) on duplicate load_skill in the same session', async () => {
+    const skillBody =
+      '---\nname: slide-creator-plan\ndescription: Plan.\n---\nfull plan skill body';
+    const fetcher = async (url: string) => {
+      if (url.endsWith('plan/SKILL.md') || url.includes('plan/SKILL.md')) return skillBody;
+      throw new Error(`not found: ${url}`);
+    };
+
+    const toolResults: string[] = [];
+    const { transport } = makeTransport([
+      () => ({
+        toolCalls: [toolCall('load_skill', JSON.stringify({ name: 'SKILL.md' }))],
+      }),
+      () => ({
+        toolCalls: [toolCall('load_skill', JSON.stringify({ name: 'SKILL.md' }))],
+      }),
+      () => ({ content: 'ok' }),
+    ]);
+    const wrapping = async (msg: Parameters<NonNullable<PlanPhaseParams['transport']>>[0]) => {
+      const last = msg.messages?.[msg.messages.length - 1];
+      if (last && last.role === 'tool' && last.name === 'load_skill') {
+        toolResults.push(typeof last.content === 'string' ? last.content : '');
+      }
+      return transport!(msg);
+    };
+
+    const { sink, events } = captureActivity();
+    const result = await runPlanPhase({
+      systemPrompt: 'stub',
+      messages: [userMsg],
+      providerConfig,
+      files: [],
+      transport: wrapping,
+      skillFetcher: fetcher,
+      onActivity: sink,
+    });
+    expect(result.status).toBe('done');
+    expect(toolResults.length).toBe(2);
+    expect(toolResults[0]).toContain('full plan skill body');
+    expect(toolResults[1]).toMatch(/^Already loaded: SKILL\.md/);
+    expect(toolResults[1]).not.toContain('full plan skill body');
+    const loadRows = events.filter((e) => e.type === 'tool_started' && e.toolName === 'load_skill');
+    expect(loadRows.every((e) => e.status === 'completed')).toBe(true);
+  });
+
+  it('allows load_skill again after context compact clears the loaded set', async () => {
+    const skillBody =
+      '---\nname: slide-creator-plan\ndescription: Plan.\n---\nfull plan skill body';
+    let skillFetches = 0;
+    const fetcher = async (url: string) => {
+      if (url.endsWith('plan/SKILL.md') || url.includes('plan/SKILL.md')) {
+        skillFetches += 1;
+        return skillBody;
+      }
+      throw new Error(`not found: ${url}`);
+    };
+
+    let modelTurns = 0;
+    const transport: PlanPhaseParams['transport'] = async (req) => {
+      const last = req.messages?.[req.messages.length - 1];
+      if (
+        last?.role === 'user' &&
+        typeof last.content === 'string' &&
+        last.content.includes('CONTEXT SUMMARIZATION')
+      ) {
+        return { content: '<summary>Prior plan work</summary>' };
+      }
+      modelTurns++;
+      if (modelTurns === 1 || modelTurns === 2) {
+        return {
+          toolCalls: [toolCall('load_skill', JSON.stringify({ name: 'SKILL.md' }))],
+        };
+      }
+      return { content: 'ok' };
+    };
+
+    const bloated: APIMessage[] = [
+      userMsg,
+      { role: 'assistant', content: 'x'.repeat(400) },
+      { role: 'tool', toolCallId: 't0', name: 'read_file', content: 'y'.repeat(400) },
+    ];
+
+    const result = await runPlanPhase({
+      systemPrompt: 'stub',
+      messages: bloated,
+      providerConfig,
+      files: [],
+      transport,
+      skillFetcher: fetcher,
+      agentContext: { toolResultCap: 12_000, charBudget: 100 },
+    });
+    expect(result.status).toBe('done');
+    // Round 1 loads body; compact clears the set; round 2 fetches the body again.
+    // (normalize may also read SKILL.md for catalog — count body-serving fetches ≥ 2.)
+    expect(skillFetches).toBeGreaterThanOrEqual(2);
+    expect(modelTurns).toBeGreaterThanOrEqual(2);
+  });
+
+  it('seeds loaded skills from prior transcript so follow-up does not re-fetch', async () => {
+    const skillBody =
+      '---\nname: slide-creator-plan\ndescription: Plan.\n---\nfull plan skill body';
+    const fetcher = async (url: string) => {
+      if (url.endsWith('plan/SKILL.md') || url.includes('plan/SKILL.md')) return skillBody;
+      throw new Error(`not found: ${url}`);
+    };
+
+    const prior: APIMessage[] = [
+      userMsg,
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          {
+            id: 'tc_prior_skill',
+            name: 'load_skill',
+            arguments: JSON.stringify({ name: 'SKILL.md' }),
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        toolCallId: 'tc_prior_skill',
+        name: 'load_skill',
+        content: skillBody,
+      },
+      { role: 'user', content: 'revise the brief' },
+    ];
+
+    let loaded = '';
+    const { transport } = makeTransport([
+      () => ({
+        toolCalls: [toolCall('load_skill', JSON.stringify({ name: 'SKILL.md' }))],
+      }),
+      () => ({ content: 'ok' }),
+    ]);
+    const wrapping = async (msg: Parameters<NonNullable<PlanPhaseParams['transport']>>[0]) => {
+      const last = msg.messages?.[msg.messages.length - 1];
+      if (last && last.role === 'tool' && last.name === 'load_skill') {
+        loaded = typeof last.content === 'string' ? last.content : '';
+      }
+      return transport!(msg);
+    };
+
+    const result = await runPlanPhase({
+      systemPrompt: 'stub',
+      messages: prior,
+      providerConfig,
+      files: [],
+      transport: wrapping,
+      skillFetcher: fetcher,
+    });
+    expect(result.status).toBe('done');
+    expect(loaded).toMatch(/^Already loaded: SKILL\.md/);
+    expect(loaded).not.toContain('full plan skill body');
+  });
+
   it('returns error status when the transport reports an error', async () => {
     const { transport } = makeTransport([() => ({ error: 'API key is required.' })]);
     const result = await runPlanPhase({

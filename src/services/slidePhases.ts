@@ -43,6 +43,7 @@ import {
   type AgentTransport,
   type StreamDelta,
 } from './agentSession.ts';
+import type { AgentContextOptions } from './agentContext.ts';
 import {
   applyPatchOperation,
   parseApplyPatchArgs,
@@ -61,6 +62,7 @@ import {
 } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
 import {
+  collectLoadedSkillIds,
   loadSlideSkillResource,
   type SlidePhaseKey,
   type SlideSkillFetcher,
@@ -494,6 +496,8 @@ export interface PlanPhaseParams {
   /** Packed skill fetcher for `load_skill` (tests inject; production uses chrome URLs). */
   skillFetcher?: SlideSkillFetcher;
   skillBaseUrl?: string;
+  /** Cache-safe context bounds for the agent loop (tests inject tiny budgets). */
+  agentContext?: Partial<AgentContextOptions>;
 }
 
 export type PlanPhaseStatus =
@@ -590,7 +594,7 @@ export async function resumePlanPhase(
     };
   }
 
-  const session = buildPlanSession(params);
+  const session = buildPlanSession(params, resume.messages);
   const { currentFiles, submit, emitter, sessionParams } = session;
 
   // Close the suspended ask's running row + emit `ask_answered` (A.6). The
@@ -627,12 +631,14 @@ export async function resumePlanPhase(
 }
 
 /** Shared dispatcher closure + runner params for the plan session. */
-function buildPlanSession(params: PlanPhaseParams) {
+function buildPlanSession(params: PlanPhaseParams, seedMessages?: APIMessage[]) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
   const submit = { fired: false, canvas: undefined as string | undefined };
   // Per-run activity emitter (Amendment A.6) for tool/file/ask rows.
   const emitter = createActivityEmitter('plan', params.onActivity);
+  // Skills already fetched this session (cleared on compact so reload is allowed).
+  const loadedSkills = collectLoadedSkillIds(seedMessages ?? params.messages);
 
   const dispatchTool = async (
     toolCall: ToolCall,
@@ -654,7 +660,7 @@ function buildPlanSession(params: PlanPhaseParams) {
         return { content };
       }
       case 'load_skill':
-        return dispatchLoadSkill(toolCall, round, 'plan', params, emitter);
+        return dispatchLoadSkill(toolCall, round, 'plan', params, emitter, loadedSkills);
       case 'apply_patch':
         return dispatchApplyPatch(
           toolCall,
@@ -687,7 +693,7 @@ function buildPlanSession(params: PlanPhaseParams) {
     }
   };
 
-  const sessionParams = {
+  const sessionParams: AgentSessionParams = {
     systemPrompt: params.systemPrompt,
     messages: params.messages,
     tools: params.tools ?? getToolsForPhaseWithOptions('plan', params.toolOptions),
@@ -699,6 +705,8 @@ function buildPlanSession(params: PlanPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
+    onCompact: () => loadedSkills.clear(),
+    agentContext: params.agentContext,
     onRoundStart: (round: number) => {
       params.onRoundStart?.();
       emitter.roundStarted(round);
@@ -710,7 +718,7 @@ function buildPlanSession(params: PlanPhaseParams) {
     dispatchTool,
   };
 
-  return { currentFiles, submit, emitter, dispatchTool, sessionParams };
+  return { currentFiles, submit, emitter, dispatchTool, sessionParams, loadedSkills };
 }
 
 // ==================== Build phase ====================
@@ -750,6 +758,8 @@ export interface BuildPhaseParams {
   /** Packed skill fetcher for `load_skill`. */
   skillFetcher?: SlideSkillFetcher;
   skillBaseUrl?: string;
+  /** Cache-safe context bounds for the agent loop (tests inject tiny budgets). */
+  agentContext?: Partial<AgentContextOptions>;
 }
 
 /**
@@ -822,6 +832,7 @@ function buildBuildSession(params: BuildPhaseParams) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
   const emitter = createActivityEmitter('build', params.onActivity);
+  const loadedSkills = collectLoadedSkillIds(params.messages);
 
   const dispatchTool = async (
     toolCall: ToolCall,
@@ -843,7 +854,7 @@ function buildBuildSession(params: BuildPhaseParams) {
         return { content };
       }
       case 'load_skill':
-        return dispatchLoadSkill(toolCall, round, 'build', params, emitter);
+        return dispatchLoadSkill(toolCall, round, 'build', params, emitter, loadedSkills);
       case 'apply_patch':
         return dispatchApplyPatch(
           toolCall,
@@ -882,6 +893,8 @@ function buildBuildSession(params: BuildPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
+    onCompact: () => loadedSkills.clear(),
+    agentContext: params.agentContext,
     onRoundStart: (round: number) => {
       params.onRoundStart?.();
       emitter.roundStarted(round);
@@ -893,7 +906,7 @@ function buildBuildSession(params: BuildPhaseParams) {
     dispatchTool,
   };
 
-  return { currentFiles, emitter, dispatchTool, sessionParams };
+  return { currentFiles, emitter, dispatchTool, sessionParams, loadedSkills };
 }
 
 /**
@@ -1005,6 +1018,8 @@ export interface EditPhaseParams {
   /** Packed skill fetcher for `load_skill`. */
   skillFetcher?: SlideSkillFetcher;
   skillBaseUrl?: string;
+  /** Cache-safe context bounds for the agent loop (tests inject tiny budgets). */
+  agentContext?: Partial<AgentContextOptions>;
 }
 
 /**
@@ -1073,6 +1088,7 @@ function buildEditSession(params: EditPhaseParams) {
   // A live, mutable copy of the VFS captured by the dispatcher closure.
   const currentFiles = params.files.slice();
   const emitter = createActivityEmitter('edit', params.onActivity);
+  const loadedSkills = collectLoadedSkillIds(params.messages);
 
   const dispatchTool = async (
     toolCall: ToolCall,
@@ -1094,7 +1110,7 @@ function buildEditSession(params: EditPhaseParams) {
         return { content };
       }
       case 'load_skill':
-        return dispatchLoadSkill(toolCall, round, 'edit', params, emitter);
+        return dispatchLoadSkill(toolCall, round, 'edit', params, emitter, loadedSkills);
       case 'apply_patch':
         return dispatchApplyPatch(
           toolCall,
@@ -1133,6 +1149,8 @@ function buildEditSession(params: EditPhaseParams) {
     abortRequest: params.abortRequest,
     onUpdate: params.onUpdate,
     onDelta: params.onDelta,
+    onCompact: () => loadedSkills.clear(),
+    agentContext: params.agentContext,
     onRoundStart: (round: number) => {
       params.onRoundStart?.();
       emitter.roundStarted(round);
@@ -1144,7 +1162,7 @@ function buildEditSession(params: EditPhaseParams) {
     dispatchTool,
   };
 
-  return { currentFiles, emitter, dispatchTool, sessionParams };
+  return { currentFiles, emitter, dispatchTool, sessionParams, loadedSkills };
 }
 
 /** Terminal copy when a runner ends `done` without a usable deliverable. */
@@ -1319,6 +1337,7 @@ async function dispatchLoadSkill(
   phase: SlidePhaseKey,
   params: { skillFetcher?: SlideSkillFetcher; skillBaseUrl?: string },
   emitter: ReturnType<typeof createActivityEmitter>,
+  loadedSkills: Set<string>,
 ): Promise<AgentToolDispatch> {
   const row = emitter.started(toolCall, round);
   const name = args<{ name?: string }>(toolCall).name;
@@ -1330,6 +1349,7 @@ async function dispatchLoadSkill(
   const content = await loadSlideSkillResource(phase, name, {
     ...(params.skillFetcher ? { fetcher: params.skillFetcher } : {}),
     ...(params.skillBaseUrl ? { baseUrl: params.skillBaseUrl } : {}),
+    alreadyLoaded: loadedSkills,
   });
   if (content.startsWith('Error:')) emitter.failed(row, content);
   else emitter.complete(row);

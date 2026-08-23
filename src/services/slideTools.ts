@@ -90,7 +90,9 @@ const LOAD_SKILL_TOOL: MCPTool = {
   name: 'load_skill',
   description:
     'Load a packed phase skill document into this session (SKILL.md or a catalog references/*.md). ' +
-    'Not a project file — use read_file for VFS paths like /brief.md. Call SKILL.md before writing files. Read-only.',
+    'Not a project file — use read_file for VFS paths like /brief.md. Call SKILL.md once before the first write. ' +
+    'Load each name at most once while its result remains in context; duplicates return an already-loaded notice (no body). ' +
+    'After context compaction you may load again. Read-only.',
   inputSchema: {
     type: 'object',
     properties: {

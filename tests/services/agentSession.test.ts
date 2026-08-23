@@ -337,6 +337,63 @@ describe('runAgentSession', () => {
     expect(after.every((m) => m.role !== 'tool')).toBe(true);
     expect(after.some((m) => String(m.content).includes('Prior work on /brief.md'))).toBe(true);
   });
+
+  it('calls onCompact after a successful compact, not after a failed one', async () => {
+    let compactHooks = 0;
+    let callCount = 0;
+    const transport: AgentSessionParams['transport'] = async () => {
+      callCount++;
+      if (callCount === 1) {
+        return { content: '<summary>ok summary</summary>' };
+      }
+      return { content: 'done' };
+    };
+
+    const bloated: APIMessage[] = [
+      userMsg,
+      { role: 'assistant', content: 'x'.repeat(500) },
+      { role: 'tool', toolCallId: 't', name: 'read_file', content: 'y'.repeat(500) },
+    ];
+
+    await runAgentSession({
+      systemPrompt: 's',
+      messages: bloated,
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      agentContext: { toolResultCap: 12_000, charBudget: 100 },
+      onCompact: () => {
+        compactHooks += 1;
+      },
+      dispatchTool: async () => ({}),
+      transport,
+    });
+    expect(compactHooks).toBe(1);
+
+    compactHooks = 0;
+    callCount = 0;
+    const failTransport: AgentSessionParams['transport'] = async () => {
+      callCount++;
+      if (callCount === 1) {
+        return { error: 'compact failed' };
+      }
+      return { content: 'done despite failed compact' };
+    };
+    await runAgentSession({
+      systemPrompt: 's',
+      messages: bloated,
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      agentContext: { toolResultCap: 12_000, charBudget: 100 },
+      onCompact: () => {
+        compactHooks += 1;
+      },
+      dispatchTool: async () => ({}),
+      transport: failTransport,
+    });
+    expect(compactHooks).toBe(0);
+  });
 });
 
 describe('resumeAgentSession', () => {

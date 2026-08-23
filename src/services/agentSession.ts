@@ -143,6 +143,12 @@ export interface AgentSessionParams {
    * `response` is set when the transport returned a payload (may include reasoning).
    */
   onRoundComplete?: (round: number, response?: AgentChatResponse) => void;
+  /**
+   * Called after a successful context compact (`workingFromSummary` applied).
+   * Phase runners use this to clear per-session caches that mirror dropped tool
+   * results (e.g. loaded `load_skill` ids). Not called when compact fails.
+   */
+  onCompact?: () => void;
   /** CHAT_REQUEST transport (injectable for tests). Defaults to chrome.runtime. */
 
   transport?: AgentTransport;
@@ -363,6 +369,7 @@ async function runLoop(
           const next = workingFromSummary(working, summaryText);
           working.length = 0;
           working.push(...next);
+          params.onCompact?.();
         } else {
           compactFailures += 1;
         }
