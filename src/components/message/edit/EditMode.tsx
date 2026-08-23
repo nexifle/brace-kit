@@ -4,7 +4,10 @@ import { Btn } from '../../ui/Btn';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import type { EditModeProps, Attachment, PageContext, SelectedText } from '../MessageBubble.types';
 import { processImageForEdit, readFileAsDataURL } from '../utils/imageProcessing';
-import { MAX_FILE_SIZE } from '../../../types';
+import {
+  classifyComposerFile,
+  composerFileSizeError,
+} from '../../../utils/composerAttachments.ts';
 
 export function EditMode({
   initialText,
@@ -119,25 +122,16 @@ export function EditMode({
   const handleFileSelect = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
-      'image/jpeg': 'image',
-      'image/png': 'image',
-      'image/gif': 'image',
-      'image/webp': 'image',
-      'text/plain': 'text',
-      'text/csv': 'text',
-      'application/pdf': 'pdf',
-    };
-
     for (const file of Array.from(files)) {
-      if (file.size > MAX_FILE_SIZE) {
-        console.error('File too large:', file.name);
+      const fileType = classifyComposerFile(file, { allowPdf: true });
+      if (!fileType) {
+        console.error('Unsupported file type:', file.name);
         continue;
       }
 
-      const fileType = ALLOWED_FILE_TYPES[file.type];
-      if (!fileType) {
-        console.error('Unsupported file type:', file.name);
+      const sizeError = composerFileSizeError(fileType, file.size);
+      if (sizeError) {
+        console.error(sizeError, file.name);
         continue;
       }
 
@@ -234,7 +228,11 @@ export function EditMode({
             >
               {att.type === 'image' ? (
                 <>
-                  <img src={att.data} alt={att.name} className="w-10 h-10 object-cover rounded-sm" />
+                  <img
+                    src={att.data}
+                    alt={att.name}
+                    className="h-10 w-10 rounded-sm object-cover object-center"
+                  />
                   <span className="truncate max-w-20">{att.name}</span>
                 </>
               ) : (
@@ -244,9 +242,10 @@ export function EditMode({
                 </>
               )}
               <button
-                className="flex items-center justify-center w-4 h-4 border-none bg-transparent text-text-subtle cursor-pointer rounded-full shrink-0 transition-all duration-150 hover:bg-danger-400/20 hover:text-danger-400"
+                className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-background text-text-subtle transition-colors duration-150 hover:bg-destructive hover:text-destructive-foreground"
                 onClick={() => handleRemoveAttachment(idx)}
                 title="Remove"
+                aria-label={`Remove ${att.name}`}
               >
                 <XIcon size={12} />
               </button>

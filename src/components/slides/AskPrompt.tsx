@@ -331,7 +331,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
                   src={a.dataUrl}
                   alt={a.name}
                   title={a.name}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover object-center"
                 />
                 <button
                   type="button"

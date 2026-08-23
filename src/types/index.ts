@@ -622,19 +622,6 @@ export const MEMORY_CATEGORY_LABELS: Record<MemoryCategory, string> = {
   dislikes: '❌ Dislikes & Avoid',
 };
 
-export const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
-export const MAX_IMAGE_DIMENSION = 1024;
-
-export const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
-  'image/jpeg': 'image',
-  'image/png': 'image',
-  'image/gif': 'image',
-  'image/webp': 'image',
-  'text/plain': 'text',
-  'text/csv': 'text',
-  'application/pdf': 'pdf',
-};
-
 // ==================== Title Generation Constants ====================
 
 /** System prompt for conversation title generation (used by auto-rename and /rename command) */

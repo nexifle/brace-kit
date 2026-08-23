@@ -52,12 +52,16 @@ export function AttachmentChip({
         className="flex h-full w-full items-center justify-center"
         onClick={clickable ? onOpen : undefined}
         title={att.error ?? att.name}
-        aria-label={att.name}
+        aria-label={att.error ? `${att.name}: ${att.error}` : att.name}
       >
         {att.type === 'error' ? (
-          <span className="text-[10px]">⚠️</span>
+          <span className="text-[10px]" title={att.error}>⚠️</span>
         ) : att.type === 'image' && (att.preview || att.data) ? (
-          <img src={att.preview || att.data} alt="" className="h-full w-full object-cover" />
+          <img
+            src={att.preview || att.data}
+            alt=""
+            className="h-full w-full object-cover object-center"
+          />
         ) : (
           <FileText size={14} className="text-muted-foreground" />
         )}
@@ -65,7 +69,7 @@ export function AttachmentChip({
       {onRemove && (
         <button
           type="button"
-          className="absolute -right-0.5 -top-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow group-hover:flex hover:text-destructive"
+          className="absolute -right-0.5 -top-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-muted-foreground shadow group-hover:flex hover:bg-destructive hover:text-destructive-foreground"
           onClick={(e) => {
             e.stopPropagation();
             onRemove();

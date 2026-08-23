@@ -6,7 +6,7 @@ import {
   safeSlidePath,
   upsertSlideFile,
 } from './slideVfs.ts';
-import { MAX_SLIDE_IMAGE_SOURCE_BYTES } from './slideImageResize.ts';
+import { MAX_COMPOSER_IMAGE_SOURCE_BYTES } from './composerAttachments.ts';
 
 export { rewriteUploadSrcs };
 
@@ -97,7 +97,7 @@ export function materializeUploads(
     // `/uploads` is user-owned original bytes — do NOT apply the 2MiB agent-VFS
     // soft cap (that cap is for HTML/CSS the model writes). A single original
     // phone photo as a data URL already exceeds 2MiB and was silently dropped.
-    if (utf8Bytes(p.data) > MAX_SLIDE_IMAGE_SOURCE_BYTES) {
+    if (utf8Bytes(p.data) > MAX_COMPOSER_IMAGE_SOURCE_BYTES) {
       rejected.push(p.name);
       continue;
     }

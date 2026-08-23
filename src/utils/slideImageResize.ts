@@ -1,16 +1,17 @@
 /**
- * Compress user-uploaded slide images so they stay small in the VFS and in
+ * Compress user-uploaded composer images so they stay small in the VFS and in
  * multimodal API turns. Always re-encodes as JPEG; drops long edge then
- * quality until the data URL is under {@link MAX_SLIDE_IMAGE_DATA_BYTES}.
+ * quality until the data URL is under {@link MAX_COMPOSER_IMAGE_DATA_BYTES}.
  */
 
-export const MAX_SLIDE_IMAGE_EDGE = 1024;
-export const MAX_SLIDE_IMAGE_DATA_BYTES = 180 * 1024;
-/** Original files may be large; we shrink them instead of rejecting at 2MB. */
-export const MAX_SLIDE_IMAGE_SOURCE_BYTES = 12 * 1024 * 1024;
+import {
+  MAX_COMPOSER_IMAGE_DATA_BYTES,
+  MAX_COMPOSER_IMAGE_EDGE,
+  MAX_COMPOSER_IMAGE_SOURCE_BYTES,
+} from './composerAttachments.ts';
 
 const QUALITY_STEPS = [0.82, 0.7, 0.58, 0.45];
-const EDGE_STEPS = [MAX_SLIDE_IMAGE_EDGE, 768, 640, 512];
+const EDGE_STEPS = [MAX_COMPOSER_IMAGE_EDGE, 768, 640, 512];
 
 export function utf8ByteLength(s: string): number {
   return new TextEncoder().encode(s).byteLength;
@@ -49,7 +50,7 @@ export function pickCompressedJpeg(
   naturalWidth: number,
   naturalHeight: number,
   encode: EncodeJpeg,
-  maxBytes: number = MAX_SLIDE_IMAGE_DATA_BYTES,
+  maxBytes: number = MAX_COMPOSER_IMAGE_DATA_BYTES,
 ): { dataUrl: string; width: number; height: number; quality: number } {
   let last: { dataUrl: string; width: number; height: number; quality: number } | null = null;
   for (const edge of EDGE_STEPS) {
@@ -87,12 +88,12 @@ function loadImageElement(src: string): Promise<HTMLImageElement> {
 }
 
 /** Read a user File/Blob, resize, and return a JPEG data URL under the byte cap. */
-export async function resizeSlideImageFile(file: Blob): Promise<{
+export async function resizeComposerImageFile(file: Blob): Promise<{
   dataUrl: string;
   width: number;
   height: number;
 }> {
-  if (file.size > MAX_SLIDE_IMAGE_SOURCE_BYTES) {
+  if (file.size > MAX_COMPOSER_IMAGE_SOURCE_BYTES) {
     throw new Error('Image is too large (max 12MB)');
   }
   const dataUrlIn = await new Promise<string>((resolve, reject) => {
