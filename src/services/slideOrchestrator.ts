@@ -800,7 +800,7 @@ export function createSlideAgent(
     const prior = project.buildTranscript ?? [];
     const hydrated = hydrateAttachments(attachments, project.files);
     await runBuildCore(project, [
-      ...prior.slice(-40),
+      ...prior,
       slideApiUserMessage(message, hydrated),
     ]);
   }
@@ -1047,7 +1047,7 @@ export function createSlideAgent(
 
     const priorEdit = project.editTranscript ?? [];
     const messages: APIMessage[] = [
-      ...priorEdit.slice(-40),
+      ...priorEdit,
       {
         role: 'user',
         content:
@@ -1248,11 +1248,11 @@ export function createSlideAgent(
 
     appendMessage(project, userMsg);
 
-    // Continue the prior edit-session context (last 40 turns) so a follow-up
-    // like "I didn't like that" sees what the previous follow-up changed.
+    // Continue the prior edit-session context (append-only) so a follow-up
+    // like "I didn't like that" shares the cached prefix of the last edit.
     const priorEdit = restoreVisionOnTranscript(project.editTranscript ?? [], project);
     const messages: APIMessage[] = priorEdit.length
-      ? [...priorEdit.slice(-40), apiUser]
+      ? [...priorEdit, apiUser]
       : [apiUser];
     const invoke = async (msgs: APIMessage[], files: SlideFile[]) => {
       prepareStream();

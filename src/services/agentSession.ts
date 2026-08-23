@@ -21,6 +21,14 @@
 import type { APIMessage, MCPTool, ProviderConfig, ToolCall } from '../types/index.ts';
 import type { SlidePendingAsk } from '../types/slides.ts';
 import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../types/slides.ts';
+import {
+  DEFAULT_AGENT_CONTEXT,
+  buildCompactUserMessage,
+  capToolResult,
+  shouldCompact,
+  workingFromSummary,
+  type AgentContextOptions,
+} from './agentContext.ts';
 
 
 // ==================== Public types ====================
@@ -140,6 +148,11 @@ export interface AgentSessionParams {
   transport?: AgentTransport;
   /** Abort in-flight request (injectable for tests). Defaults to STOP_STREAM. */
   abortRequest?: AgentAbortFn;
+  /**
+   * Cache-safe context bounds. Tool results are capped at ingest; a compact
+   * request fires only when the working transcript exceeds `charBudget`.
+   */
+  agentContext?: Partial<AgentContextOptions>;
 }
 
 // ==================== Defaults / transport ====================
@@ -315,6 +328,11 @@ async function runLoop(
   const signal = params.signal;
   const maxRounds = params.maxRounds ?? DEFAULT_SLIDE_MAX_ROUNDS;
   const prefix = params.requestIdPrefix ?? 'agent';
+  const ctx: AgentContextOptions = {
+    ...DEFAULT_AGENT_CONTEXT,
+    ...params.agentContext,
+  };
+  let compactFailures = 0;
 
   let activeRequestId: string | undefined;
   const onAbort = () => {
@@ -328,6 +346,30 @@ async function runLoop(
   try {
     for (let round = startRound; round <= maxRounds; round++) {
       if (signal?.aborted) return cancel(params, working, round);
+
+      if (shouldCompact(working, ctx.charBudget) && compactFailures < 3) {
+        const compactId = `${prefix}_compact_${round}_${Date.now().toString(36)}`;
+        activeRequestId = compactId;
+        const compactResponse = await transport({
+          type: 'CHAT_REQUEST',
+          messages: [...working, buildCompactUserMessage()],
+          providerConfig: params.providerConfig,
+          tools: params.tools,
+          options: { ...params.chatOptions, stream: false },
+          requestId: compactId,
+        });
+        const summaryText = compactResponse.content?.trim();
+        if (!compactResponse.error && summaryText) {
+          const next = workingFromSummary(working, summaryText);
+          working.length = 0;
+          working.push(...next);
+        } else {
+          compactFailures += 1;
+        }
+        activeRequestId = undefined;
+        if (signal?.aborted) return cancel(params, working, round);
+      }
+
       params.onRoundStart?.(round);
 
       const requestId = `${prefix}_${round}_${Date.now().toString(36)}`;
@@ -400,7 +442,7 @@ async function runLoop(
           role: 'tool',
           toolCallId: toolCall.id,
           name: toolCall.name,
-          content: dispatch.content ?? '',
+          content: capToolResult(dispatch.content ?? '', ctx.toolResultCap),
         });
       }
       activeRequestId = undefined;

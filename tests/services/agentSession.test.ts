@@ -256,6 +256,87 @@ describe('runAgentSession', () => {
     });
     expect(states).toEqual(['done']);
   });
+
+  it('caps tool results at ingest and keeps the next-round prefix identical', async () => {
+    const payloads: APIMessage[][] = [];
+    let callCount = 0;
+    const huge = 'Z'.repeat(30_000);
+    const transport: AgentSessionParams['transport'] = async (req) => {
+      payloads.push(req.messages.map((m) => ({ ...m })));
+      callCount++;
+      if (callCount === 1) {
+        return {
+          content: 'reading',
+          toolCalls: [{ id: 'tc_1', name: 'read_file', arguments: '{"path":"/a.html"}' }],
+        };
+      }
+      return { content: 'done' };
+    };
+
+    const result = await runAgentSession({
+      systemPrompt: 's',
+      messages: [userMsg],
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      agentContext: { toolResultCap: 4_000, charBudget: 1_000_000 },
+      dispatchTool: async () => ({ content: huge }),
+      transport,
+    });
+
+    expect(callCount).toBe(2);
+    const tool = result.messages.find((m) => m.role === 'tool');
+    expect(typeof tool?.content === 'string' && (tool.content as string).length < huge.length).toBe(true);
+    expect(String(tool?.content)).toContain('truncated');
+    // Round 2 payload is round 1 plus assistant + capped tool (prefix of round 2
+    // equals round 1 messages).
+    const p1 = payloads[0];
+    const p2 = payloads[1];
+    expect(p2.slice(0, p1.length)).toEqual(p1);
+    expect(p2[p2.length - 1].role).toBe('tool');
+  });
+
+  it('compacts with a tail user message then continues with a short working set', async () => {
+    const payloads: APIMessage[][] = [];
+    let callCount = 0;
+    const transport: AgentSessionParams['transport'] = async (req) => {
+      payloads.push(req.messages.map((m) => ({ ...m })));
+      callCount++;
+      if (callCount === 1) {
+        return { content: '<summary>Prior work on /brief.md</summary>' };
+      }
+      return { content: 'ok after compact' };
+    };
+
+    const bloated: APIMessage[] = [
+      userMsg,
+      { role: 'assistant', content: 'x'.repeat(500) },
+      { role: 'tool', toolCallId: 't', name: 'read_file', content: 'y'.repeat(500) },
+    ];
+
+    const result = await runAgentSession({
+      systemPrompt: 'skill-text',
+      messages: bloated,
+      tools: [readTool],
+      providerConfig,
+      chatOptions: {},
+      agentContext: { toolResultCap: 12_000, charBudget: 100 },
+      dispatchTool: async () => ({}),
+      transport,
+    });
+
+    expect(result.status).toBe('done');
+    expect(result.content).toBe('ok after compact');
+    expect(callCount).toBe(2);
+    const compactReq = payloads[0];
+    expect(compactReq[compactReq.length - 1].role).toBe('user');
+    expect(String(compactReq[compactReq.length - 1].content)).toContain('CONTEXT SUMMARIZATION');
+    expect(compactReq[0]).toEqual({ role: 'system', content: 'skill-text' });
+    const after = payloads[1];
+    expect(after[0]).toEqual({ role: 'system', content: 'skill-text' });
+    expect(after.every((m) => m.role !== 'tool')).toBe(true);
+    expect(after.some((m) => String(m.content).includes('Prior work on /brief.md'))).toBe(true);
+  });
 });
 
 describe('resumeAgentSession', () => {
