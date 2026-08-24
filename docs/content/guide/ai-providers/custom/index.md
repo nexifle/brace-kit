@@ -42,7 +42,13 @@ Click **Save Provider** to create it.
 
 1. The new provider appears at the top of the provider dropdown — select it to activate
 2. Enter your **API Key** in the Configuration section (or leave empty for local servers)
-3. Add or select a **Model** in the Configuration section
+3. Click **Add model** and enter the model id the API expects (for example `llama-3.1-8b`). Fill in specs you know:
+   - Context window and max output (so compact and the token meter stay accurate)
+   - Input modalities and **Vision** if the model can read images
+   - **Tools** and **Reasoning** if the model supports them
+4. Save. You can edit a model later with the pencil icon, or change the same fields on the **Advanced** card.
+
+If BraceKit can list models from your endpoint, new names are added to the list. Specs you already saved are never overwritten.
 
 ## API Formats
 

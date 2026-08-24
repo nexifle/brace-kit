@@ -5,8 +5,9 @@
  * No React hooks or side effects - testable in isolation.
  */
 
-import type { Message, CompactConfig, ProviderConfig, CustomProvider } from '../../types/index.ts';
+import type { Message, CompactConfig, ProviderConfig, CustomProvider, FetchedModelsCache } from '../../types/index.ts';
 import { getProvider as getProviderUtil } from '../../utils/providerUtils.ts';
+import { getEffectiveContextWindow } from '../../providers/modelSpecs.ts';
 
 /**
  * Default summary prompt template for conversation compaction
@@ -117,16 +118,19 @@ export function extractSummaryFromResponse(fullContent: string): string {
 export function getContextWindow(
   providerConfig: ProviderConfig,
   customProviders: CustomProvider[],
-  compactConfig: CompactConfig
+  compactConfig: CompactConfig,
+  fetched?: FetchedModelsCache | null,
 ): number {
   const currentProviderId = providerConfig.providerId || '';
   const currentProvider = getProviderUtil(currentProviderId, customProviders);
+  const custom = customProviders.find((p) => p.id === currentProviderId);
 
-  return (
-    providerConfig.contextWindow ||
-    currentProvider.contextWindow ||
-    compactConfig.defaultContextWindow
-  );
+  return getEffectiveContextWindow(
+    providerConfig,
+    custom,
+    compactConfig,
+    fetched,
+  ) || currentProvider.contextWindow || compactConfig.defaultContextWindow;
 }
 
 /**

@@ -126,6 +126,28 @@ export interface SelectedText {
 
 export type ProviderFormat = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'responses';
 
+export type ModelModality = 'text' | 'image' | 'audio' | 'video' | 'pdf';
+export type ModelMode = 'chat' | 'image_generation' | 'embedding';
+export type ReasoningControl = 'effort' | 'budget' | 'toggle';
+
+export interface ModelLimit {
+  /** Total context window in tokens */
+  context?: number;
+  /** Max input tokens when the provider splits input vs total */
+  input?: number;
+  /** Max output / max_completion_tokens */
+  output?: number;
+}
+
+export interface ModelCapabilities {
+  tools?: boolean;
+  vision?: boolean;
+  reasoning?: boolean;
+  structuredOutput?: boolean;
+  googleSearch?: boolean;
+  imageGeneration?: boolean;
+}
+
 export interface ProviderPreset {
   id: string;
   name: string;
@@ -152,6 +174,8 @@ export interface CustomProvider {
   staticModels?: string[];
   supportsModelFetch?: boolean;
   contextWindow?: number;
+  /** Per-model specs edited via the add/edit dialog and Advanced card */
+  modelSpecs?: Record<string, ModelSpec>;
   /** Whether this provider accepts reasoning_content in message history (DeepSeek only) */
   supportsReasoningContent?: boolean;
 }
@@ -190,6 +214,19 @@ export interface ModelParameters {
   numCtx?: number;
   /** Model keep-alive duration, e.g. "5m", "24h". Supported: Ollama only. */
   keepAlive?: string;
+}
+
+export interface ModelSpec {
+  id: string;
+  name?: string;
+  mode?: ModelMode;
+  limit?: ModelLimit;
+  modalities?: { input: ModelModality[]; output: ModelModality[] };
+  capabilities?: ModelCapabilities;
+  /** Overrides format-level SUPPORTED_PARAMETERS for this model */
+  supportedParameters?: (keyof ModelParameters)[];
+  /** Gemini 3 effort vs Gemini 2.5 budget, OpenAI reasoning_effort, etc. */
+  reasoningControl?: ReasoningControl;
 }
 
 /**
@@ -328,6 +365,8 @@ export interface FileAttachment {
 export interface FetchedModelsCache {
   models: string[];
   fetchedAt: number;
+  /** Sparse specs parsed from the live /models response, keyed by model id */
+  specs?: Record<string, ModelSpec>;
   /**
    * Set when the last fetch attempt failed (e.g. the /models endpoint is not
    * supported and returns 404). Used to back off instead of repeatedly
@@ -557,6 +596,7 @@ export interface AppState {
   setQuotedText: (text: string | null) => void;
 
   setView: (view: 'chat' | 'settings' | 'gallery') => void;
+  setSettingsSection: (section: string | null) => void;
   setTheme: (theme: 'light' | 'dark') => void;
   setMode: (mode: 'sidebar' | 'tab') => void;
   setRailCollapsed: (collapsed: boolean) => void;

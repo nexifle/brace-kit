@@ -75,13 +75,9 @@ The threshold slider (50% - 95%) determines when compact triggers:
 
 ### Context Window
 
-The context window is auto-detected from your provider, but you can override it in **Provider Settings**:
+The context window comes from the **selected model**, not the whole provider. Built-in models use BraceKit’s known limits. For a custom model, set **Context** on the Advanced card or in the add/edit model dialog (Settings → AI).
 
-1. Open **Settings → Providers**
-2. Find **Context Window** field
-3. Enter your model's token limit (e.g., `128000` for GPT-4o)
-
-This affects when auto-compact triggers — if set incorrectly, compact may trigger too early or too late.
+If that number is wrong, compact may fire too early or too late.
 
 ### Custom Summary Prompt
 
@@ -153,8 +149,8 @@ If you want to preserve full context:
 ### Set Correct Context Window
 
 For accurate auto-compact timing:
-- Configure context window in **Provider Settings**
-- Match it to your model's actual limit
+- Check **Context** on the selected model (Settings → AI → Advanced)
+- Custom models: set the real token limit there
 - Default is 128K if not set
 
 ## Troubleshooting
@@ -162,14 +158,14 @@ For accurate auto-compact timing:
 ### Compact triggers too often
 
 - Increase the threshold (e.g., 95%)
-- Check context window in Provider Settings matches your model
+- Check Context on the selected model (Settings → AI → Advanced)
 - Consider using a model with larger context
 
 ### Compact not triggering
 
 - Ensure auto-compact is enabled
 - Check threshold isn't too high
-- Verify context window in Provider Settings is correct
+- Verify Context on the selected model is correct
 
 ### Summaries missing key info
 

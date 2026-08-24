@@ -7,10 +7,12 @@ import { PageContextPreview } from './PageContextPreview.tsx';
 import { ComposerPicker } from './ComposerPicker.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { ReasoningPopover } from './ReasoningPopover.tsx';
-import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
+import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS, getEffectiveContextWindow } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
+import { useCapabilityGuard } from '../hooks/useCapabilityGuard.ts';
+import { composerAcceptAttribute } from '../utils/modelCapability.ts';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -55,7 +57,12 @@ export function InputArea() {
 
   // Token usage for autocompact indicator (only when enabled)
   const tokens = estimateTokenCount(store.messages);
-  const contextWindow = store.providerConfig.contextWindow || (store.compactConfig.defaultContextWindow ?? 128000);
+  const contextWindow = getEffectiveContextWindow(
+    store.providerConfig,
+    store.customProviders.find((p) => p.id === store.providerConfig.providerId),
+    store.compactConfig,
+    store.fetchedModels[store.providerConfig.providerId],
+  );
   const threshold = store.compactConfig.threshold ?? 0.9;
   const compactEnabled = store.compactConfig.enabled ?? true;
   const usagePercent = (tokens / contextWindow) * 100;
@@ -109,6 +116,7 @@ export function InputArea() {
   // Function calling (tools) master switch
   const enableTools = useStore((state) => state.enableTools);
   const setEnableTools = useStore((state) => state.setEnableTools);
+  const { spec, requestEnableTools } = useCapabilityGuard();
 
   // Preferences state from store
   const preferences = useStore((state) => state.preferences);
@@ -424,7 +432,11 @@ export function InputArea() {
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
-                onClick={() => setEnableTools(!enableTools)}
+                onClick={() => {
+                  const next = !enableTools;
+                  if (!requestEnableTools(next)) return;
+                  setEnableTools(next);
+                }}
               >
                 <WrenchIcon size={11} />
               </button>
@@ -490,7 +502,7 @@ export function InputArea() {
           type="file"
           ref={fileInputRef}
           className="hidden"
-          accept="image/*,.txt,.csv,.pdf"
+          accept={composerAcceptAttribute(spec)}
           multiple
           onChange={(e) => handleFileSelect(e.target.files)}
         />

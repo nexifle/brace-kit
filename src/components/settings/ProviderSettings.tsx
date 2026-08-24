@@ -9,7 +9,11 @@ import { ModelParameterSettings } from './ModelParameterSettings.tsx';
 import { AddProviderModal } from './AddProviderModal.tsx';
 import { ProviderSelect } from './ProviderSelect.tsx';
 import { ModelList } from './ModelList.tsx';
+import { ModelSpecDialog } from './ModelSpecDialog.tsx';
+import { emptySpec, ModelSpecFields } from './ModelSpecFields.tsx';
 import { useStore } from '../../store/index.ts';
+import { resolveModelSpec } from '../../providers/modelSpecs.ts';
+import type { ModelSpec } from '../../types/index.ts';
 
 // =============================================================================
 // Shared sub-components (mirrors ChatSettings.tsx pattern)
@@ -46,8 +50,8 @@ export function ProviderSettings() {
     fetchAndCacheModels,
     addCustomProvider,
     removeCustomProvider,
-    addModelToCustomProvider,
     removeModelFromCustomProvider,
+    upsertCustomModelSpec,
   } = useProvider();
 
   const groqEnabledBuiltinTools = useStore((s) => s.groqEnabledBuiltinTools);
@@ -56,8 +60,8 @@ export function ProviderSettings() {
   const refreshGrokAuthStatus = useStore((s) => s.refreshGrokAuthStatus);
 
   const [showKey, setShowKey] = useState(false);
-  const [newModelInput, setNewModelInput] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [specDialog, setSpecDialog] = useState<{ mode: 'add' | 'edit'; initial?: ModelSpec } | null>(null);
 
   // Grok OAuth in-flight device flow (userCode + verification link + poll interval)
   const [grokFlow, setGrokFlow] = useState<{
@@ -174,6 +178,18 @@ export function ProviderSettings() {
     [providerConfig.providerId, getAvailableModels]
   );
 
+  const customProviders = useStore((s) => s.customProviders);
+  const fetchedModels = useStore((s) => s.fetchedModels);
+  const resolvedSpec = useMemo(() => {
+    const custom = customProviders.find((p) => p.id === providerConfig.providerId);
+    return resolveModelSpec({
+      providerId: providerConfig.providerId,
+      modelId: providerConfig.model,
+      custom,
+      fetched: fetchedModels[providerConfig.providerId],
+    });
+  }, [customProviders, fetchedModels, providerConfig.providerId, providerConfig.model]);
+
   useEffect(() => {
     const isLocalhost = isOllamaLocalhost(currentProvider?.format, providerConfig.apiUrl);
     if (currentProvider?.supportsModelFetch && (providerConfig.apiKey || isLocalhost)) {
@@ -192,13 +208,13 @@ export function ProviderSettings() {
     updateProviderConfig({ apiKey: e.target.value });
   }, [updateProviderConfig]);
 
-  const handleAddModel = useCallback(() => {
-    const model = newModelInput.trim();
-    if (!model || !isCustom) return;
-    addModelToCustomProvider(providerConfig.providerId, model);
-    updateProviderConfig({ model });
-    setNewModelInput('');
-  }, [newModelInput, isCustom, providerConfig.providerId, addModelToCustomProvider, updateProviderConfig]);
+  const handleSaveModelSpec = useCallback((spec: ModelSpec) => {
+    if (!isCustom) return;
+    const previousId = specDialog?.mode === 'edit' ? specDialog.initial?.id : undefined;
+    upsertCustomModelSpec(providerConfig.providerId, spec, previousId);
+    updateProviderConfig({ model: spec.id });
+    setSpecDialog(null);
+  }, [isCustom, specDialog, providerConfig.providerId, upsertCustomModelSpec, updateProviderConfig]);
 
   const handleRemoveModel = useCallback((modelName: string) => {
     if (!isCustom) return;
@@ -422,26 +438,24 @@ export function ProviderSettings() {
                       activeModel={providerConfig.model}
                       onSelect={(m) => updateProviderConfig({ model: m })}
                       onRemove={handleRemoveModel}
-                      emptyText="No models added yet. Type a model name below to add one."
+                      onEdit={(m) => {
+                        const cp = useStore.getState().customProviders.find((p) => p.id === providerConfig.providerId);
+                        setSpecDialog({
+                          mode: 'edit',
+                          initial: cp?.modelSpecs?.[m] || emptySpec(m),
+                        });
+                      }}
+                      emptyText="No models added yet. Click + to add one with specs."
                     />
 
-                    <div className="flex gap-2">
-                    <input
-                      className="flex-1 h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
-                      placeholder="Add model name…"
-                      value={newModelInput}
-                      onChange={e => setNewModelInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddModel()}
-                    />
                     <button
-                      onClick={handleAddModel}
-                      disabled={!newModelInput.trim()}
-                      className="h-8 w-8 bg-primary/10 text-primary rounded-md flex items-center justify-center hover:bg-primary/20 transition-all disabled:opacity-40 shrink-0"
-                      title="Add model"
+                      type="button"
+                      onClick={() => setSpecDialog({ mode: 'add', initial: emptySpec() })}
+                      className="h-8 px-3 text-sm bg-primary/10 text-primary rounded-md flex items-center justify-center gap-1.5 hover:bg-primary/20 transition-all self-start"
                     >
                       <PlusIcon size={14} />
+                      Add model
                     </button>
-                  </div>
                 </div>
               ) : availableModels.length === 0 ? (
                 // No known models: free-text input
@@ -470,16 +484,15 @@ export function ProviderSettings() {
         <SectionCard>
           <SectionHeader icon={<SlidersHorizontalIcon size={12} />} title="Advanced" />
           <div className="p-3 flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">Context Window</label>
-              <input
-                type="number"
-                className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
-                placeholder={String(currentProvider?.contextWindow || 128000)}
-                value={providerConfig.contextWindow || ''}
-                onChange={(e) => updateProviderConfig({ contextWindow: e.target.value ? parseInt(e.target.value, 10) : undefined })}
-              />
-            </div>
+            <ModelSpecsAdvanced
+              isCustom={isCustom}
+              spec={resolvedSpec}
+              unknown={!providerConfig.model}
+              onChange={(next) => {
+                if (!isCustom || !next.id) return;
+                upsertCustomModelSpec(providerConfig.providerId, next);
+              }}
+            />
 
             <ModelParameterSettings />
           </div>
@@ -544,6 +557,46 @@ export function ProviderSettings() {
         onClose={() => setShowAddModal(false)}
         onSubmit={handleAddFromModal}
       />
+
+      {specDialog && (
+        <ModelSpecDialog
+          isOpen
+          title={specDialog.mode === 'add' ? 'Add model' : 'Edit model'}
+          initial={specDialog.initial}
+          existingIds={availableModels}
+          onClose={() => setSpecDialog(null)}
+          onSave={handleSaveModelSpec}
+        />
+      )}
     </section>
+  );
+}
+
+function ModelSpecsAdvanced({
+  isCustom,
+  spec,
+  unknown,
+  onChange,
+}: {
+  isCustom: boolean;
+  spec: ModelSpec;
+  unknown: boolean;
+  onChange: (next: ModelSpec) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
+        Model specs
+      </label>
+      {!isCustom && (
+        <p className="text-xs text-muted-foreground">
+          Read-only for built-in providers. Values come from the catalog and the live /models response.
+        </p>
+      )}
+      {unknown && (
+        <p className="text-xs text-muted-foreground">Select a model to see its specs.</p>
+      )}
+      <ModelSpecFields spec={spec} onChange={onChange} disabled={!isCustom || unknown} showIdentity={false} />
+    </div>
   );
 }

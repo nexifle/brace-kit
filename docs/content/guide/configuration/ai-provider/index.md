@@ -57,18 +57,16 @@ For **Custom Providers** and **Ollama**, you can configure a custom Base URL:
 
 ## Model Selection
 
-Choose a model for the selected provider:
-
-- **Dropdown**: If the provider supports model fetching, select from the list
-- **Manual Input**: Type the model name if not in the list
+Choose a model for the selected provider from the searchable list. BraceKit fills the list when it can (after you enter an API key). You can also type a model name if it is not listed yet.
 
 ### Managing Models (Custom Providers)
 
-For custom providers, models are shown as chips directly in the Model field:
+Custom providers keep a list of models you add:
 
-- **Select Model**: Click a chip to make it the active model (highlighted in blue)
-- **Add Model**: Type a name in the input at the bottom of the chip list and press Enter or click **+**
-- **Remove Model**: Click the **×** on any chip
+- Click a row to make it the active model
+- Click **Add model** to open a dialog (model id, optional display name, and specs)
+- Click the pencil to edit a model’s specs
+- Click **×** to remove a model
 
 ---
 
@@ -91,13 +89,25 @@ Hover over a custom provider button in the grid and click the **×** that appear
 
 ---
 
-## Context Window
+## Model specs
 
-Set the context window size for the current provider:
+Every model has its own limits and features — not one setting for the whole provider. The **Advanced** card shows the specs for the **currently selected** model.
 
-- This affects auto-compact threshold calculations
-- Default values are provided based on provider presets
-- Override if using a model with a different context window
+| Spec | What it affects |
+|------|-----------------|
+| **Context / max input / max output** | How long a conversation can get (token meter and auto-compact) and how long a reply can be |
+| **Mode** | Chat, image generation, or embeddings |
+| **Input / output modalities** | What you can attach (text, images, PDFs) and what the model can return |
+| **Capabilities** | Tools, vision, reasoning, structured output, Google Search, image generation |
+| **Reasoning control** | How thinking is configured when reasoning is on |
+
+Built-in providers: these fields are **read-only**. BraceKit already knows the usual limits for listed models, and updates them when the provider returns that information.
+
+Custom providers: you set specs in the add/edit dialog and on the Advanced card.
+
+**Vision** always includes **Image** as an input modality. You cannot turn Image off while Vision is on.
+
+If you turn on tools or thinking in the composer (or attach a file) that this model’s specs say it does not support, BraceKit shows a warning with **Configure here** — that link opens this settings page so you can fix the spec.
 
 ---
 

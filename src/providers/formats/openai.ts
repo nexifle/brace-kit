@@ -5,8 +5,9 @@
  * Also used by xAI and DeepSeek providers.
  */
 
-import type { MCPTool, Message } from '../../types/index.ts';
+import type { MCPTool, Message, ModelSpec } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
+import { parseOpenAICompatModel } from '../modelSpecs.ts';
 import { cleanSchema } from '../utils/schema.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 import {
@@ -319,7 +320,7 @@ const EXCLUDED_MODEL_PATTERNS = [
 export async function fetchOpenAIModels(
   apiUrl: string,
   apiKey: string
-): Promise<{ models: string[] }> {
+): Promise<{ models: string[]; specs?: ModelSpec[] }> {
   let baseUrl = apiUrl.replace(/\/+$/, '');
 
   // Remove /chat/completions suffix if present
@@ -352,10 +353,10 @@ export async function fetchOpenAIModels(
       : undefined;
 
   // Filter and sort models
-  const models = (list || [])
-    .map((m: { id: string }) => m.id)
-    .filter((id: string) => !EXCLUDED_MODEL_PATTERNS.some((p) => p.test(id)))
-    .sort((a: string, b: string) => a.localeCompare(b));
+  const parsed = (list || [])
+    .map((m) => parseOpenAICompatModel(m))
+    .filter((s): s is ModelSpec => !!s && !EXCLUDED_MODEL_PATTERNS.some((p) => p.test(s.id)))
+    .sort((a, b) => a.id.localeCompare(b.id));
 
-  return { models };
+  return { models: parsed.map((s) => s.id), specs: parsed };
 }

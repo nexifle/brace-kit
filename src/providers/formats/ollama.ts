@@ -10,7 +10,8 @@
  * - keep_alive: Model memory management
  */
 
-import type { MCPTool, Message } from '../../types/index.ts';
+import type { MCPTool, Message, ModelSpec } from '../../types/index.ts';
+import { parseOllamaShow } from '../modelSpecs.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
 
@@ -325,7 +326,7 @@ export async function* parseOllamaStream(
 export async function fetchOllamaModels(
   apiUrl: string,
   _apiKey?: string
-): Promise<{ models: string[] }> {
+): Promise<{ models: string[]; specs?: ModelSpec[] }> {
   let baseUrl = apiUrl.replace(/\/+$/, '');
 
   // Remove /api/chat suffix if present
@@ -351,7 +352,29 @@ export async function fetchOllamaModels(
   // Extract model names and sort alphabetically
   const models = (data.models || [])
     .map((m: { name: string }) => m.name)
+    .filter((name: string) => name)
     .sort((a: string, b: string) => a.localeCompare(b));
 
-  return { models };
+  return { models, specs: models.map((id: string) => ({ id })) };
+}
+
+/**
+ * POST /api/show for a single model — context length lives here, not in /api/tags.
+ */
+export async function fetchOllamaModelSpec(
+  apiUrl: string,
+  modelId: string,
+): Promise<ModelSpec | null> {
+  let baseUrl = apiUrl.replace(/\/+$/, '');
+  if (baseUrl.endsWith('/api/chat')) {
+    baseUrl = baseUrl.slice(0, -'/api/chat'.length);
+  }
+  const response = await fetch(`${baseUrl}/api/show`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: modelId }),
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return parseOllamaShow(modelId, data);
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { SearchIcon, XIcon } from 'lucide-react';
+import { PencilIcon, SearchIcon, XIcon } from 'lucide-react';
 import { fuzzyFilter } from '../../utils/fuzzySearch.ts';
 import fuzzysort from 'fuzzysort';
 
@@ -9,6 +9,8 @@ interface ModelListProps {
   onSelect: (model: string) => void;
   /** When provided, each row gets a remove (✕) button — used for custom providers. */
   onRemove?: (model: string) => void;
+  /** When provided, each row gets an edit button — used for custom providers. */
+  onEdit?: (model: string) => void;
   /** Shown when there are no models at all (before any search). */
   emptyText: string;
   /** Max height of the scrollable list area (px). Keeps the card from growing the page. */
@@ -72,6 +74,7 @@ export function ModelList({
   activeModel,
   onSelect,
   onRemove,
+  onEdit,
   emptyText,
   maxHeight = 240,
 }: ModelListProps) {
@@ -164,6 +167,17 @@ export function ModelList({
                 >
                   {highlightModelName(m, query)}
                 </span>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onEdit(m); }}
+                    className="shrink-0 text-muted-foreground/40 hover:text-foreground transition-colors p-1"
+                    title="Edit model specs"
+                    aria-label={`Edit ${m}`}
+                  >
+                    <PencilIcon size={12} />
+                  </button>
+                )}
                 {onRemove && (
                   <button
                     type="button"

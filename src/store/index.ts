@@ -36,6 +36,7 @@ import { sha256 } from '../utils/crypto.ts';
 import { selectMemoriesForConversation } from '../utils/memorySampler.ts';
 import { encryptApiKey, decryptApiKey, isEncrypted } from '../utils/keyEncryption.ts';
 import { getGrokAuthStatus } from '../utils/grokOAuth.ts';
+import { migrateCustomProvider } from '../providers/modelSpecs.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -636,6 +637,7 @@ export const useStore = create<AppState>((set, get) => ({
   setQuotedText: (quotedText) => set({ quotedText }),
 
   setView: (view) => set({ view }),
+  setSettingsSection: (settingsSection) => set({ settingsSection }),
 
   setTheme: (theme) => {
     set({ theme });
@@ -878,7 +880,7 @@ export const useStore = create<AppState>((set, get) => ({
             return p;
           })
         );
-        updates.customProviders = decrypted;
+        updates.customProviders = decrypted.map(migrateCustomProvider);
         if (needsMigration) {
           // Re-encrypt and persist migrated providers
           const encrypted = await Promise.all(

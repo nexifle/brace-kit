@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { PROVIDER_PRESETS, fetchModels } from '../providers';
-import type { ProviderPreset, CustomProvider, ProviderFormat } from '../types/index.ts';
+import { PROVIDER_PRESETS, fetchModels, fetchOllamaModelSpec, specsToRecord } from '../providers';
+import type { ProviderPreset, CustomProvider, ProviderFormat, ModelSpec } from '../types/index.ts';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil, isOllamaLocalhost, isModelFetchCacheFresh } from '../utils/providerUtils.ts';
 
 function normalizeModelList(models?: string[]): string[] {
@@ -114,18 +114,40 @@ export function useProvider() {
       if (result?.models && result.models.length > 0) {
         const models = normalizeModelList(result.models);
         if (models.length === 0) return;
+        const liveSpecs = specsToRecord(result.specs);
+
+        const selectedModel =
+          state.providerKeys[providerId]?.model
+          || (providerId === state.providerConfig.providerId ? state.providerConfig.model : '')
+          || '';
+        if (provider.format === 'ollama' && selectedModel) {
+          try {
+            const shown = await fetchOllamaModelSpec(provider.apiUrl, selectedModel);
+            if (shown) liveSpecs[selectedModel] = shown;
+          } catch {
+            /* tags list still usable without /api/show */
+          }
+        }
 
         state.setFetchedModels(providerId, {
           models,
           fetchedAt: now,
+          specs: liveSpecs,
         });
 
         // Merge fetched models into the custom provider's managed list so
         // manual entries are never wiped out by a successful fetch.
+        // Existing user specs are never overwritten by live data.
         if (isCustom) {
           const existing = (provider as CustomProvider).models ?? [];
+          const existingSpecs = (provider as CustomProvider).modelSpecs ?? {};
+          const mergedSpecs: Record<string, ModelSpec> = { ...existingSpecs };
+          for (const id of models) {
+            if (!mergedSpecs[id]) mergedSpecs[id] = liveSpecs[id] || { id };
+          }
           state.updateCustomProvider(providerId, {
             models: normalizeModelList([...existing, ...models]),
+            modelSpecs: mergedSpecs,
           });
         }
       }
@@ -288,6 +310,7 @@ export function useProvider() {
             store.setFetchedModels(id, {
               models: models.slice(),
               fetchedAt: Date.now(),
+              specs: specsToRecord(result.specs),
             });
 
             store.saveToStorage();
@@ -299,13 +322,41 @@ export function useProvider() {
     }
   }, [store, getState]);
 
-  const addModelToCustomProvider = useCallback((providerId: string, modelName: string) => {
+  const addModelToCustomProvider = useCallback((providerId: string, modelName: string, spec?: ModelSpec) => {
     const cp = getState().customProviders.find(p => p.id === providerId);
     const normalizedModel = modelName.trim();
     if (!cp || !normalizedModel || cp.models.includes(normalizedModel)) return;
+    const nextSpecs = { ...(cp.modelSpecs || {}) };
+    nextSpecs[normalizedModel] = spec ? { ...spec, id: normalizedModel } : { id: normalizedModel };
     store.updateCustomProvider(providerId, {
       models: normalizeModelList([...cp.models, normalizedModel]),
+      modelSpecs: nextSpecs,
     });
+    store.saveToStorage();
+  }, [store, getState]);
+
+  const upsertCustomModelSpec = useCallback((providerId: string, spec: ModelSpec, previousId?: string) => {
+    const state = getState();
+    const cp = state.customProviders.find(p => p.id === providerId);
+    const id = spec.id.trim();
+    if (!cp || !id) return;
+    const nextSpecs = { ...(cp.modelSpecs || {}) };
+    let nextModels = [...cp.models];
+    if (previousId && previousId !== id) {
+      delete nextSpecs[previousId];
+      nextModels = nextModels.map((m) => (m === previousId ? id : m));
+    }
+    if (!nextModels.includes(id)) nextModels.push(id);
+    nextSpecs[id] = { ...spec, id };
+    const nextActive = (previousId && cp.model === previousId) ? id : cp.model;
+    store.updateCustomProvider(providerId, {
+      models: normalizeModelList(nextModels),
+      modelSpecs: nextSpecs,
+      model: nextActive,
+    });
+    if (providerId === state.providerConfig.providerId && previousId && state.providerConfig.model === previousId) {
+      store.setProviderConfig({ model: id });
+    }
     store.saveToStorage();
   }, [store, getState]);
 
@@ -314,10 +365,13 @@ export function useProvider() {
     const cp = state.customProviders.find(p => p.id === providerId);
     if (!cp) return;
     const updatedModels = cp.models.filter(m => m !== modelName);
+    const nextSpecs = { ...(cp.modelSpecs || {}) };
+    delete nextSpecs[modelName];
     const newActiveModel = cp.model === modelName ? (updatedModels[0] || '') : cp.model;
     store.updateCustomProvider(providerId, {
       models: updatedModels,
       model: newActiveModel,
+      modelSpecs: nextSpecs,
     });
     // Sync providerConfig.model if this is the active provider and the removed model was selected
     if (providerId === state.providerConfig.providerId && state.providerConfig.model === modelName) {
@@ -374,6 +428,7 @@ export function useProvider() {
     removeCustomProvider,
     addModelToCustomProvider,
     removeModelFromCustomProvider,
+    upsertCustomModelSpec,
     setShowCustomModel: store.setShowCustomModel,
   };
 }

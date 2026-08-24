@@ -96,7 +96,8 @@ export function useAutoCompact() {
     const contextWindow = getContextWindow(
       currentState.providerConfig,
       currentState.customProviders,
-      currentState.compactConfig
+      currentState.compactConfig,
+      currentState.fetchedModels[currentState.providerConfig.providerId],
     );
 
     // Estimate current token count
