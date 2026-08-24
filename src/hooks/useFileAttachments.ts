@@ -6,7 +6,7 @@ import {
   clipboardImageFiles,
   composerFileSizeError,
 } from '../utils/composerAttachments.ts';
-import { resizeComposerImageFile } from '../utils/slideImageResize.ts';
+import { encodeImageForVision } from '../utils/slideImageResize.ts';
 
 function newId(): string {
   return `file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -110,7 +110,7 @@ async function processImageFile(
   file: File,
   addAttachment: (att: FileAttachment) => void,
 ): Promise<void> {
-  const { dataUrl, width, height } = await resizeComposerImageFile(file);
+  const { dataUrl, width, height } = await encodeImageForVision(file);
   addAttachment({
     id: newId(),
     file,

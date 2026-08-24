@@ -68,6 +68,7 @@ import {
   type SlideSkillFetcher,
 } from './slideSkills.ts';
 import { normalizeAskPayload } from '../utils/slideAsk.ts';
+import { encodeImageForVisionDataUrl } from '../utils/slideImageResize.ts';
 import {
   askAnsweredLabel,
   connectingActivityLabel,
@@ -654,7 +655,7 @@ function buildPlanSession(params: PlanPhaseParams, seedMessages?: APIMessage[]) 
       }
       case 'read_file': {
         const row = emitter.started(toolCall, round);
-        const content = readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        const content = await readFile(currentFiles, args<{ path?: string }>(toolCall).path);
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
         return { content };
@@ -848,7 +849,7 @@ function buildBuildSession(params: BuildPhaseParams) {
       }
       case 'read_file': {
         const row = emitter.started(toolCall, round);
-        const content = readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        const content = await readFile(currentFiles, args<{ path?: string }>(toolCall).path);
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
         return { content };
@@ -1104,7 +1105,7 @@ function buildEditSession(params: EditPhaseParams) {
       }
       case 'read_file': {
         const row = emitter.started(toolCall, round);
-        const content = readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        const content = await readFile(currentFiles, args<{ path?: string }>(toolCall).path);
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
         return { content };
@@ -1320,14 +1321,28 @@ function listFiles(
   return JSON.stringify(paths, null, 2);
 }
 
+/** Last vision encode per VFS path so repeated read_file does not re-canvas. */
+const visionReadCache = new Map<string, { source: string; encoded: string }>();
+
 /** Read one file's content, or a Codex-style error string when missing. */
-function readFile(
+async function readFile(
   files: import('../types/slides.ts').SlideFile[],
   path?: string
-): string {
+): Promise<string> {
   if (!path) return 'Error: read_file requires a "path" argument.';
   const file = getSlideFile(files, path);
   if (!file) return `Error: File not found: ${path}`;
+  if (file.content.startsWith('data:image/')) {
+    const hit = visionReadCache.get(path);
+    if (hit && hit.source === file.content) return hit.encoded;
+    try {
+      const encoded = (await encodeImageForVisionDataUrl(file.content)).dataUrl;
+      visionReadCache.set(path, { source: file.content, encoded });
+      return encoded;
+    } catch {
+      return file.content;
+    }
+  }
   return file.content;
 }
 

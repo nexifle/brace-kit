@@ -4,7 +4,7 @@ import {
   clipboardImageFiles,
   composerFileSizeError,
 } from '../utils/composerAttachments.ts';
-import { resizeComposerImageFile } from '../utils/slideImageResize.ts';
+import { encodeImageForVision, encodeImageForVfs } from '../utils/slideImageResize.ts';
 import {
   MAX_SLIDE_COMPOSER_ATTACHMENTS,
   type SlidePendingAttachment,
@@ -27,17 +27,23 @@ async function processImage(file: File): Promise<SlidePendingAttachment> {
   const sizeError = composerFileSizeError('image', file.size);
   if (sizeError) throw new Error(sizeError);
   const original = await readAsDataUrl(file);
-  let preview = original;
+  let data = original;
   try {
-    preview = (await resizeComposerImageFile(file)).dataUrl;
+    data = await encodeImageForVfs(file, original);
   } catch {
-    // Keep the original as the vision/chip payload if compress fails (e.g. 300KB jpeg).
+    // Keep the original bytes in VFS if archive encode fails.
+  }
+  let preview = data;
+  try {
+    preview = (await encodeImageForVision(file, original)).dataUrl;
+  } catch {
+    // Keep the VFS payload as vision if compress fails.
   }
   return {
     id: newId(),
     type: 'image',
     name: file.name || 'pasted-image.jpg',
-    data: original,
+    data,
     preview,
   };
 }

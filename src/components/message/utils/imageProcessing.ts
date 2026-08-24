@@ -1,10 +1,10 @@
-import { resizeComposerImageFile } from '../../../utils/slideImageResize.ts';
+import { encodeImageForVision } from '../../../utils/slideImageResize.ts';
 
 /**
  * Process an image file for editing (resize/compress via shared composer path).
  */
 export async function processImageForEdit(file: File): Promise<string> {
-  const { dataUrl } = await resizeComposerImageFile(file);
+  const { dataUrl } = await encodeImageForVision(file);
   return dataUrl;
 }
 

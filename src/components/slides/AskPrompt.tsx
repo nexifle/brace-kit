@@ -4,6 +4,7 @@ import type { SlideAskState } from '../../store/slideStore.ts';
 import type { SlideAskQuestion } from '../../types/slides.ts';
 import { SLIDE_CANVAS_PRESETS } from '../../types/index.ts';
 import { buildAskAnswer, normalizeAskPayload } from '../../utils/slideAsk.ts';
+import { encodeImageForVision } from '../../utils/slideImageResize.ts';
 import { Btn } from '../ui/Btn.tsx';
 
 /** Max reference images a user may attach to an ask answer. */
@@ -42,6 +43,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [freeTexts, setFreeTexts] = useState<Record<string, string>>({});
   const [attachments, setAttachments] = useState<AskAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const allAnswered = questions.every((q) => {
@@ -57,6 +59,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
     setAnswers({});
     setFreeTexts({});
     setAttachments([]);
+    setAttachError(null);
   }, [ask.id]);
 
   const setValue = (id: string, value: string | string[]) =>
@@ -73,17 +76,10 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
 
   const readImage = (file: File) => {
     if (attachments.length >= MAX_ASK_ATTACHMENTS) return;
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      img.onload = null;
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(img, 0, 0);
+    void (async () => {
+      try {
+        const { dataUrl } = await encodeImageForVision(file);
+        setAttachError(null);
         setAttachments((prev) => {
           if (prev.length >= MAX_ASK_ATTACHMENTS) return prev;
           return [
@@ -91,13 +87,14 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
             {
               id: `ask_att_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
               name: file.name,
-              dataUrl: canvas.toDataURL('image/jpeg', 0.9),
+              dataUrl,
             },
           ];
         });
+      } catch (err) {
+        setAttachError((err as Error).message || 'Could not attach image');
       }
-    };
-    img.src = url;
+    })();
   };
 
   const onFilesPicked = (files: FileList | null) => {
@@ -321,6 +318,11 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
               {attachments.length}/{MAX_ASK_ATTACHMENTS}
             </span>
           </div>
+          {attachError && (
+            <p className="mb-2 text-[11px] text-destructive" role="alert">
+              {attachError}
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {attachments.map((a) => (
               <div

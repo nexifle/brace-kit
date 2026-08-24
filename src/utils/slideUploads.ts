@@ -7,6 +7,7 @@ import {
   upsertSlideFile,
 } from './slideVfs.ts';
 import { MAX_COMPOSER_IMAGE_SOURCE_BYTES } from './composerAttachments.ts';
+import { dataUrlBinaryBytes } from './slideImageResize.ts';
 
 export { rewriteUploadSrcs };
 
@@ -17,7 +18,7 @@ export type SlidePendingAttachment = {
   id: string;
   type: 'image' | 'text' | 'error';
   name: string;
-  /** Original payload written to `/uploads` (not resized). */
+  /** Bytes written to `/uploads`: original if ≤4K and ≤9MB, else VFS-capped JPEG. */
   data?: string;
   /** Compressed JPEG for chips + the model; never stored in the VFS. */
   preview?: string;
@@ -97,7 +98,10 @@ export function materializeUploads(
     // `/uploads` is user-owned original bytes — do NOT apply the 2MiB agent-VFS
     // soft cap (that cap is for HTML/CSS the model writes). A single original
     // phone photo as a data URL already exceeds 2MiB and was silently dropped.
-    if (utf8Bytes(p.data) > MAX_COMPOSER_IMAGE_SOURCE_BYTES) {
+    const storedBytes = p.data.startsWith('data:')
+      ? dataUrlBinaryBytes(p.data)
+      : utf8Bytes(p.data);
+    if (storedBytes > MAX_COMPOSER_IMAGE_SOURCE_BYTES) {
       rejected.push(p.name);
       continue;
     }
@@ -181,7 +185,7 @@ export function slideApiUserMessage(
       { type: 'text', text },
       ...images.map((a) => ({
         type: 'image_url' as const,
-        // Prefer the resized preview for the model; VFS keeps `data` original.
+        // Prefer the vision JPEG; `data` is VFS (original unless 4K/9MB caps).
         image_url: { url: (a.preview || a.data) as string },
       })),
     ],

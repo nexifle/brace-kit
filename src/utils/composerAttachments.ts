@@ -7,9 +7,15 @@ export const MAX_COMPOSER_TEXT_BYTES = 2 * 1024 * 1024; // 2MB — txt/pdf/csv
 /** Raw image source may be large; callers shrink before sending to the model. */
 export const MAX_COMPOSER_IMAGE_SOURCE_BYTES = 12 * 1024 * 1024; // 12MB
 /** Long-edge cap when re-encoding images for the model / preview. */
-export const MAX_COMPOSER_IMAGE_EDGE = 1024;
-/** Target max size for compressed JPEG data URLs sent to the model. */
-export const MAX_COMPOSER_IMAGE_DATA_BYTES = 180 * 1024;
+export const MAX_COMPOSER_IMAGE_EDGE = 2000;
+/**
+ * Target max **binary** JPEG size (not data-URL UTF-8) sent to the model.
+ * 1.5 MB so many images fit under a ~50 MB request body after base64.
+ */
+export const MAX_COMPOSER_IMAGE_DATA_BYTES = 1_500_000;
+/** VFS archive: keep original if within this side and byte budget. */
+export const MAX_VFS_IMAGE_SIDE_PX = 4096;
+export const MAX_VFS_IMAGE_BYTES = 9 * 1024 * 1024;
 
 export type ComposerAttachmentKind = 'image' | 'text' | 'pdf';
 

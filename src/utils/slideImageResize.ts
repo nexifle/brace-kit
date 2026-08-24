@@ -1,20 +1,34 @@
 /**
- * Compress user-uploaded composer images so they stay small in the VFS and in
- * multimodal API turns. Always re-encodes as JPEG; drops long edge then
- * quality until the data URL is under {@link MAX_COMPOSER_IMAGE_DATA_BYTES}.
+ * Canvas JPEG re-encode for vision ingest vs VFS archive.
+ *
+ * Vision path (chat, slide preview, read_file tool result) matches the
+ * ingest caps: 1.5 MB binary, 2000px side, 2_408_448 pixels, quality 88→32.
+ * VFS keeps originals unless over 4K or 9 MB.
  */
 
 import {
   MAX_COMPOSER_IMAGE_DATA_BYTES,
   MAX_COMPOSER_IMAGE_EDGE,
   MAX_COMPOSER_IMAGE_SOURCE_BYTES,
+  MAX_VFS_IMAGE_BYTES,
+  MAX_VFS_IMAGE_SIDE_PX,
 } from './composerAttachments.ts';
 
-const QUALITY_STEPS = [0.82, 0.7, 0.58, 0.45];
-const EDGE_STEPS = [MAX_COMPOSER_IMAGE_EDGE, 768, 640, 512];
+export const MAX_ENCODE_PIXELS = 2_408_448;
+export const MIN_VISION_SIDE_PX = 8;
+export const MIN_VISION_TOTAL_PX = 512;
+export const JPEG_QUALITY_STEPS: readonly number[] = [0.88, 0.8, 0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 
 export function utf8ByteLength(s: string): number {
   return new TextEncoder().encode(s).byteLength;
+}
+
+/** Binary size of a data-URL payload (JPEG/PNG bytes, not UTF-8 of the string). */
+export function dataUrlBinaryBytes(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',');
+  const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  const pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - pad);
 }
 
 export function fitInsideBox(
@@ -33,7 +47,23 @@ export function fitInsideBox(
   };
 }
 
-/** Force a jpeg basename so VFS paths match the re-encoded payload. */
+/** Fit inside max side AND max pixel count. Never upscales. */
+export function fitEncodeSize(
+  width: number,
+  height: number,
+  maxSide: number,
+  maxPixels: number,
+): { width: number; height: number } {
+  let { width: w, height: h } = fitInsideBox(width, height, maxSide);
+  const pixels = w * h;
+  if (pixels <= maxPixels) return { width: w, height: h };
+  const r = Math.sqrt(maxPixels / pixels);
+  return {
+    width: Math.max(1, Math.round(w * r)),
+    height: Math.max(1, Math.round(h * r)),
+  };
+}
+
 export function jpegUploadName(originalName: string): string {
   const base = originalName.split(/[/\\]/).pop() ?? 'image';
   const stem = base.replace(/\.[^.]+$/, '').trim() || 'image';
@@ -42,30 +72,54 @@ export function jpegUploadName(originalName: string): string {
 
 export type EncodeJpeg = (width: number, height: number, quality: number) => string;
 
+export type PickJpegOptions = {
+  maxBytes?: number;
+  maxSide?: number;
+  maxPixels?: number;
+  qualitySteps?: readonly number[];
+  /** When true, do not shrink below native size (quality-only). */
+  qualityOnly?: boolean;
+};
+
 /**
- * Pick the largest edge × quality whose encoded data URL is under `maxBytes`.
- * `encode` is injected so the loop can be unit-tested without a real canvas.
+ * One fitted size, then quality ladder until binary payload ≤ maxBytes.
  */
 export function pickCompressedJpeg(
   naturalWidth: number,
   naturalHeight: number,
   encode: EncodeJpeg,
   maxBytes: number = MAX_COMPOSER_IMAGE_DATA_BYTES,
+  options: PickJpegOptions = {},
 ): { dataUrl: string; width: number; height: number; quality: number } {
+  const maxSide = options.maxSide ?? MAX_COMPOSER_IMAGE_EDGE;
+  const maxPixels = options.maxPixels ?? MAX_ENCODE_PIXELS;
+  const qualitySteps = options.qualitySteps ?? JPEG_QUALITY_STEPS;
+  const size = options.qualityOnly
+    ? { width: Math.max(1, Math.round(naturalWidth)), height: Math.max(1, Math.round(naturalHeight)) }
+    : fitEncodeSize(naturalWidth, naturalHeight, maxSide, maxPixels);
+
   let last: { dataUrl: string; width: number; height: number; quality: number } | null = null;
-  for (const edge of EDGE_STEPS) {
-    const { width, height } = fitInsideBox(naturalWidth, naturalHeight, edge);
-    for (const quality of QUALITY_STEPS) {
-      const dataUrl = encode(width, height, quality);
-      last = { dataUrl, width, height, quality };
-      if (utf8ByteLength(dataUrl) <= maxBytes) return last;
-    }
+  for (const quality of qualitySteps) {
+    const dataUrl = encode(size.width, size.height, quality);
+    last = { dataUrl, width: size.width, height: size.height, quality };
+    if (dataUrlBinaryBytes(dataUrl) <= maxBytes) return last;
   }
   if (!last) throw new Error('Failed to encode image');
-  if (utf8ByteLength(last.dataUrl) > maxBytes) {
+  if (dataUrlBinaryBytes(last.dataUrl) > maxBytes) {
     throw new Error('Image is still too large after compressing');
   }
   return last;
+}
+
+function assertVisionGeometry(width: number, height: number): void {
+  const w = Math.max(0, Math.round(width));
+  const h = Math.max(0, Math.round(height));
+  if (w < MIN_VISION_SIDE_PX || h < MIN_VISION_SIDE_PX) {
+    throw new Error('Image is too small for vision');
+  }
+  if (w * h < MIN_VISION_TOTAL_PX) {
+    throw new Error('Image is too small for vision');
+  }
 }
 
 function canvasEncode(img: CanvasImageSource, width: number, height: number, quality: number): string {
@@ -74,6 +128,7 @@ function canvasEncode(img: CanvasImageSource, width: number, height: number, qua
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Failed to get canvas context');
+  // First frame only: GIF/WebP animation is flattened. Fine for vision.
   ctx.drawImage(img, 0, 0, width, height);
   return canvas.toDataURL('image/jpeg', quality);
 }
@@ -87,8 +142,19 @@ function loadImageElement(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Read a user File/Blob, resize, and return a JPEG data URL under the byte cap. */
-export async function resizeComposerImageFile(file: Blob): Promise<{
+function readBlobAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function encodeImageForVision(
+  file: Blob,
+  alreadyReadDataUrl?: string,
+): Promise<{
   dataUrl: string;
   width: number;
   height: number;
@@ -96,15 +162,61 @@ export async function resizeComposerImageFile(file: Blob): Promise<{
   if (file.size > MAX_COMPOSER_IMAGE_SOURCE_BYTES) {
     throw new Error('Image is too large (max 12MB)');
   }
-  const dataUrlIn = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
+  const dataUrlIn = alreadyReadDataUrl ?? (await readBlobAsDataUrl(file));
+  return encodeImageForVisionDataUrl(dataUrlIn);
+}
+
+/** Vision-normalize a data URL (read_file / already-read composer). */
+export async function encodeImageForVisionDataUrl(dataUrlIn: string): Promise<{
+  dataUrl: string;
+  width: number;
+  height: number;
+}> {
   const img = await loadImageElement(dataUrlIn);
-  const picked = pickCompressedJpeg(img.naturalWidth || img.width, img.naturalHeight || img.height, (w, h, q) =>
-    canvasEncode(img, w, h, q),
-  );
+  const nw = img.naturalWidth || img.width;
+  const nh = img.naturalHeight || img.height;
+  assertVisionGeometry(nw, nh);
+  const picked = pickCompressedJpeg(nw, nh, (w, h, q) => canvasEncode(img, w, h, q), MAX_COMPOSER_IMAGE_DATA_BYTES, {
+    maxSide: MAX_COMPOSER_IMAGE_EDGE,
+    maxPixels: MAX_ENCODE_PIXELS,
+    qualitySteps: JPEG_QUALITY_STEPS,
+  });
   return { dataUrl: picked.dataUrl, width: picked.width, height: picked.height };
+}
+
+/** null = keep original; qualityOnly = JPEG at native size; otherwise scale to 4K. */
+export function vfsNeedsReencode(
+  width: number,
+  height: number,
+  binaryBytes: number,
+): { qualityOnly: boolean } | null {
+  const overSide = Math.max(width, height) > MAX_VFS_IMAGE_SIDE_PX;
+  const overBytes = binaryBytes > MAX_VFS_IMAGE_BYTES;
+  if (!overSide && !overBytes) return null;
+  return { qualityOnly: !overSide };
+}
+
+/**
+ * VFS archive: keep original if ≤4K and ≤9 MB; quality-only JPEG if ≤4K and
+ * over 9 MB; downscale into 4K then quality if over 4K.
+ */
+export async function encodeImageForVfs(file: Blob, originalDataUrl?: string): Promise<string> {
+  if (file.size > MAX_COMPOSER_IMAGE_SOURCE_BYTES) {
+    throw new Error('Image is too large (max 12MB)');
+  }
+  const dataUrlIn = originalDataUrl ?? (await readBlobAsDataUrl(file));
+  const img = await loadImageElement(dataUrlIn);
+  const nw = img.naturalWidth || img.width;
+  const nh = img.naturalHeight || img.height;
+  const binaryBytes = Math.max(file.size, dataUrlBinaryBytes(dataUrlIn));
+  const plan = vfsNeedsReencode(nw, nh, binaryBytes);
+  if (!plan) return dataUrlIn;
+
+  const picked = pickCompressedJpeg(nw, nh, (w, h, q) => canvasEncode(img, w, h, q), MAX_VFS_IMAGE_BYTES, {
+    maxSide: MAX_VFS_IMAGE_SIDE_PX,
+    maxPixels: Number.MAX_SAFE_INTEGER,
+    qualitySteps: JPEG_QUALITY_STEPS,
+    qualityOnly: plan.qualityOnly,
+  });
+  return picked.dataUrl;
 }
