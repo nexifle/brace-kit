@@ -238,6 +238,7 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     set((state) => {
       const deck = rebuildDeckProjection(project.files);
       const slides = projectDeckSlides(project.files, deck);
+      const maxIndex = Math.max(0, slides.length - 1);
       // Activity lives outside SlideProject (own slideDB store). Orchestrator
       // landProject ships SlideProject fields but may carry a stale
       // activity/rounds snapshot (from getActiveProject() after a restore) —
@@ -287,7 +288,10 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
         activeDeck: deck,
         deckSlides: slides,
         canvas: project.canvas ?? deck.canvas,
-        currentSlideIndex: 0,
+        // Preserve the viewed slide across same-project lands (prompt send,
+        // phase finish, stop) so a re-land doesn't snap the preview back to
+        // slide 1; project switch / first load still starts at 0.
+        currentSlideIndex: sameProject ? Math.min(state.currentSlideIndex, maxIndex) : 0,
         rounds,
         roundIndex,
       };

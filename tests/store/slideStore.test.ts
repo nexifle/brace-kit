@@ -98,6 +98,31 @@ describe('slideStore', () => {
     expect(s.currentSlideIndex).toBe(0);
   });
 
+  it('setActiveProjectData keeps the viewed slide on same-project land', () => {
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject());
+    store.selectSlide(1); // viewing slide 2 of 2
+
+    // Orchestrator landProject mid/after a phase — same project id.
+    store.setActiveProjectData(makeProject({ id: 'proj_1', phase: 'ready', updatedAt: Date.now() }));
+    expect(useSlideStore.getState().currentSlideIndex).toBe(1);
+
+    // Clamped when the new deck has fewer slides.
+    store.setActiveProjectData(makeProject({ files: [
+      { path: '/deck.json', content: JSON.stringify({ title: 'Test Deck', slideOrder: ['01'], canvas: '16:9' }) },
+      { path: '/slides/01.html', content: '<h1>One</h1>' },
+    ] }));
+    expect(useSlideStore.getState().currentSlideIndex).toBe(0);
+  });
+
+  it('setActiveProjectData resets the viewed slide when switching projects', () => {
+    const store = useSlideStore.getState();
+    store.setActiveProjectData(makeProject({ id: 'proj_a' }));
+    store.selectSlide(1);
+    store.setActiveProjectData(makeProject({ id: 'proj_b' }));
+    expect(useSlideStore.getState().currentSlideIndex).toBe(0);
+  });
+
   it('setActiveProjectData wires up a pending ask', () => {
     const ask = {
       id: 'ask_1',
