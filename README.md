@@ -181,3 +181,7 @@ brace-kit/
 # Run unit tests
 bun test
 ```
+
+## License
+
+[MIT](./LICENSE) © [Nexifle Labs](https://nexifle.com)
