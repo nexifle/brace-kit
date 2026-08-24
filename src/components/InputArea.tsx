@@ -7,10 +7,12 @@ import { PageContextPreview } from './PageContextPreview.tsx';
 import { ComposerPicker } from './ComposerPicker.tsx';
 import { PreferencesPopover } from './PreferencesPopover.tsx';
 import { ReasoningPopover } from './ReasoningPopover.tsx';
-import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS } from '../providers';
+import { XAI_IMAGE_MODELS, GEMINI_IMAGE_MODELS, getEffectiveContextWindow } from '../providers';
 import { GlobeIcon, PaperclipIcon, SquareTerminal, SettingsIcon, AlertCircleIcon, RefreshCwIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { cn } from '../utils/cn.ts';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
+import { useCapabilityGuard } from '../hooks/useCapabilityGuard.ts';
+import { composerAcceptAttribute } from '../utils/modelCapability.ts';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -55,7 +57,12 @@ export function InputArea() {
 
   // Token usage for autocompact indicator (only when enabled)
   const tokens = estimateTokenCount(store.messages);
-  const contextWindow = store.providerConfig.contextWindow || (store.compactConfig.defaultContextWindow ?? 128000);
+  const contextWindow = getEffectiveContextWindow(
+    store.providerConfig,
+    store.customProviders.find((p) => p.id === store.providerConfig.providerId),
+    store.compactConfig,
+    store.fetchedModels[store.providerConfig.providerId],
+  );
   const threshold = store.compactConfig.threshold ?? 0.9;
   const compactEnabled = store.compactConfig.enabled ?? true;
   const usagePercent = (tokens / contextWindow) * 100;
@@ -109,6 +116,7 @@ export function InputArea() {
   // Function calling (tools) master switch
   const enableTools = useStore((state) => state.enableTools);
   const setEnableTools = useStore((state) => state.setEnableTools);
+  const { spec, requestEnableTools } = useCapabilityGuard();
 
   // Preferences state from store
   const preferences = useStore((state) => state.preferences);
@@ -145,16 +153,14 @@ export function InputArea() {
       setText(before + formattedQuote + after);
       setQuotedText(null);
 
-      // Auto-focus and resize
+      // Auto-focus and restore cursor
       if (textareaRef.current) {
         textareaRef.current.focus();
         const newPos = pos + formattedQuote.length;
 
-        // Give React a moment to update the value before measuring scrollHeight
+        // Give React a moment to update the value before restoring selection
         setTimeout(() => {
           if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
             textareaRef.current.setSelectionRange(newPos, newPos);
           }
         }, 0);
@@ -166,9 +172,6 @@ export function InputArea() {
     if (!text.trim() && store.attachments.length === 0) return;
     sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : { enableReasoning });
     setText('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
   }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio, enableReasoning]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -186,12 +189,6 @@ export function InputArea() {
       handleSend();
     }
   }, [handleSend, autocompleteSuggestion]);
-
-  const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
-    const target = e.currentTarget;
-    target.style.height = 'auto';
-    target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-  }, []);
 
   // Sync scroll between textarea and ghost overlay
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -320,7 +317,7 @@ export function InputArea() {
           <div className="relative">
             <div
               ref={ghostRef}
-              className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[120px]"
+              className="absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words font-sans text-sm leading-relaxed py-1.5 px-1 max-h-[420px]"
               aria-hidden="true"
             >
               <span className="text-transparent">{text}</span>
@@ -332,7 +329,7 @@ export function InputArea() {
             </div>
             <textarea
               ref={textareaRef}
-              className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed max-h-[120px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
+              className="relative w-full border-none bg-transparent text-foreground font-sans text-sm resize-none leading-relaxed field-sizing-content overflow-y-auto min-h-[96px] max-h-[420px] py-1.5 px-1 outline-none placeholder:text-muted-foreground/50"
               placeholder={placeholder}
               rows={2}
               value={text}
@@ -344,7 +341,6 @@ export function InputArea() {
               onMouseUp={updateCursorPos}
               onBlur={updateCursorPos}
               onKeyDown={handleKeyDown}
-              onInput={handleInput}
               onScroll={handleScroll}
               onPaste={(e) => handlePaste(e.nativeEvent)}
               disabled={store.isStreaming || isProcessingCommand}
@@ -436,7 +432,11 @@ export function InputArea() {
                   ? 'bg-primary/15 text-primary border-primary/40'
                   : 'text-muted-foreground border-border hover:bg-muted/40 hover:text-foreground'
                   }`}
-                onClick={() => setEnableTools(!enableTools)}
+                onClick={() => {
+                  const next = !enableTools;
+                  if (!requestEnableTools(next)) return;
+                  setEnableTools(next);
+                }}
               >
                 <WrenchIcon size={11} />
               </button>
@@ -502,7 +502,7 @@ export function InputArea() {
           type="file"
           ref={fileInputRef}
           className="hidden"
-          accept="image/*,.txt,.csv,.pdf"
+          accept={composerAcceptAttribute(spec)}
           multiple
           onChange={(e) => handleFileSelect(e.target.files)}
         />

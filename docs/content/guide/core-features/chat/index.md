@@ -109,9 +109,15 @@ The effort level maps per provider:
 | Groq (gpt-oss, kimi-k2) | `reasoning_effort` | minimal / low / medium / high |
 | Ollama | `think: true` | on / off only |
 
-> **Note:** Reasoning mode only works with supported models (Claude with thinking, DeepSeek V4, Gemini thinking models, Ollama with think mode).
+> **Note:** Reasoning only turns on for models whose specs allow it. If you enable thinking on a model that does not support it, BraceKit shows a warning and keeps thinking off. Use **Configure here** to open Settings → AI and fix the spec (custom providers) or pick a reasoning-capable model.
 >
-> **Graceful fallback:** OpenAI/Anthropic/Gemini-compatible custom endpoints that reject thinking parameters (e.g. a proxy that doesn't understand `reasoning_effort`) get an automatic retry without them, so your request still succeeds.
+> Compatible endpoints that reject thinking parameters get an automatic retry without them, so the request still succeeds.
+
+## Function calling (tools)
+
+The wrench icon in the composer toolbar turns MCP and built-in tools on or off.
+
+Tools only run when the **selected model** supports them. Image-generation models and any model with **Tools** turned off in its specs will not send tool calls. Trying to enable the wrench in that case shows a warning with **Configure here**.
 
 ## Message Actions
 

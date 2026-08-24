@@ -5,6 +5,7 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
+import { parseGeminiModel } from '../modelSpecs.ts';
 import type { ChatOptions, GeminiContent, GeminiPart, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import {
   GEMINI_NO_TOOLS_MODELS,
@@ -474,7 +475,7 @@ export async function* parseGeminiStream(
 export async function fetchGeminiModels(
   apiUrl: string,
   apiKey: string
-): Promise<{ models: string[] }> {
+): Promise<{ models: string[]; specs?: import('../../types/index.ts').ModelSpec[] }> {
   const baseUrl = apiUrl.replace(/\/+$/, '');
   const url = `${baseUrl}/models?key=${apiKey}`;
 
@@ -488,18 +489,10 @@ export async function fetchGeminiModels(
 
   const data = await response.json();
 
-  // Filter and transform models
-  const models = (data.models || [])
-    .filter((m: { supportedGenerationMethods?: string[] }) => {
-      const supportedMethods = m.supportedGenerationMethods || [];
-      return supportedMethods.includes('generateContent');
-    })
-    .map((m: { name?: string }) => {
-      const name = m.name || '';
-      return name.replace(/^models\//, '');
-    })
-    .filter((name: string) => name)
-    .sort((a: string, b: string) => a.localeCompare(b));
+  const specs = (data.models || [])
+    .map((m: unknown) => parseGeminiModel(m))
+    .filter((s: ReturnType<typeof parseGeminiModel>): s is NonNullable<ReturnType<typeof parseGeminiModel>> => !!s)
+    .sort((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id));
 
-  return { models };
+  return { models: specs.map((s: { id: string }) => s.id), specs };
 }

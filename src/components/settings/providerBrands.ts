@@ -17,6 +17,7 @@ export const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
   anthropic: { color: '#d97757', fg: '#ffffff' },
   gemini: { color: '#4285f4', fg: '#ffffff' },
   xai: { color: '#18181b', fg: '#ffffff' },
+  grok: { color: '#18181b', fg: '#ffffff' },
   groq: { color: '#f55036', fg: '#ffffff' },
   deepseek: { color: '#4d6bfe', fg: '#ffffff' },
   ollama: { color: '#3f3f46', fg: '#ffffff' },

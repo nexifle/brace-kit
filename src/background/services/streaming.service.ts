@@ -9,6 +9,7 @@ import {
   XAI_IMAGE_MODELS,
   extractGeminiText,
   extractGeminiReasoning,
+  extractResponsesText,
 } from '../../providers';
 import type { StreamChunk, ProviderWithConfig } from '../../providers';
 
@@ -255,6 +256,20 @@ export function createStreamingService(): StreamingService {
                   ? tc.function.arguments
                   : JSON.stringify(tc.function.arguments)
                 : '{}',
+          }));
+        }
+      } else if (provider.format === 'responses') {
+        text = extractResponsesText(data);
+        // reasoning stays empty: xAI reasoning is encrypted under the chat proxy.
+        const output = data.output as Array<Record<string, unknown>> | undefined;
+        const calls = output?.filter((it) => it.type === 'function_call') ?? [];
+        if (calls.length > 0) {
+          toolCalls = calls.map((it, index) => ({
+            id: (it.call_id as string) || (it.id as string),
+            index,
+            name: it.name as string,
+            arguments:
+              typeof it.arguments === 'string' ? it.arguments : JSON.stringify(it.arguments ?? {}),
           }));
         }
       }

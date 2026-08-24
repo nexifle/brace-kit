@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useStore } from '../store/index.ts';
 import { IconButton } from './ui/IconButton.tsx';
 import { Btn } from './ui/Btn.tsx';
-import { MoonIcon, SunIcon, HelpCircleIcon, ExternalLinkIcon, PanelLeftOpenIcon, PanelLeftCloseIcon } from 'lucide-react';
+import { MoonIcon, SunIcon, HelpCircleIcon, ExternalLinkIcon, PanelLeftOpenIcon, PanelLeftCloseIcon, Presentation } from 'lucide-react';
 import { ConfirmDialog } from './ui/ConfirmDialog.tsx';
+import { SlideCreatorTabDialog } from './slides/SlideCreatorTabDialog.tsx';
 import { Logo } from './ui/Logo.tsx';
 import { useChat } from '../hooks';
 
@@ -13,6 +14,7 @@ export function Header() {
   const store = useStore();
   const { stopStreaming, newChat } = useChat();
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showSlideTabDialog, setShowSlideTabDialog] = useState(false);
 
   const handleNewChat = () => {
     if (store.isStreaming) {
@@ -28,8 +30,9 @@ export function Header() {
     setShowConfirm(false);
   };
 
-  const openInTab = async () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('tab.html') });
+  const openInTab = async (openSlideCreator = false) => {
+    const url = chrome.runtime.getURL('tab.html') + (openSlideCreator ? '?open=slide-creator' : '');
+    chrome.tabs.create({ url });
     // Close the side panel so only the standalone tab stays open.
     try {
       const win = await chrome.windows.getCurrent();
@@ -53,6 +56,19 @@ export function Header() {
 
   const commonActions = (
     <div className="flex gap-1 items-center">
+      <IconButton
+        title="Slide Creator"
+        onClick={() => {
+          if (store.mode === 'sidebar' && !store.preferences.slideCreatorTabSuggestionDismissed) {
+            setShowSlideTabDialog(true);
+          } else {
+            store.openSlideCreator();
+          }
+        }}
+        className="rounded-none!"
+      >
+        <Presentation size={18} />
+      </IconButton>
       <IconButton
         title={store.theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         onClick={() => store.setTheme(store.theme === 'dark' ? 'light' : 'dark')}
@@ -202,6 +218,19 @@ export function Header() {
         onConfirm={confirmNewChat}
         onCancel={() => setShowConfirm(false)}
       />
+      <SlideCreatorTabDialog
+        isOpen={showSlideTabDialog}
+        onOpenInTab={(dontShowAgain) => {
+          if (dontShowAgain) store.setPreferences({ slideCreatorTabSuggestionDismissed: true });
+          setShowSlideTabDialog(false);
+          openInTab(true);
+        }}
+        onCancel={(dontShowAgain) => {
+          if (dontShowAgain) store.setPreferences({ slideCreatorTabSuggestionDismissed: true });
+          setShowSlideTabDialog(false);
+          store.openSlideCreator();
+        }}
+      />
       <div className="flex items-center gap-2">
         <div className="flex items-center text-white justify-center w-7 h-7 rounded-md bg-primary p-1 shadow-sm text-primary-foreground">
           <Logo />
@@ -211,7 +240,7 @@ export function Header() {
       <div className="flex gap-1">
         <IconButton
           title="Open in new tab"
-          onClick={openInTab}
+          onClick={() => openInTab()}
         >
           <ExternalLinkIcon size={18} />
         </IconButton>

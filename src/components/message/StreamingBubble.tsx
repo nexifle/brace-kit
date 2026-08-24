@@ -1,11 +1,9 @@
 import { memo, useRef } from 'react';
-import parse from 'html-react-parser';
 import { QuoteIcon } from 'lucide-react';
 import { useStore } from '../../store';
-import { renderMarkdown } from '../../utils/markdown';
-import { useMermaidHydration } from '../../hooks/useMermaidHydration';
-import { useImageGenerationCheck, useMarkdownInteractions, useQuoteSelection } from '../../hooks';
+import { useImageGenerationCheck, useQuoteSelection } from '../../hooks';
 import { ReasoningSection } from './sections/ReasoningSection';
+import { MarkdownBody } from './MarkdownBody.tsx';
 
 // Import shared UI components
 import { LoadingDots } from '../ui/LoadingDots';
@@ -34,12 +32,6 @@ function StreamingBubbleInternal() {
   const isImageGenerationModel = useImageGenerationCheck();
   const { quotePopup, handleMouseUp, handleQuoteClick } = useQuoteSelection(bubbleRef);
 
-  // Pasang event listener untuk copy code, table actions, image actions, link click
-  useMarkdownInteractions(bubbleRef);
-
-  // Use mermaid hydration (disabled during streaming)
-  useMermaidHydration(bubbleRef, { isStreaming: true });
-
   const hasContent = streamingContent.length > 0;
 
   return (
@@ -57,13 +49,14 @@ function StreamingBubbleInternal() {
           <ReasoningSection content={streamingReasoningContent} isStreaming={true} />
         )}
 
-        {/* Main content — html-react-parser memungkinkan React reconciler
-            mendiff output renderMarkdown, sehingga elemen yang tidak berubah
-            (code block, table) dipertahankan dan tidak di-replace tiap token */}
+        {/* Main content — shared MarkdownBody (streaming parse for stable blocks) */}
         {hasContent ? (
-          <div className="text-sm leading-relaxed">
-            {parse(renderMarkdown(streamingContent, true))}
-          </div>
+          <MarkdownBody
+            content={streamingContent}
+            isStreaming
+            variant="bare"
+            className="text-sm leading-relaxed"
+          />
         ) : (
           <LoadingDots />
         )}

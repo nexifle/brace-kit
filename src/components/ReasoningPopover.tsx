@@ -7,6 +7,7 @@ import {
   REASONING_LEVEL_LABELS,
   getReasoningLevelInfo,
 } from '../providers/utils/reasoning.ts';
+import { useCapabilityGuard } from '../hooks/useCapabilityGuard.ts';
 
 /**
  * Composer "thinking" control.
@@ -22,6 +23,7 @@ export function ReasoningPopover() {
   const setReasoningLevel = useStore((s) => s.setReasoningLevel);
   const providerConfig = useStore((s) => s.providerConfig);
   const [open, setOpen] = useState(false);
+  const { requestEnableReasoning } = useCapabilityGuard();
 
   const info = getReasoningLevelInfo(
     providerConfig.providerId,
@@ -121,7 +123,13 @@ export function ReasoningPopover() {
                     Reasons before answering
                   </div>
                 </div>
-                <Switch checked={enableReasoning} onChange={setEnableReasoning} />
+                <Switch
+                  checked={enableReasoning}
+                  onChange={(next) => {
+                    if (!requestEnableReasoning(next)) return;
+                    setEnableReasoning(next);
+                  }}
+                />
               </div>
 
               {/* Effort level */}

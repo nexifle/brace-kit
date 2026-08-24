@@ -195,10 +195,49 @@ async function getPageContent() {
     pageTitle: document.title,
     pageUrl: window.location.href,
     metaDescription: metaDesc,
+    favicon: getFaviconUrl(),
     content: markdown,
     contentType: 'markdown',
     timestamp: new Date().toISOString(),
   };
+}
+
+function getFaviconUrl(): string | undefined {
+  // Sites often declare multiple favicons (light/dark via `media`, or svg/png/ico
+  // variants). Score each candidate to pick the one matching the user's color
+  // scheme and the best image type; fall back to the conventional root path.
+  const prefersDark =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  const scored = Array.from(document.querySelectorAll('link[rel]'))
+    .map((link): { href: string; score: number } | null => {
+      const rel = (link.getAttribute('rel') || '').toLowerCase();
+      if (!rel.includes('icon')) return null;
+      const href = link.getAttribute('href');
+      if (!href) return null;
+      let abs: string;
+      try {
+        abs = new URL(href, window.location.href).href;
+      } catch {
+        return null; // invalid href — skip this link
+      }
+
+      const media = (link.getAttribute('media') || '').toLowerCase();
+      const type = (link.getAttribute('type') || '').toLowerCase();
+      let score = 0;
+      if (media.includes('prefers-color-scheme: dark')) score += prefersDark ? 3 : -1;
+      else if (media.includes('prefers-color-scheme: light')) score += prefersDark ? -1 : 3;
+      else score += 1; // generic icon applies to both schemes
+      if (type === 'image/svg+xml' || type === 'image/png') score += 1;
+      if (rel === 'apple-touch-icon') score -= 2; // touch-screen icon, not a tab favicon
+      return { href: abs, score };
+    })
+    .filter((x): x is { href: string; score: number } => x !== null)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length > 0) return scored[0].href;
+  return `${window.location.origin}/favicon.ico`; // best-effort; 404 handled at render
 }
 
 function cleanText(text: string) {

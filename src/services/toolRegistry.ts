@@ -24,6 +24,26 @@ export const BUILTIN_TOOLS = {
       required: ['query'],
     },
   },
+  WEB_SEARCH: {
+    name: 'web_search',
+    description:
+      'Search the web for up-to-date information. Returns a synthesized answer with source citations. Use for current events, recent docs, or any time-dependent facts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query to perform.',
+        },
+        allowed_domains: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional list of domains to restrict the search to.',
+        },
+      },
+      required: ['query'],
+    },
+  },
   CONTINUE_MESSAGE: {
     name: 'continue_message',
     description:
@@ -50,6 +70,8 @@ export interface GetAllToolsOptions {
   googleSearchApiKey: string | null;
   supportsFunctionCalling: boolean;
   isGemini: boolean;
+  /** Provider id — used to auto-inject the Grok web_search tool. */
+  providerId?: string;
 }
 
 /**
@@ -63,6 +85,12 @@ export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
   // Inject google_search tool for non-Gemini providers when enabled
   if (!options.isGemini && options.enableGoogleSearchTool && options.googleSearchApiKey) {
     tools.unshift(BUILTIN_TOOLS.GOOGLE_SEARCH as MCPTool);
+  }
+
+  // Auto-inject web_search for the Grok (OAuth) provider — no separate key
+  // required, it reuses the OAuth access token.
+  if (options.providerId === 'grok' && options.supportsFunctionCalling) {
+    tools.unshift(BUILTIN_TOOLS.WEB_SEARCH as MCPTool);
   }
 
   // Inject continue_message tool for function-capable models
@@ -100,5 +128,5 @@ export function getBuiltinTools(options: {
  * @returns True if the tool is a built-in tool
  */
 export function isBuiltinTool(name: string): boolean {
-  return name === 'google_search' || name === 'continue_message';
+  return name === 'google_search' || name === 'web_search' || name === 'continue_message';
 }

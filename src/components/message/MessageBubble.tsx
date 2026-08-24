@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { renderMarkdown } from '../../utils/markdown';
+import { MarkdownBody } from './MarkdownBody.tsx';
 import { useStore } from '../../store';
-import { useMermaidHydration, useImageGenerationCheck, useMarkdownInteractions, useQuoteSelection, useMCP } from '../../hooks';
+import { useImageGenerationCheck, useQuoteSelection, useMCP } from '../../hooks';
 import { TextFileViewer } from '../TextFileViewer';
 import { QuoteIcon, RefreshCwIcon } from 'lucide-react';
 
@@ -198,8 +198,7 @@ export function MessageBubble({
   const isImageGenerationModel = useImageGenerationCheck();
   const { quotePopup, handleMouseUp, handleQuoteClick } = useQuoteSelection(bubbleRef);
 
-  // Pasang event listener untuk copy code, table actions, image actions, link click
-  useMarkdownInteractions(bubbleRef);
+
 
   const hasAfterMessages = messageIndex !== undefined && messageIndex < messages.length - 1;
 
@@ -371,8 +370,7 @@ export function MessageBubble({
     return () => el.removeEventListener('click', handleClick);
   }, [activeConversationId, toggleFavorite]);
 
-  // Hydrate mermaid diagrams after content renders (only when not streaming)
-  useMermaidHydration(bubbleRef, { isStreaming });
+
 
   // Sync markdown image favorite indicators
   useEffect(() => {
@@ -447,8 +445,9 @@ export function MessageBubble({
     }
     if (message.role === 'assistant' || message.role === 'user' || message.role === 'system') {
       const contentToRender = message.displayContent || message.content;
-      // Note: renderMarkdown sanitizes content internally
-      return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(contentToRender, isStreaming) }} />;
+      return (
+        <MarkdownBody content={contentToRender} isStreaming={isStreaming} variant="bare" />
+      );
     }
     // MCP disconnect recovery prompt
     if (message.role === 'error' && message.content.startsWith(MCP_DISCONNECT_PREFIX)) {
@@ -523,10 +522,11 @@ export function MessageBubble({
         >
           {streamingReasoningContent && <ReasoningSection content={streamingReasoningContent} isStreaming={true} />}
           {message.content ? (
-            // Note: renderMarkdown sanitizes content internally
-            <div
+            <MarkdownBody
+              content={message.content}
+              isStreaming={isStreaming}
+              variant="bare"
               className="text-sm leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content, isStreaming) }}
             />
           ) : (
             <LoadingDots />

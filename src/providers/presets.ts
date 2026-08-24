@@ -5,6 +5,7 @@
  */
 
 import type { ProviderFormat, ProviderPreset } from '../types/index.ts';
+import { catalogIds } from './modelCatalog.ts';
 
 // ==================== Provider Format Metadata ====================
 
@@ -18,6 +19,7 @@ export const FORMAT_LABELS: Record<ProviderFormat, string> = {
   anthropic: 'Anthropic API',
   gemini: 'Gemini API',
   ollama: 'Local · Ollama',
+  responses: 'OpenAI Responses API',
 };
 
 /**
@@ -28,6 +30,7 @@ export const FORMAT_PLACEHOLDERS: Record<ProviderFormat, string> = {
   anthropic: 'https://api.anthropic.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   ollama: 'http://localhost:11434',
+  responses: 'https://api.example.com/v1',
 };
 
 // ==================== Model Constants ====================
@@ -163,17 +166,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'openai',
     models: [],
     supportsModelFetch: true,
-    staticModels: [
-      // GPT-5.6 family (aliases: gpt-5.6 → gpt-5.6-sol)
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
-      // Previous generation
-      'gpt-5.5',
-      'gpt-5.4',
-      // Open-weight
-      'gpt-oss',
-    ],
+    staticModels: catalogIds('openai'),
   },
   anthropic: {
     id: 'anthropic',
@@ -183,20 +176,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'anthropic',
     models: [],
     supportsModelFetch: true,
-    staticModels: [
-      // Current generation (aliases)
-      'claude-fable-5',
-      'claude-opus-5',
-      'claude-sonnet-5',
-      'claude-haiku-4-5',
-      // Previous generation (still available)
-      'claude-opus-4-8',
-      'claude-opus-4-7',
-      'claude-opus-4-6',
-      'claude-sonnet-4-6',
-      'claude-opus-4-5',
-      'claude-sonnet-4-5',
-    ],
+    staticModels: catalogIds('anthropic'),
   },
   gemini: {
     id: 'gemini',
@@ -206,48 +186,17 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'gemini',
     models: [],
     supportsModelFetch: true,
-    staticModels: [
-      // Gemini 3.x (stable)
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.1-pro',
-      'gemini-3.1-flash',
-      'gemini-3.1-flash-lite',
-      'gemini-3-flash',
-      // Gemini 2.5 (available until Oct 2026)
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      // Native image models
-      'gemini-2.5-flash-image',
-      'gemini-3-pro-image',
-      'gemini-3.1-flash-image',
-      'gemini-3.1-flash-lite-image',
-    ],
+    staticModels: catalogIds('gemini'),
   },
   xai: {
     id: 'xai',
     name: 'xAI (Grok)',
     apiUrl: 'https://api.x.ai/v1',
-    defaultModel: 'grok-4.5',
+    defaultModel: 'grok-4.6',
     format: 'openai',
     models: [],
     supportsModelFetch: true,
-    staticModels: [
-      'grok-4.5',
-      'grok-4.3',
-      // Grok 4.20 (aliases: grok-4.20 → reasoning, grok-4.20-non-reasoning)
-      'grok-4.20-0309-reasoning',
-      'grok-4.20-0309-non-reasoning',
-      'grok-4.20-multi-agent-0309',
-      // Coding / agentic
-      'grok-build-0.1',
-      // Media generation
-      'grok-imagine-image',
-      'grok-imagine-image-pro',
-      'grok-imagine-image-quality',
-    ],
+    staticModels: catalogIds('xai'),
   },
   groq: {
     id: 'groq',
@@ -257,17 +206,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'openai',
     models: [],
     supportsModelFetch: true,
-    staticModels: [
-      // Groq compound models
-      'groq/compound',
-      'groq/compound-mini',
-      // Hosted open-weight models
-      'openai/gpt-oss-120b',
-      'openai/gpt-oss-20b',
-      'qwen/qwen3.6-27b',
-      'moonshotai/kimi-k2-instruct',
-      'minimaxai/minimax-m2.7',
-    ],
+    staticModels: catalogIds('groq'),
   },
   deepseek: {
     id: 'deepseek',
@@ -278,7 +217,7 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     models: [],
     supportsModelFetch: true,
     supportsReasoningContent: true,
-    staticModels: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    staticModels: catalogIds('deepseek'),
   },
   ollama: {
     id: 'ollama',
@@ -288,6 +227,16 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     format: 'ollama',
     models: [],
     supportsModelFetch: true,
+  },
+  grok: {
+    id: 'grok',
+    name: 'Grok (OAuth)',
+    apiUrl: 'https://cli-chat-proxy.grok.com/v1',
+    defaultModel: 'grok-4.6',
+    format: 'responses',
+    models: [],
+    supportsModelFetch: false,
+    staticModels: catalogIds('grok'),
   },
 };
 

@@ -8,12 +8,13 @@
 import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
 import type { MCPTool, ReasoningLevel } from '../../types/index.ts';
+import { buildChatOptions, chatOptionsStateFromStore } from '../../utils/chatOptions.ts';
 import {
-  GEMINI_NO_TOOLS_MODELS,
-  GEMINI_SEARCH_ONLY_MODELS,
   GEMINI_IMAGE_MODELS,
   XAI_IMAGE_MODELS,
 } from '../../providers/presets.ts';
+import { specSupportsTools } from '../../providers/modelSpecs.ts';
+import { resolveSpecFromAppState } from '../../utils/modelCapability.ts';
 import { getAllTools as getAllToolsFromRegistry } from '../../services/toolRegistry.ts';
 import { ensureMCPConnected } from '../../utils/mcpReconnect.ts';
 
@@ -29,9 +30,11 @@ export interface GetAllToolsOptions {
 
 /**
  * Filter raw MCP tool list against enabled servers and disabled tools in store.
- * Pure function — no closure over hook state, safe to call from anywhere.
+ * Pure function — no closure over hook state, safe to call from anywhere
+ * (including the Slide Creator agent hook, which reuses this so MCP filtering
+ * stays consistent with main chat).
  */
-function filterMCPTools(
+export function filterMCPTools(
   rawTools: (MCPTool & { _serverId?: string })[],
   enabledServers: { id: string; disabledTools?: string[] }[]
 ): MCPTool[] {
@@ -103,15 +106,11 @@ export function useTools() {
     (model?: string): boolean => {
       const state = useStore.getState();
       const currentModel = model ?? state.providerConfig.model ?? '';
-      const isGemini =
-        state.providerConfig.providerId === 'gemini' ||
-        state.providerConfig.format === 'gemini';
-
-      return (
-        !isGemini ||
-        (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) &&
-          !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel))
-      );
+      const spec = resolveSpecFromAppState({
+        ...state,
+        providerConfig: { ...state.providerConfig, model: currentModel },
+      });
+      return specSupportsTools(spec, currentModel);
     },
     []
   );
@@ -197,6 +196,7 @@ export function useTools() {
         googleSearchApiKey,
         supportsFunctionCalling: canUseFunctionCalling,
         isGemini,
+        providerId,
       });
     },
     [fetchMCPTools, supportsFunctionCalling]
@@ -207,45 +207,11 @@ export function useTools() {
    */
   const getChatOptions = useCallback(
     (options?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
-      const state = useStore.getState();
-      const currentModel = state.providerConfig.model || '';
-      const isGemini = isGeminiProvider();
-      const isXAIImg = isXAIImageModel();
-      const isGeminiImg = isGeminiImageModel();
-
-      const chatOptions: {
-        enableGoogleSearch: boolean;
-        enableReasoning?: boolean;
-        reasoningLevel?: ReasoningLevel;
-        aspectRatio?: string;
-        stream?: boolean;
-        modelParameters?: typeof state.providerConfig.modelParameters;
-        groqBuiltinTools?: string[];
-      } = {
-        enableGoogleSearch:
-          state.enableGoogleSearch &&
-          isGemini &&
-          !GEMINI_NO_TOOLS_MODELS.includes(currentModel),
-        enableReasoning: options?.enableReasoning ?? state.enableReasoning,
-        reasoningLevel: options?.reasoningLevel ?? state.reasoningLevel,
-        stream: state.enableStreaming,
-        modelParameters: state.providerConfig.modelParameters,
-      };
-
-      // Add aspect ratio for image models
-      if ((isXAIImg || isGeminiImg) && options?.aspectRatio) {
-        chatOptions.aspectRatio = options.aspectRatio;
-      }
-
-      // Groq built-in tools via compound_custom
-      if (state.providerConfig.providerId === 'groq' && state.groqEnabledBuiltinTools.length > 0) {
-        chatOptions.groqBuiltinTools = state.groqEnabledBuiltinTools;
-      }
-
-      return chatOptions;
+      return buildChatOptions(chatOptionsStateFromStore(() => useStore.getState()), options);
     },
-    [isGeminiProvider, isXAIImageModel, isGeminiImageModel]
+    [],
   );
+
 
   return {
     fetchMCPTools,

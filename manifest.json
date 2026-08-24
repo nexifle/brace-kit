@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BraceKit: AI Sidebar",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Premium AI sidebar with local vault, multi-chat branching, full page & selection reading, MCP tools, and multi-LLM support.",
   "permissions": [
     "sidePanel",
@@ -21,6 +21,11 @@
   },
   "side_panel": {
     "default_path": "sidebar.html"
+  },
+  "sandbox": {
+    "pages": [
+      "slide-renderer.html"
+    ]
   },
   "content_scripts": [
     {
@@ -52,6 +57,16 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "skills/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
   "omnibox": {
     "keyword": "bk"
   },

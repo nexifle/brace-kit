@@ -1,9 +1,26 @@
 import { build } from 'bun';
-import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import tailwindPlugin from 'bun-plugin-tailwind';
 
 const outDir = './dist';
+
+// Recursively copy a directory tree (used for phase skill markdown, which must
+// ship to dist/ so sub-agents can fetch it via chrome.runtime.getURL()).
+function copyDirTree(fromDir: string, toDir: string): void {
+  if (!existsSync(fromDir)) return;
+  mkdirSync(toDir, { recursive: true });
+  for (const entry of readdirSync(fromDir)) {
+    const from = join(fromDir, entry);
+    const to = join(toDir, entry);
+    if (statSync(from).isDirectory()) {
+      copyDirTree(from, to);
+    } else {
+      copyFileSync(from, to);
+      console.log(`Copied: ${from} -> ${to}`);
+    }
+  }
+}
 
 // Ensure output directory exists
 if (!existsSync(outDir)) {
@@ -12,7 +29,7 @@ if (!existsSync(outDir)) {
 
 // Build the React app
 const result = await build({
-  entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts', './src/google-docs-bridge.ts'],
+  entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts', './src/google-docs-bridge.ts', './src/slide-renderer.ts'],
   outdir: outDir,
   format: 'esm',
   target: 'browser',
@@ -35,6 +52,7 @@ if (result.success) {
     { from: './public/sidebar.html', to: `${outDir}/sidebar.html` },
     { from: './public/tab.html', to: `${outDir}/tab.html` },
     { from: './public/onboarding.html', to: `${outDir}/onboarding.html` },
+    { from: './public/slide-renderer.html', to: `${outDir}/slide-renderer.html` },
     { from: './manifest.json', to: `${outDir}/manifest.json` },
   ];
 
@@ -101,10 +119,13 @@ if (result.success) {
     }
   }
 
+  // Copy phase skill markdown (sub-agents fetch these at runtime).
+  copyDirTree(join('src', 'skills'), join(outDir, 'skills'));
+
   // Flatten dist/src/* to dist/ (Bun preserves src/ subdir structure)
   const srcOutDir = join(outDir, 'src');
   if (existsSync(srcOutDir)) {
-    const flatFiles = ['index.js', 'tab.js', 'content.js', 'index.css', 'onboarding.js', 'onboarding.css', 'google-docs-bridge.js'];
+    const flatFiles = ['index.js', 'tab.js', 'content.js', 'index.css', 'onboarding.js', 'onboarding.css', 'google-docs-bridge.js', 'slide-renderer.js'];
     for (const file of flatFiles) {
       const from = join(srcOutDir, file);
       const to = join(outDir, file);

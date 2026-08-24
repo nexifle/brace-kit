@@ -7,6 +7,7 @@ import {
   getToolDefinition,
   GOOGLE_SEARCH_TOOL,
   CONTINUE_MESSAGE_TOOL,
+  GROK_WEB_SEARCH_TOOL,
 } from '../../src/background/tools/index.js';
 
 describe('Tool Registry', () => {
@@ -37,6 +38,24 @@ describe('Tool Registry', () => {
       expect(tools[0].name).toBe('google_search');
       expect(tools[1].name).toBe('continue_message');
     });
+
+    test('returns only web_search when includeGrokWebSearch is true', () => {
+      const tools = getToolDefinitions({ includeGrokWebSearch: true });
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('web_search');
+    });
+
+    test('returns all three tools when all options are true', () => {
+      const tools = getToolDefinitions({
+        includeGoogleSearch: true,
+        includeContinueMessage: true,
+        includeGrokWebSearch: true,
+      });
+      expect(tools).toHaveLength(3);
+      expect(tools[0].name).toBe('google_search');
+      expect(tools[1].name).toBe('continue_message');
+      expect(tools[2].name).toBe('web_search');
+    });
   });
 
   describe('isBuiltinTool', () => {
@@ -46,6 +65,10 @@ describe('Tool Registry', () => {
 
     test('returns true for continue_message', () => {
       expect(isBuiltinTool('continue_message')).toBe(true);
+    });
+
+    test('returns true for web_search', () => {
+      expect(isBuiltinTool('web_search')).toBe(true);
     });
 
     test('returns false for unknown tool', () => {
@@ -79,6 +102,11 @@ describe('Tool Registry', () => {
       const result = await executeTool('google_search', { query: 'test' }, { googleSearchApiKey: null });
       expect(result.content[0].text).toContain('API key not configured');
     });
+
+    test('executes web_search with missing query', async () => {
+      const result = await executeTool('web_search', {}, { grokAccessToken: 'token', grokModel: 'grok-4.5' });
+      expect(result.content[0].text).toContain('query parameter is required');
+    });
   });
 
   describe('getBuiltinToolNames', () => {
@@ -86,7 +114,8 @@ describe('Tool Registry', () => {
       const names = getBuiltinToolNames();
       expect(names).toContain('google_search');
       expect(names).toContain('continue_message');
-      expect(names).toHaveLength(2);
+      expect(names).toContain('web_search');
+      expect(names).toHaveLength(3);
     });
   });
 
@@ -103,6 +132,14 @@ describe('Tool Registry', () => {
       const def = getToolDefinition('continue_message');
       expect(def).toBeDefined();
       expect(def?.name).toBe('continue_message');
+      expect(def?.description).toBeDefined();
+      expect(def?.inputSchema).toBeDefined();
+    });
+
+    test('returns web_search definition', () => {
+      const def = getToolDefinition('web_search');
+      expect(def).toBeDefined();
+      expect(def?.name).toBe('web_search');
       expect(def?.description).toBeDefined();
       expect(def?.inputSchema).toBeDefined();
     });
@@ -141,6 +178,26 @@ describe('Tool Registry', () => {
           },
         },
         required: ['reason'],
+      });
+    });
+
+    test('GROK_WEB_SEARCH_TOOL has correct structure', () => {
+      expect(GROK_WEB_SEARCH_TOOL.name).toBe('web_search');
+      expect(GROK_WEB_SEARCH_TOOL.description).toBeDefined();
+      expect(GROK_WEB_SEARCH_TOOL.inputSchema).toEqual({
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query to perform.',
+          },
+          allowed_domains: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional list of domains to restrict the search to.',
+          },
+        },
+        required: ['query'],
       });
     });
   });

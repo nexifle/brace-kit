@@ -41,7 +41,7 @@ Set the percentage of context window usage that triggers auto-compact.
 ### How It Works
 
 1. BraceKit tracks token usage in the current conversation
-2. When usage reaches the threshold percentage of your context window
+2. When usage reaches the threshold percentage of the **selected model's** context window (Settings → AI → Advanced)
 3. Older messages are summarized into a compact summary
 4. The conversation continues with the summary as context
 

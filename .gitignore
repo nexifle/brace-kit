@@ -1,5 +1,13 @@
-.agent
+.agents
 .claude
+.cocoindex_code
+scripts
+tasks
+skills
+!src/skills/
+ITERATION_GOTCHAS.md
+sandbox-tutorial.md
+AGENTS.md
 
 # dependencies (bun install)
 node_modules

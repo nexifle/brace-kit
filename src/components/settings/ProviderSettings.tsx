@@ -9,7 +9,11 @@ import { ModelParameterSettings } from './ModelParameterSettings.tsx';
 import { AddProviderModal } from './AddProviderModal.tsx';
 import { ProviderSelect } from './ProviderSelect.tsx';
 import { ModelList } from './ModelList.tsx';
+import { ModelSpecDialog } from './ModelSpecDialog.tsx';
+import { emptySpec, ModelSpecFields } from './ModelSpecFields.tsx';
 import { useStore } from '../../store/index.ts';
+import { resolveModelSpec } from '../../providers/modelSpecs.ts';
+import type { ModelSpec } from '../../types/index.ts';
 
 // =============================================================================
 // Shared sub-components (mirrors ChatSettings.tsx pattern)
@@ -46,16 +50,26 @@ export function ProviderSettings() {
     fetchAndCacheModels,
     addCustomProvider,
     removeCustomProvider,
-    addModelToCustomProvider,
     removeModelFromCustomProvider,
+    upsertCustomModelSpec,
   } = useProvider();
 
   const groqEnabledBuiltinTools = useStore((s) => s.groqEnabledBuiltinTools);
   const setGroqEnabledBuiltinTools = useStore((s) => s.setGroqEnabledBuiltinTools);
+  const grokAuthStatus = useStore((s) => s.grokAuthStatus);
+  const refreshGrokAuthStatus = useStore((s) => s.refreshGrokAuthStatus);
 
   const [showKey, setShowKey] = useState(false);
-  const [newModelInput, setNewModelInput] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [specDialog, setSpecDialog] = useState<{ mode: 'add' | 'edit'; initial?: ModelSpec } | null>(null);
+
+  // Grok OAuth in-flight device flow (userCode + verification link + poll interval)
+  const [grokFlow, setGrokFlow] = useState<{
+    userCode: string;
+    interval: number;
+    verificationUri: string;
+  } | null>(null);
+  const [grokFlowError, setGrokFlowError] = useState('');
 
   // Confirmation state
   const [providerToDelete, setProviderToDelete] = useState<{ id: string, name: string } | null>(null);
@@ -63,11 +77,96 @@ export function ProviderSettings() {
   const currentProvider = getProvider(providerConfig.providerId) as ProviderPreset;
   const isCustom = isCustomProvider(providerConfig.providerId);
   const isOllama = currentProvider?.format === 'ollama';
+  const isGrok = providerConfig.providerId === 'grok';
 
-  // Setup readiness
-  const hasApiKey = !!providerConfig.apiKey || isOllama;
+  // Setup readiness. For Grok (OAuth) "configured" means signed in with a
+  // session that can still refresh — an expired one requires a reconnect.
+  const hasApiKey = isGrok
+    ? grokAuthStatus.connected && !grokAuthStatus.needsReauth
+    : !!providerConfig.apiKey || isOllama;
   const hasModel = !!providerConfig.model;
   const isReady = hasApiKey && hasModel;
+
+  // Grok OAuth actions
+  const handleGrokSignIn = useCallback(async () => {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'GROK_OAUTH_START' });
+      if (res?.ok) {
+        setGrokFlow({
+          userCode: res.userCode,
+          interval: res.interval,
+          verificationUri: res.verificationUri,
+        });
+        setGrokFlowError('');
+      } else {
+        setGrokFlowError(res?.error || 'Failed to start Grok sign-in');
+      }
+    } catch {
+      setGrokFlowError('Failed to start Grok sign-in');
+    }
+  }, []);
+
+  const handleGrokCancel = useCallback(async () => {
+    await chrome.runtime.sendMessage({ type: 'GROK_OAUTH_CANCEL' });
+    setGrokFlow(null);
+    setGrokFlowError('');
+  }, []);
+
+  const handleGrokSignout = useCallback(async () => {
+    await chrome.runtime.sendMessage({ type: 'GROK_OAUTH_SIGNOUT' });
+    setGrokFlow(null);
+    setGrokFlowError('');
+    refreshGrokAuthStatus();
+  }, [refreshGrokAuthStatus]);
+
+  // Poll the token endpoint while a flow is active. The effect is keyed on
+  // grokFlow so a slow_down interval bump simply re-schedules the timer.
+  useEffect(() => {
+    if (!grokFlow) return;
+    const timeoutMs = Math.max(grokFlow.interval, 5) * 1000;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const poll = async () => {
+      if (cancelled) return;
+      let res: unknown;
+      try {
+        res = await chrome.runtime.sendMessage({ type: 'GROK_OAUTH_POLL' });
+      } catch {
+        res = { status: 'error', error: 'Background not responding' };
+      }
+      const r = res as {
+        status?: string;
+        interval?: number;
+        error?: string;
+      };
+      if (r?.status === 'success') {
+        setGrokFlow(null);
+        setGrokFlowError('');
+        refreshGrokAuthStatus();
+      } else if (r?.status === 'pending') {
+        setGrokFlow((prev) =>
+          prev ? { ...prev, interval: r.interval ?? prev.interval } : prev
+        );
+      } else {
+        setGrokFlow(null);
+        setGrokFlowError(
+          r?.error ||
+            (r?.status === 'denied'
+              ? 'Access denied'
+              : r?.status === 'expired'
+                ? 'Code expired — try signing in again'
+                : 'Grok sign-in failed')
+        );
+      }
+    };
+
+    timer = setInterval(poll, timeoutMs);
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [grokFlow, refreshGrokAuthStatus]);
 
   // Track the last URL we fetched against, so edits to the endpoint force a
   // refresh while unrelated re-renders stay throttled.
@@ -78,6 +177,18 @@ export function ProviderSettings() {
     () => getAvailableModels(providerConfig.providerId),
     [providerConfig.providerId, getAvailableModels]
   );
+
+  const customProviders = useStore((s) => s.customProviders);
+  const fetchedModels = useStore((s) => s.fetchedModels);
+  const resolvedSpec = useMemo(() => {
+    const custom = customProviders.find((p) => p.id === providerConfig.providerId);
+    return resolveModelSpec({
+      providerId: providerConfig.providerId,
+      modelId: providerConfig.model,
+      custom,
+      fetched: fetchedModels[providerConfig.providerId],
+    });
+  }, [customProviders, fetchedModels, providerConfig.providerId, providerConfig.model]);
 
   useEffect(() => {
     const isLocalhost = isOllamaLocalhost(currentProvider?.format, providerConfig.apiUrl);
@@ -97,13 +208,13 @@ export function ProviderSettings() {
     updateProviderConfig({ apiKey: e.target.value });
   }, [updateProviderConfig]);
 
-  const handleAddModel = useCallback(() => {
-    const model = newModelInput.trim();
-    if (!model || !isCustom) return;
-    addModelToCustomProvider(providerConfig.providerId, model);
-    updateProviderConfig({ model });
-    setNewModelInput('');
-  }, [newModelInput, isCustom, providerConfig.providerId, addModelToCustomProvider, updateProviderConfig]);
+  const handleSaveModelSpec = useCallback((spec: ModelSpec) => {
+    if (!isCustom) return;
+    const previousId = specDialog?.mode === 'edit' ? specDialog.initial?.id : undefined;
+    upsertCustomModelSpec(providerConfig.providerId, spec, previousId);
+    updateProviderConfig({ model: spec.id });
+    setSpecDialog(null);
+  }, [isCustom, specDialog, providerConfig.providerId, upsertCustomModelSpec, updateProviderConfig]);
 
   const handleRemoveModel = useCallback((modelName: string) => {
     if (!isCustom) return;
@@ -161,8 +272,22 @@ export function ProviderSettings() {
           ) : !hasApiKey ? (
             <>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>API Key required</span>
-              <span className="text-muted-foreground font-normal ml-1">— Enter your key below to start</span>
+              {isGrok && grokAuthStatus.connected && grokAuthStatus.needsReauth ? (
+                <>
+                  <span>Grok session expired — Reconnect below</span>
+                  <span className="text-muted-foreground font-normal ml-1">— Reconnect to keep chatting</span>
+                </>
+              ) : isGrok ? (
+                <>
+                  <span>Grok sign-in required — Connect below</span>
+                  <span className="text-muted-foreground font-normal ml-1">— Sign in with Grok to start</span>
+                </>
+              ) : (
+                <>
+                  <span>API Key required</span>
+                  <span className="text-muted-foreground font-normal ml-1">— Enter your key below to start</span>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -178,33 +303,99 @@ export function ProviderSettings() {
           <SectionHeader icon={<Settings2Icon size={12} />} title="Configuration" />
           <div className="p-3 flex flex-col gap-3">
 
-            {/* API Key */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="api-key" className="text-sm font-bold uppercase tracking-wider text-muted-foreground">API Key</label>
-              <div className="relative flex items-center">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  id="api-key"
-                  className="w-full h-8 px-2.5 pr-9 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
-                  placeholder="Paste your key here"
-                  value={providerConfig.apiKey}
-                  onChange={handleApiKeyChange}
-                />
-                <button
-                  className="absolute right-1 w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
-                  onClick={() => setShowKey(!showKey)}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    {showKey ? (
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                    ) : (
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    )}
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                </button>
+            {/* API Key — hidden for Grok (OAuth), which uses the device flow */}
+            {!isGrok && (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="api-key" className="text-sm font-bold uppercase tracking-wider text-muted-foreground">API Key</label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    id="api-key"
+                    className="w-full h-8 px-2.5 pr-9 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
+                    placeholder="Paste your key here"
+                    value={providerConfig.apiKey}
+                    onChange={handleApiKeyChange}
+                  />
+                  <button
+                    className="absolute right-1 w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                    onClick={() => setShowKey(!showKey)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      {showKey ? (
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      ) : (
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      )}
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Grok (OAuth) sign-in card */}
+            {isGrok && (
+              <div className="flex flex-col gap-2 animate-in fade-in duration-200">
+                {grokFlow ? (
+                  <>
+                    <p className="text-sm text-foreground">
+                      Waiting for authorization — open the opened tab (or{' '}
+                      <a
+                        href={grokFlow.verificationUri}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline text-primary hover:text-primary/80"
+                      >
+                        this link
+                      </a>
+                      ) and enter code{' '}
+                      <span className="font-mono font-bold text-primary">{grokFlow.userCode}</span>.
+                    </p>
+                    <button
+                      onClick={handleGrokCancel}
+                      className="h-8 px-3 text-sm bg-muted/40 border border-input rounded-md hover:bg-accent transition-all text-foreground self-start"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : grokAuthStatus.connected ? (
+                  <>
+                    <p className="text-sm text-foreground">
+                      Connected as <strong>{grokAuthStatus.email || 'Grok account'}</strong>
+                    </p>
+                    {grokAuthStatus.needsReauth && (
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                        Session expired — reconnect to continue chatting.
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleGrokSignIn}
+                        className="h-8 px-3 text-sm bg-primary/10 text-primary rounded-md hover:bg-primary/20 transition-all"
+                      >
+                        Reconnect
+                      </button>
+                      <button
+                        onClick={handleGrokSignout}
+                        className="h-8 px-3 text-sm bg-muted/40 border border-input rounded-md hover:bg-accent transition-all text-foreground"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleGrokSignIn}
+                    className="h-8 px-3 text-sm bg-primary/10 text-primary rounded-md hover:bg-primary/20 transition-all self-start"
+                  >
+                    Sign in with Grok
+                  </button>
+                )}
+                {grokFlowError && (
+                  <p className="text-xs text-red-600 dark:text-red-400">{grokFlowError}</p>
+                )}
+              </div>
+            )}
 
             {/* Base URL — custom providers and Ollama only */}
             {(isCustom || isOllama) && (
@@ -247,26 +438,24 @@ export function ProviderSettings() {
                       activeModel={providerConfig.model}
                       onSelect={(m) => updateProviderConfig({ model: m })}
                       onRemove={handleRemoveModel}
-                      emptyText="No models added yet. Type a model name below to add one."
+                      onEdit={(m) => {
+                        const cp = useStore.getState().customProviders.find((p) => p.id === providerConfig.providerId);
+                        setSpecDialog({
+                          mode: 'edit',
+                          initial: cp?.modelSpecs?.[m] || emptySpec(m),
+                        });
+                      }}
+                      emptyText="No models added yet. Click + to add one with specs."
                     />
 
-                    <div className="flex gap-2">
-                    <input
-                      className="flex-1 h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none focus:border-primary/40 transition-all text-foreground placeholder:text-muted-foreground/40"
-                      placeholder="Add model name…"
-                      value={newModelInput}
-                      onChange={e => setNewModelInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddModel()}
-                    />
                     <button
-                      onClick={handleAddModel}
-                      disabled={!newModelInput.trim()}
-                      className="h-8 w-8 bg-primary/10 text-primary rounded-md flex items-center justify-center hover:bg-primary/20 transition-all disabled:opacity-40 shrink-0"
-                      title="Add model"
+                      type="button"
+                      onClick={() => setSpecDialog({ mode: 'add', initial: emptySpec() })}
+                      className="h-8 px-3 text-sm bg-primary/10 text-primary rounded-md flex items-center justify-center gap-1.5 hover:bg-primary/20 transition-all self-start"
                     >
                       <PlusIcon size={14} />
+                      Add model
                     </button>
-                  </div>
                 </div>
               ) : availableModels.length === 0 ? (
                 // No known models: free-text input
@@ -295,16 +484,15 @@ export function ProviderSettings() {
         <SectionCard>
           <SectionHeader icon={<SlidersHorizontalIcon size={12} />} title="Advanced" />
           <div className="p-3 flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">Context Window</label>
-              <input
-                type="number"
-                className="w-full h-8 px-2.5 text-sm bg-muted/40 border border-input rounded-md outline-none text-foreground placeholder:text-muted-foreground/40"
-                placeholder={String(currentProvider?.contextWindow || 128000)}
-                value={providerConfig.contextWindow || ''}
-                onChange={(e) => updateProviderConfig({ contextWindow: e.target.value ? parseInt(e.target.value, 10) : undefined })}
-              />
-            </div>
+            <ModelSpecsAdvanced
+              isCustom={isCustom}
+              spec={resolvedSpec}
+              unknown={!providerConfig.model}
+              onChange={(next) => {
+                if (!isCustom || !next.id) return;
+                upsertCustomModelSpec(providerConfig.providerId, next);
+              }}
+            />
 
             <ModelParameterSettings />
           </div>
@@ -369,6 +557,46 @@ export function ProviderSettings() {
         onClose={() => setShowAddModal(false)}
         onSubmit={handleAddFromModal}
       />
+
+      {specDialog && (
+        <ModelSpecDialog
+          isOpen
+          title={specDialog.mode === 'add' ? 'Add model' : 'Edit model'}
+          initial={specDialog.initial}
+          existingIds={availableModels}
+          onClose={() => setSpecDialog(null)}
+          onSave={handleSaveModelSpec}
+        />
+      )}
     </section>
+  );
+}
+
+function ModelSpecsAdvanced({
+  isCustom,
+  spec,
+  unknown,
+  onChange,
+}: {
+  isCustom: boolean;
+  spec: ModelSpec;
+  unknown: boolean;
+  onChange: (next: ModelSpec) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
+        Model specs
+      </label>
+      {!isCustom && (
+        <p className="text-xs text-muted-foreground">
+          Read-only for built-in providers. Values come from the catalog and the live /models response.
+        </p>
+      )}
+      {unknown && (
+        <p className="text-xs text-muted-foreground">Select a model to see its specs.</p>
+      )}
+      <ModelSpecFields spec={spec} onChange={onChange} disabled={!isCustom || unknown} showIdentity={false} />
+    </div>
   );
 }

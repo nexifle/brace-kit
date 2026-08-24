@@ -1,10 +1,25 @@
 import { build } from 'bun';
-import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync, watch } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, renameSync, rmdirSync, watch, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import tailwindPlugin from 'bun-plugin-tailwind';
 
 const outDir = './dist';
 const WS_PORT = 35729;
+
+// Recursively copy a directory tree (phase skill markdown ships to dist/).
+function copyDirTree(fromDir: string, toDir: string): void {
+  if (!existsSync(fromDir)) return;
+  mkdirSync(toDir, { recursive: true });
+  for (const entry of readdirSync(fromDir)) {
+    const from = join(fromDir, entry);
+    const to = join(toDir, entry);
+    if (statSync(from).isDirectory()) {
+      copyDirTree(from, to);
+    } else {
+      copyFileSync(from, to);
+    }
+  }
+}
 
 // --- WebSocket server for hot reload notifications ---
 const clients = new Set<ServerWebSocket<unknown>>();
@@ -35,7 +50,7 @@ async function runBuild(): Promise<boolean> {
   }
 
   const result = await build({
-    entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts'],
+    entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts', './src/slide-renderer.ts'],
     outdir: outDir,
     format: 'esm',
     target: 'browser',
@@ -62,6 +77,7 @@ async function runBuild(): Promise<boolean> {
     { from: './public/sidebar.html', to: `${outDir}/sidebar.html` },
     { from: './public/tab.html', to: `${outDir}/tab.html` },
     { from: './public/onboarding.html', to: `${outDir}/onboarding.html` },
+    { from: './public/slide-renderer.html', to: `${outDir}/slide-renderer.html` },
     { from: './manifest.json', to: `${outDir}/manifest.json` },
   ];
 
@@ -96,10 +112,13 @@ async function runBuild(): Promise<boolean> {
     }
   }
 
+  // Copy phase skill markdown (sub-agents fetch these at runtime).
+  copyDirTree(join('src', 'skills'), join(outDir, 'skills'));
+
   // Flatten dist/src/* to dist/
   const srcOutDir = join(outDir, 'src');
   if (existsSync(srcOutDir)) {
-    for (const file of ['index.js', 'index.js.map', 'tab.js', 'tab.js.map', 'content.js', 'content.js.map', 'index.css', 'onboarding.js', 'onboarding.js.map', 'onboarding.css']) {
+    for (const file of ['index.js', 'index.js.map', 'tab.js', 'tab.js.map', 'content.js', 'content.js.map', 'index.css', 'onboarding.js', 'onboarding.js.map', 'onboarding.css', 'slide-renderer.js', 'slide-renderer.js.map']) {
       const from = join(srcOutDir, file);
       const to = join(outDir, file);
       if (existsSync(from)) renameSync(from, to);

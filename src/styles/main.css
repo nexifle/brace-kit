@@ -123,9 +123,9 @@
     --accent: oklch(0.30 0.03 265.8);
     --accent-foreground: oklch(0.985 0 0);
 
-    /* Destructive/Error */
-    --destructive: oklch(0.396 0.141 25.723);
-    --destructive-foreground: oklch(0.985 0 0);
+    /* Destructive/Error — light enough for body text on dark surfaces (WCAG AA) */
+    --destructive: oklch(0.72 0.17 25);
+    --destructive-foreground: oklch(0.18 0.02 25);
 
     /* Success */
     --success: oklch(0.548 0.145 163.2);

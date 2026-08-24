@@ -1,47 +1,95 @@
 import { useCallback } from 'react';
 import { useStore } from '../store/index.ts';
+import { useToast } from '../components/ui/toast/useToast.ts';
 import type { FileAttachment } from '../types/index.ts';
-import { MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '../types/index.ts';
+import {
+  classifyComposerFile,
+  clipboardImageFiles,
+  composerFileSizeError,
+} from '../utils/composerAttachments.ts';
+import { attachmentKindBlocked, resolveSpecFromAppState } from '../utils/modelCapability.ts';
+import { CAPABILITY_ALERTS } from '../utils/modelCapability.ts';
+import { encodeImageForVision } from '../utils/slideImageResize.ts';
 
-const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
-  'image/jpeg': 'image',
-  'image/png': 'image',
-  'image/gif': 'image',
-  'image/webp': 'image',
-  'text/plain': 'text',
-  'text/csv': 'text',
-  'application/pdf': 'pdf',
-};
+function newId(): string {
+  return `file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
 
 export function useFileAttachments() {
   const store = useStore();
+  const { toast } = useToast();
 
   const processFile = useCallback(async (file: File): Promise<void> => {
-    const newId = () => `file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-    if (file.size > MAX_FILE_SIZE) {
-      store.addAttachment({ id: newId(), file, type: 'error', name: file.name, error: 'File too large (max 2MB)' });
+    const kind = classifyComposerFile(file, { allowPdf: true });
+    if (!kind) {
+      store.addAttachment({
+        id: newId(),
+        file,
+        type: 'error',
+        name: file.name || 'Attachment',
+        error: 'Unsupported file type',
+      });
       return;
     }
 
-    const fileType = ALLOWED_FILE_TYPES[file.type];
-    if (!fileType) {
-      store.addAttachment({ id: newId(), file, type: 'error', name: file.name, error: 'Unsupported file type' });
+    const spec = resolveSpecFromAppState(useStore.getState());
+    const blocked = attachmentKindBlocked(spec, kind);
+    if (blocked) {
+      const copy = CAPABILITY_ALERTS[blocked];
+      store.addAttachment({
+        id: newId(),
+        file,
+        type: 'error',
+        name: file.name || 'Attachment',
+        error: copy.title,
+      });
+      toast({
+        variant: 'warning',
+        title: copy.title,
+        description: copy.description,
+        duration: 8000,
+        action: {
+          label: 'Configure here',
+          onClick: () => {
+            const state = useStore.getState();
+            state.setSettingsSection('ai');
+            state.setView('settings');
+          },
+        },
+      });
+      return;
+    }
+
+    const sizeError = composerFileSizeError(kind, file.size);
+    if (sizeError) {
+      store.addAttachment({
+        id: newId(),
+        file,
+        type: 'error',
+        name: file.name || 'Attachment',
+        error: sizeError,
+      });
       return;
     }
 
     try {
-      if (fileType === 'image') {
+      if (kind === 'image') {
         await processImageFile(file, store.addAttachment);
-      } else if (fileType === 'text') {
+      } else if (kind === 'text') {
         await processTextFile(file, store.addAttachment);
-      } else if (fileType === 'pdf') {
+      } else {
         await processPdfFile(file, store.addAttachment);
       }
     } catch (err) {
-      store.addAttachment({ id: newId(), file, type: 'error', name: file.name, error: (err as Error).message });
+      store.addAttachment({
+        id: newId(),
+        file,
+        type: 'error',
+        name: file.name || 'Attachment',
+        error: (err as Error).message,
+      });
     }
-  }, [store]);
+  }, [store, toast]);
 
   const handleFileSelect = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -52,21 +100,14 @@ export function useFileAttachments() {
   }, [processFile]);
 
   const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    const imageItems = Array.from(items).filter((item) => item.type.startsWith('image/'));
-    if (imageItems.length > 0) {
-      // Ada gambar di clipboard — cegah paste teks default supaya tidak dobel
+    const images = clipboardImageFiles(e.clipboardData);
+    if (images.length > 0) {
       e.preventDefault();
-      for (const item of imageItems) {
-        const file = item.getAsFile();
-        if (file) await processFile(file);
-      }
+      for (const file of images) await processFile(file);
       return;
     }
 
-    // Check if the pasted text exceeds 250 lines
+    // Long pasted text becomes a .txt attachment
     const pastedText = e.clipboardData?.getData('text');
     if (!pastedText) return;
 
@@ -99,63 +140,29 @@ export function useFileAttachments() {
 
 async function processImageFile(
   file: File,
-  addAttachment: (att: FileAttachment) => void
+  addAttachment: (att: FileAttachment) => void,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        // Resize image if needed
-        let { width, height } = img;
-        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-          const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-
-        // Draw to canvas and get base64
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Get base64 data (JPEG for smaller size)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-        addAttachment({
-          id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          file,
-          type: 'image',
-          name: file.name,
-          data: dataUrl,
-          width,
-          height,
-        });
-        resolve();
-      };
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
+  const { dataUrl, width, height } = await encodeImageForVision(file);
+  addAttachment({
+    id: newId(),
+    file,
+    type: 'image',
+    name: file.name || 'pasted-image.jpg',
+    data: dataUrl,
+    width,
+    height,
   });
 }
 
 async function processTextFile(
   file: File,
-  addAttachment: (att: FileAttachment) => void
+  addAttachment: (att: FileAttachment) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       addAttachment({
-        id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: newId(),
         file,
         type: 'text',
         name: file.name,
@@ -170,13 +177,13 @@ async function processTextFile(
 
 async function processPdfFile(
   file: File,
-  addAttachment: (att: FileAttachment) => void
+  addAttachment: (att: FileAttachment) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       addAttachment({
-        id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: newId(),
         file,
         type: 'pdf',
         name: file.name,

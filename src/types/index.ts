@@ -113,6 +113,7 @@ export interface PageContext {
   pageUrl: string;
   content: string;
   metaDescription?: string;
+  favicon?: string;   // absolute URL; present when the page exposed a favicon
 }
 
 export interface SelectedText {
@@ -123,7 +124,29 @@ export interface SelectedText {
 
 // ==================== Provider Types ====================
 
-export type ProviderFormat = 'openai' | 'anthropic' | 'gemini' | 'ollama';
+export type ProviderFormat = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'responses';
+
+export type ModelModality = 'text' | 'image' | 'audio' | 'video' | 'pdf';
+export type ModelMode = 'chat' | 'image_generation' | 'embedding';
+export type ReasoningControl = 'effort' | 'budget' | 'toggle';
+
+export interface ModelLimit {
+  /** Total context window in tokens */
+  context?: number;
+  /** Max input tokens when the provider splits input vs total */
+  input?: number;
+  /** Max output / max_completion_tokens */
+  output?: number;
+}
+
+export interface ModelCapabilities {
+  tools?: boolean;
+  vision?: boolean;
+  reasoning?: boolean;
+  structuredOutput?: boolean;
+  googleSearch?: boolean;
+  imageGeneration?: boolean;
+}
 
 export interface ProviderPreset {
   id: string;
@@ -151,6 +174,8 @@ export interface CustomProvider {
   staticModels?: string[];
   supportsModelFetch?: boolean;
   contextWindow?: number;
+  /** Per-model specs edited via the add/edit dialog and Advanced card */
+  modelSpecs?: Record<string, ModelSpec>;
   /** Whether this provider accepts reasoning_content in message history (DeepSeek only) */
   supportsReasoningContent?: boolean;
 }
@@ -191,6 +216,19 @@ export interface ModelParameters {
   keepAlive?: string;
 }
 
+export interface ModelSpec {
+  id: string;
+  name?: string;
+  mode?: ModelMode;
+  limit?: ModelLimit;
+  modalities?: { input: ModelModality[]; output: ModelModality[] };
+  capabilities?: ModelCapabilities;
+  /** Overrides format-level SUPPORTED_PARAMETERS for this model */
+  supportedParameters?: (keyof ModelParameters)[];
+  /** Gemini 3 effort vs Gemini 2.5 budget, OpenAI reasoning_effort, etc. */
+  reasoningControl?: ReasoningControl;
+}
+
 /**
  * Thinking/reasoning effort level picked from the composer reasoning popover.
  * Provider-specific mapping: OpenAI `reasoning_effort`, Anthropic adaptive `effort`
@@ -210,6 +248,7 @@ export const SUPPORTED_PARAMETERS: Record<ProviderFormat, (keyof ModelParameters
   anthropic: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget'],
   gemini: ['temperature', 'maxTokens', 'topP', 'topK', 'thinkingBudget', 'thinkingLevel'],
   ollama: ['temperature', 'maxTokens', 'topP', 'topK', 'minP', 'numCtx', 'keepAlive'],
+  responses: ['temperature', 'maxTokens', 'topP'],
 };
 
 export interface ProviderConfig {
@@ -326,6 +365,8 @@ export interface FileAttachment {
 export interface FetchedModelsCache {
   models: string[];
   fetchedAt: number;
+  /** Sparse specs parsed from the live /models response, keyed by model id */
+  specs?: Record<string, ModelSpec>;
   /**
    * Set when the last fetch attempt failed (e.g. the /models endpoint is not
    * supported and returns 404). Used to back off instead of repeatedly
@@ -346,6 +387,8 @@ export interface SecuritySettings {
 export interface Preferences {
   toolMessageDisplay: 'detailed' | 'compact';
   startOnWelcome: boolean;
+  /** When true, the "open Slide Creator in a new tab" suggestion is never shown again. */
+  slideCreatorTabSuggestionDismissed: boolean;
 }
 
 // ==================== Streaming State ====================
@@ -401,6 +444,8 @@ export interface AppState {
   showCustomModel: boolean;
   fetchedModels: Record<string, FetchedModelsCache>;
   fetchingModels: boolean;
+  /** Grok (OAuth) sign-in state (derived — not persisted). */
+  grokAuthStatus: { connected: boolean; email?: string; needsReauth: boolean };
 
   // MCP
   mcpServers: MCPServer[];
@@ -465,6 +510,9 @@ export interface AppState {
   /** Whether the left conversation rail is collapsed in tab mode (persisted) */
   railCollapsed: boolean;
 
+  /** Whether the Slide Creator workspace is open (dedicated mode, not main chat). */
+  slideCreatorOpen: boolean;
+
   // Security
   security: SecuritySettings;
   isAuthenticated: boolean;
@@ -501,6 +549,12 @@ export interface AppState {
   setShowCustomModel: (show: boolean) => void;
   setFetchedModels: (providerId: string, models: FetchedModelsCache) => void;
   setFetchingModels: (fetching: boolean) => void;
+  setGrokAuthStatus: (status: {
+    connected: boolean;
+    email?: string;
+    needsReauth: boolean;
+  }) => void;
+  refreshGrokAuthStatus: () => Promise<void>;
 
   setMCPReconnecting: (reconnecting: boolean) => void;
 
@@ -542,9 +596,14 @@ export interface AppState {
   setQuotedText: (text: string | null) => void;
 
   setView: (view: 'chat' | 'settings' | 'gallery') => void;
+  setSettingsSection: (section: string | null) => void;
   setTheme: (theme: 'light' | 'dark') => void;
   setMode: (mode: 'sidebar' | 'tab') => void;
   setRailCollapsed: (collapsed: boolean) => void;
+
+  /** Enter/leave the dedicated Slide Creator workspace. */
+  openSlideCreator: () => void;
+  closeSlideCreator: () => void;
   setHistoryDrawerOpen: (open: boolean) => void;
   toggleHistoryDrawer: () => void;
   setShowSystemPromptEditor: (show: boolean) => void;
@@ -603,23 +662,40 @@ export const MEMORY_CATEGORY_LABELS: Record<MemoryCategory, string> = {
   dislikes: '❌ Dislikes & Avoid',
 };
 
-export const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
-export const MAX_IMAGE_DIMENSION = 1024;
-
-export const ALLOWED_FILE_TYPES: Record<string, 'image' | 'text' | 'pdf'> = {
-  'image/jpeg': 'image',
-  'image/png': 'image',
-  'image/gif': 'image',
-  'image/webp': 'image',
-  'text/plain': 'text',
-  'text/csv': 'text',
-  'application/pdf': 'pdf',
-};
-
 // ==================== Title Generation Constants ====================
 
 /** System prompt for conversation title generation (used by auto-rename and /rename command) */
 export const TITLE_GENERATION_SYSTEM_PROMPT = `Generate a short title (max 6 words, no punctuation) for the conversation based on the user messages provided. Match the language of the messages. Output ONLY the title.`;
+
+// ==================== Slide Creator Types ====================
+
+export type {
+  Slide,
+  SlideActivityEvent,
+  SlideActivityEventType,
+  SlideActivityStatus,
+  SlideCanvas,
+  SlideCanvasResolution,
+  SlideDeck,
+  SlideFile,
+  SlideMainMessage,
+  SlideAskField,
+  SlideAskPayload,
+  SlideAskQuestion,
+  SlidePendingAsk,
+  SlidePhase,
+  SlideProject,
+  SlideSessionStatus,
+  SlideUiRuntime,
+  SlideRound,
+  SlideUserAttachment,
+} from './slides.ts';
+export {
+  DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
+  DEFAULT_SLIDE_CANVAS,
+  SLIDE_CANVAS_PRESETS,
+  SLIDE_PHASE_STATUS_COPY,
+} from './slides.ts';
 
 // ==================== Token Usage Types ====================
 

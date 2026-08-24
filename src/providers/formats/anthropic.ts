@@ -5,7 +5,9 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
-import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
+import { parseAnthropicModel } from '../modelSpecs.ts';
+import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage, ModelFetchResult } from '../types.ts';
+import type { ModelSpec } from '../../types/index.ts';
 import { createThinkTagParser } from '../utils/thinkTagParser.ts';
 import { anthropicThinkingBlock } from '../utils/reasoning.ts';
 
@@ -21,7 +23,7 @@ import { anthropicThinkingBlock } from '../utils/reasoning.ts';
 export async function fetchAnthropicModels(
   apiUrl: string,
   apiKey: string
-): Promise<{ models: string[] }> {
+): Promise<ModelFetchResult> {
   const baseUrl = apiUrl.replace(/\/+$/, '');
   const url = `${baseUrl}/models`;
 
@@ -40,13 +42,12 @@ export async function fetchAnthropicModels(
 
   const data = await response.json();
 
-  // Anthropic returns { data: [{ type: 'model', id, display_name, created_at }] }
   if (Array.isArray(data?.data)) {
-    const models = data.data
-      .map((m: { id?: string }) => m?.id)
-      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
-      .sort(); // stable alphabetical order, like the other fetchers
-    return { models };
+    const specs = data.data
+      .map((m: unknown) => parseAnthropicModel(m))
+      .filter((s: ModelSpec | null): s is ModelSpec => !!s)
+      .sort((a: ModelSpec, b: ModelSpec) => a.id.localeCompare(b.id));
+    return { models: specs.map((s: ModelSpec) => s.id), specs };
   }
 
   return { models: [] };

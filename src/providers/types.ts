@@ -131,7 +131,7 @@ export interface RequestConfig {
 /**
  * Supported provider format types
  */
-export type ProviderFormatType = 'openai' | 'anthropic' | 'gemini' | 'ollama';
+export type ProviderFormatType = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'responses';
 
 /**
  * Extended provider with runtime configuration
@@ -177,6 +177,8 @@ export type ModelFetchFunction = (
 export interface ModelFetchResult {
   /** Available models */
   models?: string[];
+  /** Sparse specs parsed from the live list (id required; other fields optional) */
+  specs?: import('../types/index.ts').ModelSpec[];
   /** Error message if fetch failed */
   error?: string;
 }

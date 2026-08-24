@@ -7,6 +7,7 @@ import { MCPManager } from '../../services/mcp';
 import { isBuiltinTool, executeTool, type ToolExecutionContext } from '../tools/index';
 import { decryptApiKey } from '../../utils/keyEncryption.ts';
 import { MCP_DISCONNECT_PREFIX } from '../../types/index.ts';
+import { resolveGrokBearer } from '../../utils/grokOAuth.ts';
 
 type SendResponse = (response?: unknown) => void;
 
@@ -139,8 +140,31 @@ export async function handleMCPToolCall(
       const { googleSearchApiKey } = await chrome.storage.local.get('googleSearchApiKey');
       // Decrypt API key before use
       const decryptedKey = await decryptApiKey(googleSearchApiKey as string | undefined);
+
+      // Resolve Grok (OAuth) context for the web_search tool. resolveGrokBearer
+      // returns null for non-grok providers, so this is a safe no-op otherwise.
+      const { providerConfig } = await chrome.storage.local.get('providerConfig');
+      const pc = providerConfig as
+        | { providerId?: string; model?: string; apiUrl?: string }
+        | undefined;
+      let grokAccessToken: string | undefined;
+      let grokModel: string | undefined;
+      let grokApiUrl: string | undefined;
+      if (pc?.providerId === 'grok') {
+        try {
+          grokAccessToken = (await resolveGrokBearer('grok')) ?? undefined;
+        } catch {
+          // Token errors surface as a friendly message inside the handler.
+        }
+        grokModel = pc.model || 'grok-4.6';
+        grokApiUrl = pc.apiUrl || 'https://cli-chat-proxy.grok.com/v1';
+      }
+
       const context: ToolExecutionContext = {
         googleSearchApiKey: decryptedKey,
+        grokAccessToken,
+        grokModel,
+        grokApiUrl,
       };
       const result = await executeTool(name, args, context);
       sendResponse(result as ToolCallResponse);

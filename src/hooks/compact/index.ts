@@ -14,4 +14,5 @@ export {
   createSummaryMessage,
   getMessagesToCompact,
   shouldCompact,
+  cloneMessagesForBranch,
 } from './compactUtils.ts';

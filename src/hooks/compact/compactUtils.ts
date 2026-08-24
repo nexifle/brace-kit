@@ -5,8 +5,9 @@
  * No React hooks or side effects - testable in isolation.
  */
 
-import type { Message, CompactConfig, ProviderConfig, CustomProvider } from '../../types/index.ts';
+import type { Message, CompactConfig, ProviderConfig, CustomProvider, FetchedModelsCache } from '../../types/index.ts';
 import { getProvider as getProviderUtil } from '../../utils/providerUtils.ts';
+import { getEffectiveContextWindow } from '../../providers/modelSpecs.ts';
 
 /**
  * Default summary prompt template for conversation compaction
@@ -117,16 +118,19 @@ export function extractSummaryFromResponse(fullContent: string): string {
 export function getContextWindow(
   providerConfig: ProviderConfig,
   customProviders: CustomProvider[],
-  compactConfig: CompactConfig
+  compactConfig: CompactConfig,
+  fetched?: FetchedModelsCache | null,
 ): number {
   const currentProviderId = providerConfig.providerId || '';
   const currentProvider = getProviderUtil(currentProviderId, customProviders);
+  const custom = customProviders.find((p) => p.id === currentProviderId);
 
-  return (
-    providerConfig.contextWindow ||
-    currentProvider.contextWindow ||
-    compactConfig.defaultContextWindow
-  );
+  return getEffectiveContextWindow(
+    providerConfig,
+    custom,
+    compactConfig,
+    fetched,
+  ) || currentProvider.contextWindow || compactConfig.defaultContextWindow;
 }
 
 /**
@@ -171,6 +175,27 @@ export function createSummaryMessage(summary: string, condenseId: string): Messa
  */
 export function getMessagesToCompact(messages: Message[]): Message[] {
   return messages.filter(m => !m.condenseParent && !m.summary);
+}
+
+/**
+ * Clone a conversation prefix into an independent uncompacted branch timeline.
+ * Drops summary messages and strips compact metadata so the branch sends the
+ * original messages (including attachments) instead of being skipped as condensed.
+ */
+export function cloneMessagesForBranch(messages: Message[], messageIndex: number): Message[] {
+  if (messageIndex < 0 || messages.length === 0) return [];
+
+  return messages
+    .slice(0, messageIndex + 1)
+    .filter(m => !m.summary)
+    .map((m) => {
+      const cloned: Message = { ...m };
+      delete cloned.isCompacted;
+      delete cloned.condenseParent;
+      delete cloned.condenseId;
+      delete cloned.summary;
+      return cloned;
+    });
 }
 
 /**

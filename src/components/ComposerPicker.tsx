@@ -36,6 +36,7 @@ export function ComposerPicker() {
     fetchAndCacheModels,
   } = useProvider();
   const providerKeys = useStore((s) => s.providerKeys);
+  const grokAuthStatus = useStore((s) => s.grokAuthStatus);
 
   const [open, setOpen] = useState(false);
   const [abovePlaced, setAbovePlaced] = useState(false);
@@ -76,6 +77,8 @@ export function ComposerPicker() {
 
   const isConfigured = useCallback(
     (p: SelectableProvider) => {
+      // Grok (OAuth) is configured when signed in with a refreshable session
+      if (p.id === 'grok') return grokAuthStatus.connected && !grokAuthStatus.needsReauth;
       if (p.format === 'ollama') return true;
       const saved = providerKeys[p.id];
       const key =
@@ -84,7 +87,7 @@ export function ComposerPicker() {
         (p as CustomProvider).apiKey;
       return !!key;
     },
-    [providerKeys, providerConfig]
+    [providerKeys, providerConfig, grokAuthStatus]
   );
 
   const close = useCallback(() => setOpen(false), []);

@@ -20,6 +20,7 @@ import {
 import { registerMemoryHandlers } from './handlers/memory.handler';
 import { registerTitleHandlers } from './handlers/title.handler';
 import { registerModelsHandlers } from './handlers/models.handler';
+import { registerGrokAuthHandlers } from './handlers/grokAuth.handler';
 import { registerContentHandlers } from './handlers/content.handler';
 import { migrateOldConversations } from '../utils/conversationDB';
 import { initOmniboxHandler } from './handlers/omnibox.handler';
@@ -188,4 +189,5 @@ registerMCPHandlers(chrome.runtime.onMessage);
 registerMemoryHandlers(chrome.runtime.onMessage);
 registerTitleHandlers(chrome.runtime.onMessage);
 registerModelsHandlers(chrome.runtime.onMessage);
+registerGrokAuthHandlers(chrome.runtime.onMessage);
 registerContentHandlers(chrome.runtime.onMessage);

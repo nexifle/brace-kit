@@ -51,7 +51,17 @@ If a file exceeds the limit, you'll see an error and the file won't be attached.
 
 ## Image Attachments
 
-### Vision Models Required
+### Vision and input types
+
+What you can attach depends on the **selected model**:
+
+- Images need **Vision** (and Image as an input modality)
+- PDFs need PDF in input modalities
+- Text/CSV files need Text in input modalities
+
+The paperclip file picker only offers types that model accepts. If you still attach a file it cannot use, BraceKit rejects it and shows a warning with **Configure here** (Settings → AI).
+
+For built-in providers this is already filled in. For custom providers, turn on **Vision** (Image is checked automatically) and the modalities you need.
 
 Image attachments require a vision-capable model:
 
@@ -60,7 +70,7 @@ Image attachments require a vision-capable model:
 | OpenAI | GPT-5.6, GPT-5.5, GPT-5.4 |
 | Anthropic | Claude Opus 5, Sonnet 5, Haiku 4.5 |
 | Google | Gemini models |
-| xAI | Grok 4.5, Grok 4.3 |
+| xAI | Grok 4.6, Grok 4.5, Grok 4.3 |
 | Ollama | llava, bakllava, etc. |
 
 ### Image Preview
