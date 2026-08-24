@@ -209,7 +209,7 @@ export async function generateSlideProjectTitle(projectId: string): Promise<void
       isGeminiImageModel(currentModel)
         ? { ...providerConfig, model: 'gemini-3.6-flash' }
         : providerConfig.providerId === 'xai' && isXAIImageModel(currentModel)
-          ? { ...providerConfig, model: 'grok-4.5' }
+          ? { ...providerConfig, model: 'grok-4.6' }
           : providerConfig;
 
     const response = await chrome.runtime.sendMessage({

@@ -70,7 +70,7 @@ export async function generateConversationTitle(targetConvId?: string, silent = 
     const titleProviderConfig = isGeminiImg
       ? { ...currentState.providerConfig, model: 'gemini-3.6-flash' }
       : isXAIImg
-        ? { ...currentState.providerConfig, model: 'grok-4.5' }
+        ? { ...currentState.providerConfig, model: 'grok-4.6' }
         : currentState.providerConfig;
 
     const response = await chrome.runtime.sendMessage({

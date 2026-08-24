@@ -60,7 +60,7 @@ Image attachments require a vision-capable model:
 | OpenAI | GPT-5.6, GPT-5.5, GPT-5.4 |
 | Anthropic | Claude Opus 5, Sonnet 5, Haiku 4.5 |
 | Google | Gemini models |
-| xAI | Grok 4.5, Grok 4.3 |
+| xAI | Grok 4.6, Grok 4.5, Grok 4.3 |
 | Ollama | llava, bakllava, etc. |
 
 ### Image Preview

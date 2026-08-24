@@ -127,7 +127,7 @@ bun run typecheck
 | OpenAI | Native | gpt-4o, gpt-4o-mini, o1, o3-mini |
 | Anthropic | Native | claude-sonnet-4-20250514, claude-3-5-sonnet, claude-3-opus |
 | Google Gemini | Native | gemini-2.0-flash, gemini-1.5-pro |
-| xAI (Grok) | OpenAI-compatible | grok-2, grok-2-mini |
+| xAI (Grok) | OpenAI-compatible | grok-4.6, grok-4.5, grok-4.3 |
 | DeepSeek | OpenAI-compatible | deepseek-chat, deepseek-reasoner |
 | Ollama | OpenAI-compatible | Any local model |
 | Custom | Configurable | Any OpenAI/Anthropic-compatible endpoint |

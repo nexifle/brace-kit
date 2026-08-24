@@ -36,7 +36,8 @@ Settings are saved automatically as you type.
 
 | Model | Best For | Context | Notes |
 |-------|----------|---------|-------|
-| **grok-4.5** | Coding, agentic tasks | 500K | Current flagship, configurable reasoning |
+| **grok-4.6** | Coding, agentic tasks | 500K | Current flagship, configurable reasoning |
+| **grok-4.5** | Coding, agentic tasks | 500K | Previous flagship, configurable reasoning |
 | **grok-4.3** | Balanced workloads | 1M | Strong reasoning + tool use |
 
 ### Grok 4.20 Series
@@ -125,6 +126,7 @@ xAI pricing (per 1M tokens):
 
 | Model | Input | Output | Context |
 |-------|-------|--------|---------|
+| grok-4.6 | $2.00 | $6.00 | 500K |
 | grok-4.5 | $2.00 | $6.00 | 500K |
 | grok-4.3 | $1.25 | $2.50 | 1M |
 | grok-4.20-0309-reasoning | $1.25 | $2.50 | 1M |

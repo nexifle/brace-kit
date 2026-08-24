@@ -20,7 +20,7 @@ BraceKit supports multiple AI providers, letting you switch between models insta
 | **[OpenAI](/guide/ai-providers/openai/)** | Cloud | GPT-5.6 (Sol/Terra/Luna), GPT-5.5 | Reasoning models |
 | **[Anthropic](/guide/ai-providers/anthropic/)** | Cloud | Claude Opus 5, Sonnet 5, Haiku 4.5 | Extended thinking |
 | **[Gemini](/guide/ai-providers/gemini/)** | Cloud | Gemini 3.6 Flash, 3.5 Flash, 3.1 Pro | Google Search, Image gen |
-| **[xAI](/guide/ai-providers/xai/)** | Cloud | Grok 4.5, Grok 4.3, Grok 4.20 | Image generation |
+| **[xAI](/guide/ai-providers/xai/)** | Cloud | Grok 4.6, Grok 4.5, Grok 4.3, Grok 4.20 | Image generation |
 | **[DeepSeek](/guide/ai-providers/deepseek/)** | Cloud | DeepSeek V4 (Flash, Pro) | Thinking mode |
 | **[Ollama](/guide/ai-providers/ollama/)** | Local | Any model | Offline, Private |
 | **[Custom](/guide/ai-providers/custom/)** | Any | Any | Multi-format (OpenAI, Anthropic, Gemini, Ollama) |
@@ -78,7 +78,7 @@ Some models can show their reasoning process:
 | Anthropic | Claude Opus 5, Sonnet 5 | Click brain icon (🧠) |
 | OpenAI | GPT-5.6 (reasoning levels) | Automatic |
 | Gemini | 3.6 Flash, 3.1 Pro, Thinking models | Click brain icon (🧠) |
-| xAI | Grok 4.5, Grok 4.20 reasoning | Automatic (reasoning models) |
+| xAI | Grok 4.6, Grok 4.5, Grok 4.20 reasoning | Automatic (reasoning models) |
 | DeepSeek | V4 (thinking mode) | Automatic |
 | Ollama | With think mode | Click brain icon |
 
@@ -113,7 +113,7 @@ Send images for analysis:
 | OpenAI | GPT-5.6, GPT-5.5, GPT-5.4 |
 | Anthropic | Claude Opus 5, Sonnet 5 |
 | Gemini | All Gemini models |
-| xAI | Grok 4.5, Grok 4.3 |
+| xAI | Grok 4.6, Grok 4.5, Grok 4.3 |
 | Ollama | llava, bakllava |
 
 ## API Key Security

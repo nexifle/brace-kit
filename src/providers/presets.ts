@@ -232,11 +232,12 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     id: 'xai',
     name: 'xAI (Grok)',
     apiUrl: 'https://api.x.ai/v1',
-    defaultModel: 'grok-4.5',
+    defaultModel: 'grok-4.6',
     format: 'openai',
     models: [],
     supportsModelFetch: true,
     staticModels: [
+      'grok-4.6',
       'grok-4.5',
       'grok-4.3',
       // Grok 4.20 (aliases: grok-4.20 → reasoning, grok-4.20-non-reasoning)
@@ -295,12 +296,13 @@ export const PROVIDER_PRESETS: Record<string, ProviderPreset> = {
     id: 'grok',
     name: 'Grok (OAuth)',
     apiUrl: 'https://cli-chat-proxy.grok.com/v1',
-    defaultModel: 'grok-4.5',
+    defaultModel: 'grok-4.6',
     format: 'responses',
     models: [],
     supportsModelFetch: false,
     staticModels: [
       'grok-build-0.1',
+      'grok-4.6',
       'grok-4.5',
       'grok-4.3',
       'grok-4.20-0309-reasoning',

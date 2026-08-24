@@ -156,7 +156,7 @@ export async function handleMCPToolCall(
         } catch {
           // Token errors surface as a friendly message inside the handler.
         }
-        grokModel = pc.model || 'grok-4.5';
+        grokModel = pc.model || 'grok-4.6';
         grokApiUrl = pc.apiUrl || 'https://cli-chat-proxy.grok.com/v1';
       }
 

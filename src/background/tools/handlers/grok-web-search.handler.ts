@@ -246,7 +246,7 @@ export async function handleGrokWebSearch(
     return { content: [{ text: 'Error: query parameter is required' }] };
   }
 
-  const model = context?.grokModel || 'grok-4.5';
+  const model = context?.grokModel || 'grok-4.6';
   const baseUrl = context?.grokApiUrl || 'https://cli-chat-proxy.grok.com/v1';
   const url = `${baseUrl.replace(/\/+$/, '')}/responses`;
 

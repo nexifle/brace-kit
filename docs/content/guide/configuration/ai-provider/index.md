@@ -23,7 +23,7 @@ Select from available AI providers:
 | **OpenAI** | GPT-5.6 (Sol/Terra/Luna), GPT-5.5, GPT-5.4 |
 | **Anthropic** | Claude Opus 5, Sonnet 5, Haiku 4.5, Fable 5 |
 | **Google Gemini** | Gemini 3.6 Flash, 3.5 Flash, 3.1 Pro |
-| **xAI** | Grok 4.5, Grok 4.3, Grok 4.20 |
+| **xAI** | Grok 4.6, Grok 4.5, Grok 4.3, Grok 4.20 |
 | **DeepSeek** | DeepSeek V4 Flash and Pro |
 | **Ollama** | Local models via Ollama |
 | **Custom** | Your own OpenAI-compatible endpoints |
