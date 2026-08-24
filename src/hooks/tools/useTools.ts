@@ -10,11 +10,11 @@ import { useStore } from '../../store/index.ts';
 import type { MCPTool, ReasoningLevel } from '../../types/index.ts';
 import { buildChatOptions, chatOptionsStateFromStore } from '../../utils/chatOptions.ts';
 import {
-  GEMINI_NO_TOOLS_MODELS,
-  GEMINI_SEARCH_ONLY_MODELS,
   GEMINI_IMAGE_MODELS,
   XAI_IMAGE_MODELS,
 } from '../../providers/presets.ts';
+import { specSupportsTools } from '../../providers/modelSpecs.ts';
+import { resolveSpecFromAppState } from '../../utils/modelCapability.ts';
 import { getAllTools as getAllToolsFromRegistry } from '../../services/toolRegistry.ts';
 import { ensureMCPConnected } from '../../utils/mcpReconnect.ts';
 
@@ -106,15 +106,11 @@ export function useTools() {
     (model?: string): boolean => {
       const state = useStore.getState();
       const currentModel = model ?? state.providerConfig.model ?? '';
-      const isGemini =
-        state.providerConfig.providerId === 'gemini' ||
-        state.providerConfig.format === 'gemini';
-
-      return (
-        !isGemini ||
-        (!GEMINI_NO_TOOLS_MODELS.includes(currentModel) &&
-          !GEMINI_SEARCH_ONLY_MODELS.includes(currentModel))
-      );
+      const spec = resolveSpecFromAppState({
+        ...state,
+        providerConfig: { ...state.providerConfig, model: currentModel },
+      });
+      return specSupportsTools(spec, currentModel);
     },
     []
   );

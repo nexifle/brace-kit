@@ -14,7 +14,9 @@ import type { StreamDelta } from '../services/agentSession.ts';
 import { shouldEnableGoogleSearch, shouldEnableGrokWebSearch } from '../services/slideTools.ts';
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
-import { isGeminiImageModel, isXAIImageModel, supportsFunctionCalling } from '../providers/presets.ts';
+import { isGeminiImageModel, isXAIImageModel } from '../providers/presets.ts';
+import { firstChatModelId, resolveModelSpec, specIsImageModel, specSupportsTools } from '../providers/modelSpecs.ts';
+import { PROVIDER_PRESETS } from '../providers/presets.ts';
 import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
 import type { SlideProject, SlideFile } from '../types/slides.ts';
@@ -102,10 +104,14 @@ export function useSlideAgent() {
         // though the agent instance itself is created once.
         canFunctionCall: () => {
           const s = useStore.getState();
-          const isGemini =
-            s.providerConfig.providerId === 'gemini' || s.providerConfig.format === 'gemini';
-          if (!isGemini) return true;
-          return supportsFunctionCalling(s.providerConfig.model);
+          const custom = s.customProviders.find((p) => p.id === s.providerConfig.providerId);
+          const spec = resolveModelSpec({
+            providerId: s.providerConfig.providerId,
+            modelId: s.providerConfig.model,
+            custom,
+            fetched: s.fetchedModels[s.providerConfig.providerId],
+          });
+          return specSupportsTools(spec, s.providerConfig.model);
         },
         // Same enableReasoning / reasoningLevel / modelParameters as main chat.
         getChatOptions: () =>
@@ -205,12 +211,27 @@ export async function generateSlideProjectTitle(projectId: string): Promise<void
     // gate), so fall back to a text-capable model from the same provider —
     // mirroring chat's generateConversationTitle.
     const currentModel = providerConfig.model || '';
+    const custom = useStore.getState().customProviders.find((p) => p.id === providerConfig.providerId);
+    const fetched = useStore.getState().fetchedModels[providerConfig.providerId];
+    const spec = resolveModelSpec({
+      providerId: providerConfig.providerId,
+      modelId: currentModel,
+      custom,
+      fetched,
+    });
+    const preset = PROVIDER_PRESETS[providerConfig.providerId];
+    const titleModel = specIsImageModel(spec, currentModel) || isGeminiImageModel(currentModel) || isXAIImageModel(currentModel)
+      ? firstChatModelId(
+          providerConfig.providerId,
+          preset?.defaultModel || '',
+          preset?.staticModels || custom?.models || [],
+          (id) => resolveModelSpec({ providerId: providerConfig.providerId, modelId: id, custom, fetched }),
+        )
+      : currentModel;
     const titleProviderConfig =
-      isGeminiImageModel(currentModel)
-        ? { ...providerConfig, model: 'gemini-3.6-flash' }
-        : providerConfig.providerId === 'xai' && isXAIImageModel(currentModel)
-          ? { ...providerConfig, model: 'grok-4.6' }
-          : providerConfig;
+      titleModel && titleModel !== currentModel
+        ? { ...providerConfig, model: titleModel }
+        : providerConfig;
 
     const response = await chrome.runtime.sendMessage({
       type: 'TITLE_GENERATE',

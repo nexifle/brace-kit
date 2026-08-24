@@ -177,6 +177,8 @@ export type ModelFetchFunction = (
 export interface ModelFetchResult {
   /** Available models */
   models?: string[];
+  /** Sparse specs parsed from the live list (id required; other fields optional) */
+  specs?: import('../types/index.ts').ModelSpec[];
   /** Error message if fetch failed */
   error?: string;
 }

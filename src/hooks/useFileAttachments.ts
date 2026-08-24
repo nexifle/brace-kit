@@ -1,11 +1,14 @@
 import { useCallback } from 'react';
 import { useStore } from '../store/index.ts';
+import { useToast } from '../components/ui/toast/useToast.ts';
 import type { FileAttachment } from '../types/index.ts';
 import {
   classifyComposerFile,
   clipboardImageFiles,
   composerFileSizeError,
 } from '../utils/composerAttachments.ts';
+import { attachmentKindBlocked, resolveSpecFromAppState } from '../utils/modelCapability.ts';
+import { CAPABILITY_ALERTS } from '../utils/modelCapability.ts';
 import { encodeImageForVision } from '../utils/slideImageResize.ts';
 
 function newId(): string {
@@ -14,6 +17,7 @@ function newId(): string {
 
 export function useFileAttachments() {
   const store = useStore();
+  const { toast } = useToast();
 
   const processFile = useCallback(async (file: File): Promise<void> => {
     const kind = classifyComposerFile(file, { allowPdf: true });
@@ -24,6 +28,34 @@ export function useFileAttachments() {
         type: 'error',
         name: file.name || 'Attachment',
         error: 'Unsupported file type',
+      });
+      return;
+    }
+
+    const spec = resolveSpecFromAppState(useStore.getState());
+    const blocked = attachmentKindBlocked(spec, kind);
+    if (blocked) {
+      const copy = CAPABILITY_ALERTS[blocked];
+      store.addAttachment({
+        id: newId(),
+        file,
+        type: 'error',
+        name: file.name || 'Attachment',
+        error: copy.title,
+      });
+      toast({
+        variant: 'warning',
+        title: copy.title,
+        description: copy.description,
+        duration: 8000,
+        action: {
+          label: 'Configure here',
+          onClick: () => {
+            const state = useStore.getState();
+            state.setSettingsSection('ai');
+            state.setView('settings');
+          },
+        },
       });
       return;
     }
@@ -57,7 +89,7 @@ export function useFileAttachments() {
         error: (err as Error).message,
       });
     }
-  }, [store]);
+  }, [store, toast]);
 
   const handleFileSelect = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;

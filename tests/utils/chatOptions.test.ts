@@ -42,4 +42,14 @@ describe('buildChatOptions', () => {
     const opts = buildChatOptions(base({ enableReasoning: false }));
     expect(opts.enableReasoning).toBe(false);
   });
+
+  it('does not send reasoning when the model spec disables it', () => {
+    const opts = buildChatOptions(
+      base({
+        enableReasoning: true,
+        modelSpec: { id: 'gpt-4o', capabilities: { reasoning: false } },
+      }),
+    );
+    expect(opts.enableReasoning).toBe(false);
+  });
 });

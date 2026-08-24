@@ -102,6 +102,16 @@ Solutions to common problems with BraceKit.
 3. **Check if you're signed in:** Data is stored locally in your browser
 4. **Browser cleared storage:** If you cleared browser data, conversations may be lost
 
+### "This model doesn't support tool calling" / reasoning / attachments
+
+**What it means:** The composer control (wrench, thinking, or a file) does not match this model’s specs.
+
+**Solutions:**
+
+1. **Use a model that supports it** — switch in the composer picker
+2. **Custom provider:** click **Configure here** (or Settings → AI), edit the model, and turn on Tools, Reasoning, or Vision / the right input types
+3. **Built-in provider:** specs are read-only; pick another model rather than editing the flags
+
 ### "Context Length Exceeded" Error
 
 **What it means:** Your conversation is too long for the AI to process.

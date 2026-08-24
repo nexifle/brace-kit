@@ -16,6 +16,7 @@ import {
   isGeminiImageModel,
   isXAIImageModel,
 } from '../../src/providers/presets.ts';
+import { MODEL_CATALOG } from '../../src/providers/modelCatalog.ts';
 
 describe('Provider Presets', () => {
   describe('PROVIDER_PRESETS', () => {
@@ -37,6 +38,7 @@ describe('Provider Presets', () => {
       expect(preset.supportsModelFetch).toBe(true);
       expect(preset.staticModels).toContain('gpt-5.6-sol');
       expect(preset.staticModels).toContain('gpt-5.6-terra');
+      expect(preset.staticModels?.every((id) => typeof id === 'string')).toBe(true);
     });
 
     it('should have correct Anthropic preset with static models', () => {
@@ -155,6 +157,16 @@ describe('Provider Presets', () => {
 
     it('should return false for regular xAI models', () => {
       expect(isXAIImageModel('grok-beta')).toBe(false);
+    });
+  });
+
+  describe('model catalog', () => {
+    it('has a spec with context for every static model', () => {
+      for (const preset of Object.values(PROVIDER_PRESETS)) {
+        for (const modelId of preset.staticModels || []) {
+          expect(MODEL_CATALOG[preset.id]?.[modelId]?.limit?.context).toBeGreaterThan(0);
+        }
+      }
     });
   });
 

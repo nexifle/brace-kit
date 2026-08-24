@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/index.ts';
 import { ProviderSettings } from './settings/ProviderSettings.tsx';
 import { ChatSettings } from './settings/ChatSettings.tsx';
@@ -36,7 +36,21 @@ const TABS: { id: SettingsTab; label: string; icon: typeof SparklesIcon }[] = [
 export function SettingsPanel() {
   const store = useStore();
   const mode = useStore((state) => state.mode);
-  const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
+  const settingsSection = useStore((state) => state.settingsSection);
+  const initialTab: SettingsTab =
+    settingsSection === 'ai' || TABS.some((t) => t.id === settingsSection)
+      ? (settingsSection as SettingsTab)
+      : 'ai';
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+
+  useEffect(() => {
+    if (
+      settingsSection === 'ai' ||
+      TABS.some((t) => t.id === settingsSection)
+    ) {
+      setActiveTab(settingsSection as SettingsTab);
+    }
+  }, [settingsSection]);
 
   const renderContent = (tab: SettingsTab) => {
     switch (tab) {
