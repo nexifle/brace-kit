@@ -174,6 +174,27 @@ export function getMessagesToCompact(messages: Message[]): Message[] {
 }
 
 /**
+ * Clone a conversation prefix into an independent uncompacted branch timeline.
+ * Drops summary messages and strips compact metadata so the branch sends the
+ * original messages (including attachments) instead of being skipped as condensed.
+ */
+export function cloneMessagesForBranch(messages: Message[], messageIndex: number): Message[] {
+  if (messageIndex < 0 || messages.length === 0) return [];
+
+  return messages
+    .slice(0, messageIndex + 1)
+    .filter(m => !m.summary)
+    .map((m) => {
+      const cloned: Message = { ...m };
+      delete cloned.isCompacted;
+      delete cloned.condenseParent;
+      delete cloned.condenseId;
+      delete cloned.summary;
+      return cloned;
+    });
+}
+
+/**
  * Check if compaction should be triggered based on token threshold
  */
 export function shouldCompact(

@@ -7,7 +7,24 @@ import {
   createSummaryMessage,
   getMessagesToCompact,
   shouldCompact,
+  cloneMessagesForBranch,
 } from '../../../src/hooks/compact/compactUtils.ts';
+
+/**
+ * Mirrors buildAPIMessages filtering: start at last summary, skip condensed.
+ */
+function buildEffectiveHistory(messages: Message[]): Message[] {
+  const lastSummaryIndex = [...messages].reverse().findIndex(m => m.summary && m.condenseId);
+  const startIndex = lastSummaryIndex !== -1 ? messages.length - 1 - lastSummaryIndex : 0;
+
+  const effectiveHistory: Message[] = [];
+  for (let i = startIndex; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.condenseParent) continue;
+    effectiveHistory.push(msg);
+  }
+  return effectiveHistory;
+}
 
 /**
  * Autocompact Logic Tests
@@ -16,23 +33,6 @@ import {
  * specifically the "fresh start" model and condenseParent filtering.
  */
 describe('Autocompact Logic', () => {
-  /**
-   * Helper that mirrors buildAPIMessages filtering logic
-   */
-  function buildEffectiveHistory(messages: Message[]): Message[] {
-    // Find the last summary message for the "fresh start" model
-    const lastSummaryIndex = [...messages].reverse().findIndex(m => m.summary && m.condenseId);
-    const startIndex = lastSummaryIndex !== -1 ? messages.length - 1 - lastSummaryIndex : 0;
-
-    const effectiveHistory: Message[] = [];
-    for (let i = startIndex; i < messages.length; i++) {
-      const msg = messages[i];
-      if (msg.condenseParent) continue;
-      effectiveHistory.push(msg);
-    }
-    return effectiveHistory;
-  }
-
   /**
    * Helper that mirrors estimateTokenCount logic
    */
@@ -277,6 +277,99 @@ describe('Compact Utilities', () => {
     it('should handle different threshold values', () => {
       expect(shouldCompact(500, 1000, 0.5)).toBe(false); // 500 = threshold
       expect(shouldCompact(501, 1000, 0.5)).toBe(true);  // 501 > threshold
+    });
+  });
+
+  describe('cloneMessagesForBranch', () => {
+    const imageAtt = {
+      type: 'image' as const,
+      name: 'photo.jpg',
+      data: 'data:image/jpeg;base64,abc123',
+    };
+
+    function hasNoCompactMeta(msg: Message) {
+      expect(msg.isCompacted).toBeUndefined();
+      expect(msg.condenseParent).toBeUndefined();
+      expect(msg.condenseId).toBeUndefined();
+      expect(msg.summary).toBeUndefined();
+    }
+
+    it('should uncompact a pre-summary prefix and keep image attachments', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Look', attachments: [imageAtt], condenseParent: 'c1', isCompacted: true },
+        { role: 'assistant', content: 'A cat', condenseParent: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONVERSATION SUMMARY]\nCat photo', summary: 'Cat photo', condenseId: 'c1', isCompacted: true },
+        { role: 'user', content: 'After compact' },
+      ];
+
+      const branched = cloneMessagesForBranch(messages, 0);
+      expect(branched).toHaveLength(1);
+      expect(branched[0].content).toBe('Look');
+      expect(branched[0].attachments).toEqual([imageAtt]);
+      hasNoCompactMeta(branched[0]);
+    });
+
+    it('should drop the summary and keep post-compact turns when branching after compact', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Old user', condenseParent: 'c1', isCompacted: true },
+        { role: 'assistant', content: 'Old assistant', condenseParent: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONVERSATION SUMMARY]\nS', summary: 'S', condenseId: 'c1', isCompacted: true },
+        { role: 'user', content: 'New 1' },
+        { role: 'assistant', content: 'New 2' },
+      ];
+
+      const branched = cloneMessagesForBranch(messages, 4);
+      expect(branched.map((m) => m.content)).toEqual(['Old user', 'Old assistant', 'New 1', 'New 2']);
+      for (const msg of branched) hasNoCompactMeta(msg);
+    });
+
+    it('should drop the summary when branching on the summary itself', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Old', condenseParent: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONVERSATION SUMMARY]\nS', summary: 'S', condenseId: 'c1', isCompacted: true },
+      ];
+
+      const branched = cloneMessagesForBranch(messages, 1);
+      expect(branched).toHaveLength(1);
+      expect(branched[0].content).toBe('Old');
+      hasNoCompactMeta(branched[0]);
+    });
+
+    it('should drop nested summaries and strip every compact generation', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Gen 1', condenseParent: 'c1', isCompacted: true },
+        { role: 'user', content: 'Summary 1', summary: 'S1', condenseId: 'c1', condenseParent: 'c2', isCompacted: true },
+        { role: 'user', content: 'Gen 2', condenseParent: 'c2', isCompacted: true },
+        { role: 'user', content: 'Summary 2', summary: 'S2', condenseId: 'c2', isCompacted: true },
+        { role: 'user', content: 'Gen 3' },
+      ];
+
+      const branched = cloneMessagesForBranch(messages, 4);
+      expect(branched.map((m) => m.content)).toEqual(['Gen 1', 'Gen 2', 'Gen 3']);
+      for (const msg of branched) hasNoCompactMeta(msg);
+    });
+
+    it('should return an empty array for invalid indexes or empty history', () => {
+      const messages: Message[] = [{ role: 'user', content: 'Hi' }];
+      expect(cloneMessagesForBranch([], 0)).toEqual([]);
+      expect(cloneMessagesForBranch(messages, -1)).toEqual([]);
+    });
+
+    it('should include image attachments in API history after compact-then-branch', () => {
+      const compacted: Message[] = [
+        { role: 'user', content: 'Look', attachments: [imageAtt], condenseParent: 'c1', isCompacted: true },
+        { role: 'assistant', content: 'A cat', condenseParent: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONVERSATION SUMMARY]\nCat photo', summary: 'Cat photo', condenseId: 'c1', isCompacted: true },
+      ];
+
+      const branched = cloneMessagesForBranch(compacted, 0);
+      const withNew: Message[] = [...branched, { role: 'user', content: 'What breed?' }];
+      const history = buildEffectiveHistory(withNew);
+
+      expect(history).toHaveLength(2);
+      expect(history[0].content).toBe('Look');
+      expect(history[0].attachments?.[0].data).toBe(imageAtt.data);
+      expect(history[1].content).toBe('What breed?');
     });
   });
 });

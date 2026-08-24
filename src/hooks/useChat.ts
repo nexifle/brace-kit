@@ -15,7 +15,7 @@ import { isGeminiImageModel, isXAIImageModel } from '../providers';
 import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUtil } from '../utils/providerUtils.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
-import { useAutoCompact } from './compact/index.ts';
+import { useAutoCompact, cloneMessagesForBranch } from './compact/index.ts';
 
 /**
  * Generate a title for the given conversation (or the active one if no ID provided).
@@ -355,10 +355,7 @@ export function useChat() {
   const branchFrom = useCallback(async (messageIndex: number) => {
     const currentState = useStore.getState();
     // Copy messages up to the index, but reset compaction state and remove summaries for the new branch
-    const messagesToCopy = currentState.messages
-      .slice(0, messageIndex + 1)
-      .filter(m => !m.summary)
-      .map(m => ({ ...m, isCompacted: false }));
+    const messagesToCopy = cloneMessagesForBranch(currentState.messages, messageIndex);
 
     const parentId = currentState.activeConversationId;
     const parentConv = currentState.conversations.find((c) => c.id === parentId);
