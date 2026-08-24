@@ -59,6 +59,8 @@ export function SlideFilmstrip({
   deckRef.current = deck;
   const presetRef = useRef(preset);
   presetRef.current = preset;
+  /** Id of the project the current `thumbs` cache was captured for. */
+  const lastProjectIdRef = useRef<string | null>(null);
 
 
   const commitThumbs = (patch: Record<string, string>) => {
@@ -83,6 +85,16 @@ export function SlideFilmstrip({
         const slides = deckSlidesRef.current;
         const d = deckRef.current;
         const p = presetRef.current;
+        // A project switch invalidates every htmlPath-keyed thumb: the new
+        // deck's slides reuse the same keys (`/slides/01.html`, …) but hold
+        // different content, so the skip guard below must not see the old
+        // deck's captures. Checked inside the loop so an in-flight capture for
+        // the old project that re-runs after the switch also clears.
+        if (proj && lastProjectIdRef.current !== proj.id) {
+          lastProjectIdRef.current = proj.id;
+          thumbsRef.current = {};
+          setThumbs({});
+        }
         if (!r || !proj || !p) break;
         for (const slide of slides) {
           if (recaptureRequestedRef.current) break;
