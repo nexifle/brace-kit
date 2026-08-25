@@ -10,7 +10,7 @@ export async function sha256(message: string): Promise<string> {
 
 function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   let binary = '';
-  const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   const len = bytes.byteLength;
   for (let i = 0; i < len; i++) {
     binary += String.fromCharCode(bytes[i]);
@@ -28,9 +28,9 @@ function base64ToArrayBuffer(base64: string): Uint8Array {
   return bytes;
 }
 
-/** Wrap Uint8Array so it satisfies BufferSource for strict TS. */
+/** Copy a view into a standalone ArrayBuffer (ignores unused parent bytes). */
 function toBuffer(arr: Uint8Array): ArrayBuffer {
-  return arr.buffer as ArrayBuffer;
+  return arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength) as ArrayBuffer;
 }
 
 // ── Key Derivation ───────────────────────────────────────────────────────

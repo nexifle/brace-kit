@@ -50,6 +50,7 @@ describe('getToolsForPhase', () => {
       'apply_patch',
       'ask',
       'submit_plan',
+      'web_fetch',
     ]);
     expect(names(tools)).toEqual(getToolsForPhaseNames('plan'));
     // plan must still be able to ask a clarifying question
@@ -64,6 +65,7 @@ describe('getToolsForPhase', () => {
       'load_skill',
       'apply_patch',
       'reorder_slides',
+      'web_fetch',
     ]);
     expect(names(tools)).not.toContain('ask');
     expect(names(tools)).not.toContain('submit_plan');
@@ -77,6 +79,7 @@ describe('getToolsForPhase', () => {
       'load_skill',
       'apply_patch',
       'reorder_slides',
+      'web_fetch',
     ]);
   });
 
@@ -100,6 +103,19 @@ describe('getToolsForPhase', () => {
   });
 });
 
+describe('web_fetch injection', () => {
+  test('plan/build/edit always offer web_fetch; main never does', () => {
+    expect(names(getToolsForPhase('plan'))).toContain('web_fetch');
+    expect(names(getToolsForPhase('build'))).toContain('web_fetch');
+    expect(names(getToolsForPhase('edit'))).toContain('web_fetch');
+    expect(names(getToolsForPhase('main'))).not.toContain('web_fetch');
+  });
+
+  test('web_fetch is never a VFS mutator', () => {
+    expect(isSlideVfsMutator('web_fetch')).toBe(false);
+  });
+});
+
 describe('google_search injection (US-028)', () => {
   test('plan does not offer google_search by default', () => {
     const tools = getToolsForPhase('plan');
@@ -115,6 +131,7 @@ describe('google_search injection (US-028)', () => {
       'apply_patch',
       'ask',
       'submit_plan',
+      'web_fetch',
       'google_search',
     ]);
     // The injected tool keeps the external schema (a query input).
@@ -169,6 +186,7 @@ describe('web_search (Grok) injection', () => {
       'apply_patch',
       'ask',
       'submit_plan',
+      'web_fetch',
       'web_search',
     ]);
     const ws = tools.find((t) => t.name === 'web_search');

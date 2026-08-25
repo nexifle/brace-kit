@@ -8,7 +8,7 @@
  * chrome.storage.local; the in-flight flow state lives in storage.session.
  */
 
-import { decryptApiKey, encryptApiKey } from './keyEncryption.ts';
+import { decryptApiKey, encryptApiKey, isEncrypted } from './keyEncryption.ts';
 
 // ==================== Constants ====================
 
@@ -76,10 +76,16 @@ export async function loadTokens(): Promise<GrokTokenSet | null> {
   const raw = data[GROK_TOKENS_STORAGE_KEY] as string | undefined;
   if (!raw) return null;
   const decrypted = await decryptApiKey(raw);
-  if (!decrypted) return null;
+  if (!decrypted) {
+    if (typeof raw === 'string' && isEncrypted(raw)) {
+      await chrome.storage.local.remove(GROK_TOKENS_STORAGE_KEY);
+    }
+    return null;
+  }
   try {
     return JSON.parse(decrypted) as GrokTokenSet;
   } catch {
+    await chrome.storage.local.remove(GROK_TOKENS_STORAGE_KEY);
     return null;
   }
 }

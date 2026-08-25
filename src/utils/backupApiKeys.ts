@@ -13,6 +13,7 @@
 import { decryptApiKey, encryptApiKey } from './keyEncryption.ts';
 import { encryptData, decryptData } from './crypto.ts';
 import type { ApiKeyBundle } from './backup.types.ts';
+import { GROK_TOKENS_STORAGE_KEY } from './grokOAuth.ts';
 
 /**
  * Extract API keys from storage data into a portable bundle.
@@ -95,6 +96,15 @@ export async function extractApiKeys(
       bundle.googleSearchApiKey = decrypted;
     } else {
       failedKeys.push('googleSearchApiKey');
+    }
+  }
+
+  // Grok OAuth tokens: skip (don't fail the backup) when ciphertext is stale
+  const grokTokens = storage[GROK_TOKENS_STORAGE_KEY];
+  if (typeof grokTokens === 'string' && grokTokens) {
+    const decrypted = await decryptApiKey(grokTokens);
+    if (decrypted) {
+      bundle.grokOAuthTokens = decrypted;
     }
   }
 
@@ -202,6 +212,10 @@ export async function restoreApiKeysToStorage(
     updated.googleSearchApiKey = await encryptApiKey(bundle.googleSearchApiKey);
   }
 
+  if (bundle.grokOAuthTokens) {
+    updated[GROK_TOKENS_STORAGE_KEY] = await encryptApiKey(bundle.grokOAuthTokens);
+  }
+
   return updated;
 }
 
@@ -213,6 +227,7 @@ export function hasAnyKeys(bundle: ApiKeyBundle): boolean {
     !!(bundle.providerConfig?.apiKey) ||
     !!(bundle.providerKeys && Object.keys(bundle.providerKeys).length > 0) ||
     !!(bundle.customProviders?.some((p) => p.apiKey)) ||
-    !!bundle.googleSearchApiKey
+    !!bundle.googleSearchApiKey ||
+    !!bundle.grokOAuthTokens
   );
 }

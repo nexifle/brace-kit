@@ -168,9 +168,9 @@ describe('useTools Logic', () => {
         hasGoogleSearch = true;
       }
 
-      // Inject continue_message for function-capable models
+      // Inject web_fetch + continue_message for function-capable models
       if (supportsFunctionCalling) {
-        total++;
+        total += 2;
         hasContinueMessage = true;
       }
 
@@ -204,14 +204,14 @@ describe('useTools Logic', () => {
     it('should include continue_message when function calling supported', () => {
       const result = getExpectedTools(2, false, null, true, true);
       expect(result.hasContinueMessage).toBe(true);
-      expect(result.total).toBe(3);
+      expect(result.total).toBe(4);
     });
 
     it('should include both built-in tools when conditions met', () => {
       const result = getExpectedTools(2, true, 'api-key', true, false);
       expect(result.hasGoogleSearch).toBe(true);
       expect(result.hasContinueMessage).toBe(true);
-      expect(result.total).toBe(4);
+      expect(result.total).toBe(5);
     });
   });
 });

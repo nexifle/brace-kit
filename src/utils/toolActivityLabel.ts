@@ -11,7 +11,7 @@ export interface FormattedToolActivity {
 }
 
 const SEARCH_TOOLS = new Set(['web_search', 'google_search']);
-const OPEN_NAME = /^(open_|browse_|fetch_url|open_page|browser_navigate)/i;
+const OPEN_NAME = /^(open_|browse_|fetch_url|open_page|browser_navigate|web_fetch)/i;
 const FILE_NAME = /^(read_|write_|list_|delete_|apply_patch|edit_)/i;
 
 const DETAIL_KEYS = [

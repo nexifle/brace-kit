@@ -36,6 +36,19 @@ describe('toolActivityLabel', () => {
     expect(f.status).toBe('running');
   });
 
+  it('formats web_fetch as opened page', () => {
+    const f = formatToolActivity(
+      tool({
+        name: 'web_fetch',
+        toolArguments: { url: 'https://docs.python.org/3/' },
+        content: 'md',
+      }),
+    );
+    expect(f.icon).toBe('globe');
+    expect(f.title).toBe('Opened page');
+    expect(f.detail).toBe('docs.python.org/3/');
+  });
+
   it('formats opened page from url arg', () => {
     const f = formatToolActivity(
       tool({

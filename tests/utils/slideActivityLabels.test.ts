@@ -9,6 +9,7 @@ import {
   fileDeletedLabel,
   fileWrittenLabel,
   googleSearchLabel,
+  webFetchLabel,
   listFilesLabel,
   mcpToolLabel,
   modelRoundLabel,
@@ -104,6 +105,10 @@ describe('slideActivityLabels (Amendment A.5)', () => {
     expect(toolStartedLabel('google_search', { query: 'react slides' })).toBe(
       'Searching: react slides',
     );
+    expect(toolStartedLabel('web_fetch', { url: 'https://example.com/docs' })).toBe(
+      'Fetching: example.com',
+    );
+    expect(webFetchLabel('https://react.dev/learn')).toBe('Fetching: react.dev');
   });
 
   it('tool_finished failed prefix', () => {
