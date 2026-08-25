@@ -179,8 +179,13 @@ function runRequest<T>(
  * their own store so they can be loaded/cleared independently. The project's
  * `updatedAt` is refreshed to `now` unless already newer (keeps the list sorted).
  */
-export async function saveSlideProject(project: SlideProject): Promise<void> {
-  const metadata = toMetadata({ ...project, updatedAt: Date.now() });
+export async function saveSlideProject(
+  project: SlideProject,
+  options?: { preserveUpdatedAt?: boolean },
+): Promise<void> {
+  const metadata = toMetadata(
+    options?.preserveUpdatedAt ? project : { ...project, updatedAt: Date.now() },
+  );
 
   await runRequest<void>(
     STORE_PROJECTS,
@@ -482,4 +487,40 @@ export async function clearAllSlideProjects(): Promise<void> {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+}
+
+/** All slide projects plus last-active id, for backup export. */
+export async function getAllSlideProjectsForBackup(): Promise<{
+  projects: FullSlideProject[];
+  lastActiveProjectId: string | null;
+}> {
+  const [listed, lastActiveProjectId] = await Promise.all([
+    listSlideProjects(),
+    getLastActiveSlideProject(),
+  ]);
+  const projects: FullSlideProject[] = [];
+  for (const meta of listed) {
+    const full = await getSlideProject(meta.id);
+    if (full) projects.push(full);
+  }
+  return { projects, lastActiveProjectId };
+}
+
+/**
+ * Replace the slide database with a backup snapshot.
+ * Restores original `updatedAt` values so list order matches the export.
+ */
+export async function importSlideProjects(
+  projects: FullSlideProject[],
+  lastActiveProjectId: string | null,
+): Promise<void> {
+  await clearAllSlideProjects();
+  for (const project of projects) {
+    await saveSlideProject(project, { preserveUpdatedAt: true });
+    await saveSlideActivity(project.id, project.activity ?? []);
+    await saveSlideRounds(project.id, project.rounds ?? [], project.roundIndex ?? -1);
+  }
+  if (lastActiveProjectId && projects.some((p) => p.id === lastActiveProjectId)) {
+    await setLastActiveSlideProject(lastActiveProjectId);
+  }
 }
