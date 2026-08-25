@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import type { ToolMessageData } from '../ToolMessage.tsx';
 import {
-  coalesceToolActivities,
+  activityDurationMs,
+  formatToolActivity,
   formatWorkedFor,
   formatWorkingFor,
   type ToolActivityIcon,
@@ -21,8 +22,8 @@ import { ToolCallDetailSheet } from './ToolCallDetailSheet.tsx';
 export interface AgentActivityBlockProps {
   tools: ToolMessageData[];
   isActive: boolean;
-  durationMs?: number;
   startedAt?: number;
+  endedAt?: number;
 }
 
 function ActivityIcon({ icon, running }: { icon: ToolActivityIcon; running: boolean }) {
@@ -53,14 +54,14 @@ function TimelineBody({
   tools: ToolMessageData[];
   onSelect: (index: number) => void;
 }) {
-  const rows = coalesceToolActivities(tools);
   return (
     <ul className="flex flex-col gap-3 m-0 p-0 list-none">
-      {rows.map((row, idx) => {
-        const last = idx === rows.length - 1;
+      {tools.map((tool, idx) => {
+        const row = formatToolActivity(tool);
+        const last = idx === tools.length - 1;
         const running = row.status === 'running';
         return (
-          <li key={row.key} className="relative flex gap-2.5 min-w-0">
+          <li key={tool.toolCallId || `tool-${idx}`} className="relative flex gap-2.5 min-w-0">
             {!last && (
               <span
                 className="absolute left-3 top-6 -bottom-3 w-px -translate-x-1/2 bg-border/80"
@@ -94,8 +95,8 @@ function TimelineBody({
 export function AgentActivityBlock({
   tools,
   isActive,
-  durationMs,
   startedAt,
+  endedAt,
 }: AgentActivityBlockProps) {
   const [expanded, setExpanded] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -109,10 +110,9 @@ export function AgentActivityBlock({
 
   if (tools.length === 0) return null;
 
-  const liveMs =
-    isActive && startedAt
-      ? Math.max(0, now - startedAt)
-      : durationMs;
+  const durationMs = isActive && startedAt != null
+    ? Math.max(0, now - startedAt)
+    : activityDurationMs(startedAt, endedAt);
 
   return (
     <div className="w-full max-w-full self-start mb-3 px-1">
@@ -143,7 +143,7 @@ export function AgentActivityBlock({
               <Loader2Icon size={14} className="text-muted-foreground animate-spin" />
             </div>
             <div className="min-w-0 flex-1 flex items-center">
-              <span className="text-sm text-muted-foreground">{formatWorkingFor(liveMs ?? 0)}</span>
+              <span className="text-sm text-muted-foreground">{formatWorkingFor(durationMs ?? 0)}</span>
             </div>
           </div>
         </div>

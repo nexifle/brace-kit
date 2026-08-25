@@ -19,81 +19,79 @@ export function toToolData(msg: Message): ToolMessageData {
   };
 }
 
-export type ProcessedChatItem = {
-  type: 'message' | 'tool-group';
-  message?: Message;
-  index?: number;
-  tools?: ToolMessageData[];
-  firstToolIndex?: number;
-  startedAt?: number;
-  durationMs?: number;
-};
+export type ProcessedChatItem =
+  | { type: 'message'; message: Message; index: number }
+  | {
+      type: 'tool-group';
+      tools: ToolMessageData[];
+      firstToolIndex: number;
+      startedAt?: number;
+      endedAt?: number;
+    };
 
-export function groupMessagesForDisplay(
-  messages: Message[],
-  timeline: boolean,
-): ProcessedChatItem[] {
+function groupTimeline(messages: Message[]): ProcessedChatItem[] {
   const result: ProcessedChatItem[] = [];
   let i = 0;
   while (i < messages.length) {
     const msg = messages[i];
-    const canStartGroup =
-      msg.role === 'tool' ||
-      (timeline && isEmptyAssistant(msg) && messages[i + 1]?.role === 'tool');
 
-    if (canStartGroup) {
-      const toolGroup: ToolMessageData[] = [];
-      let firstToolIndex: number | undefined;
-      let startedAt: number | undefined;
-      let durationMs: number | undefined;
-      let j = i;
+    if (isEmptyAssistant(msg)) {
+      i++;
+      continue;
+    }
 
-      while (j < messages.length) {
-        const cur = messages[j];
-        if (cur.role === 'tool') {
-          if (firstToolIndex === undefined) firstToolIndex = j;
-          if (cur.createdAt != null) {
-            startedAt = startedAt == null ? cur.createdAt : Math.min(startedAt, cur.createdAt);
-          }
-          if (cur.toolActivityDurationMs != null && durationMs == null) {
-            durationMs = cur.toolActivityDurationMs;
-          }
-          toolGroup.push(toToolData(cur));
-          j++;
-          continue;
-        }
-        if (timeline && isEmptyAssistant(cur)) {
-          j++;
-          continue;
-        }
-        break;
-      }
-
-      if (timeline) {
-        if (toolGroup.length > 0) {
-          if (durationMs == null && startedAt != null) {
-            const lastTool = [...messages.slice(i, j)].reverse().find((m) => m.role === 'tool');
-            if (lastTool?.createdAt != null && lastTool.createdAt > startedAt) {
-              durationMs = lastTool.createdAt - startedAt;
-            }
-          }
-          result.push({
-            type: 'tool-group',
-            tools: toolGroup,
-            firstToolIndex,
-            startedAt,
-            durationMs,
-          });
-        }
-        i = j;
-      } else {
-        result.push({ type: 'message', message: msg, index: i });
-        i++;
-      }
-    } else {
+    if (msg.role !== 'tool') {
       result.push({ type: 'message', message: msg, index: i });
       i++;
+      continue;
     }
+
+    const tools: ToolMessageData[] = [];
+    let firstToolIndex = i;
+    let startedAt: number | undefined;
+    let j = i;
+
+    while (j < messages.length) {
+      const cur = messages[j];
+      if (cur.role === 'tool') {
+        if (tools.length === 0) firstToolIndex = j;
+        if (cur.createdAt != null) {
+          startedAt = startedAt == null ? cur.createdAt : Math.min(startedAt, cur.createdAt);
+        }
+        tools.push(toToolData(cur));
+        j++;
+        continue;
+      }
+      if (isEmptyAssistant(cur)) {
+        j++;
+        continue;
+      }
+      break;
+    }
+
+    let endedAt: number | undefined;
+    const following = messages[j];
+    if (following && !isEmptyAssistant(following) && following.createdAt != null) {
+      endedAt = following.createdAt;
+    }
+
+    if (tools.length > 0) {
+      result.push({ type: 'tool-group', tools, firstToolIndex, startedAt, endedAt });
+    }
+    i = j;
   }
   return result;
+}
+
+function groupDetailed(messages: Message[]): ProcessedChatItem[] {
+  const result: ProcessedChatItem[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (isEmptyAssistant(messages[i])) continue;
+    result.push({ type: 'message', message: messages[i], index: i });
+  }
+  return result;
+}
+
+export function groupMessagesForDisplay(messages: Message[], timeline: boolean): ProcessedChatItem[] {
+  return timeline ? groupTimeline(messages) : groupDetailed(messages);
 }

@@ -10,15 +10,6 @@ export interface FormattedToolActivity {
   status: ToolActivityStatus;
 }
 
-export interface ActivityTimelineRow {
-  key: string;
-  icon: ToolActivityIcon;
-  title: string;
-  detail?: string;
-  status: ToolActivityStatus;
-  tool: ToolMessageData;
-}
-
 const SEARCH_TOOLS = new Set(['web_search', 'google_search']);
 const OPEN_NAME = /^(open_|browse_|fetch_url|open_page|browser_navigate)/i;
 const FILE_NAME = /^(read_|write_|list_|delete_|apply_patch|edit_)/i;
@@ -134,19 +125,9 @@ export function formatToolActivity(tool: ToolMessageData): FormattedToolActivity
   };
 }
 
-/** One timeline row per tool call (no nested search groups). */
-export function coalesceToolActivities(tools: ToolMessageData[]): ActivityTimelineRow[] {
-  return tools.map((tool, i) => {
-    const formatted = formatToolActivity(tool);
-    return {
-      key: tool.toolCallId || `tool-${i}`,
-      icon: formatted.icon,
-      title: formatted.title,
-      detail: formatted.detail,
-      status: formatted.status,
-      tool,
-    };
-  });
+export function activityDurationMs(startedAt?: number, endedAt?: number): number | undefined {
+  if (startedAt == null || endedAt == null || endedAt <= startedAt) return undefined;
+  return endedAt - startedAt;
 }
 
 export function formatWorkedFor(ms: number): string {

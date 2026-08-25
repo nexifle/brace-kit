@@ -37,6 +37,7 @@ import { selectMemoriesForConversation } from '../utils/memorySampler.ts';
 import { encryptApiKey, decryptApiKey, isEncrypted } from '../utils/keyEncryption.ts';
 import { getGrokAuthStatus } from '../utils/grokOAuth.ts';
 import { migrateCustomProvider } from '../providers/modelSpecs.ts';
+import { DEFAULT_PREFERENCES, migratePreferences } from '../utils/migratePreferences.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -181,12 +182,7 @@ export const useStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
 
   // Preferences
-  preferences: {
-    toolMessageDisplay: 'compact',
-    startOnWelcome: false,
-    slideCreatorTabSuggestionDismissed: false,
-    toolTimelineDefaultApplied: true,
-  },
+  preferences: { ...DEFAULT_PREFERENCES },
 
   // Text Selection UI Settings
   textSelectionEnabled: true,
@@ -957,19 +953,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (data.theme) {
         updates.theme = data.theme;
       }
-      let persistTimelineDefault = false;
+      let persistPreferences = false;
       if (data.preferences) {
-        const loaded = data.preferences;
-        const alreadyMigrated = loaded.toolTimelineDefaultApplied === true;
-        persistTimelineDefault = !alreadyMigrated;
-        updates.preferences = {
-          ...get().preferences,
-          ...loaded,
-          toolMessageDisplay: alreadyMigrated
-            ? (loaded.toolMessageDisplay ?? 'compact')
-            : 'compact',
-          toolTimelineDefaultApplied: true,
-        };
+        const migrated = migratePreferences(data.preferences);
+        updates.preferences = migrated.preferences;
+        persistPreferences = migrated.dirty;
       }
       if (data.railCollapsed !== undefined) {
         updates.railCollapsed = data.railCollapsed;
@@ -1068,7 +1056,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       set(updates);
-      if (persistTimelineDefault) {
+      if (persistPreferences) {
         get().saveToStorage();
       }
       // Tandai bahwa storage sudah selesai dimuat — trigger recovery di useStreaming

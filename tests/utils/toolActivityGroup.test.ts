@@ -12,30 +12,36 @@ describe('groupMessagesForDisplay', () => {
       msg({ role: 'user', content: 'hi' }),
       msg({ role: 'tool', name: 'web_search', content: '⏳ Calling...', toolCallId: 'a', createdAt: 1 }),
       msg({ role: 'tool', name: 'web_search', content: 'hits', toolCallId: 'b', createdAt: 2 }),
-      msg({ role: 'assistant', content: 'done' }),
+      msg({ role: 'assistant', content: 'done', createdAt: 50 }),
     ];
     const items = groupMessagesForDisplay(messages, true);
     expect(items.map((i) => i.type)).toEqual(['message', 'tool-group', 'message']);
+    if (items[1].type !== 'tool-group') throw new Error('expected tool-group');
     expect(items[1].tools).toHaveLength(2);
     expect(items[1].startedAt).toBe(1);
+    expect(items[1].endedAt).toBe(50);
   });
 
-  it('joins tools split by empty assistant messages', () => {
+  it('joins tools split by empty assistant messages and omits the empty assistant', () => {
     const messages: Message[] = [
       msg({ role: 'tool', name: 'web_search', content: 'a', toolCallId: '1', createdAt: 10 }),
       msg({ role: 'assistant', content: '', toolCalls: [] }),
       msg({ role: 'tool', name: 'open_page', content: 'b', toolCallId: '2', createdAt: 20 }),
+      msg({ role: 'assistant', content: 'answer', createdAt: 40 }),
     ];
     const items = groupMessagesForDisplay(messages, true);
-    expect(items).toHaveLength(1);
+    expect(items).toHaveLength(2);
     expect(items[0].type).toBe('tool-group');
+    if (items[0].type !== 'tool-group') throw new Error('expected tool-group');
     expect(items[0].tools).toHaveLength(2);
-    expect(items[0].durationMs).toBe(10);
+    expect(items[0].endedAt).toBe(40);
+    expect(items[1].type).toBe('message');
   });
 
-  it('does not group in detailed mode', () => {
+  it('does not group in detailed mode and skips empty assistants', () => {
     const messages: Message[] = [
       msg({ role: 'tool', name: 'web_search', content: 'a', toolCallId: '1' }),
+      msg({ role: 'assistant', content: '' }),
       msg({ role: 'tool', name: 'open_page', content: 'b', toolCallId: '2' }),
     ];
     const items = groupMessagesForDisplay(messages, false);
@@ -43,17 +49,14 @@ describe('groupMessagesForDisplay', () => {
     expect(items.every((i) => i.type === 'message')).toBe(true);
   });
 
-  it('uses stored duration on first tool', () => {
+  it('leaves endedAt unset while no following assistant exists', () => {
     const messages: Message[] = [
-      msg({
-        role: 'tool',
-        name: 'web_search',
-        content: 'a',
-        createdAt: 1,
-        toolActivityDurationMs: 17000,
-      }),
+      msg({ role: 'tool', name: 'web_search', content: 'a', createdAt: 1 }),
     ];
     const items = groupMessagesForDisplay(messages, true);
-    expect(items[0].durationMs).toBe(17000);
+    expect(items[0].type).toBe('tool-group');
+    if (items[0].type !== 'tool-group') throw new Error('expected tool-group');
+    expect(items[0].startedAt).toBe(1);
+    expect(items[0].endedAt).toBeUndefined();
   });
 });

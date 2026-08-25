@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { ToolMessageData } from '../../src/components/ToolMessage.tsx';
 import {
-  coalesceToolActivities,
+  activityDurationMs,
   formatToolActivity,
   formatWorkedFor,
   formatWorkingFor,
@@ -58,23 +58,15 @@ describe('toolActivityLabel', () => {
     expect(f.detail).toBe('/tmp/a.ts');
   });
 
-  it('keeps one row per tool without nested search groups', () => {
-    const rows = coalesceToolActivities([
-      tool({ name: 'web_search', toolCallId: '1', toolArguments: { query: 'a' } }),
-      tool({ name: 'google_search', toolCallId: '2', toolArguments: { query: 'b' } }),
-      tool({ name: 'read_file', toolCallId: '3', toolArguments: { path: 'x' } }),
-    ]);
-    expect(rows).toHaveLength(3);
-    expect(rows[0].title).toBe('Ran 1 search');
-    expect(rows[0].detail).toBe('a');
-    expect(rows[1].title).toBe('Ran 1 search');
-    expect(rows[2].title).toBe('Read file');
-    expect(rows[0].tool.toolCallId).toBe('1');
-  });
-
   it('formats duration copy', () => {
     expect(formatWorkedFor(17000)).toBe('Worked for 17 seconds');
     expect(formatWorkedFor(400)).toBe('Worked for 1 second');
     expect(formatWorkingFor(17000)).toBe('Working for 17s');
+  });
+
+  it('derives duration only when endedAt is after startedAt', () => {
+    expect(activityDurationMs(10, 40)).toBe(30);
+    expect(activityDurationMs(10, 10)).toBeUndefined();
+    expect(activityDurationMs(10)).toBeUndefined();
   });
 });

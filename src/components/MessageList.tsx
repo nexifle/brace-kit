@@ -181,28 +181,6 @@ export function MessageList() {
     [messages, preferences.toolMessageDisplay],
   );
 
-  const wasStreamingRef = useRef(false);
-
-  useEffect(() => {
-    if (isStreaming) {
-      wasStreamingRef.current = true;
-      return;
-    }
-    if (!wasStreamingRef.current) return;
-    wasStreamingRef.current = false;
-
-    const groups = processedMessages.filter((p) => p.type === 'tool-group');
-    const last = groups[groups.length - 1];
-    if (!last || last.firstToolIndex == null || last.startedAt == null) return;
-    const first = messages[last.firstToolIndex];
-    if (!first || first.role !== 'tool' || first.toolActivityDurationMs != null) return;
-
-    const durationMs = Math.max(0, Date.now() - last.startedAt);
-    const updated = [...messages];
-    updated[last.firstToolIndex] = { ...first, toolActivityDurationMs: durationMs };
-    useStore.getState().setMessages(updated);
-  }, [isStreaming, processedMessages, messages]);
-
   let lastToolGroupIndex = -1;
   for (let i = processedMessages.length - 1; i >= 0; i--) {
     if (processedMessages[i].type === 'tool-group') {
@@ -219,60 +197,44 @@ export function MessageList() {
     >
       <div className={`mx-auto w-full flex flex-col gap-2 ${mode === 'tab' ? 'max-w-[900px]' : ''}`}>
         {processedMessages.map((item, idx) => {
-        if (item.type === 'tool-group' && item.tools) {
+        if (item.type === 'tool-group') {
           const isLastGroup = idx === lastToolGroupIndex;
           return (
             <AgentActivityBlock
-              key={`tool-group-${item.firstToolIndex ?? idx}`}
+              key={`tool-group-${item.firstToolIndex}`}
               tools={item.tools}
               isActive={Boolean(isStreaming && isLastGroup)}
-              durationMs={item.durationMs}
               startedAt={item.startedAt}
+              endedAt={item.endedAt}
             />
           );
         }
 
-        if (item.message) {
-          const msg = item.message;
-
-          // Hide empty assistant messages (e.g., those that only carry tool calls or are residues)
-          if (msg.role === 'assistant') {
-            const hasContent = msg.content || msg.displayContent || msg.reasoningContent;
-            const hasAssets = msg.generatedImages?.length || msg.attachments?.length || msg.summary || msg.groundingMetadata;
-
-            if (!hasContent && !hasAssets) {
-              return null;
-            }
-          }
-
-          // For tool messages in detailed mode
-          if (msg.role === 'tool') {
-            return (
-              <ToolMessage
-                key={item.index}
-                name={msg.name || 'unknown'}
-                content={msg.content}
-                toolCallId={msg.toolCallId}
-                toolArguments={msg.toolArguments}
-                isCachedResult={msg.isCachedResult}
-                mode="detailed"
-              />
-            );
-          }
-
+        const msg = item.message;
+        if (msg.role === 'tool') {
           return (
-            <MessageBubble
+            <ToolMessage
               key={item.index}
-              message={msg}
-              messageIndex={item.index ?? idx}
-              onBranch={branchFrom}
-              onRegenerate={regenerateFrom}
-              onEdit={editMessage}
+              name={msg.name || 'unknown'}
+              content={msg.content}
+              toolCallId={msg.toolCallId}
+              toolArguments={msg.toolArguments}
+              isCachedResult={msg.isCachedResult}
+              mode="detailed"
             />
           );
         }
 
-        return null;
+        return (
+          <MessageBubble
+            key={item.index}
+            message={msg}
+            messageIndex={item.index}
+            onBranch={branchFrom}
+            onRegenerate={regenerateFrom}
+            onEdit={editMessage}
+          />
+        );
       })}
         {isStreaming &&
           (streamingContent ||
