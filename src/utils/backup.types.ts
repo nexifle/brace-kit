@@ -102,6 +102,8 @@ export interface ApiKeyBundle {
   customProviders?: Array<{ id: string; apiKey?: string }>;
   /** Google Search API key */
   googleSearchApiKey?: string;
+  /** Plaintext JSON of Grok OAuth tokens (device-re-encrypted on restore) */
+  grokOAuthTokens?: string;
   /** Keys that failed to decrypt (for UI warning) */
   _failedKeys?: string[];
 }

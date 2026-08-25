@@ -17,27 +17,45 @@ const ENCRYPTED_PREFIX = 'enc:';
 /** Mutex for key creation to prevent race conditions */
 let keyCreationPromise: Promise<string> | null = null;
 
+async function withDeviceKeyLock<T>(fn: () => Promise<T>): Promise<T> {
+  const request = globalThis.navigator?.locks?.request?.bind(globalThis.navigator.locks);
+  if (request) {
+    return request(ENCRYPTION_KEY_NAME, fn);
+  }
+  return fn();
+}
+
 /**
  * Get or create the device-bound encryption key
  * Uses a random 32-byte key stored in chrome.storage.local
- * Thread-safe: concurrent calls will wait for the same key creation
+ * Thread-safe across the service worker and UI via Web Locks + re-read.
  */
 async function getOrCreateEncryptionKey(): Promise<string> {
-  const data = await chrome.storage.local.get(ENCRYPTION_KEY_NAME);
+  if (keyCreationPromise) return keyCreationPromise;
 
-  if (data[ENCRYPTION_KEY_NAME]) {
-    return data[ENCRYPTION_KEY_NAME] as string;
-  }
+  keyCreationPromise = withDeviceKeyLock(async () => {
+    const existing = await chrome.storage.local.get(ENCRYPTION_KEY_NAME);
+    if (typeof existing[ENCRYPTION_KEY_NAME] === 'string' && existing[ENCRYPTION_KEY_NAME]) {
+      return existing[ENCRYPTION_KEY_NAME] as string;
+    }
 
-  // Use promise to ensure only one key creation happens
-  if (!keyCreationPromise) {
-    keyCreationPromise = (async () => {
-      const keyBytes = crypto.getRandomValues(new Uint8Array(32));
-      const key = btoa(String.fromCharCode(...keyBytes));
-      await chrome.storage.local.set({ [ENCRYPTION_KEY_NAME]: key });
-      return key;
-    })();
-  }
+    const keyBytes = crypto.getRandomValues(new Uint8Array(32));
+    const key = btoa(String.fromCharCode(...keyBytes));
+
+    // Another context may have won while we generated a candidate — never overwrite.
+    const raced = await chrome.storage.local.get(ENCRYPTION_KEY_NAME);
+    if (typeof raced[ENCRYPTION_KEY_NAME] === 'string' && raced[ENCRYPTION_KEY_NAME]) {
+      return raced[ENCRYPTION_KEY_NAME] as string;
+    }
+
+    await chrome.storage.local.set({ [ENCRYPTION_KEY_NAME]: key });
+    const winner = await chrome.storage.local.get(ENCRYPTION_KEY_NAME);
+    return (typeof winner[ENCRYPTION_KEY_NAME] === 'string' && winner[ENCRYPTION_KEY_NAME])
+      ? (winner[ENCRYPTION_KEY_NAME] as string)
+      : key;
+  }).finally(() => {
+    keyCreationPromise = null;
+  });
 
   return keyCreationPromise;
 }
@@ -106,7 +124,7 @@ export async function decryptApiKey(ciphertext: string | undefined | null): Prom
     const encrypted = ciphertext.slice(ENCRYPTED_PREFIX.length);
     return await decryptData(encrypted, key);
   } catch (e) {
-    console.error('[KeyEncryption] Decryption failed:', e);
+    console.warn('[KeyEncryption] Stale ciphertext; treating as empty:', e);
     return '';
   }
 }

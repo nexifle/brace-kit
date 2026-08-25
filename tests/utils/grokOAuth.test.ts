@@ -309,6 +309,16 @@ describe('Grok OAuth', () => {
   });
 
   describe('storage round-trip', () => {
+    it('should drop unreadable encrypted tokens and report disconnected', async () => {
+      await chrome.storage.local.set({
+        grokOAuthTokens: 'enc:' + 'A'.repeat(80),
+      });
+      expect(await loadTokens()).toBeNull();
+      expect(await getGrokAuthStatus()).toEqual({ connected: false, needsReauth: false });
+      const stored = await chrome.storage.local.get('grokOAuthTokens');
+      expect(stored.grokOAuthTokens).toBeUndefined();
+    });
+
     it('should encrypt stored tokens and decrypt them back', async () => {
       await saveTokens({
         accessToken: 'ACCESS-1',

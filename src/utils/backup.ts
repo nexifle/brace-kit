@@ -43,6 +43,7 @@ import {
   restoreApiKeysToStorage,
   hasAnyKeys,
 } from './backupApiKeys.ts';
+import { GROK_TOKENS_STORAGE_KEY } from './grokOAuth.ts';
 
 // Re-export types
 export type {
@@ -58,6 +59,19 @@ function base64ToUint8(base64: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** Drop the local device key so a backup never overwrites the destination's key. */
+function omitDeviceEncryptionKey(storage: Record<string, unknown>): Record<string, unknown> {
+  const { _deviceEncryptionKey: _deviceKey, ...rest } = storage;
+  return rest;
+}
+
+/** Drop device-bound secrets from a storage snapshot. Grok tokens restore via the API-key bundle. */
+function omitDeviceBoundSecrets(storage: Record<string, unknown>): Record<string, unknown> {
+  const rest = omitDeviceEncryptionKey(storage);
+  const { [GROK_TOKENS_STORAGE_KEY]: _grokTokens, ...withoutGrok } = rest;
+  return withoutGrok;
 }
 
 // ── Inspect ──────────────────────────────────────────────────────────────
@@ -155,7 +169,7 @@ export async function buildChunkedBackupPayload(options: ExportOptions): Promise
   // 2a. Storage chunk (settings — typically small)
   onProgress?.('storage', ++step, totalSteps);
   {
-    const storageJson = JSON.stringify(storage);
+    const storageJson = JSON.stringify(omitDeviceBoundSecrets(storage));
     const encrypted = key
       ? await compressAndEncrypt(storageJson, key)
       : { iv: '', data: storageJson, compressed: false as const };
@@ -413,7 +427,7 @@ async function importChunked(payload: ChunkedBackupPayload, options: ImportOptio
   }
 
   // ── Handle API keys from v2-style separate field (if present) ───────
-  let finalStorage = { ...storageData };
+  let finalStorage = omitDeviceBoundSecrets({ ...storageData });
   if (payload.hasApiKeys && !apiKeyBundle && payload.encrypted) {
     // This shouldn't happen for v3 chunked, but handle gracefully
     throw new Error('Password required to restore API keys from this backup.');
@@ -427,7 +441,7 @@ async function importChunked(payload: ChunkedBackupPayload, options: ImportOptio
   const existingData = await chrome.storage.local.get('_deviceEncryptionKey');
   await chrome.storage.local.clear();
   await chrome.storage.local.set({
-    ...finalStorage,
+    ...omitDeviceEncryptionKey(finalStorage),
     _deviceEncryptionKey: existingData._deviceEncryptionKey,
   });
 
@@ -501,7 +515,7 @@ async function importV2(payload: BackupPayload, options: ImportOptions): Promise
   }
 
   // Handle API keys restoration
-  let finalStorage = { ...backupData.storage };
+  let finalStorage = omitDeviceBoundSecrets({ ...backupData.storage });
   if (payload.hasApiKeys && payload.apiKeys) {
     if (!options.password?.trim()) {
       throw new Error('Password required to restore API keys from this backup.');
@@ -524,7 +538,7 @@ async function importV1(backupData: BackupData): Promise<void> {
   if (!backupData.version || !backupData.storage) {
     throw new Error('Invalid backup file structure.');
   }
-  await writeToStorage(backupData.storage, backupData);
+  await writeToStorage(omitDeviceBoundSecrets(backupData.storage), backupData);
 }
 
 // ── Shared: Write imported data to storage ───────────────────────────────
@@ -538,7 +552,7 @@ async function writeToStorage(
   const existingData = await chrome.storage.local.get('_deviceEncryptionKey');
   await chrome.storage.local.clear();
   await chrome.storage.local.set({
-    ...storage,
+    ...omitDeviceEncryptionKey(storage),
     _deviceEncryptionKey: existingData._deviceEncryptionKey,
   });
 
