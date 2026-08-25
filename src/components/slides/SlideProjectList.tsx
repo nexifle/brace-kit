@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   Search,
   X,
@@ -96,6 +97,12 @@ export function SlideProjectList({
   const [projects, setProjects] = useState<StoredSlideProject[] | null>(null);
   const [query, setQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const reduceMotion = useReducedMotion();
+  const swipeTransition = reduceMotion
+    ? { duration: 0.12, ease: 'easeOut' as const }
+    : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
+  const slideOut = reduceMotion ? 0 : -14;
+  const slideIn = reduceMotion ? 0 : 14;
 
   const load = () => {
     setProjects(null);
@@ -116,24 +123,26 @@ export function SlideProjectList({
   const filtered = (projects ?? []).filter((p) => (q ? p.title.toLowerCase().includes(q) : true));
 
   const reopen = (id: string) => {
+    setConfirmDelete(null);
     void restoreLastActiveProject(id);
     onClose();
   };
 
-  const confirm = confirmDelete
-    ? projects?.find((p) => p.id === confirmDelete) ?? null
-    : null;
-
-  const remove = (id: string) => {
-    if (confirmDelete !== id) {
-      setConfirmDelete(id);
-      return;
-    }
+  const actuallyDelete = (id: string) => {
     setConfirmDelete(null);
     void deleteProject(id).then(() => {
       setProjects((prev) => prev?.filter((p) => p.id !== id) ?? []);
     });
   };
+
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmDelete(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmDelete]);
 
   const grouped = filtered.reduce<{ label: string; items: StoredSlideProject[] }[]>(
     (acc, p) => {
@@ -234,91 +243,143 @@ export function SlideProjectList({
                     {group.items.map((p) => {
                       const active = p.id === activeProjectId;
                       const preset = p.canvas ? SLIDE_CANVAS_PRESETS[p.canvas] : null;
+                      const isPendingDelete = confirmDelete === p.id;
 
                       return (
                         <div
                           key={p.id}
                           role="button"
                           tabIndex={0}
-                          onClick={() => reopen(p.id)}
+                          onClick={() => {
+                            if (isPendingDelete) {
+                              setConfirmDelete(null);
+                              return;
+                            }
+                            reopen(p.id);
+                          }}
                           onKeyDown={(e) => {
+                            if (e.key === 'Escape' && isPendingDelete) {
+                              e.preventDefault();
+                              setConfirmDelete(null);
+                              return;
+                            }
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
+                              if (isPendingDelete) {
+                                setConfirmDelete(null);
+                                return;
+                              }
                               reopen(p.id);
                             }
                           }}
-                          title="Open this deck"
+                          title={isPendingDelete ? undefined : 'Open this deck'}
                           className={cn(
-                            'group relative cursor-pointer rounded-lg border transition-colors',
+                            'group relative grid items-center overflow-hidden rounded-lg border cursor-pointer transition-colors',
                             active
                               ? 'border-primary/30 bg-primary/5'
                               : 'border-transparent hover:border-border hover:bg-muted/40'
                           )}
                         >
-                          {/* Delete affordance on hover */}
-                          {!active && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                remove(p.id);
-                              }}
-                              className={cn(
-                                'absolute right-1.5 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/70 transition-all',
-                                confirmDelete === p.id
-                                  ? 'opacity-100 bg-destructive/10 text-destructive'
-                                  : 'opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-destructive'
-                              )}
-                              title={confirmDelete === p.id ? 'Click again to confirm' : 'Delete deck'}
-                              aria-label={
-                                confirmDelete === p.id
-                                  ? `Confirm delete ${p.title}`
-                                  : `Delete ${p.title}`
-                              }
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-
-                          <div className="flex items-center gap-2.5 px-2.5 py-2 pr-8">
-                            <span
-                              className={cn(
-                                'flex items-center justify-center w-8 h-8 shrink-0 rounded-lg border',
-                                active
-                                  ? 'bg-primary/10 text-primary border-primary/20'
-                                  : 'bg-muted/50 text-muted-foreground border-border/70'
-                              )}
-                            >
-                              <Presentation size={15} />
-                            </span>
-
-                            <div className="min-w-0 flex-1">
-                              <p
-                                className={cn(
-                                  'truncate text-[13px] leading-snug',
-                                  active ? 'text-primary font-semibold' : 'text-foreground font-medium'
-                                )}
+                          <AnimatePresence initial={false}>
+                            {isPendingDelete ? (
+                              <motion.div
+                                key="confirm"
+                                className="col-start-1 row-start-1 flex items-center gap-1.5 w-full min-w-0 h-12 px-2.5"
+                                initial={{ x: slideIn, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: slideIn, opacity: 0 }}
+                                transition={swipeTransition}
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                {p.title || 'Untitled deck'}
-                              </p>
-                              <div className="flex items-center gap-1.5 pt-0.5 text-2xs text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Clock size={11} />
-                                  {timeAgo(p.updatedAt)}
+                                <span className="text-sm text-muted-foreground truncate flex-1 min-w-0 leading-5">
+                                  Delete this deck?
                                 </span>
-                                <span className="text-muted-foreground/30">·</span>
-                                <span className="flex items-center gap-1 text-muted-foreground/80">
-                                  <MetaIcon phase={p.phase} />
-                                  {preset?.label ?? 'Size unset'}
+                                <button
+                                  type="button"
+                                  className="h-5 px-1.5 shrink-0 text-xs leading-5 text-muted-foreground hover:text-foreground transition-colors"
+                                  aria-label="Cancel delete"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDelete(null);
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  className="h-5 px-2 shrink-0 text-xs leading-5 font-medium bg-destructive text-destructive-foreground hover:brightness-110 transition-all"
+                                  aria-label={`Confirm delete ${p.title || 'Untitled deck'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    actuallyDelete(p.id);
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                key="content"
+                                className="col-start-1 row-start-1 relative flex items-center gap-2.5 w-full min-w-0 h-12 px-2.5 pr-8"
+                                initial={{ x: slideOut, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: slideOut, opacity: 0 }}
+                                transition={swipeTransition}
+                              >
+                                {!active && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setConfirmDelete(p.id);
+                                    }}
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-destructive"
+                                    title="Delete deck"
+                                    aria-label={`Delete ${p.title || 'Untitled deck'}`}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
 
+                                <span
+                                  className={cn(
+                                    'flex items-center justify-center w-8 h-8 shrink-0 rounded-lg border',
+                                    active
+                                      ? 'bg-primary/10 text-primary border-primary/20'
+                                      : 'bg-muted/50 text-muted-foreground border-border/70'
+                                  )}
+                                >
+                                  <Presentation size={15} />
                                 </span>
-                              </div>
-                            </div>
 
-                            <div className="shrink-0">
-                              <PhaseBadge phase={p.phase} />
-                            </div>
-                          </div>
+                                <div className="min-w-0 flex-1">
+                                  <p
+                                    className={cn(
+                                      'truncate text-[13px] leading-snug',
+                                      active ? 'text-primary font-semibold' : 'text-foreground font-medium'
+                                    )}
+                                  >
+                                    {p.title || 'Untitled deck'}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 pt-0.5 text-2xs text-muted-foreground">
+                                    <span className="flex items-center gap-1">
+                                      <Clock size={11} />
+                                      {timeAgo(p.updatedAt)}
+                                    </span>
+                                    <span className="text-muted-foreground/30">·</span>
+                                    <span className="flex items-center gap-1 text-muted-foreground/80">
+                                      <MetaIcon phase={p.phase} />
+                                      {preset?.label ?? 'Size unset'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0">
+                                  <PhaseBadge phase={p.phase} />
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       );
                     })}
@@ -328,34 +389,6 @@ export function SlideProjectList({
             )}
           </div>
         </>
-      )}
-
-      {/* Confirm-delete banner */}
-      {confirm && (
-        <div className="flex items-center gap-2.5 px-3 py-2.5 border-t border-border/70 bg-muted/30 animate-in fade-in slide-in-from-bottom-1 duration-200 shrink-0">
-          <Trash2 size={14} className="text-destructive shrink-0" />
-          <p className="min-w-0 flex-1 truncate text-2xs text-muted-foreground">
-            Delete “{confirm.title || 'Untitled deck'}”? This removes its transcript, files, and
-            preview — it cannot be undone.
-          </p>
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(null)}
-            className="px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void deleteProject(confirmDelete!).then(() => {
-              setConfirmDelete(null);
-              setProjects((prev) => prev?.filter((p) => p.id !== confirmDelete!) ?? []);
-            })}
-            className="px-2 h-7 rounded-md text-2xs font-semibold bg-destructive text-destructive-foreground hover:brightness-110 transition-all"
-          >
-            Delete
-          </button>
-        </div>
       )}
 
       {/* Footer action */}
