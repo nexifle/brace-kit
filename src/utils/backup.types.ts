@@ -35,7 +35,14 @@ export interface BackupPayload {
 // ── v3 Chunked Types ─────────────────────────────────────────────────────
 
 /** Section types that can appear as a chunk */
-export type ChunkType = 'storage' | 'conversation' | 'conversation_metadata' | 'images' | 'api_keys';
+export type ChunkType =
+  | 'storage'
+  | 'conversation'
+  | 'conversation_metadata'
+  | 'images'
+  | 'api_keys'
+  | 'slide_project'
+  | 'slide_meta';
 
 /** A single encrypted section within a chunked backup */
 export interface BackupChunk {
@@ -50,11 +57,18 @@ export interface BackupChunk {
   compressed?: boolean;
 }
 
+/** Last-active pointer for Slide Creator, stored in a `slide_meta` chunk. */
+export interface SlideBackupMeta {
+  lastActiveProjectId: string | null;
+}
+
 /** Metadata about backup contents, always unencrypted for inspection */
 export interface ChunkedBackupMeta {
   timestamp: number;
   conversationCount: number;
   imageCount: number;
+  /** Present on backups that include Slide Creator (optional for legacy v3 files). */
+  slideProjectCount?: number;
 }
 
 /** v3 chunked backup payload */
@@ -103,7 +117,7 @@ export interface ExportOptions {
 }
 
 /** Phases during export for progress reporting */
-export type ExportPhase = 'storage' | 'conversations' | 'images' | 'metadata' | 'encrypting';
+export type ExportPhase = 'storage' | 'conversations' | 'images' | 'metadata' | 'slides' | 'encrypting';
 
 /** Options for import operation */
 export interface ImportOptions {
@@ -114,7 +128,7 @@ export interface ImportOptions {
 }
 
 /** Phases during import for progress reporting */
-export type ImportPhase = 'reading' | 'decrypting' | 'storage' | 'conversations' | 'images' | 'metadata' | 'api_keys';
+export type ImportPhase = 'reading' | 'decrypting' | 'storage' | 'conversations' | 'images' | 'metadata' | 'slides' | 'api_keys';
 
 /** Result of backup inspection (for UI display) */
 export interface BackupInspection {

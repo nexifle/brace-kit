@@ -34,6 +34,7 @@ const PHASE_LABELS: Record<ExportPhase, string> = {
     conversations: 'Conversations',
     images: 'Images',
     metadata: 'Metadata',
+    slides: 'Slide decks',
     encrypting: 'Finalizing',
 };
 
@@ -44,6 +45,7 @@ const IMPORT_PHASE_LABELS: Record<ImportPhase, string> = {
     conversations: 'Restoring conversations',
     images: 'Restoring images',
     metadata: 'Restoring metadata',
+    slides: 'Restoring slide decks',
     api_keys: 'Restoring API keys',
 };
 
@@ -331,7 +333,7 @@ export function DataSettings() {
                                         )}
                                         {backupInfo.meta && (
                                             <span className="text-sm text-muted-foreground">
-                                                {backupInfo.meta.conversationCount} convs, {backupInfo.meta.imageCount} image batches
+                                                {backupInfo.meta.conversationCount} convs, {backupInfo.meta.imageCount} image batches{backupInfo.meta.slideProjectCount != null ? `, ${backupInfo.meta.slideProjectCount} slide decks` : ''}
                                             </span>
                                         )}
                                     </div>

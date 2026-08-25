@@ -14,6 +14,8 @@ import {
   saveSlideProject,
   saveSlideRounds,
   setLastActiveSlideProject,
+  getAllSlideProjectsForBackup,
+  importSlideProjects,
 } from '../../src/utils/slideDB.ts';
 import type {
   SlideActivityEvent,
@@ -323,5 +325,56 @@ describe('slideDB planTranscript persistence (context continuity)', () => {
     // not leave the stale transcript behind to be rehydrated on reload.
     await saveSlideProject({ ...project('p1'), planTranscript: undefined });
     expect((await getSlideProject('p1'))?.planTranscript).toBeUndefined();
+  });
+});
+
+describe('slideDB backup helpers', () => {
+  test('getAll + import round-trips projects, activity, rounds, last-active, timestamps', async () => {
+    const p = project('p1');
+    await saveSlideProject(p, { preserveUpdatedAt: true });
+    const events: SlideActivityEvent[] = [
+      { id: 'e1', type: 'phase_started', status: 'running', ts: 1, phase: 'plan', label: 'Planning' },
+    ];
+    await saveSlideActivity('p1', events);
+    const rounds: SlideRound[] = [{
+      number: 1,
+      label: 'Built',
+      createdAt: 3000,
+      files: [{ path: '/slides/01.html', content: '<h1>Hi</h1>' }],
+    }];
+    await saveSlideRounds('p1', rounds, 0);
+    await setLastActiveSlideProject('p1');
+
+    const snapshot = await getAllSlideProjectsForBackup();
+    expect(snapshot.lastActiveProjectId).toBe('p1');
+    expect(snapshot.projects).toHaveLength(1);
+    expect(snapshot.projects[0].updatedAt).toBe(2000);
+    expect(snapshot.projects[0].activity).toEqual(events);
+    expect(snapshot.projects[0].rounds).toEqual(rounds);
+    expect(snapshot.projects[0].roundIndex).toBe(0);
+
+    await clearAllSlideProjects();
+    expect(await getSlideProject('p1')).toBeNull();
+
+    await importSlideProjects(snapshot.projects, snapshot.lastActiveProjectId);
+    const restored = await getSlideProject('p1');
+    expect(restored?.title).toBe(p.title);
+    expect(restored?.updatedAt).toBe(2000);
+    expect(restored?.files).toEqual(p.files);
+    expect(restored?.activity).toEqual(events);
+    expect(restored?.rounds).toEqual(rounds);
+    expect(restored?.roundIndex).toBe(0);
+    expect(await getLastActiveSlideProject()).toBe('p1');
+  });
+
+  test('importSlideProjects replaces existing projects', async () => {
+    await saveSlideProject(project('old'));
+    await importSlideProjects(
+      [{ ...project('new'), activity: [], rounds: [], roundIndex: -1 }],
+      'new',
+    );
+    expect(await getSlideProject('old')).toBeNull();
+    expect((await getSlideProject('new'))?.id).toBe('new');
+    expect(await getLastActiveSlideProject()).toBe('new');
   });
 });

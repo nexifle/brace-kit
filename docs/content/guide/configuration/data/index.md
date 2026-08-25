@@ -24,6 +24,7 @@ Download a complete backup of your BraceKit data.
 - **Settings**: All configuration options
 - **Memories**: Stored personalization data
 - **Custom Providers**: Your added providers (configuration only)
+- **Slide Creator**: All decks (files, transcripts, activity, undo history)
 
 ### API Keys (Optional)
 
@@ -113,6 +114,7 @@ The **Danger Zone** section allows you to permanently delete all BraceKit data a
 - All memories and personalization data
 - All MCP server configurations
 - All settings and preferences
+- All Slide Creator decks
 
 ### Resetting
 

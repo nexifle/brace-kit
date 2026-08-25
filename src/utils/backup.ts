@@ -12,6 +12,12 @@ import {
   saveConversationMetadata,
 } from './conversationDB.ts';
 import type { Conversation, Message, StoredImageRecord } from '../types';
+import type { FullSlideProject } from './slideDB.ts';
+import {
+  getAllSlideProjectsForBackup,
+  importSlideProjects,
+  clearAllSlideProjects,
+} from './slideDB.ts';
 import type {
   BackupData,
   BackupPayload,
@@ -20,6 +26,7 @@ import type {
   ExportOptions,
   ImportOptions,
   ApiKeyBundle,
+  SlideBackupMeta,
 } from './backup.types.ts';
 import {
   deriveKey,
@@ -111,15 +118,9 @@ export async function inspectBackup(file: File): Promise<import('./backup.types.
 // ── Export ───────────────────────────────────────────────────────────────
 
 /**
- * Export application data to a chunked backup file (v3).
- * Each section is encrypted independently for memory safety.
- * Falls back to v2 monolithic format when no password is provided and no API keys.
+ * Build a v3 chunked backup payload (no download). Used by export and tests.
  */
-export async function exportData(optionsOrPassword?: string | ExportOptions): Promise<void> {
-  const options: ExportOptions = typeof optionsOrPassword === 'string'
-    ? { password: optionsOrPassword, includeApiKeys: false }
-    : { password: undefined, includeApiKeys: false, ...optionsOrPassword };
-
+export async function buildChunkedBackupPayload(options: ExportOptions): Promise<ChunkedBackupPayload> {
   const { onProgress } = options;
 
   if (options.includeApiKeys && !options.password?.trim()) {
@@ -132,9 +133,11 @@ export async function exportData(optionsOrPassword?: string | ExportOptions): Pr
   const storage = await chrome.storage.local.get(null);
   const allConversations = await _getAllConversationData();
   const conversationMetadata = await getAllConversationMetadata();
+  const slideBackup = await getAllSlideProjectsForBackup();
 
   const totalConvs = allConversations.length;
-  const totalSteps = 2 + totalConvs + 1; // storage + conversations + images/metadata
+  const totalSlides = slideBackup.projects.length;
+  const totalSteps = 2 + totalConvs + 1 + 1; // storage + conversations + images/metadata + slides
   let step = 0;
 
   // ── Phase 1: Derive key (if password provided) ────────────────────────
@@ -198,7 +201,27 @@ export async function exportData(optionsOrPassword?: string | ExportOptions): Pr
     chunks.push({ type: 'conversation_metadata', ...encrypted });
   }
 
-  // 2e. API keys chunk (if requested)
+  // 2e. Slide Creator projects (one chunk per project) + meta
+  onProgress?.('slides', ++step, totalSteps);
+  for (let i = 0; i < slideBackup.projects.length; i++) {
+    const project = slideBackup.projects[i];
+    const projectJson = JSON.stringify(project);
+    const encrypted = key
+      ? await compressAndEncrypt(projectJson, key)
+      : { iv: '', data: projectJson, compressed: false as const };
+    chunks.push({ type: 'slide_project', id: project.id, ...encrypted });
+    (slideBackup.projects as FullSlideProject[])[i] = null as unknown as FullSlideProject;
+  }
+  {
+    const slideMeta: SlideBackupMeta = { lastActiveProjectId: slideBackup.lastActiveProjectId };
+    const metaJson = JSON.stringify(slideMeta);
+    const encrypted = key
+      ? await compressAndEncrypt(metaJson, key)
+      : { iv: '', data: metaJson, compressed: false as const };
+    chunks.push({ type: 'slide_meta', ...encrypted });
+  }
+
+  // 2f. API keys chunk (if requested)
   let encryptedApiKeys: string | undefined;
   if (options.includeApiKeys && options.password) {
     const apiKeysBundle = await extractApiKeys(storage);
@@ -226,9 +249,24 @@ export async function exportData(optionsOrPassword?: string | ExportOptions): Pr
       timestamp: Date.now(),
       conversationCount: totalConvs,
       imageCount: chunks.filter(c => c.type === 'images').length,
+      slideProjectCount: totalSlides,
     },
     chunks,
   };
+
+  return payload;
+}
+
+/**
+ * Export application data to a chunked backup file (v3).
+ * Each section is encrypted independently for memory safety.
+ */
+export async function exportData(optionsOrPassword?: string | ExportOptions): Promise<void> {
+  const options: ExportOptions = typeof optionsOrPassword === 'string'
+    ? { password: optionsOrPassword, includeApiKeys: false }
+    : { password: undefined, includeApiKeys: false, ...optionsOrPassword };
+
+  const payload = await buildChunkedBackupPayload(options);
 
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -312,6 +350,9 @@ async function importChunked(payload: ChunkedBackupPayload, options: ImportOptio
   const allImages: StoredImageRecord[] = [];
   let conversationMetadata: Conversation[] | undefined;
   let apiKeyBundle: ApiKeyBundle | undefined;
+  const slideProjects: FullSlideProject[] = [];
+  let slideMeta: SlideBackupMeta | undefined;
+  let sawSlideChunk = false;
 
   for (const chunk of chunks) {
     processedChunks++;
@@ -351,6 +392,18 @@ async function importChunked(payload: ChunkedBackupPayload, options: ImportOptio
           // the separate encrypted field for backward compat during export
           apiKeyBundle = JSON.parse(decryptedStr) as ApiKeyBundle;
         }
+        break;
+
+      case 'slide_project':
+        onProgress?.('slides', processedChunks, totalChunks);
+        sawSlideChunk = true;
+        slideProjects.push(JSON.parse(decryptedStr) as FullSlideProject);
+        break;
+
+      case 'slide_meta':
+        onProgress?.('slides', processedChunks, totalChunks);
+        sawSlideChunk = true;
+        slideMeta = JSON.parse(decryptedStr) as SlideBackupMeta;
         break;
     }
   }
@@ -412,6 +465,13 @@ async function importChunked(payload: ChunkedBackupPayload, options: ImportOptio
         return saveConversationMetadata(meta);
       }),
     );
+  }
+
+  // Restore Slide Creator only when this backup includes the section.
+  // Legacy v3 files without slide chunks leave the local slide DB untouched.
+  if (sawSlideChunk) {
+    onProgress?.('slides', processedChunks, totalChunks);
+    await importSlideProjects(slideProjects, slideMeta?.lastActiveProjectId ?? null);
   }
 }
 
@@ -533,5 +593,6 @@ export async function resetAllData(): Promise<void> {
     clearAllImages(),
     clearAllConversationMessages(),
     clearAllConversationMetadata(),
+    clearAllSlideProjects(),
   ]);
 }
