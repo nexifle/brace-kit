@@ -3,6 +3,7 @@ import {
   MAX_COMPOSER_IMAGE_SOURCE_BYTES,
   MAX_COMPOSER_TEXT_BYTES,
   classifyComposerFile,
+  clipboardComposerFiles,
   composerFileSizeError,
   normalizeClipboardImageFile,
 } from '../../src/utils/composerAttachments.ts';
@@ -79,5 +80,47 @@ describe('normalizeClipboardImageFile', () => {
       getAsFile: () => raw,
     } as unknown as DataTransferItem;
     expect(normalizeClipboardImageFile(item)).toBe(raw);
+  });
+});
+
+describe('clipboardComposerFiles', () => {
+  test('collects a screenshot item and an OS-pasted txt file without duplicating', () => {
+    const png = new File([new Uint8Array([1, 2])], '', { type: '' });
+    const txt = new File(['notes'], 'brief.txt', { type: 'text/plain' });
+    const items = [
+      {
+        kind: 'file',
+        type: 'image/png',
+        getAsFile: () => png,
+      },
+      {
+        kind: 'file',
+        type: 'text/plain',
+        getAsFile: () => txt,
+      },
+    ] as unknown as DataTransferItemList;
+    const files = {
+      length: 1,
+      0: txt,
+      item: (i: number) => (i === 0 ? txt : null),
+      [Symbol.iterator]: function* () {
+        yield txt;
+      },
+    } as unknown as FileList;
+
+    const dt = { items, files } as unknown as DataTransfer;
+    const out = clipboardComposerFiles(dt, { allowPdf: false });
+    expect(out).toHaveLength(2);
+    expect(out.some((f) => f.name === 'pasted-image.png' && f.type === 'image/png')).toBe(true);
+    expect(out.some((f) => f.name === 'brief.txt')).toBe(true);
+  });
+
+  test('rejects pdf when allowPdf is false', () => {
+    const pdf = new File(['%PDF'], 'a.pdf', { type: 'application/pdf' });
+    const items = [
+      { kind: 'file', type: 'application/pdf', getAsFile: () => pdf },
+    ] as unknown as DataTransferItemList;
+    const dt = { items, files: { length: 0, [Symbol.iterator]: function* () {} } } as unknown as DataTransfer;
+    expect(clipboardComposerFiles(dt, { allowPdf: false })).toEqual([]);
   });
 });

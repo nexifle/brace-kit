@@ -121,3 +121,48 @@ export function clipboardImageFiles(clipboardData: DataTransfer | null): File[] 
   }
   return out;
 }
+
+function fileDedupeKey(file: File): string {
+  return `${file.name}\0${file.size}\0${file.lastModified}\0${file.type}`;
+}
+
+/**
+ * Collect composer-eligible Files from a paste (images + txt, optional pdf).
+ * Covers OS file-manager paste via `clipboardData.files` as well as
+ * `items` (screenshots often have empty File.name until normalize).
+ */
+export function clipboardComposerFiles(
+  clipboardData: DataTransfer | null,
+  options: ClassifyComposerFileOptions = {},
+): File[] {
+  if (!clipboardData) return [];
+  const seen = new Set<string>();
+  const out: File[] = [];
+  const add = (file: File | null) => {
+    if (!file) return;
+    if (!classifyComposerFile(file, options)) return;
+    const key = fileDedupeKey(file);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(file);
+  };
+
+  const items = clipboardData.items;
+  if (items) {
+    for (const item of Array.from(items)) {
+      if (item.kind && item.kind !== 'file') continue;
+      const image = normalizeClipboardImageFile(item);
+      if (image) {
+        add(image);
+        continue;
+      }
+      add(item.getAsFile());
+    }
+  }
+
+  const files = clipboardData.files;
+  if (files?.length) {
+    for (const file of Array.from(files)) add(file);
+  }
+  return out;
+}

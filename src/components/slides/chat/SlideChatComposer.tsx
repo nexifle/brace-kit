@@ -5,6 +5,8 @@ import { slideComposerCanSend, slideComposerHasPayload } from '../../../utils/sl
 import type { SlidePendingAttachment } from '../../../utils/slideUploads.ts';
 import { MAX_SLIDE_COMPOSER_ATTACHMENTS } from '../../../utils/slideUploads.ts';
 import { useSlideComposerAttachments } from '../../../hooks/useSlideComposerAttachments.ts';
+import { useStore } from '../../../store/index.ts';
+import { specAllowsImageInput } from '../../../utils/modelCapability.ts';
 import { ComposerPicker } from '../../ComposerPicker.tsx';
 import { ReasoningPopover } from '../../ReasoningPopover.tsx';
 import {
@@ -53,6 +55,8 @@ export function SlideChatComposer({
   const typed = slideComposerCanSend(sessionStatus);
   const disabled = !typed || blocked;
   const canSend = typed && !blocked && !loading && slideComposerHasPayload(value, valid.length);
+  const visionOk = useStore((s) => specAllowsImageInput(s));
+  const showAssetOnlyHint = !visionOk && attachments.some((a) => a.type === 'image');
 
   useEffect(() => {
     if (seedKey == null) return;
@@ -63,14 +67,6 @@ export function SlideChatComposer({
     if (focusKey == null) return;
     textareaRef.current?.focus();
   }, [focusKey]);
-
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const onPaste = (e: Event) => void handlePaste(e as ClipboardEvent);
-    el.addEventListener('paste', onPaste);
-    return () => el.removeEventListener('paste', onPaste);
-  }, [handlePaste]);
 
   function submit() {
     if (!canSend) return;
@@ -117,17 +113,29 @@ export function SlideChatComposer({
             e.preventDefault();
             void handleFileSelect(e.dataTransfer.files);
           }}
+          onPaste={(e) => {
+            if (disabled) return;
+            void handlePaste(e.nativeEvent);
+          }}
         >
           {attachments.length > 0 && (
-            <div className="flex items-center gap-1 px-2.5 pt-2">
-              {attachments.slice(0, MAX_SLIDE_COMPOSER_ATTACHMENTS).map((att) => (
-                <AttachmentChip
-                  key={att.id}
-                  att={toViewable(att)}
-                  onRemove={disabled ? undefined : () => removeAttachment(att.id)}
-                  onOpen={() => setViewer(toViewable(att))}
-                />
-              ))}
+            <div className="flex flex-col gap-1 px-2.5 pt-2">
+              <div className="flex items-center gap-1">
+                {attachments.slice(0, MAX_SLIDE_COMPOSER_ATTACHMENTS).map((att) => (
+                  <AttachmentChip
+                    key={att.id}
+                    att={toViewable(att)}
+                    onRemove={disabled ? undefined : () => removeAttachment(att.id)}
+                    onOpen={() => setViewer(toViewable(att))}
+                  />
+                ))}
+              </div>
+              {showAssetOnlyHint && (
+                <p className="px-0.5 text-2xs leading-relaxed text-muted-foreground">
+                  This model can't view images. Files still upload to /uploads for the agent
+                  to use if you ask.
+                </p>
+              )}
             </div>
           )}
           <textarea

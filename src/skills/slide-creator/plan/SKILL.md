@@ -100,7 +100,7 @@ Before writing, pin down what the user actually wants:
 - **Purpose / goal** — education, lead gen, brand awareness, engagement, etc.
 - **Style direction** — any visual feel the user wants.
 - **Brand assets** — logo, colors, fonts the user wants applied.
-- **User uploads** — files the user attached live under `/uploads/` (listed in the user turn). Mention them in `/brief.md` / `/design.md` by path. Do **not** `apply_patch` `/uploads/**` (denied). Do **not** `read_file` image uploads (binary data URLs). Text uploads may be read if you need the body.
+- **User uploads** — files the user attached live under `/uploads/` (listed in the user turn). Do **not** `apply_patch` `/uploads/**` (denied). Text uploads may be read if you need the body. Image uploads may be `read_file` when the model can view images. Treat uploads as **optional context**: mention or schedule them as slide assets in `/brief.md` / `/design.md` **only if the user asked to use that file** (logo, photo, brand art). A screenshot is often so you can *see* a current/wrong slide — inspect it; do **not** automatically put it on the deck.
 
 ## How to structure the deck
 

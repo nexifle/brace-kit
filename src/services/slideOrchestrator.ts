@@ -24,13 +24,16 @@ import type {
 } from '../types/slides.ts';
 import type { SlidePendingAttachment } from '../utils/slideUploads.ts';
 import {
-  apiMessageText,
   hydrateAttachments,
   materializeUploads,
   persistableAttachment,
   slideApiUserMessage,
   slideDisplayText,
 } from '../utils/slideUploads.ts';
+import {
+  buildPlanSessionMessages,
+  prepareTranscriptForModel,
+} from '../utils/slideVisionTranscript.ts';
 
 import {
   runPlanPhase,
@@ -60,100 +63,7 @@ export function deriveSlideTitle(prompt: string): string {
   return cleaned.length > 0 ? cleaned : 'Untitled deck';
 }
 
-/**
- * Build isolated plan-session user turns from the main transcript.
- * Retries must include the original deck prompt — never only "continue"/Retry.
- *
- * When a prior plan round already completed (`project.planTranscript`), the
- * follow-up CONTINUES that exact conversation (user + assistant + tool turns)
- * instead of starting fresh — appending only the newest user turn. This keeps
- * every plan round on the same context and makes the prior round a cacheable
- * prefix for the next (token savings).
- */
-function apiUserFromMainMessage(
-  m: SlideMainMessage,
-  files: SlideFile[],
-): APIMessage {
-  const atts = hydrateAttachments(m.attachments, files);
-  return slideApiUserMessage(m.content, atts);
-}
-
-/** True when an API user turn already carries vision `image_url` parts. */
-function hasVisionParts(content: APIMessage['content']): boolean {
-  return Array.isArray(content) && content.some((p) => p.type === 'image_url' && p.image_url?.url);
-}
-
-/**
- * Re-attach vision parts onto a persisted plan transcript when a user turn was
- * stored as a plain string (or lost its image_url parts) but the main
- * transcript still has the uploads.
- */
-function restoreVisionOnTranscript(
-  transcript: APIMessage[],
-  project: SlideProject,
-): APIMessage[] {
-  const mains = project.messages.filter((m) => m.role === 'user');
-  let i = 0;
-  return transcript.map((msg) => {
-    if (msg.role !== 'user') return msg;
-    const main = mains[i++];
-    if (!main?.attachments?.some((a) => a.type === 'image')) return msg;
-    if (hasVisionParts(msg.content)) return msg;
-    return apiUserFromMainMessage(main, project.files);
-  });
-}
-
-export function buildPlanSessionMessages(
-  project: SlideProject,
-  extraUser?: string,
-): APIMessage[] {
-  if (project.planTranscript?.length) {
-    const out = restoreVisionOnTranscript(project.planTranscript, project);
-    const extra = extraUser?.trim();
-    const newestMain = [...project.messages].reverse().find((m) => m.role === 'user');
-    const newestMsg: APIMessage | undefined = extra
-      ? { role: 'user', content: extra }
-      : newestMain
-        ? apiUserFromMainMessage(newestMain, project.files)
-        : undefined;
-    const newestText = newestMsg ? apiMessageText(newestMsg.content) : '';
-    const tail = out[out.length - 1];
-    const tailText = tail ? apiMessageText(tail.content) : '';
-    if (newestText && !(tail?.role === 'user' && tailText === newestText)) {
-      out.push(newestMsg!);
-    } else if (!newestText) {
-      // No newer user turn (e.g. a bare retry over a transcript) — match the
-      // fresh-plan fallback so the session still has an explicit instruction.
-      out.push({
-        role: 'user',
-        content: 'Continue planning this deck from the current workspace.',
-      });
-    }
-    return out;
-  }
-
-  const out: APIMessage[] = [];
-  for (const m of project.messages) {
-    if (m.role !== 'user') continue;
-    const msg = apiUserFromMainMessage(m, project.files);
-    if (!apiMessageText(msg.content).trim()) continue;
-    out.push(msg);
-  }
-  const extra = extraUser?.trim();
-  if (extra) {
-    const last = out[out.length - 1];
-    if (!last || apiMessageText(last.content) !== extra) {
-      out.push({ role: 'user', content: extra });
-    }
-  }
-  if (out.length === 0) {
-    out.push({
-      role: 'user',
-      content: 'Continue planning this deck from the current workspace.',
-    });
-  }
-  return out;
-}
+export { buildPlanSessionMessages } from '../utils/slideVisionTranscript.ts';
 
 function makeMsg(
   role: SlideMainMessage['role'],
@@ -251,6 +161,12 @@ export interface SlideAgentDeps {
    */
   canFunctionCall?: () => boolean;
   /**
+   * Whether image bytes may be sent as vision `image_url` parts. Defaults to
+   * the live model spec (`specAllowsComposerKind(..., 'image')`). When false,
+   * uploads still land in `/uploads` and are listed in the user text.
+   */
+  canSendImageParts?: () => boolean;
+  /**
    * Live CHAT_REQUEST options (enableReasoning / reasoningLevel / …).
    * Prefer a getter so the main-store toggle is read at request time.
    * Defaults to `{}` (reasoning follows chat.service default: allowed).
@@ -304,6 +220,11 @@ export function createSlideAgent(
     const isGemini = pc.providerId === 'gemini' || pc.format === 'gemini';
     if (!isGemini) return true;
     return geminiSupportsFunctionCalling(pc.model);
+  }
+
+  /** Whether vision `image_url` parts may go on the wire. Default true for tests. */
+  function sendImageParts(): boolean {
+    return deps.canSendImageParts?.() ?? true;
   }
 
   /** Feed a streaming turn delta to the store (US-035). */
@@ -482,7 +403,7 @@ export function createSlideAgent(
       systemPrompt,
       // Prefer full transcript user turns so Retry / "continue" still see the
       // original deck brief — not an empty session with only the kickoff word.
-      messages: buildPlanSessionMessages(project, prompt),
+      messages: buildPlanSessionMessages(project, prompt, sendImageParts()),
       providerConfig: providerConfig(),
       chatOptions: chatOptions(),
       files: project.files,
@@ -633,6 +554,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
@@ -797,11 +719,15 @@ export function createSlideAgent(
   ): Promise<void> {
     if (state.running) return;
     if (blockPhase(project)) return;
-    const prior = project.buildTranscript ?? [];
+    const prior = prepareTranscriptForModel(
+      project.buildTranscript ?? [],
+      project,
+      sendImageParts(),
+    );
     const hydrated = hydrateAttachments(attachments, project.files);
     await runBuildCore(project, [
       ...prior,
-      slideApiUserMessage(message, hydrated),
+      slideApiUserMessage(message, hydrated, { sendImageParts: sendImageParts() }),
     ]);
   }
 
@@ -832,6 +758,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
@@ -1045,7 +972,11 @@ export function createSlideAgent(
     prepareStream();
     host.setBusy(true);
 
-    const priorEdit = project.editTranscript ?? [];
+    const priorEdit = prepareTranscriptForModel(
+      project.editTranscript ?? [],
+      project,
+      sendImageParts(),
+    );
     const messages: APIMessage[] = [
       ...priorEdit,
       {
@@ -1067,6 +998,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
@@ -1216,7 +1148,9 @@ export function createSlideAgent(
     if (project !== project0) host.landProject(project);
 
     const userMsg = makeMsg('user', display, attachments);
-    const apiUser = slideApiUserMessage(display, hydrateAttachments(attachments, files));
+    const apiUser = slideApiUserMessage(display, hydrateAttachments(attachments, files), {
+      sendImageParts: sendImageParts(),
+    });
 
     if (shouldResumePlan(project)) {
       // Land the follow-up in the transcript, then re-plan with ALL user turns
@@ -1250,7 +1184,11 @@ export function createSlideAgent(
 
     // Continue the prior edit-session context (append-only) so a follow-up
     // like "I didn't like that" shares the cached prefix of the last edit.
-    const priorEdit = restoreVisionOnTranscript(project.editTranscript ?? [], project);
+    const priorEdit = prepareTranscriptForModel(
+      project.editTranscript ?? [],
+      project,
+      sendImageParts(),
+    );
     const messages: APIMessage[] = priorEdit.length
       ? [...priorEdit, apiUser]
       : [apiUser];
@@ -1267,6 +1205,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),

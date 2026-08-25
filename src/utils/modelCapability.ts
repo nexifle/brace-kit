@@ -65,3 +65,12 @@ export function attachmentKindBlocked(
   if (specAllowsComposerKind(spec, kind)) return null;
   return kind;
 }
+
+/** Live store snapshot: whether the selected model may receive `image_url` parts. */
+export function specAllowsImageInput(state: {
+  providerConfig: { providerId: string; model: string };
+  customProviders: AppState['customProviders'];
+  fetchedModels: AppState['fetchedModels'];
+}): boolean {
+  return specAllowsComposerKind(resolveSpecFromAppState(state), 'image');
+}

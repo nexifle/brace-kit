@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   attachmentKindBlocked,
   composerAcceptAttribute,
+  specAllowsImageInput,
   CAPABILITY_ALERTS,
 } from '../../src/utils/modelCapability.ts';
 
@@ -14,6 +15,30 @@ describe('modelCapability', () => {
     expect(attachmentKindBlocked(spec, 'image')).toBe('image');
     expect(attachmentKindBlocked(spec, 'text')).toBeNull();
     expect(composerAcceptAttribute(spec)).not.toContain('image');
+  });
+
+  it('specAllowsImageInput follows the live spec snapshot', () => {
+    expect(
+      specAllowsImageInput({
+        providerConfig: { providerId: 'custom', model: 'm' },
+        customProviders: [
+          {
+            id: 'custom',
+            name: 'c',
+            apiUrl: '',
+            apiKey: '',
+            model: 'm',
+            defaultModel: 'm',
+            format: 'openai',
+            models: ['m'],
+            modelSpecs: {
+              m: { id: 'm', modalities: { input: ['text'], output: ['text'] } },
+            },
+          },
+        ],
+        fetchedModels: {},
+      }),
+    ).toBe(false);
   });
 
   it('has copy for tools and reasoning alerts', () => {

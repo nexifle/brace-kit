@@ -1134,6 +1134,56 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     expect(h.active?.editTranscript).toBeDefined();
   });
 
+  it('strips leftover vision parts on edit follow-up when switching to a non-vision model', async () => {
+    const skills = makeSkillFetcher();
+    const prior: APIMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'use the logo' },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,SMALL' } },
+        ],
+      },
+      { role: 'assistant', content: 'Placed the logo.' },
+    ];
+    const { transport, seenMessages } = makeTransport([
+      () => ({ content: 'Tweaked placement.', toolCalls: [] }),
+    ]);
+
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'ready',
+      mode: 'agent',
+      editTranscript: prior,
+      files: [
+        ...builtProject().files,
+        { path: '/uploads/logo.png', content: 'data:image/png;base64,ORIGINAL' },
+        { path: '/theme.css', content: ':root{}' },
+        {
+          path: '/deck.json',
+          content: JSON.stringify({ title: 'Coffee', canvas: '16:9', slideOrder: ['01'] }),
+        },
+        { path: '/slides/01.html', content: '<section>Hi</section>' },
+      ],
+    });
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      canSendImageParts: () => false,
+    });
+
+    await agent.sendFollowUp('make it bigger');
+
+    const firstMessages = seenMessages[0] ?? [];
+    const wire = JSON.stringify(firstMessages);
+    expect(wire).not.toContain('image_url');
+    expect(wire).not.toContain('data:image');
+    expect(wire).toContain('/uploads/logo.png');
+    expect(wire).toContain('make it bigger');
+  });
+
   it('starts a fresh edit session with a single message when there is no prior edit context', async () => {
     const skills = makeSkillFetcher();
     const { transport, seenMessages } = makeTransport([
@@ -1804,6 +1854,96 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
     expect(parts.some((p) => p.type === 'image_url' && p.image_url?.url === 'data:image/jpeg;base64,SMALL')).toBe(true);
   });
 
+  it('buildPlanSessionMessages strips vision parts when sendImageParts is false', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'plan_ready',
+      mode: 'plan',
+      canvas: '16:9',
+      messages: [
+        {
+          id: 'u1',
+          role: 'user',
+          content: 'logo deck',
+          createdAt: 0,
+          attachments: [
+            {
+              id: 'a1',
+              type: 'image',
+              name: 'logo.png',
+              path: '/uploads/logo.png',
+              preview: 'data:image/jpeg;base64,SMALL',
+            },
+          ],
+        },
+      ],
+      files: [{ path: '/uploads/logo.png', content: 'data:image/png;base64,ORIGINAL' }],
+      planTranscript: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'logo deck' },
+            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,SMALL' } },
+          ],
+        },
+      ],
+    };
+    const msgs = buildPlanSessionMessages(project, undefined, false);
+    const user = msgs.find((m) => m.role === 'user');
+    expect(typeof user?.content).toBe('string');
+    expect(String(user?.content)).not.toContain('data:image');
+    expect(String(user?.content)).toContain('/uploads/logo.png');
+  });
+
+  it('buildPlanSessionMessages injects workspace upload paths when a non-vision model resumes a deck', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'plan_ready',
+      mode: 'plan',
+      canvas: '16:9',
+      messages: [{ id: 'u1', role: 'user', content: 'logo deck', createdAt: 0 }],
+      files: [{ path: '/uploads/logo.png', content: 'data:image/png;base64,ORIGINAL' }],
+      planTranscript: [{ role: 'user', content: 'logo deck' }],
+    };
+    const msgs = buildPlanSessionMessages(project, undefined, false);
+    const blob = msgs.map((m) => String(m.content)).join('\n');
+    expect(blob).toContain('/uploads/logo.png');
+    expect(blob).toContain('cannot view image pixels');
+    expect(blob).toContain('if the user asked');
+    expect(blob).not.toContain('data:image');
+    expect(blob).not.toContain('<img src=');
+  });
+
+  it('buildPlanSessionMessages rehydrates only images named on that user turn when switching back to vision', () => {
+    const project: SlideProject = {
+      id: 'p',
+      title: 't',
+      createdAt: 0,
+      updatedAt: 0,
+      phase: 'plan_ready',
+      mode: 'plan',
+      canvas: '16:9',
+      messages: [{ id: 'u1', role: 'user', content: 'see /uploads/logo.png', createdAt: 0 }],
+      files: [
+        { path: '/uploads/logo.png', content: 'data:image/png;base64,LOGO' },
+        { path: '/uploads/other.png', content: 'data:image/png;base64,OTHER' },
+      ],
+      planTranscript: [{ role: 'user', content: 'see /uploads/logo.png' }],
+    };
+    const msgs = buildPlanSessionMessages(project, undefined, true);
+    const user = msgs.find((m) => m.role === 'user');
+    expect(Array.isArray(user?.content)).toBe(true);
+    const parts = user?.content as Array<{ type: string; image_url?: { url: string } }>;
+    const urls = parts.filter((p) => p.type === 'image_url').map((p) => p.image_url?.url);
+    expect(urls).toEqual(['data:image/png;base64,LOGO']);
+  });
+
   it('createFromPrompt with only a txt attachment seeds /uploads and inlines the body', async () => {
     const skills = makeSkillFetcher();
     const { transport, seenMessages } = makeTransport([
@@ -1857,6 +1997,35 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
     ]);
     const userTurn = seenMessages[0]?.find((m) => m.role === 'user');
     expect(Array.isArray(userTurn?.content)).toBe(true);
+  });
+
+  it('createFromPrompt with an image still writes /uploads when vision is off, without image_url', async () => {
+    const skills = makeSkillFetcher();
+    const { transport, seenMessages } = makeTransport([
+      () => ({
+        toolCalls: [
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+ok\n' } })),
+          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+ok\n' } })),
+        ],
+      }),
+      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' }))] }),
+      () => ({ content: 'Plan complete.' }),
+    ]);
+    const h = makeHost();
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: skills.fetcher,
+      maxRounds: 6,
+      canSendImageParts: () => false,
+    });
+    await agent.createFromPrompt('', undefined, [
+      { id: 'img', type: 'image', name: 'hero.jpg', data: 'data:image/jpeg;base64,qq' },
+    ]);
+    expect(h.active?.files.some((f) => f.path === '/uploads/hero.jpg')).toBe(true);
+    const userTurn = seenMessages[0]?.find((m) => m.role === 'user');
+    expect(typeof userTurn?.content).toBe('string');
+    expect(String(userTurn?.content)).toContain('/uploads/hero.jpg');
   });
 
   it('createFromPrompt no-ops when prompt and attachments are empty', async () => {

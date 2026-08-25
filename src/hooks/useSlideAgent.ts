@@ -15,7 +15,13 @@ import { shouldEnableGoogleSearch, shouldEnableGrokWebSearch } from '../services
 import type { SlideToolOptions } from '../services/slidePhases.ts';
 import { filterMCPTools } from './tools/useTools.ts';
 import { isGeminiImageModel, isXAIImageModel } from '../providers/presets.ts';
-import { firstChatModelId, resolveModelSpec, specIsImageModel, specSupportsTools } from '../providers/modelSpecs.ts';
+import {
+  firstChatModelId,
+  resolveModelSpec,
+  specIsImageModel,
+  specSupportsTools,
+} from '../providers/modelSpecs.ts';
+import { specAllowsImageInput } from '../utils/modelCapability.ts';
 import { PROVIDER_PRESETS } from '../providers/presets.ts';
 import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
@@ -113,6 +119,7 @@ export function useSlideAgent() {
           });
           return specSupportsTools(spec, s.providerConfig.model);
         },
+        canSendImageParts: () => specAllowsImageInput(useStore.getState()),
         // Same enableReasoning / reasoningLevel / modelParameters as main chat.
         getChatOptions: () =>
           buildChatOptions(chatOptionsStateFromStore(() => useStore.getState()), {
