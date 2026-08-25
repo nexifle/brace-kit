@@ -203,6 +203,7 @@ export function MessageList() {
             <AgentActivityBlock
               key={`tool-group-${item.firstToolIndex}`}
               tools={item.tools}
+              entries={item.entries}
               isActive={Boolean(isStreaming && isLastGroup)}
               startedAt={item.startedAt}
               endedAt={item.endedAt}

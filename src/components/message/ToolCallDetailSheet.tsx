@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeftIcon, ChevronRightIcon, XIcon, WrenchIcon } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon, LightbulbIcon, XIcon, WrenchIcon } from 'lucide-react';
 import { Btn } from '../ui/Btn.tsx';
 import type { ToolMessageData } from '../ToolMessage.tsx';
+import type { TimelineEntry } from '../../utils/toolActivityGroup.ts';
 import { isToolError, isToolRunning } from '../../utils/toolActivityLabel.ts';
 
 export interface ToolCallDetailSheetProps {
   tools: ToolMessageData[];
+  entries: TimelineEntry[];
   index: number | null;
   onIndexChange: (index: number) => void;
   onClose: () => void;
@@ -31,9 +33,31 @@ function formatResult(content: string): string {
   }
 }
 
-export function ToolCallDetailSheet({ tools, index, onIndexChange, onClose }: ToolCallDetailSheetProps) {
-  const open = index != null && index >= 0 && index < tools.length;
-  const tool = open ? tools[index] : null;
+function SheetSection({ label, children, className }: { label: string; children: string; className?: string }) {
+  return (
+    <section>
+      <h3 className="text-2xs font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
+        {label}
+      </h3>
+      <pre className={`text-2xs font-mono whitespace-pre-wrap break-all rounded-md border border-border/50 bg-muted/30 p-2.5 max-h-[60vh] overflow-y-auto scrollbar-thin ${className ?? 'text-foreground/90'}`}>
+        {children}
+      </pre>
+    </section>
+  );
+}
+
+export function ToolCallDetailSheet({
+  tools,
+  entries,
+  index,
+  onIndexChange,
+  onClose,
+}: ToolCallDetailSheetProps) {
+  const rows = entries.length > 0
+    ? entries
+    : tools.map((_, toolIndex) => ({ kind: 'tool' as const, toolIndex }));
+  const open = index != null && index >= 0 && index < rows.length;
+  const entry = open ? rows[index] : null;
 
   useEffect(() => {
     if (!open) return;
@@ -48,19 +72,21 @@ export function ToolCallDetailSheet({ tools, index, onIndexChange, onClose }: To
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
-        if (index != null && index < tools.length - 1) onIndexChange(index + 1);
+        if (index != null && index < rows.length - 1) onIndexChange(index + 1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, index, tools.length, onClose, onIndexChange]);
+  }, [open, index, rows.length, onClose, onIndexChange]);
 
-  if (!tool || index == null) return null;
+  if (!entry || index == null) return null;
 
-  const running = isToolRunning(tool.content);
-  const errored = isToolError(tool.content);
+  const tool = entry.kind === 'tool' ? tools[entry.toolIndex] : undefined;
+  const running = tool ? isToolRunning(tool.content) : false;
+  const errored = tool ? isToolError(tool.content) : false;
   const canPrev = index > 0;
-  const canNext = index < tools.length - 1;
+  const canNext = index < rows.length - 1;
+  const isThinking = entry.kind === 'thinking';
 
   const sheet = (
     <div className="fixed inset-0 z-50 flex justify-end overflow-hidden">
@@ -77,17 +103,17 @@ export function ToolCallDetailSheet({ tools, index, onIndexChange, onClose }: To
         <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-border/50 shrink-0">
           <div className="flex items-start gap-2 min-w-0">
             <div className="flex items-center justify-center w-7 h-7 bg-muted/50 rounded-md text-muted-foreground shrink-0 mt-0.5">
-              <WrenchIcon size={14} />
+              {isThinking ? <LightbulbIcon size={14} /> : <WrenchIcon size={14} />}
             </div>
             <div className="min-w-0">
               <div className="text-2xs font-bold uppercase tracking-widest text-muted-foreground">
-                Tool call
+                {isThinking ? 'Thinking' : 'Tool call'}
               </div>
               <h2
                 id="tool-call-sheet-title"
                 className="text-sm font-semibold text-foreground break-all leading-snug"
               >
-                {tool.name}
+                {isThinking ? 'Thinking' : (tool?.name ?? 'Tool')}
               </h2>
             </div>
           </div>
@@ -97,69 +123,63 @@ export function ToolCallDetailSheet({ tools, index, onIndexChange, onClose }: To
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4 flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <span
-              className={`px-1.5 py-0.5 rounded-md text-2xs font-bold uppercase tracking-widest ${
-                running
-                  ? 'bg-primary/10 text-primary'
-                  : errored
-                    ? 'bg-destructive/10 text-destructive'
-                    : 'bg-success/10 text-success'
-              }`}
-            >
-              {running ? 'Running' : errored ? 'Error' : 'Completed'}
-            </span>
-            {tool.isCachedResult && (
-              <span className="px-1.5 py-0.5 rounded-md bg-muted/50 text-2xs font-bold uppercase tracking-widest text-muted-foreground">
-                cached
-              </span>
-            )}
-          </div>
-
-          <section>
-            <h3 className="text-2xs font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
-              Parameters
-            </h3>
-            <pre className="text-2xs font-mono whitespace-pre-wrap break-all rounded-md border border-border/50 bg-muted/30 p-2.5 text-foreground/90 max-h-[60vh] overflow-y-auto scrollbar-thin">
-              {formatParams(tool.toolArguments)}
-            </pre>
-          </section>
-
-          <section>
-            <h3 className="text-2xs font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
-              Result
-            </h3>
-            <pre
-              className={`text-2xs font-mono whitespace-pre-wrap break-all rounded-md border border-border/50 bg-muted/30 p-2.5 max-h-[60vh] overflow-y-auto scrollbar-thin ${
-                errored ? 'text-destructive/90' : 'text-foreground/90'
-              }`}
-            >
-              {formatResult(tool.content)}
-            </pre>
-          </section>
+          {isThinking ? (
+            <>
+              {entry.body && <SheetSection label="Message">{entry.body}</SheetSection>}
+              {entry.reasoning && <SheetSection label="Reasoning">{entry.reasoning}</SheetSection>}
+              {!entry.body && !entry.reasoning && (
+                <p className="text-sm text-muted-foreground">No thinking content.</p>
+              )}
+            </>
+          ) : tool ? (
+            <>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-1.5 py-0.5 rounded-md text-2xs font-bold uppercase tracking-widest ${
+                    running
+                      ? 'bg-primary/10 text-primary'
+                      : errored
+                        ? 'bg-destructive/10 text-destructive'
+                        : 'bg-success/10 text-success'
+                  }`}
+                >
+                  {running ? 'Running' : errored ? 'Error' : 'Completed'}
+                </span>
+                {tool.isCachedResult && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-muted/50 text-2xs font-bold uppercase tracking-widest text-muted-foreground">
+                    cached
+                  </span>
+                )}
+              </div>
+              <SheetSection label="Parameters">{formatParams(tool.toolArguments)}</SheetSection>
+              <SheetSection label="Result" className={errored ? 'text-destructive/90' : 'text-foreground/90'}>
+                {formatResult(tool.content)}
+              </SheetSection>
+            </>
+          ) : null}
         </div>
 
-        {tools.length > 1 && (
+        {rows.length > 1 && (
           <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-t border-border/50 shrink-0">
             <Btn
               variant="ghost"
               size="sm"
               disabled={!canPrev}
               onClick={() => canPrev && onIndexChange(index - 1)}
-              title="Previous tool call"
+              title="Previous"
             >
               <ChevronLeftIcon size={14} />
               Prev
             </Btn>
             <span className="text-2xs font-medium text-muted-foreground tabular-nums">
-              {index + 1} / {tools.length}
+              {index + 1} / {rows.length}
             </span>
             <Btn
               variant="ghost"
               size="sm"
               disabled={!canNext}
               onClick={() => canNext && onIndexChange(index + 1)}
-              title="Next tool call"
+              title="Next"
             >
               Next
               <ChevronRightIcon size={14} />
