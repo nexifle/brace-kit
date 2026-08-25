@@ -108,6 +108,49 @@ describe('Gemini Format', () => {
       expect(body.contents[0].parts[0].functionCall.args).toEqual({ query: 'test' });
     });
 
+    it('should attach per-call thoughtSignature on functionCall parts', () => {
+      const messages: Message[] = [
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'call_123',
+              name: 'tavily_search',
+              arguments: '{"query": "test"}',
+              thoughtSignature: 'fc_sig_aaa',
+            },
+          ],
+        },
+      ];
+
+      const config = formatGemini(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.contents[0].parts[0].functionCall.name).toBe('tavily_search');
+      expect(body.contents[0].parts[0].thoughtSignature).toBe('fc_sig_aaa');
+    });
+
+    it('should fall back to message-level reasoningSignature on the first functionCall', () => {
+      const messages: Message[] = [
+        {
+          role: 'assistant',
+          content: '',
+          reasoningSignature: 'msg_sig_legacy',
+          toolCalls: [
+            { id: 'tc1', name: 'search', arguments: '{"query":"a"}' },
+            { id: 'tc2', name: 'search', arguments: '{"query":"b"}' },
+          ],
+        },
+      ];
+
+      const config = formatGemini(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.contents[0].parts[0].thoughtSignature).toBe('msg_sig_legacy');
+      expect(body.contents[0].parts[1].thoughtSignature).toBeUndefined();
+    });
+
     it('should handle tool result messages', () => {
       const messages: Message[] = [
         {
@@ -577,6 +620,24 @@ describe('Gemini Format', () => {
       expect(results).toHaveLength(1);
       expect(results[0].type).toBe('tool_call');
       expect(results[0].name).toBe('search');
+    });
+
+    it('should attach thoughtSignature to tool_call chunks, not as reasoning_signature', async () => {
+      const chunks = [
+        'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"tavily_search","args":{"query":"test"}},"thoughtSignature":"fc_sig_1"}]}}]}\n\n',
+      ];
+
+      const response = createMockStreamResponse(chunks);
+      const results = [];
+
+      for await (const chunk of parseGeminiStream(response)) {
+        results.push(chunk);
+      }
+
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe('tool_call');
+      expect(results[0].name).toBe('tavily_search');
+      expect(results[0].thoughtSignature).toBe('fc_sig_1');
       expect(results[0].arguments).toBe('{"query":"test"}');
     });
 

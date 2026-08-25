@@ -18,6 +18,7 @@ export interface StreamChunk {
   name?: string;
   arguments?: string;
   index?: number;
+  thoughtSignature?: string;
   groundingMetadata?: GroundingMetadata;
   mimeType?: string;
   imageData?: string;
@@ -139,6 +140,7 @@ export function useStreamProcessor() {
               id: chunk.id || `tc_${Date.now()}`,
               name: chunk.name,
               arguments: chunk.arguments || '',
+              ...(chunk.thoughtSignature ? { thoughtSignature: chunk.thoughtSignature } : {}),
             };
             toolCallsRef.current.push(currentToolCallRef.current as ToolCall);
           }
@@ -268,6 +270,7 @@ function mergeToolCalls(toolCalls: ToolCall[]): ToolCall[] {
         if (tc.arguments) existing.arguments += tc.arguments;
         if (tc.name) existing.name = tc.name;
         if (tc.id) existing.id = tc.id;
+        if (tc.thoughtSignature) existing.thoughtSignature = tc.thoughtSignature;
       } else {
         merged.set(index, { ...tc });
       }

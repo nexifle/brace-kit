@@ -137,6 +137,32 @@ describe('Ollama Format', () => {
       });
     });
 
+    it('[REGRESSION] must not leak Gemini thoughtSignature into Ollama tool_calls', () => {
+      const messages: Message[] = [
+        {
+          role: 'assistant',
+          content: 'Let me help you with that.',
+          reasoningSignature: 'msg_sig',
+          toolCalls: [
+            {
+              id: 'call_123',
+              name: 'search',
+              arguments: '{"query": "test"}',
+              thoughtSignature: 'gemini_fc_sig',
+            },
+          ],
+        },
+      ];
+
+      const config = formatOllama(provider, messages, [], {});
+      const raw = config.options.body as string;
+      expect(raw).not.toContain('thoughtSignature');
+      expect(raw).not.toContain('gemini_fc_sig');
+
+      const body = JSON.parse(raw);
+      expect(Object.keys(body.messages[0].tool_calls[0])).toEqual(['id', 'type', 'function']);
+    });
+
     it('should include thinking field in assistant messages with reasoning content', () => {
       const messages: Message[] = [
         {

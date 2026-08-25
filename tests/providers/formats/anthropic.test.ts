@@ -87,6 +87,33 @@ describe('Anthropic Format', () => {
       expect(body.messages[0].content[1].name).toBe('search');
     });
 
+    it('[REGRESSION] must not leak Gemini thoughtSignature into Anthropic tool_use blocks', () => {
+      const messages: Message[] = [
+        {
+          role: 'assistant',
+          content: 'Let me search for that.',
+          reasoningSignature: 'msg_sig',
+          toolCalls: [
+            {
+              id: 'toolu_123',
+              name: 'search',
+              arguments: '{"query": "test"}',
+              thoughtSignature: 'gemini_fc_sig',
+            },
+          ],
+        },
+      ];
+
+      const config = formatAnthropic(provider, messages, [], {});
+      const raw = config.options.body as string;
+      expect(raw).not.toContain('thoughtSignature');
+      expect(raw).not.toContain('gemini_fc_sig');
+
+      const body = JSON.parse(raw);
+      const toolUse = body.messages[0].content.find((p: { type: string }) => p.type === 'tool_use');
+      expect(Object.keys(toolUse).sort()).toEqual(['id', 'input', 'name', 'type']);
+    });
+
     it('should batch consecutive tool results', () => {
       const messages: Message[] = [
         { role: 'tool', content: 'Result 1', toolCallId: 'call_1' },

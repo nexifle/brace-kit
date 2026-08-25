@@ -18,6 +18,7 @@ export interface ToolCallFragment {
   index?: number;
   name?: string;
   arguments?: string;
+  thoughtSignature?: string;
 }
 
 export interface StreamingService {
@@ -99,6 +100,7 @@ export function createStreamingService(): StreamingService {
             if (tc.arguments) existing.arguments += tc.arguments;
             if (tc.name) existing.name = tc.name;
             if (tc.id) existing.id = tc.id;
+            if (tc.thoughtSignature) existing.thoughtSignature = tc.thoughtSignature;
           } else {
             merged.set(tc.index, { ...tc });
           }
@@ -219,8 +221,8 @@ export function createStreamingService(): StreamingService {
         // visible message; surface it separately as reasoning.
         text = extractGeminiText(partsArray);
         reasoning = extractGeminiReasoning(partsArray);
-        // Thought signature — required for Gemini 3+ multi-turn replay.
-        reasoningSignature = partsArray?.find((p) => p.thoughtSignature)?.thoughtSignature;
+        // Thought signature on thought/text parts — required for Gemini 3+ multi-turn replay.
+        reasoningSignature = partsArray?.find((p) => p.thoughtSignature && !p.functionCall)?.thoughtSignature;
 
         // Extract tool calls from Gemini format (functionCall)
         const functionCalls = partsArray?.filter((p) => p.functionCall);
@@ -230,6 +232,7 @@ export function createStreamingService(): StreamingService {
             index,
             name: fc.functionCall?.name,
             arguments: fc.functionCall?.args ? JSON.stringify(fc.functionCall.args) : '{}',
+            ...(fc.thoughtSignature ? { thoughtSignature: fc.thoughtSignature } : {}),
           }));
         }
       } else if (provider.format === 'ollama') {

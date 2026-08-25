@@ -50,6 +50,19 @@ describe('Streaming Service', () => {
       const result = streamingService.mergeToolCalls([]);
       expect(result).toHaveLength(0);
     });
+
+    test('should preserve thoughtSignature when merging without changing other fields', () => {
+      const toolCalls = [
+        { index: 0, id: 'tc1', name: 'tool1', arguments: '{"a":', thoughtSignature: 'sig' },
+        { index: 0, arguments: '1}' },
+      ];
+
+      const result = streamingService.mergeToolCalls(toolCalls);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].arguments).toBe('{"a":1}');
+      expect(result[0].thoughtSignature).toBe('sig');
+    });
   });
 
   describe('buildNonStreamingResponse', () => {
@@ -222,6 +235,26 @@ describe('Streaming Service', () => {
       expect(result.content).toBe('Answer.');
       expect(result.reasoning_content).toBe('reasoning');
       expect(result.reasoning_signature).toBe('sig-xyz');
+    });
+
+    test('should attach Gemini thoughtSignature to functionCall tool fragments', () => {
+      const data = {
+        candidates: [{
+          content: {
+            parts: [
+              { functionCall: { name: 'tavily_search', args: { query: 'x' } }, thoughtSignature: 'fc_sig' },
+            ],
+          },
+        }],
+      };
+      const provider = { format: 'gemini' };
+
+      const result = streamingService.buildNonStreamingResponse(data, provider);
+
+      expect(result.reasoning_signature).toBeUndefined();
+      expect(result.tool_calls).toHaveLength(1);
+      expect(result.tool_calls?.[0].name).toBe('tavily_search');
+      expect(result.tool_calls?.[0].thoughtSignature).toBe('fc_sig');
     });
 
     test('should handle missing data gracefully', () => {

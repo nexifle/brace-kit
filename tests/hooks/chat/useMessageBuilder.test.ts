@@ -29,6 +29,7 @@ describe('useMessageBuilder Logic', () => {
             id: tc.id,
             name: tc.name,
             arguments: tc.arguments || '{}',
+            ...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
           })),
         };
       }

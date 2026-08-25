@@ -104,6 +104,8 @@ export interface StreamChunk {
   name?: string;
   /** Tool arguments (JSON string) */
   arguments?: string;
+  /** Gemini thought signature attached to a functionCall part */
+  thoughtSignature?: string;
   /** Google Search grounding metadata */
   groundingMetadata?: unknown;
   /** Image MIME type */

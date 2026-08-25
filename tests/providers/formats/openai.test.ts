@@ -115,6 +115,33 @@ describe('OpenAI Format', () => {
       });
     });
 
+    it('[REGRESSION] must not leak Gemini thoughtSignature into OpenAI tool_calls', () => {
+      const messages: Message[] = [
+        {
+          role: 'assistant',
+          content: '',
+          reasoningSignature: 'msg_sig',
+          toolCalls: [
+            {
+              id: 'call_123',
+              name: 'search',
+              arguments: '{"query": "test"}',
+              thoughtSignature: 'gemini_fc_sig',
+            },
+          ],
+        },
+      ];
+
+      const config = formatOpenAI(provider, messages, [], {});
+      const raw = config.options.body as string;
+      expect(raw).not.toContain('thoughtSignature');
+      expect(raw).not.toContain('gemini_fc_sig');
+      expect(raw).not.toContain('msg_sig');
+
+      const body = JSON.parse(raw);
+      expect(Object.keys(body.messages[0].tool_calls[0])).toEqual(['id', 'type', 'function']);
+    });
+
     it('should handle tool result messages', () => {
       const messages: Message[] = [
         {
