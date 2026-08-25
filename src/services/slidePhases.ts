@@ -160,6 +160,7 @@ interface ActivityArgs {
   path?: string;
   patchOp?: SlidePatchOpLabel;
   query?: string;
+  url?: string;
   skillName?: string;
 }
 
@@ -175,6 +176,7 @@ function activityArgs(toolCall: ToolCall): ActivityArgs | undefined {
         : undefined,
     patchOp: patch.ok ? (patch.operation.type as SlidePatchOpLabel) : undefined,
     query: typeof parsed?.query === 'string' ? (parsed.query as string) : undefined,
+    url: typeof parsed?.url === 'string' ? (parsed.url as string) : undefined,
     skillName: typeof parsed?.name === 'string' ? (parsed.name as string) : undefined,
   };
 }

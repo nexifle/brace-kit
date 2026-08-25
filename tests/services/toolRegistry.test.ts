@@ -26,6 +26,11 @@ describe('Tool Registry Service', () => {
       expect(BUILTIN_TOOLS.WEB_SEARCH.description).toBeDefined();
       expect(BUILTIN_TOOLS.WEB_SEARCH.inputSchema).toBeDefined();
     });
+
+    test('has WEB_FETCH tool with correct structure', () => {
+      expect(BUILTIN_TOOLS.WEB_FETCH.name).toBe('web_fetch');
+      expect(BUILTIN_TOOLS.WEB_FETCH.inputSchema).toBeDefined();
+    });
   });
 
   describe('getAllTools', () => {
@@ -96,7 +101,8 @@ describe('Tool Registry Service', () => {
         isGemini: true,
       });
 
-      expect(tools).toHaveLength(3);
+      expect(tools).toHaveLength(4);
+      expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
       expect(tools[tools.length - 1].name).toBe('continue_message');
     });
 
@@ -122,8 +128,9 @@ describe('Tool Registry Service', () => {
         isGemini: false,
       });
 
-      expect(tools).toHaveLength(4);
+      expect(tools).toHaveLength(5);
       expect(tools[0].name).toBe('google_search');
+      expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
       expect(tools[tools.length - 1].name).toBe('continue_message');
     });
 
@@ -137,9 +144,10 @@ describe('Tool Registry Service', () => {
         providerId: 'grok',
       });
 
-      // web_search + continue_message (both injected)
-      expect(tools).toHaveLength(4);
+      // web_search + web_fetch + continue_message
+      expect(tools).toHaveLength(5);
       expect(tools.find((t) => t.name === 'web_search')).toBeDefined();
+      expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
       expect(tools.find((t) => t.name === 'continue_message')).toBeDefined();
     });
 
@@ -153,8 +161,9 @@ describe('Tool Registry Service', () => {
         providerId: 'openai',
       });
 
-      expect(tools).toHaveLength(3); // 2 MCP + continue_message
+      expect(tools).toHaveLength(4); // 2 MCP + web_fetch + continue_message
       expect(tools.find((t) => t.name === 'web_search')).toBeUndefined();
+      expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
     });
 
     test('does not include web_search for grok when supportsFunctionCalling is false', () => {
@@ -202,21 +211,20 @@ describe('Tool Registry Service', () => {
       expect(tools[0].name).toBe('google_search');
     });
 
-    test('returns continue_message only', () => {
+    test('returns continue_message with web_fetch (same function-calling gate)', () => {
       const tools = getBuiltinTools({
         includeGoogleSearch: false,
         includeContinueMessage: true,
       });
-      expect(tools).toHaveLength(1);
-      expect(tools[0].name).toBe('continue_message');
+      expect(tools.map((t) => t.name)).toEqual(['web_fetch', 'continue_message']);
     });
 
-    test('returns both tools', () => {
+    test('returns google_search, web_fetch, and continue_message', () => {
       const tools = getBuiltinTools({
         includeGoogleSearch: true,
         includeContinueMessage: true,
       });
-      expect(tools).toHaveLength(2);
+      expect(tools.map((t) => t.name)).toEqual(['google_search', 'web_fetch', 'continue_message']);
     });
   });
 
@@ -231,6 +239,10 @@ describe('Tool Registry Service', () => {
 
     test('returns true for web_search', () => {
       expect(isBuiltinTool('web_search')).toBe(true);
+    });
+
+    test('returns true for web_fetch', () => {
+      expect(isBuiltinTool('web_fetch')).toBe(true);
     });
 
     test('returns false for other tools', () => {

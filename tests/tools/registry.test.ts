@@ -8,6 +8,7 @@ import {
   GOOGLE_SEARCH_TOOL,
   CONTINUE_MESSAGE_TOOL,
   GROK_WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
 } from '../../src/background/tools/index.js';
 
 describe('Tool Registry', () => {
@@ -56,6 +57,12 @@ describe('Tool Registry', () => {
       expect(tools[1].name).toBe('continue_message');
       expect(tools[2].name).toBe('web_search');
     });
+
+    test('returns web_fetch when includeWebFetch is true', () => {
+      const tools = getToolDefinitions({ includeWebFetch: true });
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('web_fetch');
+    });
   });
 
   describe('isBuiltinTool', () => {
@@ -69,6 +76,10 @@ describe('Tool Registry', () => {
 
     test('returns true for web_search', () => {
       expect(isBuiltinTool('web_search')).toBe(true);
+    });
+
+    test('returns true for web_fetch', () => {
+      expect(isBuiltinTool('web_fetch')).toBe(true);
     });
 
     test('returns false for unknown tool', () => {
@@ -103,6 +114,11 @@ describe('Tool Registry', () => {
       expect(result.content[0].text).toContain('API key not configured');
     });
 
+    test('executes web_fetch with missing url', async () => {
+      const result = await executeTool('web_fetch', {}, {});
+      expect(result.content[0].text).toContain('url parameter is required');
+    });
+
     test('executes web_search with missing query', async () => {
       const result = await executeTool('web_search', {}, { grokAccessToken: 'token', grokModel: 'grok-4.5' });
       expect(result.content[0].text).toContain('query parameter is required');
@@ -115,7 +131,8 @@ describe('Tool Registry', () => {
       expect(names).toContain('google_search');
       expect(names).toContain('continue_message');
       expect(names).toContain('web_search');
-      expect(names).toHaveLength(3);
+      expect(names).toContain('web_fetch');
+      expect(names).toHaveLength(4);
     });
   });
 
@@ -134,6 +151,12 @@ describe('Tool Registry', () => {
       expect(def?.name).toBe('continue_message');
       expect(def?.description).toBeDefined();
       expect(def?.inputSchema).toBeDefined();
+    });
+
+    test('returns web_fetch definition', () => {
+      const def = getToolDefinition('web_fetch');
+      expect(def).toBeDefined();
+      expect(def?.name).toBe('web_fetch');
     });
 
     test('returns web_search definition', () => {
@@ -178,6 +201,21 @@ describe('Tool Registry', () => {
           },
         },
         required: ['reason'],
+      });
+    });
+
+    test('WEB_FETCH_TOOL has correct structure', () => {
+      expect(WEB_FETCH_TOOL.name).toBe('web_fetch');
+      expect(WEB_FETCH_TOOL.description).toBeDefined();
+      expect(WEB_FETCH_TOOL.inputSchema).toEqual({
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The URL to fetch content from.',
+          },
+        },
+        required: ['url'],
       });
     });
 

@@ -123,6 +123,18 @@ export function googleSearchLabel(query: string): string {
   return `Searching: ${q}`;
 }
 
+/** web_fetch: hostname (or raw url) truncated to 40 chars. */
+export function webFetchLabel(url: string): string {
+  const raw = (url ?? '').trim();
+  let host = raw || '…';
+  try {
+    if (raw) host = new URL(raw).hostname || raw;
+  } catch {
+    host = raw;
+  }
+  return `Fetching: ${truncateLabel(host, 40)}`;
+}
+
 /** MCP / unknown external tools. */
 export function mcpToolLabel(toolName: string): string {
   const name = (toolName ?? '').trim() || 'tool';
@@ -165,6 +177,7 @@ export function toolStartedLabel(
     path?: string;
     patchOp?: SlidePatchOpLabel;
     query?: string;
+    url?: string;
     skillName?: string;
   },
 ): string {
@@ -187,6 +200,8 @@ export function toolStartedLabel(
       return 'Reordering slides';
     case 'google_search':
       return googleSearchLabel(args?.query ?? '');
+    case 'web_fetch':
+      return webFetchLabel(args?.url ?? args?.path ?? args?.query ?? '');
     default:
       return mcpToolLabel(toolName);
   }

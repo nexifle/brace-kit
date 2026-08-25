@@ -16,6 +16,9 @@
 // never fork an unbounded write tool.
 
 import type { MCPTool, ProviderConfig } from '../types/index.ts';
+import { GOOGLE_SEARCH_TOOL } from '../background/tools/definitions/google-search.tool.ts';
+import { GROK_WEB_SEARCH_TOOL } from '../background/tools/definitions/grok-web-search.tool.ts';
+import { WEB_FETCH_TOOL } from '../background/tools/definitions/web-fetch.tool.ts';
 import type { SlidePatchPhase } from './applyPatchHarness.ts';
 
 // Re-export for phase runners that type their tool-enablement params.
@@ -23,49 +26,15 @@ export type { SlidePatchPhase };
 
 // ==================== External research tools ====================
 //
-// `google_search` and `web_search` (Grok) are NOT part of the slide tool
-// allowlist — they are injected on top of the plan phase (and, when the caller
-// opts in, build/edit) exactly when the user enables them. They reuse the
-// shared background `MCP_CALL_TOOL` path that routes built-in tools to their
-// handlers, mirroring main chat. The definitions here are identical to the
-// background's GOOGLE_SEARCH_TOOL / GROK_WEB_SEARCH_TOOL so the model sees a
-// consistent schema.
+// `web_fetch` is always injected on plan/build/edit. `google_search` and
+// `web_search` (Grok) are injected on top when the user enables them. They
+// reuse the shared background `MCP_CALL_TOOL` path that routes built-in tools
+// to their handlers, mirroring main chat.
 
-const GOOGLE_SEARCH_TOOL: MCPTool = {
-  name: 'google_search',
-  description:
-    'Search the web using Google. Use this to find current information, news, facts, or any topic that requires up-to-date web search results.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: 'The search query to look up on the web',
-      },
-    },
-    required: ['query'],
-  },
-};
-
-const GROK_WEB_SEARCH_TOOL: MCPTool = {
-  name: 'web_search',
-  description:
-    'Search the web for up-to-date information. Returns a synthesized answer with source citations. Use for current events, recent docs, or any time-dependent facts.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: {
-        type: 'string',
-        description: 'The search query to perform.',
-      },
-      allowed_domains: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Optional list of domains to restrict the search to.',
-      },
-    },
-    required: ['query'],
-  },
+const EXTERNAL_SLIDE_TOOLS: Record<string, MCPTool> = {
+  google_search: GOOGLE_SEARCH_TOOL,
+  web_search: GROK_WEB_SEARCH_TOOL,
+  web_fetch: WEB_FETCH_TOOL,
 };
 
 // ==================== Individual tool definitions ====================
@@ -317,12 +286,11 @@ export function shouldEnableGrokWebSearch(
  * - edit:  read tools + load_skill + apply_patch + reorder_slides (follow-ups are pure patches)
  * - main:  read-only VFS tools only (orchestrator may orient but never mutate)
  *
- * When `enableGoogleSearch` is passed true (US-028), `google_search` is appended
- * for plan — and for build/edit when the caller opts in — matching main chat's
- * behaviour of offering the tool for non-Gemini providers. When
- * `enableGrokWebSearch` is passed true, `web_search` is appended for plan and
- * build/edit. Both are always injected AFTER the slide tools so they stay
- * external to the apply_patch allowlist.
+ * `web_fetch` is always appended for plan/build/edit (never `main`) so the
+ * agent can pull public pages. When `enableGoogleSearch` is passed true
+ * (US-028), `google_search` is appended after that. When `enableGrokWebSearch`
+ * is passed true, `web_search` is appended. External tools stay after the
+ * slide tools so they remain outside the apply_patch allowlist.
  */
 export function getToolsForPhaseNames(
   phase: SlidePatchPhase,
@@ -342,7 +310,8 @@ export function getToolsForPhaseNames(
     }
   })();
 
-  if (phase !== 'main') {
+  if (phase === 'plan' || phase === 'build' || phase === 'edit') {
+    base.push('web_fetch');
     if (options?.enableGoogleSearch) base.push('google_search');
     if (options?.enableGrokWebSearch) base.push('web_search');
   }
@@ -358,11 +327,7 @@ export function getToolsForPhase(
   options?: { enableGoogleSearch?: boolean; enableGrokWebSearch?: boolean }
 ): MCPTool[] {
   const toolNames = getToolsForPhaseNames(phase, options);
-  return toolNames.map((name) =>
-    name === 'google_search'
-      ? GOOGLE_SEARCH_TOOL
-      : name === 'web_search'
-        ? GROK_WEB_SEARCH_TOOL
-        : SLIDE_BUILTIN_TOOLS[name]
-  ).filter((tool): tool is MCPTool => Boolean(tool));
+  return toolNames
+    .map((name) => EXTERNAL_SLIDE_TOOLS[name] ?? SLIDE_BUILTIN_TOOLS[name])
+    .filter((tool): tool is MCPTool => Boolean(tool));
 }

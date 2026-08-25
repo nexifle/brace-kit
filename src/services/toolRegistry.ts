@@ -4,6 +4,7 @@
  */
 
 import type { MCPTool } from '../types/index.ts';
+import { WEB_FETCH_TOOL } from '../background/tools/definitions/web-fetch.tool.ts';
 
 /**
  * Built-in tool definitions for client use
@@ -44,6 +45,7 @@ export const BUILTIN_TOOLS = {
       required: ['query'],
     },
   },
+  WEB_FETCH: WEB_FETCH_TOOL,
   CONTINUE_MESSAGE: {
     name: 'continue_message',
     description:
@@ -95,6 +97,7 @@ export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
 
   // Inject continue_message tool for function-capable models
   if (options.supportsFunctionCalling) {
+    tools.push(BUILTIN_TOOLS.WEB_FETCH as MCPTool);
     tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
   }
 
@@ -109,11 +112,16 @@ export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
 export function getBuiltinTools(options: {
   includeGoogleSearch: boolean;
   includeContinueMessage: boolean;
+  includeWebFetch?: boolean;
 }): MCPTool[] {
   const tools: MCPTool[] = [];
 
   if (options.includeGoogleSearch) {
     tools.push(BUILTIN_TOOLS.GOOGLE_SEARCH as MCPTool);
+  }
+  // Mirror getAllTools: function-calling injection includes web_fetch with continue_message.
+  if (options.includeWebFetch ?? options.includeContinueMessage) {
+    tools.push(BUILTIN_TOOLS.WEB_FETCH as MCPTool);
   }
   if (options.includeContinueMessage) {
     tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
@@ -128,5 +136,10 @@ export function getBuiltinTools(options: {
  * @returns True if the tool is a built-in tool
  */
 export function isBuiltinTool(name: string): boolean {
-  return name === 'google_search' || name === 'web_search' || name === 'continue_message';
+  return (
+    name === 'google_search' ||
+    name === 'web_search' ||
+    name === 'web_fetch' ||
+    name === 'continue_message'
+  );
 }
