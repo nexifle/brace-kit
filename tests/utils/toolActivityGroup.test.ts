@@ -49,6 +49,37 @@ describe('groupMessagesForDisplay', () => {
     expect(items.every((i) => i.type === 'message')).toBe(true);
   });
 
+  it('folds reasoning-only and mid-turn assistant text into one timeline', () => {
+    const messages: Message[] = [
+      msg({ role: 'user', content: 'search indonesia' }),
+      msg({ role: 'assistant', content: '', reasoningContent: 'plan…', createdAt: 5 }),
+      msg({ role: 'tool', name: 'tavily_search', content: 'a', toolCallId: '1', createdAt: 10 }),
+      msg({ role: 'tool', name: 'tavily_search', content: 'b', toolCallId: '2', createdAt: 12 }),
+      msg({
+        role: 'assistant',
+        content: 'Let me dig a little deeper into the top trends.',
+        reasoningContent: 'more…',
+        createdAt: 20,
+      }),
+      msg({ role: 'tool', name: 'tavily_extract', content: 'c', toolCallId: '3', createdAt: 25 }),
+      msg({ role: 'assistant', content: 'Here are the trends.', createdAt: 40 }),
+    ];
+    const items = groupMessagesForDisplay(messages, true);
+    expect(items.map((i) => i.type)).toEqual(['message', 'tool-group', 'message']);
+    if (items[1].type !== 'tool-group') throw new Error('expected tool-group');
+    expect(items[1].tools).toHaveLength(3);
+    expect(items[1].entries.map((e) => e.kind)).toEqual(['thinking', 'tool', 'tool', 'thinking', 'tool']);
+    const midThink = items[1].entries[3];
+    expect(midThink.kind).toBe('thinking');
+    if (midThink.kind === 'thinking') {
+      expect(midThink.body).toContain('Let me dig a little deeper');
+      expect(midThink.reasoning).toBe('more…');
+    }
+    expect(items[1].endedAt).toBe(40);
+    if (items[2].type !== 'message') throw new Error('expected message');
+    expect(items[2].message.content).toBe('Here are the trends.');
+  });
+
   it('leaves endedAt unset while no following assistant exists', () => {
     const messages: Message[] = [
       msg({ role: 'tool', name: 'web_search', content: 'a', createdAt: 1 }),
