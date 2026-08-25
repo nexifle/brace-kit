@@ -273,6 +273,7 @@ export function createChatService(): ChatService {
             id: tc.id || `tc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: tc.name || 'unknown',
             arguments: tc.arguments || '{}',
+            ...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
           }));
 
           const thinkParser = createThinkTagParser();
@@ -425,6 +426,7 @@ export function createChatService(): ChatService {
                 index: chunk.index,
                 name: chunk.name,
                 arguments: chunk.arguments || '',
+                ...(chunk.thoughtSignature ? { thoughtSignature: chunk.thoughtSignature } : {}),
               };
               toolCalls.push(currentToolCall);
             }

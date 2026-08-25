@@ -50,6 +50,7 @@ export function useMessageBuilder() {
           id: tc.id,
           name: tc.name,
           arguments: tc.arguments || '{}',
+          ...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
         })),
         ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
         ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),

@@ -110,19 +110,30 @@ export function formatGemini(
         parts.push(textPart);
       }
       if (msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
+        for (let i = 0; i < msg.toolCalls.length; i++) {
+          const tc = msg.toolCalls[i];
           let args = {};
           try {
             args = JSON.parse(tc.arguments || '{}');
           } catch {
             args = {};
           }
-          parts.push({
+          // Per-call signature preferred. Legacy messages only stored a
+          // message-level reasoningSignature — attach that to the first FC
+          // when no thought/text part would already carry it.
+          const thoughtSignature =
+            tc.thoughtSignature ||
+            (i === 0 && !msg.reasoningContent && !msg.content ? msg.reasoningSignature : undefined);
+          const part: GeminiPart = {
             functionCall: {
               name: tc.name,
               args,
             },
-          });
+          };
+          if (thoughtSignature) {
+            part.thoughtSignature = thoughtSignature;
+          }
+          parts.push(part);
         }
       }
       if (parts.length > 0) {
@@ -387,7 +398,16 @@ export async function* parseGeminiStream(
                 continue;
               }
 
-              if (part.thoughtSignature) {
+              // Function-call signatures must stay on the tool_call chunk so they
+              // are not concatenated into message-level reasoningSignature.
+              if (part.functionCall) {
+                yield {
+                  type: 'tool_call',
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args),
+                  ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
+                };
+              } else if (part.thoughtSignature) {
                 yield { type: 'reasoning_signature', content: part.thoughtSignature };
               }
 
@@ -395,15 +415,6 @@ export async function* parseGeminiStream(
               // Gemini-compatible endpoints that embed <think> blocks in text
               if (part.text) {
                 yield* thinkParser.process(part.text);
-              }
-
-              // Tool calls
-              if (part.functionCall) {
-                yield {
-                  type: 'tool_call',
-                  name: part.functionCall.name,
-                  arguments: JSON.stringify(part.functionCall.args),
-                };
               }
 
               // Generated images

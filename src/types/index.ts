@@ -13,6 +13,8 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
+  /** Gemini 3+ thought signature for this functionCall part — must be echoed on replay. */
+  thoughtSignature?: string;
 }
 
 export interface ToolResult {

@@ -146,6 +146,34 @@ describe('Grok Responses Format', () => {
       });
     });
 
+    it('[REGRESSION] must not leak Gemini thoughtSignature into Responses function_call items', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Question' },
+        {
+          role: 'assistant',
+          content: '',
+          reasoningSignature: 'msg_sig',
+          toolCalls: [
+            {
+              id: 'c1',
+              name: 'search',
+              arguments: '{"q":"x"}',
+              thoughtSignature: 'gemini_fc_sig',
+            },
+          ],
+        },
+        { role: 'tool', toolCallId: 'c1', content: 'results' },
+      ];
+      const config = formatResponses(provider, messages, [], {});
+      const raw = config.options.body as string;
+      expect(raw).not.toContain('thoughtSignature');
+      expect(raw).not.toContain('gemini_fc_sig');
+
+      const body = JSON.parse(raw);
+      const fc = (body.input as Array<Record<string, unknown>>).find((i) => i.type === 'function_call');
+      expect(Object.keys(fc || {}).sort()).toEqual(['arguments', 'call_id', 'name', 'type']);
+    });
+
     it('[REGRESSION] maps multimodal user content to input_text + input_image (not nested arrays)', () => {
       const messages: Message[] = [
         {
