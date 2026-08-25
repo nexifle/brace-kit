@@ -66,6 +66,10 @@ export interface Message {
   condenseId?: string;
   condenseParent?: string;
   isCachedResult?: boolean;
+  /** Wall-clock when the message was added (tool activity duration). */
+  createdAt?: number;
+  /** Duration of a tool-activity group, stored on the first tool in the group. */
+  toolActivityDurationMs?: number;
   // Reasoning/thinking content
   reasoningContent?: string;
   reasoningSignature?: string; // Anthropic thinking block signature (required for history replay)
@@ -391,6 +395,8 @@ export interface Preferences {
   startOnWelcome: boolean;
   /** When true, the "open Slide Creator in a new tab" suggestion is never shown again. */
   slideCreatorTabSuggestionDismissed: boolean;
+  /** Set after migrating the factory default from detailed → timeline (compact). */
+  toolTimelineDefaultApplied?: boolean;
 }
 
 // ==================== Streaming State ====================

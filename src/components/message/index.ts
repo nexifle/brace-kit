@@ -3,6 +3,8 @@ export { MessageBubble } from './MessageBubble';
 
 // Streaming component (optimized for streaming re-renders)
 export { StreamingBubble } from './StreamingBubble';
+export { AgentActivityBlock } from './AgentActivityBlock';
+export { ToolCallDetailSheet } from './ToolCallDetailSheet';
 
 // Shared markdown body (main chat + slide rail)
 export { MarkdownBody, MARKDOWN_BODY_PROSE_CLASS } from './MarkdownBody.tsx';

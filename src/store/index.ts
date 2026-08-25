@@ -182,9 +182,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Preferences
   preferences: {
-    toolMessageDisplay: 'detailed',
+    toolMessageDisplay: 'compact',
     startOnWelcome: false,
     slideCreatorTabSuggestionDismissed: false,
+    toolTimelineDefaultApplied: true,
   },
 
   // Text Selection UI Settings
@@ -195,7 +196,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Actions
   setMessages: (messages) => set({ messages }),
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) =>
+    set((state) => ({
+      messages: [
+        ...state.messages,
+        message.createdAt ? message : { ...message, createdAt: Date.now() },
+      ],
+    })),
   updateLastMessage: (content) =>
     set((state) => {
       const messages = [...state.messages];
@@ -950,8 +957,19 @@ export const useStore = create<AppState>((set, get) => ({
       if (data.theme) {
         updates.theme = data.theme;
       }
+      let persistTimelineDefault = false;
       if (data.preferences) {
-        updates.preferences = data.preferences;
+        const loaded = data.preferences;
+        const alreadyMigrated = loaded.toolTimelineDefaultApplied === true;
+        persistTimelineDefault = !alreadyMigrated;
+        updates.preferences = {
+          ...get().preferences,
+          ...loaded,
+          toolMessageDisplay: alreadyMigrated
+            ? (loaded.toolMessageDisplay ?? 'compact')
+            : 'compact',
+          toolTimelineDefaultApplied: true,
+        };
       }
       if (data.railCollapsed !== undefined) {
         updates.railCollapsed = data.railCollapsed;
@@ -1050,6 +1068,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       set(updates);
+      if (persistTimelineDefault) {
+        get().saveToStorage();
+      }
       // Tandai bahwa storage sudah selesai dimuat — trigger recovery di useStreaming
       get().setStorageReady(true);
       // Grok (OAuth) status is derived from storage.session/local — refresh it

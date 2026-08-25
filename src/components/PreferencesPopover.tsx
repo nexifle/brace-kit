@@ -14,16 +14,16 @@ export function PreferencesPopover({ isOpen, onClose }: PreferencesPopoverProps)
 
   const displayModes = [
     {
+      value: 'compact' as const,
+      label: 'Timeline',
+      description: 'Collapsible activity timeline with live tool progress (default)',
+      icon: WrenchIcon,
+    },
+    {
       value: 'detailed' as const,
       label: 'Detailed',
       description: 'Full tool messages with collapsible sections',
       icon: ListIcon,
-    },
-    {
-      value: 'compact' as const,
-      label: 'Compact',
-      description: 'Badge-style tool messages, click to expand',
-      icon: WrenchIcon,
     },
   ];
 
