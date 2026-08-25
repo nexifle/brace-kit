@@ -37,6 +37,7 @@ import { selectMemoriesForConversation } from '../utils/memorySampler.ts';
 import { encryptApiKey, decryptApiKey, isEncrypted } from '../utils/keyEncryption.ts';
 import { getGrokAuthStatus } from '../utils/grokOAuth.ts';
 import { migrateCustomProvider } from '../providers/modelSpecs.ts';
+import { DEFAULT_PREFERENCES, migratePreferences } from '../utils/migratePreferences.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -181,11 +182,7 @@ export const useStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
 
   // Preferences
-  preferences: {
-    toolMessageDisplay: 'detailed',
-    startOnWelcome: false,
-    slideCreatorTabSuggestionDismissed: false,
-  },
+  preferences: { ...DEFAULT_PREFERENCES },
 
   // Text Selection UI Settings
   textSelectionEnabled: true,
@@ -195,7 +192,13 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Actions
   setMessages: (messages) => set({ messages }),
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) =>
+    set((state) => ({
+      messages: [
+        ...state.messages,
+        message.createdAt ? message : { ...message, createdAt: Date.now() },
+      ],
+    })),
   updateLastMessage: (content) =>
     set((state) => {
       const messages = [...state.messages];
@@ -950,8 +953,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (data.theme) {
         updates.theme = data.theme;
       }
+      let persistPreferences = false;
       if (data.preferences) {
-        updates.preferences = data.preferences;
+        const migrated = migratePreferences(data.preferences);
+        updates.preferences = migrated.preferences;
+        persistPreferences = migrated.dirty;
       }
       if (data.railCollapsed !== undefined) {
         updates.railCollapsed = data.railCollapsed;
@@ -1050,6 +1056,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       set(updates);
+      if (persistPreferences) {
+        get().saveToStorage();
+      }
       // Tandai bahwa storage sudah selesai dimuat — trigger recovery di useStreaming
       get().setStorageReady(true);
       // Grok (OAuth) status is derived from storage.session/local — refresh it

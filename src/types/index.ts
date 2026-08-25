@@ -66,6 +66,8 @@ export interface Message {
   condenseId?: string;
   condenseParent?: string;
   isCachedResult?: boolean;
+  /** Wall-clock when the message was added. */
+  createdAt?: number;
   // Reasoning/thinking content
   reasoningContent?: string;
   reasoningSignature?: string; // Anthropic thinking block signature (required for history replay)
@@ -391,6 +393,8 @@ export interface Preferences {
   startOnWelcome: boolean;
   /** When true, the "open Slide Creator in a new tab" suggestion is never shown again. */
   slideCreatorTabSuggestionDismissed: boolean;
+  /** Bumped when a one-shot default/schema change must run on load. */
+  preferencesVersion?: number;
 }
 
 // ==================== Streaming State ====================

@@ -2,13 +2,16 @@ import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
 import { MessageBubble } from './MessageBubble.tsx';
 import { StreamingBubble } from './message/StreamingBubble.tsx';
-import { ToolMessage, ToolMessageGroup, ToolMessageData } from './ToolMessage.tsx';
+import { AgentActivityBlock } from './message/AgentActivityBlock.tsx';
+import { ToolMessage } from './ToolMessage.tsx';
 import { useChat } from '../hooks';
-import type { Message } from '../types/index.ts';
+import { groupMessagesForDisplay } from '../utils/toolActivityGroup.ts';
 
 export function MessageList() {
   const messages = useStore((state) => state.messages);
   const isStreaming = useStore((state) => state.isStreaming);
+  const streamingContent = useStore((state) => state.streamingContent);
+  const streamingReasoningContent = useStore((state) => state.streamingReasoningContent);
   const preferences = useStore((state) => state.preferences);
   const mode = useStore((state) => state.mode);
   const { branchFrom, regenerateFrom, editMessage } = useChat();
@@ -173,75 +176,18 @@ export function MessageList() {
     };
   }, []);
 
-  // Group consecutive tool messages for compact mode
-  const processedMessages = useMemo(() => {
-    const result: Array<{
-      type: 'message' | 'tool-group';
-      message?: Message;
-      index?: number;
-      tools?: ToolMessageData[];
-    }> = [];
+  const processedMessages = useMemo(
+    () => groupMessagesForDisplay(messages, preferences.toolMessageDisplay === 'compact'),
+    [messages, preferences.toolMessageDisplay],
+  );
 
-    let i = 0;
-    while (i < messages.length) {
-      const msg = messages[i];
-
-      if (msg.role === 'tool') {
-        // Skip 'Calling...' messages
-        if (msg.content.includes('Calling...')) {
-          i++;
-          continue;
-        }
-
-        // In compact mode, group consecutive tool messages
-        if (preferences.toolMessageDisplay === 'compact') {
-          const toolGroup: ToolMessageData[] = [];
-          let j = i;
-
-          // Collect all consecutive tool messages
-          while (j < messages.length && messages[j].role === 'tool') {
-            const toolMsg = messages[j];
-            // Skip 'Calling...' in the middle of group
-            if (!toolMsg.content.includes('Calling...')) {
-              toolGroup.push({
-                name: toolMsg.name || 'unknown',
-                content: toolMsg.content,
-                toolCallId: toolMsg.toolCallId,
-                toolArguments: toolMsg.toolArguments,
-                isCachedResult: toolMsg.isCachedResult,
-              });
-            }
-            j++;
-          }
-
-          if (toolGroup.length > 0) {
-            result.push({
-              type: 'tool-group',
-              tools: toolGroup,
-            });
-          }
-          i = j;
-        } else {
-          // Detailed mode: render tool messages individually
-          result.push({
-            type: 'message',
-            message: msg,
-            index: i,
-          });
-          i++;
-        }
-      } else {
-        result.push({
-          type: 'message',
-          message: msg,
-          index: i,
-        });
-        i++;
-      }
+  let lastToolGroupIndex = -1;
+  for (let i = processedMessages.length - 1; i >= 0; i--) {
+    if (processedMessages[i].type === 'tool-group') {
+      lastToolGroupIndex = i;
+      break;
     }
-
-    return result;
-  }, [messages, preferences.toolMessageDisplay]);
+  }
 
   return (
     <div
@@ -251,59 +197,49 @@ export function MessageList() {
     >
       <div className={`mx-auto w-full flex flex-col gap-2 ${mode === 'tab' ? 'max-w-[900px]' : ''}`}>
         {processedMessages.map((item, idx) => {
-        if (item.type === 'tool-group' && item.tools) {
+        if (item.type === 'tool-group') {
+          const isLastGroup = idx === lastToolGroupIndex;
           return (
-            <ToolMessageGroup
-              key={`tool-group-${idx}`}
+            <AgentActivityBlock
+              key={`tool-group-${item.firstToolIndex}`}
               tools={item.tools}
-              mode={preferences.toolMessageDisplay}
+              isActive={Boolean(isStreaming && isLastGroup)}
+              startedAt={item.startedAt}
+              endedAt={item.endedAt}
             />
           );
         }
 
-        if (item.message) {
-          const msg = item.message;
-
-          // Hide empty assistant messages (e.g., those that only carry tool calls or are residues)
-          if (msg.role === 'assistant') {
-            const hasContent = msg.content || msg.displayContent || msg.reasoningContent;
-            const hasAssets = msg.generatedImages?.length || msg.attachments?.length || msg.summary || msg.groundingMetadata;
-
-            if (!hasContent && !hasAssets) {
-              return null;
-            }
-          }
-
-          // For tool messages in detailed mode
-          if (msg.role === 'tool') {
-            return (
-              <ToolMessage
-                key={item.index}
-                name={msg.name || 'unknown'}
-                content={msg.content}
-                toolCallId={msg.toolCallId}
-                toolArguments={msg.toolArguments}
-                isCachedResult={msg.isCachedResult}
-                mode="detailed"
-              />
-            );
-          }
-
+        const msg = item.message;
+        if (msg.role === 'tool') {
           return (
-            <MessageBubble
+            <ToolMessage
               key={item.index}
-              message={msg}
-              messageIndex={item.index ?? idx}
-              onBranch={branchFrom}
-              onRegenerate={regenerateFrom}
-              onEdit={editMessage}
+              name={msg.name || 'unknown'}
+              content={msg.content}
+              toolCallId={msg.toolCallId}
+              toolArguments={msg.toolArguments}
+              isCachedResult={msg.isCachedResult}
+              mode="detailed"
             />
           );
         }
 
-        return null;
+        return (
+          <MessageBubble
+            key={item.index}
+            message={msg}
+            messageIndex={item.index}
+            onBranch={branchFrom}
+            onRegenerate={regenerateFrom}
+            onEdit={editMessage}
+          />
+        );
       })}
-        {isStreaming && <StreamingBubble />}
+        {isStreaming &&
+          (streamingContent ||
+            streamingReasoningContent ||
+            !processedMessages.some((p) => p.type === 'tool-group')) && <StreamingBubble />}
         <div ref={messagesEndRef} style={{ height: '20px' }} />
       </div>
     </div>
