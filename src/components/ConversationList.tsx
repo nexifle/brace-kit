@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useStore } from '../store/index.ts';
 import { fuzzySearchMulti, fuzzyHighlight } from '../utils/fuzzySearch.ts';
 import type { Message, Conversation } from '../types/index.ts';
@@ -109,6 +110,8 @@ export function ConversationList() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   // Which conversation's export menu is open (keeps its row visible while open)
   const [exportMenuFor, setExportMenuFor] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const reduceMotion = useReducedMotion();
 
   // Cache: store messages + pre-built searchable strings, survive across search changes
   const messagesCacheRef = useRef<Map<string, Message[]>>(new Map());
@@ -127,10 +130,20 @@ export function ConversationList() {
   }, [searchQuery]);
 
   const handleSwitchConversation = (id: string) => {
+    setPendingDeleteId(null);
     if (id === store.activeConversationId) return;
     // Switch directly – active streams continue running in background
     store.switchConversation(id);
   };
+
+  useEffect(() => {
+    if (!pendingDeleteId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPendingDeleteId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pendingDeleteId]);
 
   const branchRelations = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -145,6 +158,7 @@ export function ConversationList() {
   }, [store.conversations]);
 
   const startRename = useCallback((conv: ConversationWithMessages) => {
+    setPendingDeleteId(null);
     setRenamingId(conv.id);
     setRenameValue(conv.title);
     setTimeout(() => renameInputRef.current?.select(), 0);
@@ -346,100 +360,163 @@ export function ConversationList() {
     const isActive = conv.id === store.activeConversationId;
     const isRenaming = renamingId === conv.id;
     const isStreamingConv = !!store.streamingConversations[conv.id];
+    const isPendingDelete = pendingDeleteId === conv.id;
+    const swipeTransition = reduceMotion
+      ? { duration: 0.12, ease: 'easeOut' as const }
+      : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
+    const slideOut = reduceMotion ? 0 : -14;
+    const slideIn = reduceMotion ? 0 : 14;
 
     return (
       <div
         key={conv.id}
-        className={`group/item relative flex items-center gap-2 px-2.5 py-1.5 rounded-none cursor-pointer transition-all duration-200
+        className={`group/item relative grid items-center px-2.5 py-1.5 rounded-none cursor-pointer transition-colors duration-200 overflow-hidden
           ${isActive ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted/40'}
           ${isHighlighted ? 'ring-2 ring-primary/40 bg-primary/5 animate-pulse' : ''}
           ${isRenaming ? 'bg-muted/30 ring-1 ring-border' : ''}`}
-        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 36px' }}
-        onClick={() => !isRenaming && handleSwitchConversation(conv.id)}
-        onDoubleClick={() => !isRenaming && startRename(conv)}
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 32px' }}
+        onClick={() => {
+          if (isRenaming) return;
+          if (isPendingDelete) {
+            setPendingDeleteId(null);
+            return;
+          }
+          handleSwitchConversation(conv.id);
+        }}
+        onDoubleClick={() => !isRenaming && !isPendingDelete && startRename(conv)}
       >
-        <div className="w-full min-w-0 overflow-hidden">
-          {isRenaming ? (
-            <input
-              ref={renameInputRef}
-              className="w-full bg-transparent border-none outline-none text-sm font-medium py-0"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename();
-                else if (e.key === 'Escape') cancelRename();
-              }}
-              onBlur={commitRename}
-              autoFocus
+        <AnimatePresence initial={false}>
+          {isPendingDelete ? (
+            <motion.div
+              key="confirm"
+              className="col-start-1 row-start-1 flex items-center gap-1.5 w-full min-w-0 h-5"
+              initial={{ x: slideIn, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: slideIn, opacity: 0 }}
+              transition={swipeTransition}
               onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            <div className="flex items-center gap-2 w-full">
-              {isBranched && (
-                <GitBranchIcon size={12} className="text-muted-foreground/50 shrink-0" />
-              )}
-              {isStreamingConv && (
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0"
-                  title="Generating response…"
-                />
-              )}
-              <span
-                className={`text-sm truncate w-full ${isActive ? 'text-primary font-semibold' : 'text-foreground'}`}
-                dangerouslySetInnerHTML={{
-                  __html: searchQuery ? highlightMatch(conv.title, searchQuery) : conv.title,
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        <div className={`absolute -right-px top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-gradient-to-l from-card via-card/95 to-transparent from-0% via-60% to-100% pl-10 pr-3 py-1 transition-all duration-200 ${exportMenuFor === conv.id ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100'}`}>
-          <Btn
-            variant="ghost"
-            size="icon-sm"
-            className={`h-6 w-6 rounded-none ${conv.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-primary'}`}
-            title={conv.pinned ? 'Unpin' : 'Pin'}
-            onClick={(e) => {
-              e.stopPropagation();
-              store.togglePinConversation(conv.id);
-            }}
-          >
-            <PinIcon size={12} fill={conv.pinned ? 'currentColor' : 'none'} className={conv.pinned ? '' : 'rotate-45'} />
-          </Btn>
-          {isBranched && (
-            <Btn
-              variant="ghost"
-              size="icon-sm"
-              className="h-6 w-6 rounded-none text-muted-foreground hover:text-primary"
-              title="View Source"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleBranchIconClick(conv);
-              }}
             >
-              <ExternalLinkIcon size={12} />
-            </Btn>
+              <span className="text-sm text-muted-foreground truncate flex-1 min-w-0 leading-5">
+                Delete this chat?
+              </span>
+              <button
+                type="button"
+                className="h-5 px-1.5 shrink-0 text-xs leading-5 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cancel delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDeleteId(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-5 px-2 shrink-0 text-xs leading-5 font-medium bg-destructive text-destructive-foreground hover:brightness-110 transition-all"
+                aria-label="Confirm delete conversation"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDeleteId(null);
+                  store.deleteConversation(conv.id);
+                }}
+              >
+                Delete
+              </button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="content"
+              className="col-start-1 row-start-1 relative flex items-center gap-2 w-full min-w-0 h-5"
+              initial={{ x: slideOut, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: slideOut, opacity: 0 }}
+              transition={swipeTransition}
+            >
+              <div className="w-full min-w-0 overflow-hidden">
+                {isRenaming ? (
+                  <input
+                    ref={renameInputRef}
+                    className="w-full bg-transparent border-none outline-none text-sm font-medium py-0"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename();
+                      else if (e.key === 'Escape') cancelRename();
+                    }}
+                    onBlur={commitRename}
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <div className="flex items-center gap-2 w-full">
+                    {isBranched && (
+                      <GitBranchIcon size={12} className="text-muted-foreground/50 shrink-0" />
+                    )}
+                    {isStreamingConv && (
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0"
+                        title="Generating response…"
+                      />
+                    )}
+                    <span
+                      className={`text-sm leading-5 truncate w-full ${isActive ? 'text-primary font-semibold' : 'text-foreground'}`}
+                      dangerouslySetInnerHTML={{
+                        __html: searchQuery ? highlightMatch(conv.title, searchQuery) : conv.title,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className={`absolute -right-px top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-gradient-to-l from-card via-card/95 to-transparent from-0% via-60% to-100% pl-10 pr-0 py-1 transition-all duration-200 ${exportMenuFor === conv.id ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100'}`}>
+                <Btn
+                  variant="ghost"
+                  size="icon-sm"
+                  className={`h-6 w-6 rounded-none ${conv.pinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-primary'}`}
+                  title={conv.pinned ? 'Unpin' : 'Pin'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    store.togglePinConversation(conv.id);
+                  }}
+                >
+                  <PinIcon size={12} fill={conv.pinned ? 'currentColor' : 'none'} className={conv.pinned ? '' : 'rotate-45'} />
+                </Btn>
+                {isBranched && (
+                  <Btn
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-6 w-6 rounded-none text-muted-foreground hover:text-primary"
+                    title="View Source"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBranchIconClick(conv);
+                    }}
+                  >
+                    <ExternalLinkIcon size={12} />
+                  </Btn>
+                )}
+                <ExportMenu
+                  conversation={conv}
+                  messages={conv.messages}
+                  open={exportMenuFor === conv.id}
+                  onOpenChange={(o) => setExportMenuFor(o ? conv.id : null)}
+                />
+                <Btn
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-6 w-6 rounded-none text-muted-foreground hover:text-destructive"
+                  title="Delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPendingDeleteId(conv.id);
+                  }}
+                >
+                  <Trash2Icon size={12} />
+                </Btn>
+              </div>
+            </motion.div>
           )}
-          <ExportMenu
-            conversation={conv}
-            messages={conv.messages}
-            open={exportMenuFor === conv.id}
-            onOpenChange={(o) => setExportMenuFor(o ? conv.id : null)}
-          />
-          <Btn
-            variant="ghost"
-            size="icon-sm"
-            className="h-6 w-6 rounded-none text-muted-foreground hover:text-destructive"
-            title="Delete"
-            onClick={(e) => {
-              e.stopPropagation();
-              store.deleteConversation(conv.id);
-            }}
-          >
-            <Trash2Icon size={12} />
-          </Btn>
-        </div>
+        </AnimatePresence>
       </div>
     );
   };
