@@ -13,7 +13,6 @@
 
 import type {
   APIMessage,
-  AppState,
   ProviderConfig,
 } from '../types/index.ts';
 import type {
@@ -25,15 +24,16 @@ import type {
 } from '../types/slides.ts';
 import type { SlidePendingAttachment } from '../utils/slideUploads.ts';
 import {
-  apiMessageText,
-  attachmentKindFromPath,
   hydrateAttachments,
-  listUploadFiles,
   materializeUploads,
   persistableAttachment,
   slideApiUserMessage,
   slideDisplayText,
 } from '../utils/slideUploads.ts';
+import {
+  buildPlanSessionMessages,
+  prepareTranscriptForModel,
+} from '../utils/slideVisionTranscript.ts';
 
 import {
   runPlanPhase,
@@ -51,8 +51,6 @@ import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './sl
 import type { AgentTransport, AgentAbortFn, StreamDelta } from './agentSession.ts';
 import { isSlideCanvas, rebuildDeckProjection, syncDeckJson, verifyDeck } from '../utils/slideVfs.ts';
 import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
-import { specAllowsComposerKind } from '../providers/modelSpecs.ts';
-import { resolveSpecFromAppState } from '../utils/modelCapability.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
 /** Clear message narrated when the active model can't drive the slide tool loop. */
@@ -65,212 +63,7 @@ export function deriveSlideTitle(prompt: string): string {
   return cleaned.length > 0 ? cleaned : 'Untitled deck';
 }
 
-/**
- * Build isolated plan-session user turns from the main transcript.
- * Retries must include the original deck prompt — never only "continue"/Retry.
- *
- * When a prior plan round already completed (`project.planTranscript`), the
- * follow-up CONTINUES that exact conversation (user + assistant + tool turns)
- * instead of starting fresh — appending only the newest user turn. This keeps
- * every plan round on the same context and makes the prior round a cacheable
- * prefix for the next (token savings).
- */
-function apiUserFromMainMessage(
-  m: SlideMainMessage,
-  files: SlideFile[],
-  sendImageParts = true,
-): APIMessage {
-  const atts = hydrateAttachments(m.attachments, files);
-  return slideApiUserMessage(m.content, atts, { sendImageParts });
-}
-
-/** True when an API user turn already carries vision `image_url` parts. */
-function hasVisionParts(content: APIMessage['content']): boolean {
-  return Array.isArray(content) && content.some((p) => p.type === 'image_url' && p.image_url?.url);
-}
-
-/** Drop `image_url` parts so a non-vision model is not sent multimodal content. */
-function stripVisionParts(msg: APIMessage): APIMessage {
-  if (!hasVisionParts(msg.content)) return msg;
-  return { ...msg, content: apiMessageText(msg.content) };
-}
-
-const UPLOAD_PATH_RE = /\/uploads\/[A-Za-z0-9._-]+/g;
-
-function imageAttachmentByPath(project: SlideProject): Map<string, SlideUserAttachment> {
-  const map = new Map<string, SlideUserAttachment>();
-  for (const f of listUploadFiles(project.files)) {
-    if (attachmentKindFromPath(f.path, f.content) !== 'image') continue;
-    map.set(f.path, {
-      id: f.path,
-      type: 'image',
-      name: f.path.replace(/^\/uploads\//, ''),
-      path: f.path,
-      data: f.content,
-    });
-  }
-  for (const m of project.messages) {
-    if (m.role !== 'user') continue;
-    for (const a of hydrateAttachments(m.attachments, project.files)) {
-      if (a.type !== 'image' || !(a.preview || a.data)) continue;
-      map.set(a.path, a);
-    }
-  }
-  return map;
-}
-
-function imagesForUserTurn(
-  msg: APIMessage,
-  main: SlideMainMessage | undefined,
-  project: SlideProject,
-): SlideUserAttachment[] {
-  const byPath = imageAttachmentByPath(project);
-  const seen = new Set<string>();
-  const out: SlideUserAttachment[] = [];
-  const add = (att: SlideUserAttachment | undefined) => {
-    if (!att?.path || seen.has(att.path)) return;
-    if (att.type !== 'image' || !(att.preview || att.data)) return;
-    seen.add(att.path);
-    out.push(att);
-  };
-  for (const a of hydrateAttachments(main?.attachments, project.files)) add(a);
-  const text = apiMessageText(msg.content);
-  for (const path of text.match(UPLOAD_PATH_RE) ?? []) add(byPath.get(path));
-  return out;
-}
-
-function attachVisionToUserMessage(
-  msg: APIMessage,
-  images: SlideUserAttachment[],
-): APIMessage {
-  if (images.length === 0 || hasVisionParts(msg.content)) return msg;
-  const text = apiMessageText(msg.content);
-  return {
-    ...msg,
-    content: [
-      { type: 'text', text },
-      ...images.map((a) => ({
-        type: 'image_url' as const,
-        image_url: { url: (a.preview || a.data) as string },
-      })),
-    ],
-  };
-}
-
-function workspaceUploadListing(files: SlideFile[]): string {
-  const uploads = listUploadFiles(files);
-  if (uploads.length === 0) return '';
-  const lines = uploads.map((f) => `- ${f.path} (${attachmentKindFromPath(f.path, f.content)})`);
-  return (
-    '\n\n[Uploaded files already in this workspace]\n' +
-    lines.join('\n') +
-    '\nThese files stay at those paths. This model cannot view image pixels. Do not paste data URLs. ' +
-    'Only put a file on a slide if the user asked to use it on the deck — a screenshot may be context only.'
-  );
-}
-
-function transcriptMentionsUploads(transcript: APIMessage[], files: SlideFile[]): boolean {
-  const uploads = listUploadFiles(files);
-  if (uploads.length === 0) return true;
-  const blob = transcript.map((m) => apiMessageText(m.content)).join('\n');
-  if (blob.includes('[Uploaded files]')) return true;
-  return uploads.some((f) => blob.includes(f.path));
-}
-
-function ensureUploadPathsInTranscript(
-  transcript: APIMessage[],
-  project: SlideProject,
-): APIMessage[] {
-  if (transcriptMentionsUploads(transcript, project.files)) return transcript;
-  const listing = workspaceUploadListing(project.files);
-  if (!listing) return transcript;
-  const out = transcript.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
-    if (out[i].role !== 'user') continue;
-    const text = apiMessageText(out[i].content);
-    out[i] = { ...out[i], content: text + listing };
-    return out;
-  }
-  return [...out, { role: 'user', content: listing.trim() }];
-}
-
-/**
- * Shape a persisted phase transcript for the live model:
- * vision on → rehydrate `image_url` per user turn (that turn's attachments
- * and any `/uploads/…` paths named in its text);
- * vision off → drop `image_url` and keep `/uploads` paths so a model switch
- * on an existing deck does not send multimodal parts.
- */
-function prepareTranscriptForModel(
-  transcript: APIMessage[],
-  project: SlideProject,
-  sendImageParts: boolean,
-): APIMessage[] {
-  if (sendImageParts) {
-    const mains = project.messages.filter((m) => m.role === 'user');
-    let i = 0;
-    return transcript.map((msg) => {
-      if (msg.role !== 'user') return msg;
-      const main = mains[i++];
-      if (hasVisionParts(msg.content)) return msg;
-      return attachVisionToUserMessage(msg, imagesForUserTurn(msg, main, project));
-    });
-  }
-  return ensureUploadPathsInTranscript(transcript.map(stripVisionParts), project);
-}
-
-export function buildPlanSessionMessages(
-  project: SlideProject,
-  extraUser?: string,
-  sendImageParts = true,
-): APIMessage[] {
-  if (project.planTranscript?.length) {
-    const out = prepareTranscriptForModel(project.planTranscript, project, sendImageParts);
-    const extra = extraUser?.trim();
-    const newestMain = [...project.messages].reverse().find((m) => m.role === 'user');
-    const newestMsg: APIMessage | undefined = extra
-      ? { role: 'user', content: extra }
-      : newestMain
-        ? apiUserFromMainMessage(newestMain, project.files, sendImageParts)
-        : undefined;
-    const newestText = newestMsg ? apiMessageText(newestMsg.content) : '';
-    const tail = out[out.length - 1];
-    const tailText = tail ? apiMessageText(tail.content) : '';
-    if (newestText && !(tail?.role === 'user' && tailText === newestText)) {
-      out.push(newestMsg!);
-    } else if (!newestText) {
-      // No newer user turn (e.g. a bare retry over a transcript) — match the
-      // fresh-plan fallback so the session still has an explicit instruction.
-      out.push({
-        role: 'user',
-        content: 'Continue planning this deck from the current workspace.',
-      });
-    }
-    return out;
-  }
-
-  const out: APIMessage[] = [];
-  for (const m of project.messages) {
-    if (m.role !== 'user') continue;
-    const msg = apiUserFromMainMessage(m, project.files, sendImageParts);
-    if (!apiMessageText(msg.content).trim()) continue;
-    out.push(msg);
-  }
-  const extra = extraUser?.trim();
-  if (extra) {
-    const last = out[out.length - 1];
-    if (!last || apiMessageText(last.content) !== extra) {
-      out.push({ role: 'user', content: extra });
-    }
-  }
-  if (out.length === 0) {
-    out.push({
-      role: 'user',
-      content: 'Continue planning this deck from the current workspace.',
-    });
-  }
-  return out;
-}
+export { buildPlanSessionMessages } from '../utils/slideVisionTranscript.ts';
 
 function makeMsg(
   role: SlideMainMessage['role'],
@@ -374,14 +167,6 @@ export interface SlideAgentDeps {
    */
   canSendImageParts?: () => boolean;
   /**
-   * Live custom-provider + fetched-model specs for the vision fallback when
-   * `canSendImageParts` is not injected. Production always injects the checker.
-   */
-  getSpecState?: () => {
-    customProviders: AppState['customProviders'];
-    fetchedModels: AppState['fetchedModels'];
-  };
-  /**
    * Live CHAT_REQUEST options (enableReasoning / reasoningLevel / …).
    * Prefer a getter so the main-store toggle is read at request time.
    * Defaults to `{}` (reasoning follows chat.service default: allowed).
@@ -437,22 +222,9 @@ export function createSlideAgent(
     return geminiSupportsFunctionCalling(pc.model);
   }
 
-  /** Whether vision `image_url` parts may go on the wire. */
+  /** Whether vision `image_url` parts may go on the wire. Default true for tests. */
   function sendImageParts(): boolean {
-    if (deps.canSendImageParts) return deps.canSendImageParts();
-    try {
-      const specState = deps.getSpecState?.();
-      return specAllowsComposerKind(
-        resolveSpecFromAppState({
-          providerConfig: providerConfig(),
-          customProviders: specState?.customProviders ?? [],
-          fetchedModels: specState?.fetchedModels ?? {},
-        }),
-        'image',
-      );
-    } catch {
-      return false;
-    }
+    return deps.canSendImageParts?.() ?? true;
   }
 
   /** Feed a streaming turn delta to the store (US-035). */
@@ -471,10 +243,8 @@ export function createSlideAgent(
   };
 
   /** Live search/MCP flags — never freeze the first-render snapshot. */
-  const toolOptions = (): SlideToolOptions => ({
-    ...(deps.getToolOptions?.() ?? deps.toolOptions),
-    sendImageParts: sendImageParts(),
-  });
+  const toolOptions = (): SlideToolOptions | undefined =>
+    deps.getToolOptions?.() ?? deps.toolOptions;
 
 
 
@@ -784,6 +554,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (files) => host.refreshDeckFromFiles(files),
@@ -987,6 +758,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
@@ -1226,6 +998,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),
@@ -1432,6 +1205,7 @@ export function createSlideAgent(
         transport: deps.transport,
         abortRequest: deps.abortRequest,
         toolOptions: toolOptions(),
+        sendImageParts: sendImageParts(),
         onDelta: streamDelta,
         onRoundStart: prepareStream,
         onFilesChange: (changed) => host.refreshDeckFromFiles(changed),

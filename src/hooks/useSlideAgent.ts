@@ -18,11 +18,10 @@ import { isGeminiImageModel, isXAIImageModel } from '../providers/presets.ts';
 import {
   firstChatModelId,
   resolveModelSpec,
-  specAllowsComposerKind,
   specIsImageModel,
   specSupportsTools,
 } from '../providers/modelSpecs.ts';
-import { resolveSpecFromAppState } from '../utils/modelCapability.ts';
+import { specAllowsImageInput } from '../utils/modelCapability.ts';
 import { PROVIDER_PRESETS } from '../providers/presets.ts';
 import { buildChatOptions, chatOptionsStateFromStore } from '../utils/chatOptions.ts';
 import { saveSlideProject, setLastActiveSlideProject } from '../utils/slideDB.ts';
@@ -120,12 +119,7 @@ export function useSlideAgent() {
           });
           return specSupportsTools(spec, s.providerConfig.model);
         },
-        canSendImageParts: () =>
-          specAllowsComposerKind(resolveSpecFromAppState(useStore.getState()), 'image'),
-        getSpecState: () => {
-          const s = useStore.getState();
-          return { customProviders: s.customProviders, fetchedModels: s.fetchedModels };
-        },
+        canSendImageParts: () => specAllowsImageInput(useStore.getState()),
         // Same enableReasoning / reasoningLevel / modelParameters as main chat.
         getChatOptions: () =>
           buildChatOptions(chatOptionsStateFromStore(() => useStore.getState()), {

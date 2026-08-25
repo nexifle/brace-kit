@@ -6,8 +6,7 @@ import type { SlidePendingAttachment } from '../../../utils/slideUploads.ts';
 import { MAX_SLIDE_COMPOSER_ATTACHMENTS } from '../../../utils/slideUploads.ts';
 import { useSlideComposerAttachments } from '../../../hooks/useSlideComposerAttachments.ts';
 import { useStore } from '../../../store/index.ts';
-import { resolveSpecFromAppState } from '../../../utils/modelCapability.ts';
-import { specAllowsComposerKind } from '../../../providers/modelSpecs.ts';
+import { specAllowsImageInput } from '../../../utils/modelCapability.ts';
 import { ComposerPicker } from '../../ComposerPicker.tsx';
 import { ReasoningPopover } from '../../ReasoningPopover.tsx';
 import {
@@ -56,7 +55,7 @@ export function SlideChatComposer({
   const typed = slideComposerCanSend(sessionStatus);
   const disabled = !typed || blocked;
   const canSend = typed && !blocked && !loading && slideComposerHasPayload(value, valid.length);
-  const visionOk = useStore((s) => specAllowsComposerKind(resolveSpecFromAppState(s), 'image'));
+  const visionOk = useStore((s) => specAllowsImageInput(s));
   const showAssetOnlyHint = !visionOk && attachments.some((a) => a.type === 'image');
 
   useEffect(() => {

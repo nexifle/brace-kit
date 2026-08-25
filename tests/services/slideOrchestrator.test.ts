@@ -1999,55 +1999,6 @@ describe('createSlideAgent — continue after failed plan resumes plan', () => {
     expect(Array.isArray(userTurn?.content)).toBe(true);
   });
 
-  it('createFromPrompt omits image_url when getSpecState says the model has no image input', async () => {
-    const skills = makeSkillFetcher();
-    const { transport, seenMessages } = makeTransport([
-      () => ({
-        toolCalls: [
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/brief.md', diff: '@@\n+ok\n' } })),
-          toolCall('apply_patch', JSON.stringify({ operation: { type: 'create_file', path: '/design.md', diff: '@@\n+ok\n' } })),
-        ],
-      }),
-      () => ({ toolCalls: [toolCall('submit_plan', JSON.stringify({ summary: 'ok', canvas: '16:9' }))] }),
-      () => ({ content: 'Plan complete.' }),
-    ]);
-    const h = makeHost();
-    const agent = createSlideAgent(h.host, {
-      providerConfig,
-      transport,
-      skillFetcher: skills.fetcher,
-      maxRounds: 6,
-      getSpecState: () => ({
-        customProviders: [
-          {
-            id: 'custom',
-            name: 'c',
-            apiUrl: 'http://localhost',
-            apiKey: '',
-            model: 'test-model',
-            defaultModel: 'test-model',
-            format: 'openai',
-            models: ['test-model'],
-            modelSpecs: {
-              'test-model': {
-                id: 'test-model',
-                modalities: { input: ['text'], output: ['text'] },
-              },
-            },
-          },
-        ],
-        fetchedModels: {},
-      }),
-    });
-    await agent.createFromPrompt('', undefined, [
-      { id: 'img', type: 'image', name: 'hero.jpg', data: 'data:image/jpeg;base64,qq' },
-    ]);
-    expect(h.active?.files.some((f) => f.path === '/uploads/hero.jpg')).toBe(true);
-    const userTurn = seenMessages[0]?.find((m) => m.role === 'user');
-    expect(typeof userTurn?.content).toBe('string');
-    expect(String(userTurn?.content)).toContain('/uploads/hero.jpg');
-  });
-
   it('createFromPrompt with an image still writes /uploads when vision is off, without image_url', async () => {
     const skills = makeSkillFetcher();
     const { transport, seenMessages } = makeTransport([

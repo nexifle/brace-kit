@@ -294,7 +294,7 @@ describe('runPlanPhase', () => {
       providerConfig,
       files,
       transport,
-      toolOptions: { sendImageParts: false },
+      sendImageParts: false,
     });
     expect(result.status).toBe('done');
     expect(toolResult).toBe(imageReadBlockedMessage('/uploads/hero.jpg'));

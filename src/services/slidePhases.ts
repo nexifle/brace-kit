@@ -69,6 +69,7 @@ import {
 } from './slideSkills.ts';
 import { normalizeAskPayload } from '../utils/slideAsk.ts';
 import { encodeImageForVisionDataUrl } from '../utils/slideImageResize.ts';
+import { attachmentKindFromPath } from '../utils/slideUploads.ts';
 import {
   askAnsweredLabel,
   connectingActivityLabel,
@@ -135,11 +136,6 @@ export interface SlideToolOptions {
    * clear error instead of hanging (FR-14).
    */
   externalTool?: ExternalToolCaller;
-  /**
-   * When false, `read_file` on an image returns an error instead of pixels
-   * (active model has no image input). Default true.
-   */
-  sendImageParts?: boolean;
 }
 
 /** Executes an external tool call and returns its text result (or an error). */
@@ -497,6 +493,8 @@ export interface PlanPhaseParams {
   onRoundStart?: () => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /** When false, `read_file` on an image returns an error instead of pixels. */
+  sendImageParts?: boolean;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
   onActivity?: SlideActivitySink;
   /** Packed skill fetcher for `load_skill` (tests inject; production uses chrome URLs). */
@@ -663,7 +661,7 @@ function buildPlanSession(params: PlanPhaseParams, seedMessages?: APIMessage[]) 
         const content = await readFile(
           currentFiles,
           args<{ path?: string }>(toolCall).path,
-          params.toolOptions?.sendImageParts !== false,
+          params.sendImageParts !== false,
         );
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
@@ -763,6 +761,8 @@ export interface BuildPhaseParams {
   onRoundStart?: () => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /** When false, `read_file` on an image returns an error instead of pixels. */
+  sendImageParts?: boolean;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
   onActivity?: SlideActivitySink;
   /** Packed skill fetcher for `load_skill`. */
@@ -861,7 +861,7 @@ function buildBuildSession(params: BuildPhaseParams) {
         const content = await readFile(
           currentFiles,
           args<{ path?: string }>(toolCall).path,
-          params.toolOptions?.sendImageParts !== false,
+          params.sendImageParts !== false,
         );
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
@@ -1027,6 +1027,8 @@ export interface EditPhaseParams {
   onRoundStart?: () => void;
   /** External tool sharing (google_search / MCP) for the session (US-028/029). */
   toolOptions?: SlideToolOptions;
+  /** When false, `read_file` on an image returns an error instead of pixels. */
+  sendImageParts?: boolean;
   /** Activity-feed sink (Amendment A.6): emit tool/file/ask rows as tools dispatch. */
   onActivity?: SlideActivitySink;
   /** Packed skill fetcher for `load_skill`. */
@@ -1121,7 +1123,7 @@ function buildEditSession(params: EditPhaseParams) {
         const content = await readFile(
           currentFiles,
           args<{ path?: string }>(toolCall).path,
-          params.toolOptions?.sendImageParts !== false,
+          params.sendImageParts !== false,
         );
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
@@ -1341,12 +1343,6 @@ function listFiles(
 /** Last vision encode per VFS path so repeated read_file does not re-canvas. */
 const visionReadCache = new Map<string, { source: string; encoded: string }>();
 
-const IMAGE_PATH = /\.(jpe?g|png|gif|webp)$/i;
-
-function isImageVfsFile(path: string, content: string): boolean {
-  return content.startsWith('data:image/') || IMAGE_PATH.test(path);
-}
-
 export function imageReadBlockedMessage(path: string): string {
   return (
     `Error: Cannot view ${path}. The active model is not multimodal, so read_file cannot return image pixels. ` +
@@ -1364,7 +1360,7 @@ async function readFile(
   if (!path) return 'Error: read_file requires a "path" argument.';
   const file = getSlideFile(files, path);
   if (!file) return `Error: File not found: ${path}`;
-  if (isImageVfsFile(path, file.content)) {
+  if (attachmentKindFromPath(path, file.content) === 'image') {
     if (!sendImageParts) return imageReadBlockedMessage(path);
     if (!file.content.startsWith('data:image/')) return file.content;
     const hit = visionReadCache.get(path);
