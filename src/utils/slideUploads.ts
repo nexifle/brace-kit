@@ -162,9 +162,18 @@ export function apiMessageText(content: MessageContent): string {
   return texts.join('\n');
 }
 
+export type SlideApiUserMessageOptions = {
+  /**
+   * When false, skip `image_url` parts so a non-vision model still gets the
+   * VFS paths in text. Images are already in `/uploads`. Default true.
+   */
+  sendImageParts?: boolean;
+};
+
 export function slideApiUserMessage(
   displayText: string,
   attachments: SlideUserAttachment[] = [],
+  options: SlideApiUserMessageOptions = {},
 ): APIMessage {
   let text = displayText;
   if (attachments.length > 0) {
@@ -177,7 +186,10 @@ export function slideApiUserMessage(
       text += `\n\n[File: ${a.name}]\n${a.data}`;
     }
   }
-  const images = attachments.filter((a) => a.type === 'image' && (a.preview || a.data));
+  const sendImageParts = options.sendImageParts !== false;
+  const images = sendImageParts
+    ? attachments.filter((a) => a.type === 'image' && (a.preview || a.data))
+    : [];
   if (images.length === 0) return { role: 'user', content: text };
   return {
     role: 'user',

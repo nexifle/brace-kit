@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   classifyComposerFile,
-  clipboardImageFiles,
+  clipboardComposerFiles,
   composerFileSizeError,
 } from '../utils/composerAttachments.ts';
 import { encodeImageForVision, encodeImageForVfs } from '../utils/slideImageResize.ts';
@@ -123,10 +123,10 @@ export function useSlideComposerAttachments() {
 
   const handlePaste = useCallback(
     async (e: ClipboardEvent) => {
-      const images = clipboardImageFiles(e.clipboardData);
-      if (images.length === 0) return;
+      const files = clipboardComposerFiles(e.clipboardData, { allowPdf: false });
+      if (files.length === 0) return;
       e.preventDefault();
-      for (const file of images) await processFile(file);
+      for (const file of files) await processFile(file);
     },
     [processFile],
   );

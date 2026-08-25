@@ -125,6 +125,26 @@ describe('slideApiUserMessage', () => {
     const parts = msg.content as Array<{ type: string; image_url?: { url: string } }>;
     expect(parts.find((p) => p.type === 'image_url')?.image_url?.url).toBe('data:image/jpeg;base64,SMALL');
   });
+
+  test('sendImageParts: false keeps VFS paths in text and omits image_url', () => {
+    const msg = slideApiUserMessage(
+      'place this logo',
+      [
+        {
+          id: '1',
+          type: 'image',
+          name: 'logo.png',
+          path: '/uploads/logo.png',
+          data: 'data:image/png;base64,ORIGINAL',
+          preview: 'data:image/jpeg;base64,SMALL',
+        },
+      ],
+      { sendImageParts: false },
+    );
+    expect(typeof msg.content).toBe('string');
+    expect(String(msg.content)).toContain('/uploads/logo.png');
+    expect(String(msg.content)).not.toContain('data:image');
+  });
 });
 
 describe('slideDisplayText', () => {

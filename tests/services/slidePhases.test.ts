@@ -5,6 +5,7 @@ import {
   hasValidPlanFiles,
   runBuildPhase,
   runEditPhase,
+  imageReadBlockedMessage,
   type PlanPhaseResult,
   type PlanPhaseParams,
 } from '../../src/services/slidePhases.ts';
@@ -267,6 +268,39 @@ describe('runPlanPhase', () => {
     });
     expect(result.status).toBe('done');
     expect(result.error).toBeUndefined();
+  });
+
+  it('read_file on an image returns a blocked reason when the model is not multimodal', async () => {
+    const files = makeFiles([
+      { path: '/uploads/hero.jpg', content: 'data:image/jpeg;base64,qq' },
+    ]);
+    let toolResult = '';
+    let round = 0;
+    const transport: PlanPhaseParams['transport'] = async (req) => {
+      const lastTool = [...(req.messages ?? [])].reverse().find((m) => m.role === 'tool');
+      if (lastTool) toolResult = String(lastTool.content ?? '');
+      round += 1;
+      if (round === 1) {
+        return {
+          toolCalls: [toolCall('read_file', JSON.stringify({ path: '/uploads/hero.jpg' }))],
+        };
+      }
+      return { content: 'ok' };
+    };
+
+    const result = await runPlanPhase({
+      systemPrompt: 'p',
+      messages: [userMsg],
+      providerConfig,
+      files,
+      transport,
+      toolOptions: { sendImageParts: false },
+    });
+    expect(result.status).toBe('done');
+    expect(toolResult).toBe(imageReadBlockedMessage('/uploads/hero.jpg'));
+    expect(toolResult).toContain('not multimodal');
+    expect(toolResult).toContain('/uploads/hero.jpg');
+    expect(toolResult).not.toContain('<img src=');
   });
 
   it('routes load_skill to packed skill resources, not the VFS', async () => {

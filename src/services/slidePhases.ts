@@ -135,6 +135,11 @@ export interface SlideToolOptions {
    * clear error instead of hanging (FR-14).
    */
   externalTool?: ExternalToolCaller;
+  /**
+   * When false, `read_file` on an image returns an error instead of pixels
+   * (active model has no image input). Default true.
+   */
+  sendImageParts?: boolean;
 }
 
 /** Executes an external tool call and returns its text result (or an error). */
@@ -655,7 +660,11 @@ function buildPlanSession(params: PlanPhaseParams, seedMessages?: APIMessage[]) 
       }
       case 'read_file': {
         const row = emitter.started(toolCall, round);
-        const content = await readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        const content = await readFile(
+          currentFiles,
+          args<{ path?: string }>(toolCall).path,
+          params.toolOptions?.sendImageParts !== false,
+        );
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
         return { content };
@@ -849,7 +858,11 @@ function buildBuildSession(params: BuildPhaseParams) {
       }
       case 'read_file': {
         const row = emitter.started(toolCall, round);
-        const content = await readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        const content = await readFile(
+          currentFiles,
+          args<{ path?: string }>(toolCall).path,
+          params.toolOptions?.sendImageParts !== false,
+        );
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
         return { content };
@@ -1105,7 +1118,11 @@ function buildEditSession(params: EditPhaseParams) {
       }
       case 'read_file': {
         const row = emitter.started(toolCall, round);
-        const content = await readFile(currentFiles, args<{ path?: string }>(toolCall).path);
+        const content = await readFile(
+          currentFiles,
+          args<{ path?: string }>(toolCall).path,
+          params.toolOptions?.sendImageParts !== false,
+        );
         if (content.startsWith('Error:')) emitter.failed(row, content);
         else emitter.complete(row);
         return { content };
@@ -1324,15 +1341,32 @@ function listFiles(
 /** Last vision encode per VFS path so repeated read_file does not re-canvas. */
 const visionReadCache = new Map<string, { source: string; encoded: string }>();
 
+const IMAGE_PATH = /\.(jpe?g|png|gif|webp)$/i;
+
+function isImageVfsFile(path: string, content: string): boolean {
+  return content.startsWith('data:image/') || IMAGE_PATH.test(path);
+}
+
+export function imageReadBlockedMessage(path: string): string {
+  return (
+    `Error: Cannot view ${path}. The active model is not multimodal, so read_file cannot return image pixels. ` +
+    `The file remains at ${path}. Do not paste a data URL into HTML/CSS. ` +
+    `Only reference this path in slide markup if the user asked you to use this file on the deck.`
+  );
+}
+
 /** Read one file's content, or a Codex-style error string when missing. */
 async function readFile(
   files: import('../types/slides.ts').SlideFile[],
-  path?: string
+  path?: string,
+  sendImageParts = true,
 ): Promise<string> {
   if (!path) return 'Error: read_file requires a "path" argument.';
   const file = getSlideFile(files, path);
   if (!file) return `Error: File not found: ${path}`;
-  if (file.content.startsWith('data:image/')) {
+  if (isImageVfsFile(path, file.content)) {
+    if (!sendImageParts) return imageReadBlockedMessage(path);
+    if (!file.content.startsWith('data:image/')) return file.content;
     const hit = visionReadCache.get(path);
     if (hit && hit.source === file.content) return hit.encoded;
     try {
