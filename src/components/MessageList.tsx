@@ -18,6 +18,7 @@ export function MessageList() {
   const pendingAsk = useStore((state) => state.pendingAsk);
   const { branchFrom, regenerateFrom, editMessage, answerAsk, cancelAsk } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const askPromptWrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
   const scrollRafRef = useRef<number | undefined>(undefined);
@@ -178,6 +179,24 @@ export function MessageList() {
     };
   }, []);
 
+  // AskPrompt sits after the transcript and can grow (wizard steps, confirm overlay).
+  // Scroll it into view when it appears, and keep the chat pinned to the bottom
+  // while its height changes unless the user has scrolled away.
+  useEffect(() => {
+    if (!pendingAsk) return;
+    isUserScrollingRef.current = false;
+    scrollToBottom(true);
+
+    const el = askPromptWrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (isUserScrollingRef.current) return;
+      scrollToBottom(true);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pendingAsk?.id, scrollToBottom]);
+
   const processedMessages = useMemo(
     () => groupMessagesForDisplay(messages, preferences.toolMessageDisplay === 'compact'),
     [messages, preferences.toolMessageDisplay],
@@ -240,12 +259,14 @@ export function MessageList() {
         );
       })}
         {pendingAsk && (
-          <AskPrompt
-            ask={pendingAsk}
-            busy={isStreaming}
-            onSubmit={(answer, attachments) => { void answerAsk(answer, attachments); }}
-            onCancel={() => { void cancelAsk(); }}
-          />
+          <div ref={askPromptWrapRef}>
+            <AskPrompt
+              ask={pendingAsk}
+              busy={isStreaming}
+              onSubmit={(answer, attachments) => { void answerAsk(answer, attachments); }}
+              onCancel={() => { void cancelAsk(); }}
+            />
+          </div>
         )}
         {isStreaming &&
           (streamingContent ||

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, HelpCircle, Plus, Send, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, HelpCircle, Paperclip, Send, X } from 'lucide-react';
 import type { SlideAskState } from '../../store/slideStore.ts';
 import type { PendingAsk, AskQuestion } from '../../types/index.ts';
 import { SLIDE_CANVAS_PRESETS } from '../../types/index.ts';
 import { buildAskAnswer, normalizeAskPayload } from '../../utils/ask.ts';
 import { encodeImageForVision } from '../../utils/slideImageResize.ts';
 import { Btn } from '../ui/Btn.tsx';
+import { IconButton } from '../ui/IconButton.tsx';
 
 /** Max reference images a user may attach to an ask answer. */
 const MAX_ASK_ATTACHMENTS = 3;
@@ -40,19 +42,33 @@ export interface AskPromptProps {
 export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
   const payload = normalizeAskPayload(ask.payload) ?? { questions: [] };
   const questions = payload.questions;
+  const isWizard = questions.length > 1;
+  const [stepIndex, setStepIndex] = useState(0);
+  const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [freeTexts, setFreeTexts] = useState<Record<string, string>>({});
   const [attachments, setAttachments] = useState<AskAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<AskAttachment | null>(null);
+  const [confirmKind, setConfirmKind] = useState<'submit' | 'skip' | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const formMeasureRef = useRef<HTMLDivElement>(null);
+  const overlayMeasureRef = useRef<HTMLDivElement>(null);
+  const [shellHeight, setShellHeight] = useState<number | 'auto'>('auto');
+  const reduceMotion = useReducedMotion();
 
-  const allAnswered = questions.every((q) => {
+  const isAnswered = (q: AskQuestion) => {
     const v = answers[q.id];
     const hasChip = Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim().length > 0;
-    const hasFree = (freeTexts[q.id] ?? '').trim().length > 0;
-    return hasChip || hasFree;
-  });
+    return hasChip || (freeTexts[q.id] ?? '').trim().length > 0;
+  };
+  const allAnswered = questions.every(isAnswered);
+  const unansweredCount = questions.length - questions.filter(isAnswered).length;
   const canSubmit = allAnswered || attachments.length > 0;
+  const safeStep = Math.min(stepIndex, Math.max(0, questions.length - 1));
+  const current = questions[safeStep];
+  const isLastStep = !isWizard || safeStep >= questions.length - 1;
 
   // Reset the draft whenever a new question arrives.
   useEffect(() => {
@@ -60,7 +76,26 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
     setFreeTexts({});
     setAttachments([]);
     setAttachError(null);
+    setStepIndex(0);
+    setStepDir(1);
+    setLightbox(null);
+    setConfirmKind(null);
+    setShellHeight('auto');
   }, [ask.id]);
+
+  useLayoutEffect(() => {
+    const el = confirmKind ? overlayMeasureRef.current : formMeasureRef.current;
+    if (!el) return;
+    const apply = () => {
+      const next = el.getBoundingClientRect().height;
+      if (next > 0) setShellHeight(next);
+    };
+    apply();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [confirmKind, isWizard, current?.id]);
 
   const setValue = (id: string, value: string | string[]) =>
     setAnswers((prev) => ({ ...prev, [id]: value }));
@@ -107,17 +142,45 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
   const removeAttachment = (id: string) =>
     setAttachments((prev) => prev.filter((a) => a.id !== id));
 
+  const goStep = (dir: 1 | -1) => {
+    setConfirmKind(null);
+    setStepDir(dir);
+    setStepIndex((i) => Math.min(questions.length - 1, Math.max(0, i + dir)));
+  };
+
   // A single-question, single-select (non-multi) ask answers immediately on chip
   // tap — no separate send step (A.11). Everything else collects then submits.
   const immediateSubmit = (value: string) =>
     onSubmit(value, attachments.map((a) => a.dataUrl));
 
-  const submit = () => {
-    if (!canSubmit || busy) return;
+  const commitSubmit = () => {
+    if (busy) return;
+    setConfirmKind(null);
     onSubmit(
       buildAskAnswer(questions, answers, freeTexts),
       attachments.map((a) => a.dataUrl),
     );
+  };
+
+  const commitSkip = () => {
+    if (busy || !onCancel) return;
+    setConfirmKind(null);
+    onCancel();
+  };
+
+  const requestSubmit = () => {
+    if (busy) return;
+    if (isWizard && unansweredCount > 0) {
+      setConfirmKind('submit');
+      return;
+    }
+    if (!canSubmit) return;
+    commitSubmit();
+  };
+
+  const requestSkip = () => {
+    if (busy || !onCancel) return;
+    setConfirmKind((kind) => (kind === 'skip' ? null : 'skip'));
   };
 
   /** Render the input widget for a single question. */
@@ -228,137 +291,259 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
     !questions[0].freeText &&
     (questions[0].options?.length ?? 0) > 0;
   const showSubmitButton = !onlyImmediate;
+  const showFooter = showSubmitButton || isWizard || attachments.length > 0 || attachError != null;
 
-  // How many questions the user has answered (for the multi-question progress).
-  const answeredCount = questions.filter((q) => {
-    const v = answers[q.id];
-    const hasChip = Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim().length > 0;
-    return hasChip || (freeTexts[q.id] ?? '').trim().length > 0;
-  }).length;
+  const onCardKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (busy) return;
+    if (confirmKind) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setConfirmKind(null);
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (confirmKind === 'skip') commitSkip();
+        else commitSubmit();
+      }
+      return;
+    }
+    if (!isWizard) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      goStep(-1);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isLastStep) goStep(1);
+    } else if (e.key === 'Enter' && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      requestSubmit();
+    }
+  };
 
-  const showFooter = showSubmitButton || attachments.length > 0;
+  const heightTransition = reduceMotion
+    ? { duration: 0 }
+    : { type: 'spring' as const, stiffness: 380, damping: 36, mass: 0.7 };
+  const slideTransition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
+
+  const questionBody = (q: AskQuestion, index: number) => (
+    <div className="space-y-2">
+      <div className="flex items-start gap-2">
+        {isWizard && (
+          <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+            {index + 1}
+          </span>
+        )}
+        <p className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-foreground">
+          {q.text}
+          {q.multiple && (
+            <span className="ml-1.5 inline-flex items-center rounded-full bg-muted/70 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Select all that apply
+            </span>
+          )}
+        </p>
+      </div>
+      {renderQuestion(q, index)}
+    </div>
+  );
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card/70 shadow-[0_1px_2px_rgba(0,0,0,0.04)] animate-in fade-in slide-in-from-bottom-2 duration-300 motion-reduce:animate-none">
-      {/* Accent edge — subtle brand line so the card reads as the active input. */}
-      <div
-        aria-hidden
-        className="h-[3px] bg-gradient-to-r from-primary to-primary/30"
-      />
+    <div
+      ref={cardRef}
+      tabIndex={0}
+      onKeyDown={onCardKeyDown}
+      className="overflow-hidden rounded-xl border border-border bg-card/70 shadow-[0_1px_2px_rgba(0,0,0,0.04)] outline-none animate-in fade-in slide-in-from-bottom-2 duration-300 motion-reduce:animate-none focus-visible:ring-2 focus-visible:ring-ring/30"
+    >
+      <div aria-hidden className="h-[2px] bg-gradient-to-r from-primary to-primary/30" />
 
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-primary/[0.04] px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
-            <HelpCircle size={15} />
+      <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-primary/[0.04] px-3 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
+            <HelpCircle size={12} />
           </span>
-          <div className="min-w-0">
-            <span className="block text-2xs font-semibold uppercase tracking-[0.16em] text-primary">
-              Answer needed
-            </span>
-            {questions.length > 1 && (
-              <span className="block text-[11px] leading-tight text-muted-foreground/80">
-                {answeredCount} of {questions.length} answered
-              </span>
-            )}
-          </div>
+          <span className="text-2xs font-semibold uppercase tracking-[0.16em] text-primary">
+            Answer needed
+          </span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {questions.length > 1 && (
-            <span className="hidden rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground sm:inline">
-              {answeredCount}/{questions.length}
+          {isWizard && (
+            <span className="rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+              {safeStep + 1}/{questions.length}
             </span>
           )}
           {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            <IconButton
+              size="sm"
+              onClick={requestSkip}
               title="Skip question"
               aria-label="Skip question"
             >
               <X size={14} />
-            </button>
+            </IconButton>
           )}
         </div>
       </div>
 
-      {/* Questions */}
-      <div className="space-y-4 px-4 pt-3.5">
-        {questions.map((q, i) => (
-          <div key={q.id} className="space-y-2">
-            <div className="flex items-start gap-2">
-              {questions.length > 1 && (
-                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                  {i + 1}
-                </span>
-              )}
-              <p className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-foreground">
-                {q.text}
-                {q.multiple && (
-                  <span className="mt-0.5 mb-1 inline-flex items-center rounded-full bg-muted/70 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Select all that apply
-                  </span>
-                )}
-              </p>
+      <motion.div
+        className="relative overflow-hidden"
+        initial={false}
+        animate={{ height: shellHeight }}
+        transition={heightTransition}
+      >
+        <div ref={formMeasureRef} className={confirmKind ? 'invisible' : undefined}>
+          {isWizard && (
+            <div className="flex gap-0.5 px-3 pt-2" aria-hidden>
+              {questions.map((q, i) => (
+                <button
+                  key={q.id}
+                  type="button"
+                  onClick={() => {
+                    setConfirmKind(null);
+                    setStepDir(i >= safeStep ? 1 : -1);
+                    setStepIndex(i);
+                  }}
+                  className={`h-1 flex-1 rounded-full transition-colors ${
+                    i === safeStep
+                      ? 'bg-primary'
+                      : isAnswered(q)
+                        ? 'bg-primary/40'
+                        : 'bg-muted'
+                  }`}
+                  aria-label={`Question ${i + 1}${isAnswered(q) ? ', answered' : ''}`}
+                />
+              ))}
             </div>
-            {renderQuestion(q, i)}
-          </div>
-        ))}
-      </div>
-
-      {/* Attachments */}
-      {(attachments.length > 0 || attachments.length < MAX_ASK_ATTACHMENTS) && (
-        <div className="mx-4 my-3 rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
-              Reference images
-            </span>
-            <span className="text-[11px] tabular-nums text-muted-foreground/60">
-              {attachments.length}/{MAX_ASK_ATTACHMENTS}
-            </span>
-          </div>
-          {attachError && (
-            <p className="mb-2 text-[11px] text-destructive" role="alert">
-              {attachError}
-            </p>
           )}
-          <div className="flex flex-wrap items-center gap-2">
+
+          {isWizard && current ? (
+            <motion.div
+              key={current.id}
+              className="px-3 py-2.5"
+              initial={reduceMotion ? false : { opacity: 0, x: 18 * stepDir }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={slideTransition}
+            >
+              {questionBody(current, safeStep)}
+            </motion.div>
+          ) : (
+            <div className="px-3 py-2.5">
+              {questions.map((q, i) => (
+                <div key={q.id}>{questionBody(q, i)}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <AnimatePresence>
+          {confirmKind && (
+            <motion.div
+              key={`confirm-${confirmKind}`}
+              ref={overlayMeasureRef}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="ask-confirm-title"
+              aria-describedby="ask-confirm-desc"
+              className="absolute inset-x-0 top-0 z-10 flex flex-col justify-center gap-3 bg-card/90 px-4 py-4 backdrop-blur-sm"
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={reduceMotion ? undefined : { opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.18 }}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                  confirmKind === 'skip' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+                }`}>
+                  <AlertTriangle size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p id="ask-confirm-title" className="text-sm font-semibold leading-snug text-foreground">
+                    {confirmKind === 'skip' ? 'Skip this question?' : 'Submit anyway?'}
+                  </p>
+                  <p id="ask-confirm-desc" className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                    {confirmKind === 'skip'
+                      ? 'Are you sure you want to skip? You can keep chatting afterward.'
+                      : unansweredCount === 1
+                        ? '1 question is still unanswered. Are you sure you want to submit?'
+                        : `${unansweredCount} questions are still unanswered. Are you sure you want to submit?`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Btn
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmKind(null)}
+                  aria-label={confirmKind === 'skip' ? 'Cancel skip' : 'Cancel submit'}
+                  className="rounded-full! px-3"
+                >
+                  Cancel
+                </Btn>
+                <Btn
+                  size="sm"
+                  variant={confirmKind === 'skip' ? 'destructive' : 'default'}
+                  onClick={confirmKind === 'skip' ? commitSkip : commitSubmit}
+                  aria-label={
+                    confirmKind === 'skip'
+                      ? 'Confirm skip question'
+                      : 'Confirm submit with unanswered questions'
+                  }
+                  className="rounded-full! px-3.5"
+                >
+                  {confirmKind === 'skip' ? 'Skip' : 'Submit'}
+                </Btn>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {showFooter && (
+        <div className="flex items-center gap-1.5 border-t border-border/50 bg-muted/20 px-2.5 py-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             {attachments.map((a) => (
               <div
                 key={a.id}
-                className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm"
+                className="group relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted/40"
               >
-                <img
-                  src={a.dataUrl}
-                  alt={a.name}
+                <button
+                  type="button"
+                  className="h-full w-full"
+                  onClick={() => setLightbox(a)}
                   title={a.name}
-                  className="h-full w-full object-cover object-center"
-                />
+                  aria-label={a.name}
+                >
+                  <img
+                    src={a.dataUrl}
+                    alt=""
+                    className="h-full w-full object-cover object-center"
+                  />
+                </button>
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
-                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white opacity-90 transition-all hover:bg-black/80 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                  className="absolute -right-0.5 -top-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-muted-foreground shadow group-hover:flex hover:bg-destructive hover:text-destructive-foreground"
                   title={`Remove ${a.name}`}
                   aria-label={`Remove image ${a.name}`}
                 >
-                  <X size={11} />
+                  <X size={9} />
                 </button>
               </div>
             ))}
             {attachments.length < MAX_ASK_ATTACHMENTS && (
               <>
-                <button
-                  type="button"
+                <IconButton
+                  size="sm"
                   onClick={() => fileRef.current?.click()}
                   disabled={busy}
-                  className="flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border/80 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40"
                   title="Attach reference image"
                   aria-label="Attach reference image"
                 >
-                  <Plus size={16} />
-                  <span className="text-[9px] font-medium leading-none">Add</span>
-                </button>
+                  <Paperclip size={14} />
+                </IconButton>
                 <input
                   ref={fileRef}
                   type="file"
@@ -372,33 +557,97 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
                 />
               </>
             )}
+            {attachments.length > 0 && (
+              <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                {attachments.length}/{MAX_ASK_ATTACHMENTS}
+              </span>
+            )}
+            {attachError && (
+              <p className="min-w-0 truncate text-[11px] text-destructive" role="alert">
+                {attachError}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {isWizard && (
+              <>
+                <Btn
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goStep(-1)}
+                  disabled={busy || !!confirmKind || safeStep === 0}
+                  aria-label="Previous question"
+                  title="Previous question"
+                  className="gap-1 rounded-full! px-2.5"
+                >
+                  <ChevronLeft size={14} />
+                  Prev
+                </Btn>
+                <Btn
+                  variant="outline"
+                  size="sm"
+                  onClick={() => goStep(1)}
+                  disabled={busy || !!confirmKind || isLastStep}
+                  aria-label="Next question"
+                  title="Next question"
+                  className="gap-1 rounded-full! px-2.5"
+                >
+                  Next
+                  <ChevronRight size={14} />
+                </Btn>
+              </>
+            )}
+            {showSubmitButton && (
+              <Btn
+                size="sm"
+                onClick={requestSubmit}
+                disabled={busy || !!confirmKind || (!isWizard && !canSubmit)}
+                className="gap-1.5 rounded-full! px-3.5"
+              >
+                <Send size={13} />
+                Answer
+              </Btn>
+            )}
           </div>
         </div>
       )}
 
-      {/* Footer */}
-      {showFooter && (
-        <div className="flex items-center justify-between gap-2 border-t border-border/50 bg-muted/20 px-4 py-2.5">
-          <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
-            {attachments.length > 0
-              ? `${attachments.length}/${MAX_ASK_ATTACHMENTS} images`
-              : showSubmitButton
-                ? 'Answer all, then submit'
-                : ''}
-          </span>
-          {showSubmitButton && (
-            <Btn
-              size="sm"
-              onClick={submit}
-              disabled={!canSubmit || busy}
-              className="gap-1.5 rounded-full! px-4"
-            >
-              <Send size={13} />
-              Answer
-            </Btn>
-          )}
-        </div>
+      {lightbox && (
+        <AskAttachmentLightbox att={lightbox} onClose={() => setLightbox(null)} />
       )}
+    </div>
+  );
+}
+
+function AskAttachmentLightbox({
+  att,
+  onClose,
+}: {
+  att: AskAttachment;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4" role="dialog" aria-modal>
+      <button type="button" className="absolute inset-0 bg-background/70 backdrop-blur-sm" onClick={onClose} aria-label="Close" />
+      <div className="relative z-10 max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+          <span className="truncate text-xs font-medium">{att.name}</span>
+          <IconButton size="sm" onClick={onClose} aria-label="Close" title="Close">
+            <X size={14} />
+          </IconButton>
+        </div>
+        <div className="p-3">
+          <img src={att.dataUrl} alt={att.name} className="mx-auto max-h-[70vh] max-w-full object-contain" />
+        </div>
+      </div>
     </div>
   );
 }
