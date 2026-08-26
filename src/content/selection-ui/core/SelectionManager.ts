@@ -15,9 +15,14 @@ import {
   createShadowContainer,
   removeShadowContainer,
   getSelectionUIStyles,
+  getSelectionAnchorRect,
   calculateToolbarPosition,
+  calculateFabPositionFromRect,
+  calculateExpandedToolbarPositionFromRect,
   calculateToolbarPositionFromElement,
+  calculateExpandedToolbarPositionFromElement,
   calculateToolbarPositionFromPoint,
+  calculateExpandedToolbarPositionFromPoint,
   getEditableElement,
   applyTextToEditable,
   isExcludedElement,
@@ -215,29 +220,31 @@ export function createSelectionManager(): SelectionManager {
 
     // Calculate position relative to the container
     let position: SelectionPosition | null = null;
+    let expandedPosition: SelectionPosition | null = null;
     // Save the selection rect at the SAME TIME as toolbar position calculation,
     // so both see identical DOM state. This is critical for multi-element selections.
     let savedSelectionRect: DOMRect | null = null;
 
     if (selection && selection.rangeCount > 0) {
-      position = calculateToolbarPosition(selection, containerEl);
-
-      // For multi-element selections (heading + paragraph), getBoundingClientRect()
-      // returns the union rect which can be very tall and imprecise.
-      // Use getClientRects() to get a more precise anchor point.
       const range = selection.getRangeAt(0);
-      const clientRects = range.getClientRects();
-      if (clientRects.length > 0) {
-        // Use the first client rect as the anchor — this is the start of the selection
-        savedSelectionRect = clientRects[0];
+      savedSelectionRect = getSelectionAnchorRect(range);
+      if (savedSelectionRect) {
+        position = calculateFabPositionFromRect(savedSelectionRect, containerEl);
+        expandedPosition = calculateExpandedToolbarPositionFromRect(
+          savedSelectionRect,
+          containerEl,
+          undefined,
+          position
+        );
       } else {
-        savedSelectionRect = range.getBoundingClientRect();
+        position = calculateToolbarPosition(selection, containerEl);
       }
     }
 
     // Fallback: if position is null but we have an editable element, use element position
     if (!position && editableToSave) {
       position = calculateToolbarPositionFromElement(editableToSave, containerEl);
+      expandedPosition = calculateExpandedToolbarPositionFromElement(editableToSave, containerEl);
       savedSelectionRect = editableToSave.getBoundingClientRect();
     }
 
@@ -245,6 +252,11 @@ export function createSelectionManager(): SelectionManager {
     // where getBoundingClientRect() returns a zero rect because text renders on a canvas overlay)
     if (!position && state.lastMousePosition) {
       position = calculateToolbarPositionFromPoint(
+        state.lastMousePosition.x,
+        state.lastMousePosition.y,
+        containerEl
+      );
+      expandedPosition = calculateExpandedToolbarPositionFromPoint(
         state.lastMousePosition.x,
         state.lastMousePosition.y,
         containerEl
@@ -276,13 +288,17 @@ export function createSelectionManager(): SelectionManager {
     const localEditable = editableToSave;
     // Capture the toolbar position — this is KNOWN to be correct and serves as
     // the most reliable reference for popover positioning
-    const toolbarPosition = position;
+    const fabPosition = position;
+    const barPosition = expandedPosition ?? position;
 
     createFloatingToolbar(localShadow.shadow, {
-      position,
+      position: fabPosition,
+      expandedPosition: barPosition,
+      anchorRect: savedSelectionRect ?? undefined,
+      containerElement: containerEl,
       onActionClick: (action, targetLang) => {
         state.isActionInProgress = true;
-        handleActionClick(action, targetLang, localShadow, localSelection, localEditable, savedSelectionRect, toolbarPosition);
+        handleActionClick(action, targetLang, localShadow, localSelection, localEditable, savedSelectionRect, fabPosition, barPosition);
       },
       onDismiss: cleanup,
     });
@@ -295,20 +311,18 @@ export function createSelectionManager(): SelectionManager {
     localSelection: string,
     localEditable: Element | null,
     _savedSelectionRect: DOMRect | null,
-    toolbarPosition: SelectionPosition
+    fabPosition: SelectionPosition,
+    barPosition: SelectionPosition
   ): void {
     // Remove toolbar only
     removeFloatingToolbar(localShadow.shadow);
 
-    // Use the toolbar's known-correct position to derive the popover position.
-    // The toolbar is ALWAYS positioned correctly near the selection, regardless
-    // of how many elements are selected. Using the toolbar position directly
-    // eliminates all edge cases with multi-element selections where
-    // getClientRects() / getBoundingClientRect() return unreliable coordinates.
+    // Popover sits at the FAB (end of last selected line), which is the
+    // reliable anchor for multi-line / multi-element selections.
     const position: SelectionPosition = {
-      top: toolbarPosition.top,
-      left: toolbarPosition.left,
-      placement: toolbarPosition.placement,
+      top: fabPosition.top,
+      left: fabPosition.left,
+      placement: fabPosition.placement,
     };
 
     // Show Apply button if we have an editable element OR we're on Google Docs
@@ -325,10 +339,13 @@ export function createSelectionManager(): SelectionManager {
           state.isActionInProgress = false;
           // Re-create toolbar in expanded state at the same position
           createFloatingToolbar(localShadow.shadow, {
-            position: toolbarPosition,
+            position: fabPosition,
+            expandedPosition: barPosition,
+            anchorRect: _savedSelectionRect ?? undefined,
+            containerElement: localShadow.container,
             onActionClick: (nextAction, nextTargetLang) => {
               state.isActionInProgress = true;
-              handleActionClick(nextAction, nextTargetLang, localShadow, localSelection, localEditable, _savedSelectionRect, toolbarPosition);
+              handleActionClick(nextAction, nextTargetLang, localShadow, localSelection, localEditable, _savedSelectionRect, fabPosition, barPosition);
             },
             onDismiss: cleanup,
             initiallyExpanded: true,

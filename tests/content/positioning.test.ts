@@ -17,11 +17,13 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import {
     getContainerOffset,
+    getSelectionAnchorRect,
     calculateToolbarPosition,
+    calculateExpandedToolbarPositionFromRect,
     calculateToolbarPositionFromElement,
     calculatePopoverPosition,
 } from '../../src/content/selection-ui/utils/positioning.ts';
-import { TOOLBAR_HEIGHT, TOOLBAR_WIDTH, POPOVER_WIDTH, POPOVER_MAX_HEIGHT, GAP } from '../../src/content/selection-ui/constants.ts';
+import { TOOLBAR_HEIGHT, TOOLBAR_WIDTH, POPOVER_WIDTH, POPOVER_MAX_HEIGHT, GAP, FAB_SIZE, EXPANDED_TOOLBAR_HEIGHT, EXPANDED_TOOLBAR_WIDTH } from '../../src/content/selection-ui/constants.ts';
 
 // =============================================================================
 // Mock Factories
@@ -93,9 +95,22 @@ function createMockRect(overrides: Partial<DOMRect> = {}): DOMRect {
 /**
  * Create a mock Selection with a configurable range bounding rect.
  */
-function createMockSelection(rect: DOMRect): Selection {
+function createMockSelection(rect: DOMRect, clientRects?: DOMRect[]): Selection {
     const mockRange = {
         getBoundingClientRect: () => rect,
+        cloneRange: () => ({
+            collapse: () => {},
+            getBoundingClientRect: () =>
+                createMockRect({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }),
+        }),
+        getClientRects: () =>
+            ({
+                length: (clientRects ?? [rect]).length,
+                item: (i: number) => (clientRects ?? [rect])[i] ?? null,
+                [Symbol.iterator]: function* () {
+                    yield* (clientRects ?? [rect]);
+                },
+            }) as unknown as DOMRectList,
     } as unknown as Range;
 
     return {
@@ -219,116 +234,174 @@ describe('Selection UI Positioning', () => {
     // calculateToolbarPosition
     // ===========================================================================
 
-    describe('calculateToolbarPosition', () => {
+    describe('getSelectionAnchorRect', () => {
+        test('uses the last line, not the union box', () => {
+            const first = createMockRect({ top: 100, bottom: 120, left: 40, right: 180, width: 140, height: 20 });
+            const last = createMockRect({ top: 280, bottom: 300, left: 40, right: 420, width: 380, height: 20 });
+            const union = createMockRect({ top: 100, bottom: 300, left: 40, right: 420, width: 380, height: 200 });
+            const selection = createMockSelection(union, [first, last]);
+            const range = selection.getRangeAt(0);
+            const anchor = getSelectionAnchorRect(range);
+            expect(anchor!.top).toBe(280);
+            expect(anchor!.right).toBe(420);
+        });
+
+        test('ignores zero-size interstitial rects', () => {
+            const first = createMockRect({ top: 100, bottom: 120, left: 40, right: 200, width: 160, height: 20 });
+            const gap = createMockRect({ top: 120, bottom: 120, left: 40, right: 800, width: 760, height: 0 });
+            const last = createMockRect({ top: 140, bottom: 160, left: 40, right: 300, width: 260, height: 20 });
+            const selection = createMockSelection(first, [first, gap, last]);
+            const anchor = getSelectionAnchorRect(selection.getRangeAt(0));
+            expect(anchor!.top).toBe(140);
+            expect(anchor!.width).toBe(260);
+        });
+
+        test('merges fragments on the same visual line', () => {
+            const a = createMockRect({ top: 200, bottom: 220, left: 10, right: 80, width: 70, height: 20 });
+            const b = createMockRect({ top: 201, bottom: 221, left: 80, right: 150, width: 70, height: 20 });
+            const selection = createMockSelection(a, [a, b]);
+            const anchor = getSelectionAnchorRect(selection.getRangeAt(0));
+            expect(anchor!.left).toBe(10);
+            expect(anchor!.right).toBe(150);
+        });
+
+        test('ignores a full-width block box so the FAB is not parked at the column edge', () => {
+            const text = createMockRect({
+                top: 360, bottom: 380, left: 80, right: 240, width: 160, height: 20, x: 80, y: 360,
+            });
+            const block = createMockRect({
+                top: 360, bottom: 380, left: 40, right: 1100, width: 1060, height: 20, x: 40, y: 360,
+            });
+            const selection = createMockSelection(block, [text, block]);
+            const anchor = getSelectionAnchorRect(selection.getRangeAt(0));
+            expect(anchor!.right).toBe(240);
+            expect(anchor!.right).toBeLessThan(400);
+        });
+    });
+
+    describe('calculateToolbarPosition (collapsed FAB)', () => {
         test('returns null for zero-size selection rect', () => {
-            const selection = createMockSelection(createMockRect({ width: 0, height: 0 }));
+            const selection = createMockSelection(createMockRect({ width: 0, height: 0, top: 0, bottom: 0, left: 0, right: 0 }));
             const result = calculateToolbarPosition(selection);
             expect(result).toBeNull();
         });
 
-        test('places toolbar above selection when there is enough space', () => {
-            const rect = createMockRect({ top: 300, bottom: 320, left: 400, width: 200 });
-            const selection = createMockSelection(rect);
+        test('places FAB to the right of the last line, vertically centered', () => {
+            const last = createMockRect({ top: 300, bottom: 320, left: 400, right: 600, width: 200, height: 20 });
+            const selection = createMockSelection(last);
             const result = calculateToolbarPosition(selection);
 
             expect(result).not.toBeNull();
-            expect(result!.placement).toBe('top');
-            expect(result!.top).toBe(300 - TOOLBAR_HEIGHT - GAP);
+            expect(result!.left).toBe(600 + GAP);
+            expect(result!.top).toBe(300 + (20 - FAB_SIZE) / 2);
         });
 
-        test('places toolbar below selection when not enough space above', () => {
-            const rect = createMockRect({ top: 10, bottom: 30, left: 400, width: 200 });
+        test('places FAB next to short list text, not at the far right of a block box', () => {
+            const text = createMockRect({
+                top: 360, bottom: 380, left: 80, right: 220, width: 140, height: 20, x: 80, y: 360,
+            });
+            const block = createMockRect({
+                top: 360, bottom: 380, left: 40, right: 1100, width: 1060, height: 20, x: 40, y: 360,
+            });
+            const selection = createMockSelection(block, [text, block]);
+            const result = calculateToolbarPosition(selection);
+            expect(result!.left).toBe(220 + GAP);
+        });
+
+        test('does not use the union-box center on a multi-line list', () => {
+            const first = createMockRect({ top: 200, bottom: 220, left: 80, right: 260, width: 180, height: 20, x: 80, y: 200 });
+            const last = createMockRect({ top: 360, bottom: 380, left: 80, right: 500, width: 420, height: 20, x: 80, y: 360 });
+            const union = createMockRect({ top: 200, bottom: 380, left: 80, right: 500, width: 420, height: 180, x: 80, y: 200 });
+            const selection = createMockSelection(union, [first, last]);
+            const result = calculateToolbarPosition(selection);
+
+            const unionCenterLeft = union.left + union.width / 2 - TOOLBAR_WIDTH / 2;
+            expect(result!.left).toBe(last.right + GAP);
+            expect(result!.left).not.toBe(unionCenterLeft);
+            expect(result!.top).toBe(360 + (20 - FAB_SIZE) / 2);
+        });
+
+        test('flips to the left of the line when there is no room on the right', () => {
+            const rect = createMockRect({ top: 300, bottom: 320, left: 1220, right: 1270, width: 50, height: 20 });
             const selection = createMockSelection(rect);
             const result = calculateToolbarPosition(selection);
 
-            expect(result).not.toBeNull();
-            expect(result!.placement).toBe('bottom');
-            expect(result!.top).toBe(30 + GAP);
+            expect(result!.left).toBe(1220 - FAB_SIZE - GAP);
         });
 
-        test('falls back to top of viewport when no space anywhere', () => {
-            updateViewport({ height: 50 });
-
-            const rect = createMockRect({ top: 10, bottom: 40, left: 100, width: 100 });
-            const selection = createMockSelection(rect);
-            const result = calculateToolbarPosition(selection);
-
-            expect(result).not.toBeNull();
-            expect(result!.placement).toBe('top');
-            expect(result!.top).toBe(GAP);
-        });
-
-        test('centers toolbar horizontally on selection', () => {
-            const rectLeft = 400;
-            const rectWidth = 200;
-            const rect = createMockRect({ top: 300, bottom: 320, left: rectLeft, width: rectWidth });
-            const selection = createMockSelection(rect);
-            const result = calculateToolbarPosition(selection);
-
-            const expectedLeft = rectLeft + rectWidth / 2 - TOOLBAR_WIDTH / 2;
-            expect(result!.left).toBe(expectedLeft);
-        });
-
-        test('clamps toolbar to left edge of viewport', () => {
-            const rect = createMockRect({ top: 300, bottom: 320, left: 5, width: 30 });
+        test('clamps FAB to viewport edges', () => {
+            const rect = createMockRect({ top: 300, bottom: 320, left: 5, width: 30, right: 35 });
             const selection = createMockSelection(rect);
             const result = calculateToolbarPosition(selection);
 
             expect(result!.left).toBeGreaterThanOrEqual(GAP);
-        });
-
-        test('clamps toolbar to right edge of viewport', () => {
-            const rect = createMockRect({ top: 300, bottom: 320, left: 1250, width: 20 });
-            const selection = createMockSelection(rect);
-            const result = calculateToolbarPosition(selection);
-
-            const maxLeft = 1280 - TOOLBAR_WIDTH - GAP;
-            expect(result!.left).toBeLessThanOrEqual(maxLeft);
+            expect(result!.left + FAB_SIZE).toBeLessThanOrEqual(1280 - GAP);
         });
 
         test('includes scroll offset in position (no container)', () => {
             updateViewport({ scrollY: 500, scrollX: 100 });
 
-            const rect = createMockRect({ top: 300, bottom: 320, left: 400, width: 200 });
+            const rect = createMockRect({ top: 300, bottom: 320, left: 400, right: 600, width: 200, height: 20 });
             const selection = createMockSelection(rect);
             const result = calculateToolbarPosition(selection);
 
-            expect(result!.top).toBe(300 + 500 - TOOLBAR_HEIGHT - GAP);
+            expect(result!.top).toBe(300 + (20 - FAB_SIZE) / 2 + 500);
+            expect(result!.left).toBe(600 + GAP + 100);
         });
 
         test('subtracts container offset from position', () => {
             const container = createMockContainer({ top: 50, left: 30 });
-            const rect = createMockRect({ top: 300, bottom: 320, left: 400, width: 200 });
+            const rect = createMockRect({ top: 300, bottom: 320, left: 400, right: 600, width: 200, height: 20 });
             const selection = createMockSelection(rect);
             const result = calculateToolbarPosition(selection, container);
 
-            const expectedTop = 300 - TOOLBAR_HEIGHT - GAP - 50;
-            expect(result!.top).toBe(expectedTop);
+            expect(result!.top).toBe(300 + (20 - FAB_SIZE) / 2 - 50);
+            expect(result!.left).toBe(600 + GAP - 30);
+        });
+    });
+
+    describe('calculateExpandedToolbarPositionFromRect', () => {
+        test('places toolbar below the last line so it does not cover the selection', () => {
+            const rect = createMockRect({ top: 300, bottom: 320, left: 400, width: 200, right: 600 });
+            const result = calculateExpandedToolbarPositionFromRect(rect);
+
+            expect(result.placement).toBe('bottom');
+            expect(result.top).toBe(320 + GAP);
         });
 
-        test('handles container offset with scroll', () => {
-            updateViewport({ scrollY: 1000 });
+        test('places toolbar above when there is not enough space below', () => {
+            const rect = createMockRect({ top: 700, bottom: 780, left: 400, width: 200, right: 600 });
+            const result = calculateExpandedToolbarPositionFromRect(rect);
 
-            const container = createMockContainer({ top: -950, left: 0 });
-            const rect = createMockRect({ top: 300, bottom: 320, left: 400, width: 200 });
-            const selection = createMockSelection(rect);
-            const result = calculateToolbarPosition(selection, container);
-
-            // offsetY = -950 + 1000 = 50
-            const expectedTop = 300 + 1000 - TOOLBAR_HEIGHT - GAP - 50;
-            expect(result!.top).toBe(expectedTop);
+            expect(result.placement).toBe('top');
+            expect(result.top).toBe(700 - EXPANDED_TOOLBAR_HEIGHT - GAP);
         });
 
-        test('horizontal position adjusted for container offset', () => {
-            const container = createMockContainer({ top: 0, left: 40 });
+        test('aligns with the FAB when provided', () => {
+            const rect = createMockRect({ top: 300, bottom: 320, left: 80, width: 200, right: 280 });
+            const fab = { top: 290, left: 288, placement: 'bottom' as const };
+            const result = calculateExpandedToolbarPositionFromRect(rect, undefined, undefined, fab);
+
+            expect(result.left).toBe(288);
+        });
+
+        test('aligns to the line start when no FAB is given', () => {
             const rectLeft = 400;
-            const rectWidth = 200;
-            const rect = createMockRect({ top: 300, bottom: 320, left: rectLeft, width: rectWidth });
-            const selection = createMockSelection(rect);
-            const result = calculateToolbarPosition(selection, container);
+            const rect = createMockRect({ top: 300, bottom: 320, left: rectLeft, width: 200, right: 600 });
+            const result = calculateExpandedToolbarPositionFromRect(rect);
 
-            const expectedLeft = rectLeft + rectWidth / 2 - TOOLBAR_WIDTH / 2 - 40;
-            expect(result!.left).toBe(expectedLeft);
+            expect(result.left).toBe(rectLeft);
+        });
+
+        test('uses measured chrome height instead of the 48px compact constant', () => {
+            const rect = createMockRect({ top: 700, bottom: 720, left: 400, width: 200, right: 600 });
+            const result = calculateExpandedToolbarPositionFromRect(rect, undefined, {
+                width: EXPANDED_TOOLBAR_WIDTH,
+                height: EXPANDED_TOOLBAR_HEIGHT,
+            });
+
+            expect(result.top).toBe(700 - EXPANDED_TOOLBAR_HEIGHT - GAP);
+            expect(result.top).not.toBe(700 - TOOLBAR_HEIGHT - GAP);
         });
     });
 
@@ -337,56 +410,30 @@ describe('Selection UI Positioning', () => {
     // ===========================================================================
 
     describe('calculateToolbarPositionFromElement', () => {
-        test('places toolbar above element when space available', () => {
-            const element = createMockElement({ top: 400, bottom: 440, left: 200, width: 300 });
+        test('places FAB to the right of the element', () => {
+            const element = createMockElement({ top: 400, bottom: 440, left: 200, right: 500, width: 300, height: 40 });
             const result = calculateToolbarPositionFromElement(element);
 
-            expect(result.placement).toBe('top');
-            expect(result.top).toBe(400 - TOOLBAR_HEIGHT - GAP);
-        });
-
-        test('places toolbar below element when not enough space above', () => {
-            const element = createMockElement({ top: 10, bottom: 50, left: 200, width: 300 });
-            const result = calculateToolbarPositionFromElement(element);
-
-            expect(result.placement).toBe('bottom');
-            expect(result.top).toBe(50 + GAP);
-        });
-
-        test('centers horizontally on element', () => {
-            const elemLeft = 200;
-            const elemWidth = 300;
-            const element = createMockElement({ top: 400, bottom: 440, left: elemLeft, width: elemWidth });
-            const result = calculateToolbarPositionFromElement(element);
-
-            const expectedLeft = elemLeft + elemWidth / 2 - TOOLBAR_WIDTH / 2;
-            expect(result.left).toBe(expectedLeft);
+            expect(result.left).toBe(500 + GAP);
+            expect(result.top).toBe(400 + (40 - FAB_SIZE) / 2);
         });
 
         test('subtracts container offset from position', () => {
             const container = createMockContainer({ top: 80, left: 40 });
-            const element = createMockElement({ top: 400, bottom: 440, left: 200, width: 300 });
+            const element = createMockElement({ top: 400, bottom: 440, left: 200, right: 500, width: 300, height: 40 });
             const result = calculateToolbarPositionFromElement(element, container);
 
-            expect(result.top).toBe(400 - TOOLBAR_HEIGHT - GAP - 80);
-        });
-
-        test('horizontal clamping works with container offset', () => {
-            const container = createMockContainer({ top: 0, left: 50 });
-            const element = createMockElement({ top: 400, bottom: 440, left: 1250, width: 20 });
-            const result = calculateToolbarPositionFromElement(element, container);
-
-            const maxLeft = 1280 - TOOLBAR_WIDTH - GAP - 50;
-            expect(result.left).toBeLessThanOrEqual(maxLeft);
+            expect(result.top).toBe(400 + (40 - FAB_SIZE) / 2 - 80);
+            expect(result.left).toBe(500 + GAP - 40);
         });
 
         test('includes scroll offset', () => {
             updateViewport({ scrollY: 300 });
 
-            const element = createMockElement({ top: 400, bottom: 440, left: 200, width: 300 });
+            const element = createMockElement({ top: 400, bottom: 440, left: 200, right: 500, width: 300, height: 40 });
             const result = calculateToolbarPositionFromElement(element);
 
-            expect(result.top).toBe(400 + 300 - TOOLBAR_HEIGHT - GAP);
+            expect(result.top).toBe(400 + (40 - FAB_SIZE) / 2 + 300);
         });
     });
 
@@ -529,7 +576,7 @@ describe('Selection UI Positioning', () => {
 
     describe('position stability (no fixed positioning)', () => {
         test('toolbar position changes with scroll (document-anchored, not viewport-anchored)', () => {
-            const rect = createMockRect({ top: 300, bottom: 320, left: 400, width: 200 });
+            const rect = createMockRect({ top: 300, bottom: 320, left: 400, right: 600, width: 200, height: 20 });
             const selection = createMockSelection(rect);
 
             const resultNoScroll = calculateToolbarPosition(selection);
@@ -560,22 +607,16 @@ describe('Selection UI Positioning', () => {
     // ===========================================================================
 
     describe('regression: CSS transform on ancestor', () => {
-        test('toolbar appears next to selection despite 200px container offset', () => {
+        test('FAB appears next to selection despite 200px container offset', () => {
             const container = createMockContainer({ top: 200, left: 0 });
 
-            const rect = createMockRect({ top: 400, bottom: 420, left: 300, width: 200 });
+            const rect = createMockRect({ top: 400, bottom: 420, left: 300, right: 500, width: 200, height: 20 });
             const selection = createMockSelection(rect);
 
             const result = calculateToolbarPosition(selection, container);
 
-            // Without fix: 400 - TOOLBAR_HEIGHT - GAP ≈ 344
-            // With offset: 344 - 200 = 144
-            expect(result!.top).toBe(400 - TOOLBAR_HEIGHT - GAP - 200);
-
-            // Toolbar bottom should be at or above the selection's container-relative top
-            const containerRelativeSelectionTop = 400 - 200;
-            const toolbarBottom = result!.top + TOOLBAR_HEIGHT;
-            expect(toolbarBottom).toBeLessThanOrEqual(containerRelativeSelectionTop);
+            expect(result!.top).toBe(400 + (20 - FAB_SIZE) / 2 - 200);
+            expect(result!.left).toBe(500 + GAP);
         });
 
         test('popover appears next to selection despite both X and Y offsets', () => {
@@ -600,9 +641,6 @@ describe('Selection UI Positioning', () => {
 
             const result = calculateToolbarPosition(selection, container);
 
-            // The result should be calculated but may be negative in container coords
-            // (selection is "above" in container space). This is valid behavior - 
-            // the toolbar appears at the correct document position regardless
             expect(result).not.toBeNull();
         });
     });
