@@ -133,7 +133,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
   };
 
   const onFilesPicked = (files: FileList | null) => {
-    if (!files) return;
+    if (!files || confirmKind) return;
     for (const file of Array.from(files)) {
       if (file.type.startsWith('image/')) readImage(file);
     }
@@ -507,12 +507,15 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
             {attachments.map((a) => (
               <div
                 key={a.id}
-                className="group relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted/40"
+                className={`group relative h-9 w-9 shrink-0 overflow-hidden rounded-md border border-border bg-muted/40 ${
+                  confirmKind ? 'cursor-not-allowed opacity-40' : ''
+                }`}
               >
                 <button
                   type="button"
-                  className="h-full w-full"
-                  onClick={() => setLightbox(a)}
+                  className={`h-full w-full ${confirmKind ? 'cursor-not-allowed' : ''}`}
+                  onClick={() => !confirmKind && setLightbox(a)}
+                  disabled={!!confirmKind}
                   title={a.name}
                   aria-label={a.name}
                 >
@@ -525,7 +528,8 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
-                  className="absolute -right-0.5 -top-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-muted-foreground shadow group-hover:flex hover:bg-destructive hover:text-destructive-foreground"
+                  disabled={!!confirmKind}
+                  className="absolute -right-0.5 -top-0.5 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-background text-muted-foreground shadow group-hover:flex hover:bg-destructive hover:text-destructive-foreground disabled:hidden"
                   title={`Remove ${a.name}`}
                   aria-label={`Remove image ${a.name}`}
                 >
@@ -538,7 +542,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
                 <IconButton
                   size="sm"
                   onClick={() => fileRef.current?.click()}
-                  disabled={busy}
+                  disabled={busy || !!confirmKind}
                   title="Attach reference image"
                   aria-label="Attach reference image"
                 >
@@ -550,6 +554,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
                   accept="image/*"
                   multiple
                   className="hidden"
+                  disabled={busy || !!confirmKind}
                   onChange={(e) => {
                     onFilesPicked(e.target.files);
                     e.target.value = '';
