@@ -5,6 +5,7 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
+import { extractToolResultMedia } from '../utils/toolResultMedia.ts';
 import { parseAnthropicModel } from '../modelSpecs.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage, ModelFetchResult } from '../types.ts';
 import type { ModelSpec } from '../../types/index.ts';
@@ -111,12 +112,28 @@ export function formatAnthropic(
     if ('role' in msg && msg.role === 'tool_batch') {
       // Batch all tool results into a single user message
       const toolResults = (msg as { tools: Message[] }).tools;
-      const content: Record<string, unknown>[] = toolResults.map((t) => ({
-        type: 'tool_result',
-        tool_use_id: t.toolCallId,
-        content: typeof t.content === 'string' ? t.content : JSON.stringify(t.content),
-        is_error: t.content?.startsWith('Error:') || t.content?.includes('[DUPLICATE_CALL_SKIPPED]'),
-      }));
+      const content: Record<string, unknown>[] = toolResults.map((t) => {
+        const media = extractToolResultMedia(t);
+        const toolContent = media.images.length === 0
+          ? media.text
+          : [
+              ...(media.text ? [{ type: 'text', text: media.text }] : []),
+              ...media.images.map((image) => ({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: image.mimeType,
+                  data: image.data,
+                },
+              })),
+            ];
+        return {
+          type: 'tool_result',
+          tool_use_id: t.toolCallId,
+          content: toolContent,
+          is_error: media.text.startsWith('Error:') || media.text.includes('[DUPLICATE_CALL_SKIPPED]'),
+        };
+      });
       filtered.push({ role: 'user', content });
     } else if ((msg as Message).role === 'system') {
       // Accumulate system messages

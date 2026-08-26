@@ -6,6 +6,7 @@ import { AgentActivityBlock } from './message/AgentActivityBlock.tsx';
 import { ToolMessage } from './ToolMessage.tsx';
 import { useChat } from '../hooks';
 import { groupMessagesForDisplay } from '../utils/toolActivityGroup.ts';
+import { AskPrompt } from './slides/AskPrompt.tsx';
 
 export function MessageList() {
   const messages = useStore((state) => state.messages);
@@ -14,7 +15,8 @@ export function MessageList() {
   const streamingReasoningContent = useStore((state) => state.streamingReasoningContent);
   const preferences = useStore((state) => state.preferences);
   const mode = useStore((state) => state.mode);
-  const { branchFrom, regenerateFrom, editMessage } = useChat();
+  const pendingAsk = useStore((state) => state.pendingAsk);
+  const { branchFrom, regenerateFrom, editMessage, answerAsk, cancelAsk } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
@@ -237,6 +239,14 @@ export function MessageList() {
           />
         );
       })}
+        {pendingAsk && (
+          <AskPrompt
+            ask={pendingAsk}
+            busy={isStreaming}
+            onSubmit={(answer, attachments) => { void answerAsk(answer, attachments); }}
+            onCancel={() => { void cancelAsk(); }}
+          />
+        )}
         {isStreaming &&
           (streamingContent ||
             streamingReasoningContent ||

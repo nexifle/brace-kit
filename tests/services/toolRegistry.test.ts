@@ -101,7 +101,8 @@ describe('Tool Registry Service', () => {
         isGemini: true,
       });
 
-      expect(tools).toHaveLength(4);
+      expect(tools).toHaveLength(5);
+      expect(tools.find((t) => t.name === 'ask')).toBeDefined();
       expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
       expect(tools[tools.length - 1].name).toBe('continue_message');
     });
@@ -128,8 +129,9 @@ describe('Tool Registry Service', () => {
         isGemini: false,
       });
 
-      expect(tools).toHaveLength(5);
+      expect(tools).toHaveLength(6);
       expect(tools[0].name).toBe('google_search');
+      expect(tools.find((t) => t.name === 'ask')).toBeDefined();
       expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
       expect(tools[tools.length - 1].name).toBe('continue_message');
     });
@@ -144,8 +146,8 @@ describe('Tool Registry Service', () => {
         providerId: 'grok',
       });
 
-      // web_search + web_fetch + continue_message
-      expect(tools).toHaveLength(5);
+      // web_search + ask + web_fetch + continue_message
+      expect(tools).toHaveLength(6);
       expect(tools.find((t) => t.name === 'web_search')).toBeDefined();
       expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
       expect(tools.find((t) => t.name === 'continue_message')).toBeDefined();
@@ -161,7 +163,7 @@ describe('Tool Registry Service', () => {
         providerId: 'openai',
       });
 
-      expect(tools).toHaveLength(4); // 2 MCP + web_fetch + continue_message
+      expect(tools).toHaveLength(5); // 2 MCP + ask + web_fetch + continue_message
       expect(tools.find((t) => t.name === 'web_search')).toBeUndefined();
       expect(tools.find((t) => t.name === 'web_fetch')).toBeDefined();
     });
@@ -198,6 +200,7 @@ describe('Tool Registry Service', () => {
       const tools = getBuiltinTools({
         includeGoogleSearch: false,
         includeContinueMessage: false,
+        includeAsk: false,
       });
       expect(tools).toEqual([]);
     });
@@ -206,6 +209,7 @@ describe('Tool Registry Service', () => {
       const tools = getBuiltinTools({
         includeGoogleSearch: true,
         includeContinueMessage: false,
+        includeAsk: false,
       });
       expect(tools).toHaveLength(1);
       expect(tools[0].name).toBe('google_search');
@@ -243,6 +247,10 @@ describe('Tool Registry Service', () => {
 
     test('returns true for web_fetch', () => {
       expect(isBuiltinTool('web_fetch')).toBe(true);
+    });
+
+    test('returns false for client-side ask', () => {
+      expect(isBuiltinTool('ask')).toBe(false);
     });
 
     test('returns false for other tools', () => {

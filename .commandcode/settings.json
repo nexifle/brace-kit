@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(bun:*)",
+      "Shell(touch:*)",
+      "Shell(sleep:*)",
+      "Shell(cat > /tmp/probe.mjs <<'EOF' import babelPlugin from '@stylexjs/babel-plugin'; import { transformAsync } from '@babel/core'; import fs from 'node:fs'; const code = fs.readFileSync('src/styles/tokens.stylex.ts','utf8'); const res = await transformAsync(code, { babelrc:false, filename:'src/styles/tokens.stylex.ts', plugins: [ ['@babel/plugin-syntax-typescript', { isTSX:true }], [babelPlugin, { dev:false, runtimeInjection:false, importSources:['stylex','@stylexjs/stylex'], unstable_moduleResolution:{type:'commonJS', rootDir:process.cwd()} }] ], caller:{ name:'probe', supportsStaticESM:true } }); const rules = res?.metadata?.stylex ?? []; console.log('rule count', rules.length); console.log('CSS:', babelPlugin.processStylexRules ? '(has fn)' : 'NO FN'); EOF bun run /tmp/probe.mjs 2>&1 | head -40)",
+      "Shell(cat > ./_probe.mjs <<'EOF' import babelPlugin from '@stylexjs/babel-plugin'; import { transformAsync } from '@babel/core'; import fs from 'node:fs'; const code = fs.readFileSync('src/styles/tokens.stylex.ts','utf8'); const res = await transformAsync(code, { babelrc:false, filename:'src/styles/tokens.stylex.ts', plugins: [ ['@babel/plugin-syntax-typescript', { isTSX:true }], [babelPlugin, { dev:false, runtimeInjection:false, importSources:['stylex','@stylexjs/stylex'], unstable_moduleResolution:{type:'commonJS', rootDir:process.cwd()} }] ], caller:{ name:'probe', supportsStaticESM:true } }); const rules = res?.metadata?.stylex ?? []; console.log('rule count:', rules.length); console.log('CSS:\\n' + babelPlugin.processStylexRules(rules, {useLayers:false})); EOF bun run ./_probe.mjs 2>&1 | head -40; rm -f ./_probe.mjs)",
+      "Shell(cat > ./_probe4.mjs <<'EOF' import { stylexPlugin } from './stylex.plugin.ts'; const p = stylexPlugin(false); console.log('keys:', Object.keys(p)); console.log('typeof transform:', typeof p.transform); console.log('has onLoad:', typeof p.onLoad); console.log('name:', p.name); EOF bun run ./_probe4.mjs 2>&1; rm -f ./_probe4.mjs)",
+      "Shell(cat > ./_probe7.mjs <<'EOF' import babelPlugin from '@stylexjs/babel-plugin'; import { transformAsync } from '@babel/core'; import fs from 'node:fs'; // Mimic the REAL plugin: no unstable_moduleResolution, no treeshake const code = fs.readFileSync('src/styles/tokens.stylex.ts','utf8'); const res = await transformAsync(code, { babelrc:false, filename:'src/styles/tokens.stylex.ts', plugins: [['@babel/plugin-syntax-typescript',{isTSX:true}], [babelPlugin,{dev:false,runtimeInjection:false,importSources:['stylex','@stylexjs/stylex']}]], caller:{name:'probe',supportsStaticESM:true} }); const rules = res?.metadata?.stylex ?? []; console.log('rule count:', rules.length); console.log('CSS:', JSON.stringify(babelPlugin.processStylexRules(rules,{useLayers:true})).slice(0,200)); EOF bun run ./_probe7.mjs 2>&1 | head; rm -f ./_probe7.mjs)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

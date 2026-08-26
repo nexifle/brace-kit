@@ -5,6 +5,7 @@
  */
 
 import type { MCPTool, Message } from '../../types/index.ts';
+import { extractToolResultMedia } from '../utils/toolResultMedia.ts';
 import { parseGeminiModel } from '../modelSpecs.ts';
 import type { ChatOptions, GeminiContent, GeminiPart, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import {
@@ -49,6 +50,34 @@ export function extractGeminiReasoning(
       .filter(Boolean)
       .join('') || ''
   );
+}
+
+/**
+ * Map a stored/API tool message onto Gemini FunctionResponse.
+ * `response` is always a JSON object (protobuf Struct). Images live in nested
+ * `parts[].inlineData`. Do not put `{"$ref": displayName}` in `response` unless
+ * that exact display_name is also on the part — Gemini 400s on a mismatch
+ * ("The referenced name … does not match to a display_name"). $ref is optional.
+ */
+export function buildGeminiFunctionResponse(msg: Message): NonNullable<GeminiPart['functionResponse']> {
+  const { text, images } = extractToolResultMedia(msg);
+  const parts = images.map((image, index) => {
+    const ext = image.mimeType.split('/')[1] || 'png';
+    return {
+      inlineData: {
+        displayName: image.displayName || `ask_ref_${index + 1}.${ext}`,
+        mimeType: image.mimeType,
+        data: image.data,
+      },
+    };
+  });
+
+  return {
+    name: msg.name || 'unknown',
+    response: { content: text },
+    ...(msg.toolCallId ? { id: msg.toolCallId } : {}),
+    ...(parts.length > 0 ? { parts } : {}),
+  };
 }
 
 // ==================== Request Formatting ====================
@@ -144,11 +173,14 @@ export function formatGemini(
       // IMPORTANT: For parallel function calls (multiple functionCall parts in one model turn),
       // all functionResponse parts MUST be grouped in a SINGLE user turn.
       // Ref: https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/function-calling/parallel_function_calling.ipynb
+      //
+      // `functionResponse.response` is a protobuf Struct (JSON object). Passing an
+      // array 400s with: Unknown name "response" ... Proto field is not repeating.
+      // Images must be nested in functionResponse.parts[].inlineData, not as
+      // sibling Content parts and not as OpenAI-style image_url arrays.
+      // https://ai.google.dev/gemini-api/docs/generate-content/function-calling
       const functionResponsePart: GeminiPart = {
-        functionResponse: {
-          name: msg.name || 'unknown',
-          response: typeof msg.content === 'string' ? { content: msg.content } : msg.content,
-        },
+        functionResponse: buildGeminiFunctionResponse(msg),
       };
 
       const lastContent = contents[contents.length - 1];

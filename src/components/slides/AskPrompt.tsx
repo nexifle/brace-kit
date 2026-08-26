@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, HelpCircle, Plus, Send, X } from 'lucide-react';
 import type { SlideAskState } from '../../store/slideStore.ts';
-import type { SlideAskQuestion } from '../../types/slides.ts';
+import type { PendingAsk, AskQuestion } from '../../types/index.ts';
 import { SLIDE_CANVAS_PRESETS } from '../../types/index.ts';
-import { buildAskAnswer, normalizeAskPayload } from '../../utils/slideAsk.ts';
+import { buildAskAnswer, normalizeAskPayload } from '../../utils/ask.ts';
 import { encodeImageForVision } from '../../utils/slideImageResize.ts';
 import { Btn } from '../ui/Btn.tsx';
 
@@ -19,7 +19,7 @@ interface AskAttachment {
 
 export interface AskPromptProps {
   /** The suspended question the plan session is waiting on. */
-  ask: SlideAskState;
+  ask: PendingAsk | SlideAskState;
   /** Whether the answer is being sent (disables the form). */
   busy?: boolean;
   /** Submit the answer (+ optional reference images) to resume the plan session. */
@@ -65,7 +65,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
   const setValue = (id: string, value: string | string[]) =>
     setAnswers((prev) => ({ ...prev, [id]: value }));
 
-  const toggleOption = (q: SlideAskQuestion, option: string) => {
+  const toggleOption = (q: AskQuestion, option: string) => {
     const current = answers[q.id];
     const list = Array.isArray(current) ? current : [];
     const next = list.includes(option)
@@ -121,7 +121,7 @@ export function AskPrompt({ ask, busy, onSubmit, onCancel }: AskPromptProps) {
   };
 
   /** Render the input widget for a single question. */
-  function renderQuestion(q: SlideAskQuestion, index: number): ReactNode {
+  function renderQuestion(q: AskQuestion, index: number): ReactNode {
     const isCanvas = q.field === 'canvas';
     const options: string[] = isCanvas
       ? Object.keys(SLIDE_CANVAS_PRESETS)

@@ -167,7 +167,66 @@ describe('Gemini Format', () => {
       expect(body.contents[0].role).toBe('user');
       expect(body.contents[0].parts[0].functionResponse).toBeDefined();
       expect(body.contents[0].parts[0].functionResponse.name).toBe('search');
+      expect(body.contents[0].parts[0].functionResponse.id).toBe('call_123');
       expect(body.contents[0].parts[0].functionResponse.response).toEqual({ content: 'Search result' });
+      expect(body.contents[0].parts[0].functionResponse.parts).toBeUndefined();
+    });
+
+    it('nests ask-answer images inside functionResponse.parts and keeps response as an object', () => {
+      // Official generateContent REST: response is a Struct; images go in
+      // functionResponse.parts[].inlineData with $ref from response.
+      // Passing an array as response 400s: "Proto field is not repeating, cannot start list."
+      const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          name: 'ask',
+          toolCallId: 'ask_tc',
+          content: [
+            { type: 'text', text: '16:9' },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ] as unknown as string,
+        },
+      ];
+
+      const config = formatGemini(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+      const fr = body.contents[0].parts[0].functionResponse;
+
+      expect(Array.isArray(fr.response)).toBe(false);
+      expect(fr.response).toEqual({ content: '16:9' });
+      expect(fr.response.image_ref_1).toBeUndefined();
+      expect(fr.parts).toEqual([
+        {
+          inlineData: {
+            displayName: 'ask-ref-1',
+            mimeType: 'image/png',
+            data: 'iVBORw0KGgo=',
+          },
+        },
+      ]);
+      expect(body.contents[0].parts).toHaveLength(1);
+    });
+
+    it('reads image attachments on a tool message into functionResponse.parts', () => {
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          name: 'ask',
+          toolCallId: 'ask_tc',
+          content: 'use this sketch',
+          attachments: [{ type: 'image', name: 'sketch.png', data: 'data:image/jpeg;base64,/9j/4AAQ' }],
+        },
+      ];
+
+      const config = formatGemini(provider, messages, [], {});
+      const fr = JSON.parse(config.options.body as string).contents[0].parts[0].functionResponse;
+      expect(fr.response.content).toBe('use this sketch');
+      expect(fr.parts[0].inlineData).toEqual({
+        displayName: 'sketch.png',
+        mimeType: 'image/jpeg',
+        data: '/9j/4AAQ',
+      });
     });
 
     it('should group parallel tool results into a single user turn', () => {

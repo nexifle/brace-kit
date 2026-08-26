@@ -14,6 +14,7 @@ import type { MCPTool, Message, ModelSpec } from '../../types/index.ts';
 import { parseOllamaShow } from '../modelSpecs.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
+import { extractToolResultMedia } from '../utils/toolResultMedia.ts';
 
 // ==================== Request Formatting ====================
 
@@ -77,10 +78,12 @@ export function formatOllama(
     // Transform tool result messages
     // Ollama uses role='tool' with tool_name field (not tool_call_id)
     if (msg.role === 'tool') {
+      const media = extractToolResultMedia(msg);
       return {
         role: 'tool',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        content: media.text,
         tool_name: msg.name, // Ollama uses tool_name instead of tool_call_id
+        ...(media.images.length > 0 ? { images: media.images.map((image) => image.data) } : {}),
       };
     }
 

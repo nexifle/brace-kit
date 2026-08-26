@@ -4,6 +4,7 @@
 
 // Type-only import to avoid a runtime cycle (index.ts re-exports from here).
 import type { APIMessage } from './index.ts';
+import type { AskField, AskPayload, AskQuestion } from './ask.ts';
 
 // ==================== Canvas / Aspect Presets ====================
 
@@ -138,41 +139,10 @@ export interface SlideDeck {
 
 // ==================== Ask (HITL) ====================
 
-/** Field an `ask` can target, used to surface contextual chips (e.g. canvas presets). */
-export type SlideAskField =
-  | 'canvas'
-  | 'slide_count'
-  | 'audience'
-  | 'topic'
-  | 'style'
-  | 'brand'
-  | 'other';
-
-/**
- * One question within an `ask` payload. `multiple: true` renders as multi-select
- * checkboxes; otherwise single-select chips (or free text when no `options`).
- * `freeText: true` additionally shows a free-text input alongside the options so
- * the user can add a custom answer ("other").
- */
-export interface SlideAskQuestion {
-  /** Stable id used to key the user's answer in the resume payload. */
-  id: string;
-  /** The question text. */
-  text: string;
-  /** Choice options; when present the question renders as selectable chips. */
-  options?: string[];
-  /** True = the user may select multiple options (multi-select). */
-  multiple?: boolean;
-  /** True = offer a free-text "add your own" input alongside the options. */
-  freeText?: boolean;
-  /** Field the question targets, used to surface contextual chips (e.g. canvas). */
-  field?: SlideAskField;
-}
-
-/** Payload delivered by the `ask` tool (see PRD Appendix A). */
-export interface SlideAskPayload {
-  questions: SlideAskQuestion[];
-}
+/** Backward-compatible aliases for the shared ask contract. */
+export type SlideAskField = AskField;
+export type SlideAskQuestion = AskQuestion;
+export type SlideAskPayload = AskPayload;
 
 /** A suspended question the plan session is waiting on the user to answer. */
 export interface SlidePendingAsk {

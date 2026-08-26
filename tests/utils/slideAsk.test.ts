@@ -49,6 +49,11 @@ describe('normalizeAskPayload', () => {
     expect(normalizeAskPayload({ questions: [{}] })).toBeNull();
   });
 
+  it('ignores invalid field values', () => {
+    const p = normalizeAskPayload({ question: 'Q', field: 'not-a-real-field' });
+    expect(p?.questions[0].field).toBeUndefined();
+  });
+
   it('filters non-string options', () => {
     const p = normalizeAskPayload({ questions: [{ question: 'Q', options: ['a', 42, 'b'] }] });
     expect(p?.questions[0].options).toEqual(['a', 'b']);

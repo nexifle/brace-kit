@@ -30,6 +30,7 @@ export function InputArea() {
   const footerRef = useRef<HTMLDivElement>(null);
   const lastCursorPosRef = useRef<number>(0);
   const store = useStore();
+  const pendingAsk = useStore((state) => state.pendingAsk);
   const mode = useStore((state) => state.mode);
   const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
   const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
@@ -125,6 +126,7 @@ export function InputArea() {
   const isCompacting = useStore((state) => state.isCompacting);
   const isRenaming = useStore((state) => state.isRenaming);
   const isProcessingCommand = isCompacting || isRenaming;
+  const composerLocked = store.isStreaming || !!pendingAsk || isProcessingCommand;
   const processingCommandLabel = isCompacting ? 'Compacting…' : isRenaming ? 'Renaming…' : '';
 
   // MCP connection status
@@ -169,10 +171,11 @@ export function InputArea() {
   }, [quotedText, setQuotedText, text]);
 
   const handleSend = useCallback(() => {
+    if (composerLocked) return;
     if (!text.trim() && store.attachments.length === 0) return;
     sendMessage(text, isImageGenerationModel ? { aspectRatio: imageAspectRatio } : { enableReasoning });
     setText('');
-  }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio, enableReasoning]);
+  }, [text, store.attachments.length, sendMessage, isXAIImageModel, imageAspectRatio, enableReasoning, composerLocked]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Tab to accept autocomplete suggestion
@@ -267,7 +270,7 @@ export function InputArea() {
               className="text-xs bg-muted/40 border border-input rounded-md px-2 py-0.5 cursor-pointer outline-none transition-all hover:bg-muted/60 focus:ring-1 focus:ring-ring disabled:opacity-50 text-foreground"
               value={imageAspectRatio}
               onChange={(e) => setImageAspectRatio(e.target.value)}
-              disabled={store.isStreaming}
+              disabled={composerLocked}
             >
               {isXAIImageModel && <option value="auto">auto (Model selects best)</option>}
               <option value="1:1">1:1 (Square)</option>
@@ -343,7 +346,7 @@ export function InputArea() {
               onKeyDown={handleKeyDown}
               onScroll={handleScroll}
               onPaste={(e) => handlePaste(e.nativeEvent)}
-              disabled={store.isStreaming || isProcessingCommand}
+              disabled={composerLocked}
             />
           </div>
         </div>
@@ -486,7 +489,7 @@ export function InputArea() {
               type="button"
               className="flex items-center justify-center w-9 h-9 rounded-full cursor-pointer transition-all duration-200 shrink-0 bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed disabled:scale-100"
               onClick={handleSend}
-              disabled={(!text.trim() && store.attachments.length === 0) || isProcessingCommand}
+              disabled={(!text.trim() && store.attachments.length === 0) || composerLocked}
               title="Send message"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

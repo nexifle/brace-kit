@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { useStore } from '../../src/store';
+import { buildSystemPrompt, INTERNAL_SYSTEM_PROMPT } from '../../src/utils/systemPrompt.ts';
 import type { Conversation } from '../../src/types';
 
 // Helper to build metadata block (extracted logic from useMessageBuilder)
@@ -8,6 +9,18 @@ function buildMetadataBlock(conversations: Conversation[], activeConversationId:
   const timestamp = activeConv?.metadataTimestamp || new Date().toISOString();
   return `\n\n<metadata>{"currentTime": "${timestamp}"}</metadata>`;
 }
+
+describe('system prompt composition', () => {
+  test('keeps internal instructions before the custom prompt and context', () => {
+    const result = buildSystemPrompt('Use a friendly tone.', '\n\n<memory>saved preference</memory>', '<metadata>now</metadata>');
+    expect(result).toBe(`${INTERNAL_SYSTEM_PROMPT}\n\nUse a friendly tone.\n\n<memory>saved preference</memory>\n\n<metadata>now</metadata>`);
+  });
+
+  test('does not include the MCP usage text', () => {
+    expect(buildSystemPrompt('Custom prompt')).not.toContain('Context7');
+    expect(buildSystemPrompt('Custom prompt')).not.toContain('webSearchPrime');
+  });
+});
 
 describe('useMessageBuilder - Static Metadata Timestamp', () => {
   beforeEach(() => {
