@@ -14,9 +14,14 @@ export {
 } from './shadowContainer.ts';
 export {
   getContainerOffset,
+  getSelectionAnchorRect,
   calculateToolbarPosition,
+  calculateFabPositionFromRect,
+  calculateExpandedToolbarPositionFromRect,
   calculateToolbarPositionFromElement,
+  calculateExpandedToolbarPositionFromElement,
   calculateToolbarPositionFromPoint,
+  calculateExpandedToolbarPositionFromPoint,
   calculatePopoverPositionFromRect,
   getEditableElement,
   applyTextToEditable,

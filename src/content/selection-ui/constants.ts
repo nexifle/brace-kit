@@ -235,8 +235,14 @@ export const ACTION_CATEGORIES: Record<string, { label: string; order: number }>
 };
 
 export const DEFAULT_MIN_SELECTION_LENGTH = 10;
+/** Legacy compact-bar fallback; expanded chrome is larger (see EXPANDED_*). */
 export const TOOLBAR_HEIGHT = 48;
 export const TOOLBAR_WIDTH = 200;
+/** Collapsed selection chip (.bk-fab is 40×40). */
+export const FAB_SIZE = 40;
+/** Expanded action panel (header + 2×2 grid). Refined after first paint by measuring. */
+export const EXPANDED_TOOLBAR_WIDTH = 320;
+export const EXPANDED_TOOLBAR_HEIGHT = 140;
 export const POPOVER_WIDTH = 360;
 export const POPOVER_MAX_HEIGHT = 400;
 export const GAP = 8;

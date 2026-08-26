@@ -8,7 +8,151 @@
  */
 
 import type { SelectionPosition } from '../types.ts';
-import { TOOLBAR_HEIGHT, TOOLBAR_WIDTH, POPOVER_WIDTH, POPOVER_MAX_HEIGHT, GAP } from '../constants.ts';
+import {
+  POPOVER_WIDTH,
+  POPOVER_MAX_HEIGHT,
+  GAP,
+  FAB_SIZE,
+  EXPANDED_TOOLBAR_WIDTH,
+  EXPANDED_TOOLBAR_HEIGHT,
+} from '../constants.ts';
+
+const LINE_MERGE_TOLERANCE_PX = 2;
+
+interface ViewportMetrics {
+  width: number;
+  height: number;
+  scrollX: number;
+  scrollY: number;
+}
+
+function getViewport(): ViewportMetrics {
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+  };
+}
+
+function clampHorizontal(
+  left: number,
+  chromeWidth: number,
+  viewport: ViewportMetrics,
+  offsetX: number
+): number {
+  const minLeft = viewport.scrollX + GAP - offsetX;
+  const maxLeft = viewport.scrollX + viewport.width - chromeWidth - GAP - offsetX;
+  return Math.max(minLeft, Math.min(left, maxLeft));
+}
+
+function copyRect(left: number, top: number, right: number, bottom: number): DOMRect {
+  const width = right - left;
+  const height = bottom - top;
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width,
+    height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+function mergeLineRects(rects: DOMRect[]): DOMRect[] {
+  const lines: DOMRect[] = [];
+  for (const r of rects) {
+    const last = lines[lines.length - 1];
+    const sameLine = last && Math.abs(r.top - last.top) <= LINE_MERGE_TOLERANCE_PX;
+    const adjacent = last && r.left <= last.right + 8;
+    if (sameLine && adjacent) {
+      lines[lines.length - 1] = copyRect(
+        Math.min(last.left, r.left),
+        Math.min(last.top, r.top),
+        Math.max(last.right, r.right),
+        Math.max(last.bottom, r.bottom)
+      );
+    } else {
+      lines.push(copyRect(r.left, r.top, r.right, r.bottom));
+    }
+  }
+  return lines;
+}
+
+function medianWidth(rects: DOMRect[]): number {
+  const widths = rects.map((r) => r.width).sort((a, b) => a - b);
+  return widths[Math.floor(widths.length / 2)] ?? 0;
+}
+
+/** Drop full-width block boxes (e.g. `<li>` / markdown column) that dwarf inline text. */
+function inlineClientRects(rects: DOMRect[]): DOMRect[] {
+  const usable = rects.filter((r) => r.width >= 1 && r.height >= 1);
+  if (usable.length === 0) return [];
+
+  const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const median = medianWidth(usable);
+  const maxInline = Math.max(median * 3, 80);
+  const filtered = usable.filter(
+    (r) => r.width <= maxInline && r.width < viewportW * 0.5
+  );
+  return filtered.length > 0 ? filtered : usable;
+}
+
+function caretEndRect(range: Range): DOMRect | null {
+  try {
+    const caretRange = range.cloneRange();
+    caretRange.collapse(false);
+    const c = caretRange.getBoundingClientRect();
+    if (c.height > 0 || c.width > 0 || (c.top !== 0 && c.left !== 0)) {
+      const height = c.height > 0 ? c.height : 16;
+      const top = c.height > 0 ? c.top : c.top;
+      return copyRect(c.left, top, Math.max(c.right, c.left), top + height);
+    }
+  } catch {
+    // cloneRange can throw on detached nodes
+  }
+  return null;
+}
+
+/**
+ * End of the last *text* line — not the union box, not a full-width block.
+ */
+export function getSelectionAnchorRect(range: Range): DOMRect | null {
+  const caret = caretEndRect(range);
+  const inline = inlineClientRects(Array.from(range.getClientRects()));
+  if (inline.length > 0) {
+    const lines = mergeLineRects(inline);
+    const last = lines[lines.length - 1];
+    if (last) {
+      // Prefer caret x when it sits on the last line (true selection end).
+      if (
+        caret &&
+        Math.abs(caret.top - last.top) <= Math.max(last.height, 16)
+      ) {
+        return copyRect(
+          Math.min(last.left, caret.left),
+          last.top,
+          caret.left > last.left ? caret.left : last.right,
+          last.bottom
+        );
+      }
+      return last;
+    }
+  }
+
+  if (caret && (caret.width > 0 || caret.height > 0 || caret.top !== 0)) {
+    return caret;
+  }
+
+  const fallback = range.getBoundingClientRect();
+  if (fallback.width === 0 && fallback.height === 0) {
+    return null;
+  }
+  return fallback;
+}
 
 /**
  * Get the container's offset from the viewport origin.
@@ -32,62 +176,109 @@ export function getContainerOffset(containerElement?: HTMLElement): { offsetX: n
 }
 
 /**
- * Calculate optimal position for floating toolbar
- * Returns position above selection if space available, otherwise below
- * Coordinates are relative to the container element for robust positioning
- *
- * @param selection - The current text selection
- * @param containerElement - The container element (used to compute relative offsets)
+ * Collapsed FAB: sit beside the last line of the selection (right, then left,
+ * then above/below) so the 40px chip does not cover highlighted text.
  */
-export function calculateToolbarPosition(
-  selection: Selection,
+export function calculateFabPositionFromRect(
+  rect: DOMRect,
   containerElement?: HTMLElement
-): SelectionPosition | null {
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
-
-  if (rect.width === 0 && rect.height === 0) {
-    return null;
-  }
-
-  const viewport = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-    scrollX: window.scrollX,
-    scrollY: window.scrollY,
-  };
-
+): SelectionPosition {
+  const viewport = getViewport();
   const { offsetX, offsetY } = getContainerOffset(containerElement);
 
-  // Calculate space above and below (viewport-relative for visibility check)
+  let top = rect.top + (rect.height - FAB_SIZE) / 2 + viewport.scrollY - offsetY;
+  let left = rect.right + GAP + viewport.scrollX - offsetX;
+  let placement: 'top' | 'bottom' = 'bottom';
+
+  const maxRight = viewport.scrollX + viewport.width - GAP - offsetX;
+  if (left + FAB_SIZE > maxRight) {
+    const leftSide = rect.left + viewport.scrollX - FAB_SIZE - GAP - offsetX;
+    const minLeft = viewport.scrollX + GAP - offsetX;
+    if (leftSide >= minLeft) {
+      left = leftSide;
+    } else {
+      const spaceAbove = rect.top;
+      if (spaceAbove >= FAB_SIZE + GAP) {
+        top = rect.top + viewport.scrollY - FAB_SIZE - GAP - offsetY;
+        placement = 'top';
+      } else {
+        top = rect.bottom + viewport.scrollY + GAP - offsetY;
+        placement = 'bottom';
+      }
+      left = rect.left + viewport.scrollX + rect.width / 2 - FAB_SIZE / 2 - offsetX;
+    }
+  }
+
+  left = clampHorizontal(left, FAB_SIZE, viewport, offsetX);
+  return { top, left, placement };
+}
+
+export interface ChromeSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Expanded toolbar: sit *after* the last selected line (below) so the panel
+ * does not cover the highlight. Grow from the FAB horizontally when given.
+ * `chrome` should be the real panel size when known (post-measure).
+ */
+export function calculateExpandedToolbarPositionFromRect(
+  rect: DOMRect,
+  containerElement?: HTMLElement,
+  chrome: ChromeSize = { width: EXPANDED_TOOLBAR_WIDTH, height: EXPANDED_TOOLBAR_HEIGHT },
+  fab?: SelectionPosition
+): SelectionPosition {
+  const viewport = getViewport();
+  const { offsetX, offsetY } = getContainerOffset(containerElement);
+  const { width, height } = chrome;
+
   const spaceAbove = rect.top;
   const spaceBelow = viewport.height - rect.bottom;
 
   let top: number;
   let placement: 'top' | 'bottom';
 
-  // Prefer above, fallback to below
-  if (spaceAbove >= TOOLBAR_HEIGHT + GAP) {
-    top = rect.top + viewport.scrollY - TOOLBAR_HEIGHT - GAP - offsetY;
+  // Prefer below the last line so selected text stays visible.
+  if (spaceBelow >= height + GAP) {
+    top = rect.bottom + viewport.scrollY + GAP - offsetY;
+    placement = 'bottom';
+  } else if (spaceAbove >= height + GAP) {
+    top = rect.top + viewport.scrollY - height - GAP - offsetY;
     placement = 'top';
-  } else if (spaceBelow >= TOOLBAR_HEIGHT + GAP) {
+  } else if (spaceBelow >= spaceAbove) {
     top = rect.bottom + viewport.scrollY + GAP - offsetY;
     placement = 'bottom';
   } else {
-    // Not enough space, position at top of viewport (plus scroll)
     top = viewport.scrollY + GAP - offsetY;
     placement = 'top';
   }
 
-  // Center horizontally on selection, but keep within viewport
-  let left = rect.left + viewport.scrollX + rect.width / 2 - TOOLBAR_WIDTH / 2 - offsetX;
+  // Grow from the FAB when we have it; otherwise align to the line start.
+  let left: number;
+  if (fab) {
+    left = fab.left;
+  } else {
+    left = rect.left + viewport.scrollX - offsetX;
+  }
 
-  // Ensure within viewport bounds (relative to container)
-  const minLeft = viewport.scrollX + GAP - offsetX;
-  const maxLeft = viewport.scrollX + viewport.width - TOOLBAR_WIDTH - GAP - offsetX;
-  left = Math.max(minLeft, Math.min(left, maxLeft));
-
+  left = clampHorizontal(left, width, viewport, offsetX);
   return { top, left, placement };
+}
+
+/**
+ * Collapsed FAB position for a live Selection.
+ */
+export function calculateToolbarPosition(
+  selection: Selection,
+  containerElement?: HTMLElement
+): SelectionPosition | null {
+  const range = selection.getRangeAt(0);
+  const rect = getSelectionAnchorRect(range);
+  if (!rect) {
+    return null;
+  }
+  return calculateFabPositionFromRect(rect, containerElement);
 }
 
 /**
@@ -101,36 +292,14 @@ export function calculateToolbarPositionFromElement(
   element: Element,
   containerElement?: HTMLElement
 ): SelectionPosition {
-  const rect = element.getBoundingClientRect();
-  const viewport = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-    scrollX: window.scrollX,
-    scrollY: window.scrollY,
-  };
+  return calculateFabPositionFromRect(element.getBoundingClientRect(), containerElement);
+}
 
-  const { offsetX, offsetY } = getContainerOffset(containerElement);
-
-  // Position above or below the element
-  const spaceAbove = rect.top;
-  let top: number;
-  let placement: 'top' | 'bottom';
-
-  if (spaceAbove >= TOOLBAR_HEIGHT + GAP) {
-    top = rect.top + viewport.scrollY - TOOLBAR_HEIGHT - GAP - offsetY;
-    placement = 'top';
-  } else {
-    top = rect.bottom + viewport.scrollY + GAP - offsetY;
-    placement = 'bottom';
-  }
-
-  // Center horizontally
-  let left = rect.left + viewport.scrollX + rect.width / 2 - TOOLBAR_WIDTH / 2 - offsetX;
-  const minLeft = viewport.scrollX + GAP - offsetX;
-  const maxLeft = viewport.scrollX + viewport.width - TOOLBAR_WIDTH - GAP - offsetX;
-  left = Math.max(minLeft, Math.min(left, maxLeft));
-
-  return { top, left, placement };
+export function calculateExpandedToolbarPositionFromElement(
+  element: Element,
+  containerElement?: HTMLElement
+): SelectionPosition {
+  return calculateExpandedToolbarPositionFromRect(element.getBoundingClientRect(), containerElement);
 }
 
 /**
@@ -235,33 +404,17 @@ export function calculateToolbarPositionFromPoint(
   clientY: number,
   containerElement?: HTMLElement
 ): SelectionPosition {
-  const viewport = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-    scrollX: window.scrollX,
-    scrollY: window.scrollY,
-  };
+  const pointRect = copyRect(clientX, clientY, clientX, clientY);
+  return calculateFabPositionFromRect(pointRect, containerElement);
+}
 
-  const { offsetX, offsetY } = getContainerOffset(containerElement);
-
-  const spaceAbove = clientY;
-  let top: number;
-  let placement: 'top' | 'bottom';
-
-  if (spaceAbove >= TOOLBAR_HEIGHT + GAP) {
-    top = clientY + viewport.scrollY - TOOLBAR_HEIGHT - GAP - offsetY;
-    placement = 'top';
-  } else {
-    top = clientY + viewport.scrollY + GAP - offsetY;
-    placement = 'bottom';
-  }
-
-  let left = clientX + viewport.scrollX - TOOLBAR_WIDTH / 2 - offsetX;
-  const minLeft = viewport.scrollX + GAP - offsetX;
-  const maxLeft = viewport.scrollX + viewport.width - TOOLBAR_WIDTH - GAP - offsetX;
-  left = Math.max(minLeft, Math.min(left, maxLeft));
-
-  return { top, left, placement };
+export function calculateExpandedToolbarPositionFromPoint(
+  clientX: number,
+  clientY: number,
+  containerElement?: HTMLElement
+): SelectionPosition {
+  const pointRect = copyRect(clientX, clientY, clientX, clientY);
+  return calculateExpandedToolbarPositionFromRect(pointRect, containerElement);
 }
 
 /**

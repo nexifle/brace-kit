@@ -9,6 +9,7 @@ import type { QuickAction, SelectionPosition } from '../types.ts';
 import { toolbarTemplate, getProviderMenuView, type ToolbarState, type ToolbarCallbacks } from '../templates/index.ts';
 import { QUICK_ACTIONS } from '../constants.ts';
 import { loadAllActions } from '../utils/actionsLoader.ts';
+import { calculateExpandedToolbarPositionFromRect } from '../utils/positioning.ts';
 
 // === Types ===
 
@@ -18,6 +19,11 @@ import { isChromeRuntimeAvailable, isExtensionContextInvalidated } from '../util
 
 export interface FloatingToolbarConfig {
   position: SelectionPosition;
+  /** Position for the expanded action bar (FAB uses `position`). */
+  expandedPosition?: SelectionPosition;
+  /** Viewport rect of the last selected line; used to re-place after measuring. */
+  anchorRect?: DOMRect;
+  containerElement?: HTMLElement;
   onActionClick: (action: QuickAction['id'], targetLang?: string) => void;
   onDismiss: () => void;
   initiallyExpanded?: boolean;
@@ -38,7 +44,15 @@ export function createFloatingToolbar(
   shadow: ShadowRoot,
   config: FloatingToolbarConfig
 ): FloatingToolbarAPI {
-  const { position, onActionClick, onDismiss, initiallyExpanded = false } = config;
+  const {
+    position,
+    expandedPosition = position,
+    anchorRect,
+    containerElement,
+    onActionClick,
+    onDismiss,
+    initiallyExpanded = false,
+  } = config;
 
   // Create container for toolbar
   const container = document.createElement('div');
@@ -50,7 +64,7 @@ export function createFloatingToolbar(
     isExpanded: initiallyExpanded,
     isTranslateMode: false,
     selectedLang: 'English',
-    position,
+    position: initiallyExpanded ? expandedPosition : position,
     menuState: { isOpen: false, selectedCategory: null },
     providerState: {
       isOpen: false,
@@ -255,10 +269,11 @@ export function createFloatingToolbar(
     onIconClick: (e: Event) => {
       e.stopPropagation();
       initialClickTarget = e.target;
-      state = { ...state, isExpanded: true };
+      state = { ...state, isExpanded: true, position: expandedPosition };
       // Re-attach document click listener to catch clicks outside
       attachDocumentListeners();
       renderToolbar();
+      refineExpandedPosition();
     },
 
     onActionClick: (e: Event, actionId: QuickAction['id']) => {
@@ -511,6 +526,27 @@ export function createFloatingToolbar(
     render(toolbarTemplate(state, callbacks), container);
   }
 
+  /**
+   * After the expanded panel is in the DOM, measure it and re-place so a
+   * ~140×320 panel is not positioned as if it were 48×200.
+   */
+  function refineExpandedPosition(): void {
+    if (!state.isExpanded || !anchorRect) return;
+    const el = container.querySelector('.bk-toolbar') as HTMLElement | null;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    if (box.width < 1 || box.height < 1) return;
+    const next = calculateExpandedToolbarPositionFromRect(
+      anchorRect,
+      containerElement,
+      { width: box.width, height: box.height },
+      position
+    );
+    if (next.top === state.position.top && next.left === state.position.left) return;
+    state = { ...state, position: next };
+    renderToolbar();
+  }
+
   // Focus the search input once the provider menu is open. The input lives in
   // a shadow root, so document.activeElement is retargeted to the host — check
   // the shadow root's own activeElement instead, and retry after the click
@@ -596,7 +632,7 @@ export function createFloatingToolbar(
 
     // If expanded, collapse it
     if (state.isExpanded) {
-      state = { ...state, isExpanded: false };
+      state = { ...state, isExpanded: false, position };
       renderToolbar();
       // Remove document listeners since we're collapsed
       detachDocumentListeners();
@@ -662,6 +698,9 @@ export function createFloatingToolbar(
 
   // Initial render
   renderToolbar();
+  if (initiallyExpanded) {
+    refineExpandedPosition();
+  }
 
   // Attach listeners after initial render
   attachDocumentListeners();
