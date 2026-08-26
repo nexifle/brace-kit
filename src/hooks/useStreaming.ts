@@ -10,6 +10,7 @@ import { useStore } from '../store/index.ts';
 import { useToast } from '../components/ui/toast/useToast.ts';
 import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message, ActiveStreamsResponse, StreamingBufferEntry } from '../types/index.ts';
 import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
+import { executeChatToolCall, finishRequestAsSuspended, updateToolMessage } from '../services/chatToolExecutor.ts';
 import { useMemory } from './useMemory.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
@@ -173,13 +174,6 @@ export function useStreaming() {
       }
       if (!tc.name) continue;
       
-      let args = {};
-      try {
-        args = JSON.parse(tc.arguments || '{}');
-      } catch {
-        args = {};
-      }
-
       // Check for cached result (duplicate tool call)
       // const freshMsgs = useStore.getState().messages;
       // const argsKey = JSON.stringify(args);
@@ -204,44 +198,12 @@ export function useStreaming() {
       //   continue;
       // }
 
-      // Add "calling" status
-      store.addMessage({
-        role: 'tool',
-        toolCallId: tc.id,
-        name: tc.name,
-        content: '⏳ Calling...',
-        toolArguments: args as Record<string, unknown>,
-      });
-
-      // Execute tool
-      try {
-        let resultText = '';
-        if (tc.name === 'continue_message') {
-          resultText = 'Chain message initiated. You may continue your response now.';
-        } else {
-          const result = await chrome.runtime.sendMessage({
-            type: 'MCP_CALL_TOOL',
-            name: tc.name,
-            arguments: args,
-          });
-
-          // Detect MCP server disconnect
-          if (typeof result?.error === 'string' && result.error.startsWith(MCP_DISCONNECT_PREFIX)) {
-            const serverName = result.error.slice(MCP_DISCONNECT_PREFIX.length);
-            handleMCPDisconnect(tc.id, serverName);
-            return; // Stop processing remaining tool calls
-          }
-
-          resultText =
-            result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
-            JSON.stringify(result);
-        }
-
-        // Update message with result
-        updateToolMessage(tc.id, resultText);
-      } catch (e) {
-        updateToolMessage(tc.id, `Error: ${(e as Error).message}`);
+      const execution = await executeChatToolCall(tc, handleMCPDisconnect);
+      if (execution === 'suspended') {
+        finishRequestAsSuspended();
+        return;
       }
+      if (execution === 'disconnected') return;
     }
 
     // Auto compact check
@@ -661,27 +623,4 @@ export function useStreaming() {
     finishStream,
     handleStreamError,
   };
-}
-
-/**
- * Helper function to update tool message content
- */
-function updateToolMessage(toolCallId: string, content: string) {
-  const store = useStore.getState();
-  const freshMessages = store.messages;
-  const callingIdx = [...freshMessages]
-    .reverse()
-    .findIndex(
-      (m) =>
-        m.role === 'tool' &&
-        String(m.toolCallId) === String(toolCallId) &&
-        String(m.content).includes('Calling...')
-    );
-
-  if (callingIdx !== -1) {
-    const actualIdx = freshMessages.length - 1 - callingIdx;
-    const updated = [...freshMessages];
-    updated[actualIdx] = { ...updated[actualIdx], content };
-    store.setMessages(updated);
-  }
 }

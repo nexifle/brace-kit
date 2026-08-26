@@ -82,6 +82,10 @@ describe('Tool Registry', () => {
       expect(isBuiltinTool('web_fetch')).toBe(true);
     });
 
+    test('returns false for client-side ask', () => {
+      expect(isBuiltinTool('ask')).toBe(false);
+    });
+
     test('returns false for unknown tool', () => {
       expect(isBuiltinTool('some_mcp_tool')).toBe(false);
     });

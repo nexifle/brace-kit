@@ -14,6 +14,7 @@ import type {
   Preferences,
   ConversationStreamingState,
   ReasoningLevel,
+  PendingAsk,
 } from '../types/index.ts';
 import {
   isReasoningLevel,
@@ -38,6 +39,8 @@ import { encryptApiKey, decryptApiKey, isEncrypted } from '../utils/keyEncryptio
 import { getGrokAuthStatus } from '../utils/grokOAuth.ts';
 import { migrateCustomProvider } from '../providers/modelSpecs.ts';
 import { DEFAULT_PREFERENCES, migratePreferences } from '../utils/migratePreferences.ts';
+import { findPendingAsk, normalizeAskPayload } from '../utils/ask.ts';
+import { INTERNAL_SYSTEM_PROMPT } from '../utils/systemPrompt.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -71,7 +74,8 @@ interface StorageData {
   fetchedModels?: Record<string, { models?: string[] }>;
 }
 
-const DEFAULT_SYSTEM_PROMPT = 'You are BraceKit, a helpful AI assistant. When the user shares page content or selected text, help them understand and work with it. Be concise and helpful.';
+// User-configurable prompt; immutable application instructions are added at request time.
+const DEFAULT_SYSTEM_PROMPT = '';
 
 const initialProviderConfig: ProviderConfig = {
   providerId: 'openai',
@@ -90,6 +94,7 @@ export const useStore = create<AppState>((set, get) => ({
   streamingContent: '',
   streamingReasoningContent: '',
   streamingConversations: {} as Record<string, ConversationStreamingState>,
+  pendingAsk: null as PendingAsk | null,
 
   // Storage ready signal — diset true setelah loadFromStorage selesai
   storageReady: false,
@@ -191,7 +196,35 @@ export const useStore = create<AppState>((set, get) => ({
   builtinActionOverrides: {},
 
   // Actions
-  setMessages: (messages) => set({ messages }),
+  setMessages: (messages) => set({ messages, pendingAsk: findPendingAsk(messages) }),
+  suspendConversationOnAsk: async (pendingAsk) => {
+    set((s) => ({
+      pendingAsk,
+      messages: s.messages.map((message) =>
+        message.role === 'tool' && message.toolCallId === pendingAsk.toolCallId
+          ? { ...message, content: 'Waiting for your answer…' }
+          : message
+      ),
+    }));
+    await get().saveActiveConversation();
+  },
+  suspendAskToolCall: async (toolCallId, argumentsJson) => {
+    let args: unknown;
+    try {
+      args = JSON.parse(argumentsJson || '{}');
+    } catch {
+      args = {};
+    }
+    const payload = normalizeAskPayload(args);
+    if (!payload) return false;
+    await get().suspendConversationOnAsk({
+      id: `ask_${toolCallId}`,
+      toolCallId,
+      payload,
+      createdAt: Date.now(),
+    });
+    return true;
+  },
   addMessage: (message) =>
     set((state) => ({
       messages: [
@@ -212,6 +245,7 @@ export const useStore = create<AppState>((set, get) => ({
   setCurrentRequestId: (currentRequestId) => set({ currentRequestId }),
   setStreamingContent: (streamingContent) => set({ streamingContent }),
   setStreamingReasoningContent: (streamingReasoningContent) => set({ streamingReasoningContent }),
+  setPendingAsk: (pendingAsk) => set({ pendingAsk }),
   setConversationStreaming: (convId, state) => {
     if (state === null) {
       set((s) => {
@@ -375,6 +409,7 @@ export const useStore = create<AppState>((set, get) => ({
       conversations: [conv, ...s.conversations],
       activeConversationId: id,
       messages: [],
+      pendingAsk: null,
     }));
 
     // Async save metadata to DB
@@ -426,6 +461,7 @@ export const useStore = create<AppState>((set, get) => ({
       // Restore snapshot jika conv tujuan masih streaming, atau kosongkan jika tidak
       streamingContent: targetConvStreaming?.streamingContent || '',
       streamingReasoningContent: '',
+      pendingAsk: null,
     });
     try {
       let messagesOrNull = await getConversationMessages(id);
@@ -453,7 +489,7 @@ export const useStore = create<AppState>((set, get) => ({
       // Guard: user mungkin sudah switch ke conversation lain selama async load/hydrate
       if (get().activeConversationId !== id) return;
 
-      set({ messages });
+      set({ messages, pendingAsk: findPendingAsk(messages) });
 
       // Save to storage
       await chrome.storage.local.set({ activeConversationId: id });
@@ -821,7 +857,12 @@ export const useStore = create<AppState>((set, get) => ({
       // Load and decrypt providerConfig
       if (data.providerConfig) {
         let config = { ...initialProviderConfig, ...data.providerConfig };
-        // Migrate apiKey: encrypt if plaintext, decrypt if encrypted
+        // Remove the legacy persisted copy now that internal instructions are injected at request time.
+        if (config.systemPrompt === INTERNAL_SYSTEM_PROMPT) {
+          config.systemPrompt = DEFAULT_SYSTEM_PROMPT;
+          chrome.storage.local.set({ providerConfig: config }).catch(() => {});
+        }
+        // Migrate apiKey: encrypt if plaintext, decrypt if encrypted.
         if (config.apiKey) {
           if (isEncrypted(config.apiKey)) {
             config.apiKey = await decryptApiKey(config.apiKey);
@@ -1017,6 +1058,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (!startOnWelcome) {
           updates.activeConversationId = id;
           updates.messages = legacyData.chatHistory;
+          updates.pendingAsk = findPendingAsk(legacyData.chatHistory);
         }
 
         await saveConversationMessages(id, legacyData.chatHistory);
@@ -1044,6 +1086,8 @@ export const useStore = create<AppState>((set, get) => ({
         }
 
         if (messages.length > 0) {
+          updates.pendingAsk = findPendingAsk(messages);
+
           // Hydrate gambar dari IndexedDB saat extension pertama dibuka
           try {
             messages = await hydrateMessages(messages);
@@ -1141,7 +1185,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!state.activeConversationId) return;
 
     // Do not save a conversation that is still empty
-    if (state.messages.length === 0) return;
+    if (state.messages.length === 0 && !state.pendingAsk) return;
 
     try {
       const convId = state.activeConversationId;

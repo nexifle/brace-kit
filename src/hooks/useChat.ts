@@ -16,6 +16,8 @@ import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUti
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
 import { useAutoCompact, cloneMessagesForBranch } from './compact/index.ts';
+import { executeChatToolCall, finishRequestAsSuspended, updateToolMessage, type ChatToolExecutionResult } from '../services/chatToolExecutor.ts';
+import { isChatSendBlocked } from '../utils/ask.ts';
 
 /**
  * Generate a title for the given conversation (or the active one if no ID provided).
@@ -178,7 +180,11 @@ export function useChat() {
         // Handle tool calls for non-streaming (if any)
         if (toolCalls.length > 0) {
           // Keep isStreaming true while handling tool calls
-          await handleToolCallsNonStreaming(toolCalls, activeConvId);
+          const toolResult = await handleToolCallsNonStreaming(toolCalls, activeConvId);
+          if (toolResult === 'suspended') {
+            finishRequestAsSuspended();
+            return;
+          }
         } else {
           // No tool calls, we're done
           currentState.setIsStreaming(false);
@@ -200,9 +206,7 @@ export function useChat() {
 
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
     const currentState = useStore.getState();
-    const convId = currentState.activeConversationId;
-    const isConvStreaming = convId ? !!currentState.streamingConversations[convId] : false;
-    if (currentState.isStreaming || isConvStreaming || currentState.isCompacting) return;
+    if (isChatSendBlocked(currentState)) return;
 
     const validAttachments = currentState.attachments.filter((a) => a.type !== 'error');
     if (!text && validAttachments.length === 0) return;
@@ -303,6 +307,23 @@ export function useChat() {
 
     await dispatchChatRequest(apiMessages, sendOptions);
   }, [buildAPIMessages, compactConversation, renameConversation, checkAndAutoCompact, dispatchChatRequest]);
+
+  const answerAsk = useCallback(async (answer: string, attachments: string[] = []) => {
+    const state = useStore.getState();
+    const ask = state.pendingAsk;
+    if (!ask || state.isStreaming) return;
+    state.setPendingAsk(null);
+    const imageAttachments = attachments
+      .filter((data) => typeof data === 'string' && data.length > 0)
+      .map((data, index) => ({ type: 'image' as const, name: `ask-ref-${index + 1}`, data }));
+    updateToolMessage(ask.toolCallId, answer, imageAttachments);
+    await state.saveActiveConversation();
+    await dispatchChatRequest(buildAPIMessages(useStore.getState().messages));
+  }, [buildAPIMessages, dispatchChatRequest]);
+
+  const cancelAsk = useCallback(async () => {
+    await answerAsk('Question skipped by the user.');
+  }, [answerAsk]);
 
   const stopStreaming = useCallback(() => {
     if (abortControllerRef.current) {
@@ -452,48 +473,16 @@ export function useChat() {
   const handleToolCallsNonStreaming = useCallback(async (
     toolCalls: ToolCall[],
     activeConvId: string | null
-  ) => {
-    const currentState = useStore.getState();
+  ): Promise<ChatToolExecutionResult> => {
     for (const tc of toolCalls) {
       if (!tc.name) continue;
 
-      let args = {};
-      try {
-        args = JSON.parse(tc.arguments || '{}');
-      } catch {
-        args = {};
+      const execution = await executeChatToolCall(tc);
+      if (execution === 'suspended') {
+        finishRequestAsSuspended();
+        return 'suspended';
       }
-
-      // Add "calling" status
-      currentState.addMessage({
-        role: 'tool',
-        toolCallId: tc.id,
-        name: tc.name,
-        content: '⏳ Calling...',
-        toolArguments: args as Record<string, unknown>,
-      });
-
-      // Execute tool
-      try {
-        let resultText = '';
-        if (tc.name === 'continue_message') {
-          resultText = 'Chain message initiated. You may continue your response now.';
-        } else {
-          const result = await chrome.runtime.sendMessage({
-            type: 'MCP_CALL_TOOL',
-            name: tc.name,
-            arguments: args,
-          });
-          resultText =
-            result?.content?.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n') ||
-            JSON.stringify(result);
-        }
-
-        // Update message with result
-        updateToolMessage(tc.id, resultText);
-      } catch (e) {
-        updateToolMessage(tc.id, `Error: ${(e as Error).message}`);
-      }
+      if (execution === 'disconnected') return 'disconnected';
     }
 
     // Auto compact check
@@ -555,7 +544,7 @@ export function useChat() {
 
         // Recursively handle tool calls if any
         if (followUpToolCalls.length > 0) {
-          await handleToolCallsNonStreaming(followUpToolCalls, activeConvId);
+          return handleToolCallsNonStreaming(followUpToolCalls, activeConvId);
         }
       }
     } catch (e) {
@@ -563,6 +552,7 @@ export function useChat() {
       useStore.getState().addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       useStore.getState().setIsStreaming(false);
     }
+    return 'completed';
   }, [buildAPIMessages, getAllTools, supportsFunctionCalling, getChatOptions, checkAndAutoCompact]);
 
   return {
@@ -572,6 +562,8 @@ export function useChat() {
     branchFrom,
     regenerateFrom,
     editMessage,
+    answerAsk,
+    cancelAsk,
     getProvider,
     isCustomProvider,
     buildAPIMessages, // Single unified function
@@ -580,27 +572,4 @@ export function useChat() {
     estimateTokenCount,
     checkAndAutoCompact,
   };
-}
-
-/**
- * Helper function to update tool message content
- */
-function updateToolMessage(toolCallId: string, content: string) {
-  const store = useStore.getState();
-  const freshMessages = store.messages;
-  const callingIdx = [...freshMessages]
-    .reverse()
-    .findIndex(
-      (m) =>
-        m.role === 'tool' &&
-        String(m.toolCallId) === String(toolCallId) &&
-        String(m.content).includes('Calling...')
-    );
-
-  if (callingIdx !== -1) {
-    const actualIdx = freshMessages.length - 1 - callingIdx;
-    const updated = [...freshMessages];
-    updated[actualIdx] = { ...updated[actualIdx], content };
-    store.setMessages(updated);
-  }
 }

@@ -6,6 +6,7 @@
  */
 
 import type { MCPTool, Message, ModelSpec } from '../../types/index.ts';
+import { extractToolResultMedia } from '../utils/toolResultMedia.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { parseOpenAICompatModel } from '../modelSpecs.ts';
 import { cleanSchema } from '../utils/schema.ts';
@@ -77,10 +78,20 @@ export function formatOpenAI(
 
     // Transform tool result messages to OpenAI format
     if (msg.role === 'tool') {
+      const media = extractToolResultMedia(msg);
+      const content = media.images.length === 0
+        ? media.text
+        : [
+            ...(media.text ? [{ type: 'text', text: media.text }] : []),
+            ...media.images.map((image) => ({
+              type: 'image_url',
+              image_url: { url: image.dataUrl },
+            })),
+          ];
       return {
         role: 'tool',
         tool_call_id: msg.toolCallId,
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        content,
       };
     }
 

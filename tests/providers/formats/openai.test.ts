@@ -161,6 +161,32 @@ describe('OpenAI Format', () => {
       });
     });
 
+    it('sends ask-answer images as Chat Completions image_url parts on the tool message', () => {
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          toolCallId: 'call_123',
+          name: 'ask',
+          content: [
+            { type: 'text', text: '16:9' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+          ] as unknown as string,
+        },
+      ];
+
+      const config = formatOpenAI(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.messages[0]).toEqual({
+        role: 'tool',
+        tool_call_id: 'call_123',
+        content: [
+          { type: 'text', text: '16:9' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+        ],
+      });
+    });
+
     it('should stringify object content in tool messages', () => {
       const messages: Message[] = [
         {

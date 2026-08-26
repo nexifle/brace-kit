@@ -128,6 +128,36 @@ describe('Anthropic Format', () => {
       expect(body.messages[0].content).toHaveLength(2);
     });
 
+    it('nests ask-answer images inside tool_result content as Anthropic image blocks', () => {
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          toolCallId: 'toolu_1',
+          name: 'ask',
+          content: [
+            { type: 'text', text: '16:9' },
+            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,/9j/4AAQ' } },
+          ] as unknown as string,
+        },
+      ];
+
+      const config = formatAnthropic(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.messages[0].content[0]).toEqual({
+        type: 'tool_result',
+        tool_use_id: 'toolu_1',
+        is_error: false,
+        content: [
+          { type: 'text', text: '16:9' },
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: '/9j/4AAQ' },
+          },
+        ],
+      });
+    });
+
     it('should mark error tool results', () => {
       const messages: Message[] = [
         { role: 'tool', content: 'Error: Something went wrong', toolCallId: 'call_1' },

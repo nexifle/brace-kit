@@ -197,8 +197,13 @@ export interface GeminiPart {
   /** Thought signature for multi-turn context (Gemini 3+) */
   thoughtSignature?: string;
   functionCall?: { name: string; args: Record<string, unknown> };
-  inlineData?: { mimeType: string; data: string };
-  functionResponse?: { name: string; response: unknown };
+  inlineData?: { mimeType: string; data: string; displayName?: string };
+  functionResponse?: {
+    name: string;
+    response: Record<string, unknown>;
+    id?: string;
+    parts?: Array<{ inlineData: { mimeType: string; data: string; displayName?: string } }>;
+  };
 }
 
 /**

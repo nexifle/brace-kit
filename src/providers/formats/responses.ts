@@ -10,6 +10,7 @@ import type { MCPTool, Message, MessageContent } from '../../types/index.ts';
 import type { ChatOptions, RequestConfig, StreamChunk, TokenUsage } from '../types.ts';
 import { cleanSchema } from '../utils/schema.ts';
 import { xaiReasoningEffort } from '../utils/reasoning.ts';
+import { extractToolResultMedia } from '../utils/toolResultMedia.ts';
 
 // The xAI CLI chat proxy version-gates requests: it rejects an unknown or
 // outdated Grok CLI version with HTTP 426. These are the identity headers the
@@ -88,10 +89,20 @@ export function formatResponses(
         }
       }
     } else if (msg.role === 'tool') {
+      const media = extractToolResultMedia(msg);
+      const output = media.images.length === 0
+        ? media.text
+        : [
+            ...(media.text ? [{ type: 'input_text', text: media.text }] : []),
+            ...media.images.map((image) => ({
+              type: 'input_image',
+              image_url: image.dataUrl,
+            })),
+          ];
       input.push({
         type: 'function_call_output',
         call_id: msg.toolCallId,
-        output: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        output,
       });
     }
   }

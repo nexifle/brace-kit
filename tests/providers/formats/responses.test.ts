@@ -146,6 +146,31 @@ describe('Grok Responses Format', () => {
       });
     });
 
+    it('sends ask-answer images as function_call_output input_image parts', () => {
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          toolCallId: 'c1',
+          name: 'ask',
+          content: [
+            { type: 'text', text: '16:9' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+          ] as unknown as string,
+        },
+      ];
+      const config = formatResponses(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.input[0]).toEqual({
+        type: 'function_call_output',
+        call_id: 'c1',
+        output: [
+          { type: 'input_text', text: '16:9' },
+          { type: 'input_image', image_url: 'data:image/png;base64,iVBOR' },
+        ],
+      });
+    });
+
     it('[REGRESSION] must not leak Gemini thoughtSignature into Responses function_call items', () => {
       const messages: Message[] = [
         { role: 'user', content: 'Question' },

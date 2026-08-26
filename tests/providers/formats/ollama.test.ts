@@ -224,6 +224,30 @@ describe('Ollama Format', () => {
       });
     });
 
+    it('puts ask-answer images on the tool message images array as raw base64', () => {
+      const messages: Message[] = [
+        {
+          role: 'tool',
+          toolCallId: 'call_123',
+          name: 'ask',
+          content: [
+            { type: 'text', text: '16:9' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR' } },
+          ] as unknown as string,
+        },
+      ];
+
+      const config = formatOllama(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.messages[0]).toEqual({
+        role: 'tool',
+        content: '16:9',
+        tool_name: 'ask',
+        images: ['iVBOR'],
+      });
+    });
+
     it('should stringify object content in tool messages', () => {
       const messages: Message[] = [
         {

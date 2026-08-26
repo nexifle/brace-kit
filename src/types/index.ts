@@ -1,3 +1,5 @@
+import type { PendingAsk } from './ask.ts';
+
 // ==================== MCP Constants ====================
 
 /**
@@ -438,6 +440,8 @@ export interface AppState {
   streamingContent: string;
   streamingReasoningContent: string;
   streamingConversations: Record<string, ConversationStreamingState>;
+  /** Question currently awaiting an answer in the active chat conversation. */
+  pendingAsk: PendingAsk | null;
 
   // Context
   pageContext: PageContext | null;
@@ -541,6 +545,9 @@ export interface AppState {
   setStreamingContent: (content: string) => void;
   setStreamingReasoningContent: (content: string) => void;
   setConversationStreaming: (convId: string, state: ConversationStreamingState | null) => void;
+  setPendingAsk: (pendingAsk: PendingAsk | null) => void;
+  suspendConversationOnAsk: (pendingAsk: PendingAsk) => Promise<void>;
+  suspendAskToolCall: (toolCallId: string, argumentsJson: string) => Promise<boolean>;
 
   setPageContext: (context: PageContext | null) => void;
   setSelectedText: (text: SelectedText | null) => void;
@@ -707,6 +714,9 @@ export {
 
 // Import for use in AppState
 import type { TokenUsage as TokenUsageType } from '../providers/types.ts';
+
+export type { AskField, AskQuestion, AskPayload, PendingAsk } from './ask.ts';
+export { ASK_TOOL } from './ask.ts';
 
 /**
  * Token usage metadata from API responses

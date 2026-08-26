@@ -9,6 +9,8 @@ import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
 import type { Message, APIMessage } from '../../types/index.ts';
 import { buildMemoryBlockFromSelection } from '../../utils/memorySampler.ts';
+import { buildSystemPrompt } from '../../utils/systemPrompt.ts';
+import { formatMessageForAPI } from '../../utils/formatMessageForAPI.ts';
 
 /**
  * Unified message builder hook
@@ -36,77 +38,6 @@ export function useMessageBuilder() {
   }, []);
 
   /**
-   * Format a single message for API
-   */
-  const formatMessageForAPI = useCallback((msg: Message): APIMessage | null => {
-    if (msg.role === 'error') return null;
-
-    // Assistant with tool calls
-    if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-      return {
-        role: 'assistant',
-        content: msg.content || '',
-        toolCalls: msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments || '{}',
-          ...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
-        })),
-        ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
-        ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),
-      };
-    }
-
-    // Tool result
-    if (msg.role === 'tool') {
-      return {
-        role: 'tool',
-        toolCallId: msg.toolCallId,
-        name: msg.name,
-        content: msg.content,
-      };
-    }
-
-    // User with attachments
-    if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-      const images = msg.attachments.filter(a => a.type === 'image');
-      const texts = msg.attachments.filter(a => a.type === 'text');
-
-      // Build inline text from text attachments
-      let textContent = msg.content || '';
-      for (const att of texts) {
-        textContent += `\n\n--- ${att.name} ---\n${att.data}`;
-      }
-
-      // No images — send as plain string for compatibility with all providers
-      if (images.length === 0) {
-        return { role: msg.role, content: textContent };
-      }
-
-      // With images — use multi-part content format (required by OpenAI vision API)
-      const content: { type: string; text?: string; image_url?: { url: string } }[] = [];
-      if (textContent) {
-        content.push({ type: 'text', text: textContent });
-      }
-      for (const att of images) {
-        content.push({
-          type: 'image_url',
-          image_url: { url: att.data },
-        });
-      }
-      return { role: msg.role, content };
-    }
-
-    // Regular message
-    return {
-      role: msg.role,
-      content: msg.content,
-      ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
-      ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),
-    };
-  }, []);
-
-  /**
    * Build metadata block for system prompt
    * Uses static timestamp from conversation for prompt caching efficiency
    */
@@ -130,8 +61,8 @@ export function useMessageBuilder() {
       const activeConv = state.conversations.find((c) => c.id === state.activeConversationId);
       const memoryBlock = buildMemoryBlock(activeConv?.selectedMemoryIds);
       const metadataBlock = buildMetadataBlock();
-      const basePrompt = activeConv?.systemPrompt ?? state.providerConfig.systemPrompt ?? '';
-      let systemContent = basePrompt + memoryBlock + metadataBlock;
+      const customPrompt = activeConv?.systemPrompt || state.providerConfig.systemPrompt || '';
+      const systemContent = buildSystemPrompt(customPrompt, memoryBlock, metadataBlock);
 
       // Use provided messages or store messages
       const sourceMessages = messages ?? state.messages;
@@ -165,7 +96,7 @@ export function useMessageBuilder() {
 
       return [...msgs, ...historyMessages];
     },
-    [buildMemoryBlock, buildMetadataBlock, formatMessageForAPI]
+    [buildMemoryBlock, buildMetadataBlock]
   );
 
   /**

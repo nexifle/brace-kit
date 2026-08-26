@@ -4,6 +4,7 @@
  */
 
 import type { MCPTool } from '../types/index.ts';
+import { ASK_TOOL } from '../types/ask.ts';
 import { WEB_FETCH_TOOL } from '../background/tools/definitions/web-fetch.tool.ts';
 
 /**
@@ -17,10 +18,7 @@ export const BUILTIN_TOOLS = {
     inputSchema: {
       type: 'object',
       properties: {
-        query: {
-          type: 'string',
-          description: 'The search query to look up on the web',
-        },
+        query: { type: 'string', description: 'The search query to look up on the web' },
       },
       required: ['query'],
     },
@@ -32,71 +30,46 @@ export const BUILTIN_TOOLS = {
     inputSchema: {
       type: 'object',
       properties: {
-        query: {
-          type: 'string',
-          description: 'The search query to perform.',
-        },
-        allowed_domains: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Optional list of domains to restrict the search to.',
-        },
+        query: { type: 'string', description: 'The search query to perform.' },
+        allowed_domains: { type: 'array', items: { type: 'string' }, description: 'Optional list of domains to restrict your search.' },
       },
       required: ['query'],
     },
   },
   WEB_FETCH: WEB_FETCH_TOOL,
+  ASK: ASK_TOOL,
   CONTINUE_MESSAGE: {
     name: 'continue_message',
     description:
       'Use this tool to continue your response in a new message chunk. This is useful when you have more to say but want to break it up, or if you want to perform a chain of thought before the next response.',
     inputSchema: {
       type: 'object',
-      properties: {
-        reason: {
-          type: 'string',
-          description: 'Brief reason why you are continuing',
-        },
-      },
+      properties: { reason: { type: 'string', description: 'Brief reason why you are continuing' } },
       required: ['reason'],
     },
   },
 } as const;
 
-/**
- * Options for getting all tools
- */
 export interface GetAllToolsOptions {
   mcpTools: MCPTool[];
   enableGoogleSearchTool: boolean;
   googleSearchApiKey: string | null;
   supportsFunctionCalling: boolean;
   isGemini: boolean;
-  /** Provider id — used to auto-inject the Grok web_search tool. */
   providerId?: string;
 }
 
-/**
- * Get all tools for API request (MCP + built-in)
- * @param options - Configuration options
- * @returns Array of tools to include in API request
- */
 export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
   const tools: MCPTool[] = [...options.mcpTools];
 
-  // Inject google_search tool for non-Gemini providers when enabled
   if (!options.isGemini && options.enableGoogleSearchTool && options.googleSearchApiKey) {
     tools.unshift(BUILTIN_TOOLS.GOOGLE_SEARCH as MCPTool);
   }
-
-  // Auto-inject web_search for the Grok (OAuth) provider — no separate key
-  // required, it reuses the OAuth access token.
   if (options.providerId === 'grok' && options.supportsFunctionCalling) {
     tools.unshift(BUILTIN_TOOLS.WEB_SEARCH as MCPTool);
   }
-
-  // Inject continue_message tool for function-capable models
   if (options.supportsFunctionCalling) {
+    tools.push(BUILTIN_TOOLS.ASK as MCPTool);
     tools.push(BUILTIN_TOOLS.WEB_FETCH as MCPTool);
     tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
   }
@@ -105,41 +78,23 @@ export function getAllTools(options: GetAllToolsOptions): MCPTool[] {
 }
 
 /**
- * Get only built-in tools based on options
- * @param options - Filter options
- * @returns Array of built-in tools
+ * Legacy client-only assembly helper. Prefer getAllTools for new request paths.
  */
 export function getBuiltinTools(options: {
   includeGoogleSearch: boolean;
   includeContinueMessage: boolean;
+  includeAsk?: boolean;
   includeWebFetch?: boolean;
 }): MCPTool[] {
   const tools: MCPTool[] = [];
-
-  if (options.includeGoogleSearch) {
-    tools.push(BUILTIN_TOOLS.GOOGLE_SEARCH as MCPTool);
-  }
-  // Mirror getAllTools: function-calling injection includes web_fetch with continue_message.
-  if (options.includeWebFetch ?? options.includeContinueMessage) {
-    tools.push(BUILTIN_TOOLS.WEB_FETCH as MCPTool);
-  }
-  if (options.includeContinueMessage) {
-    tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
-  }
-
+  if (options.includeGoogleSearch) tools.push(BUILTIN_TOOLS.GOOGLE_SEARCH as MCPTool);
+  if (options.includeAsk) tools.push(BUILTIN_TOOLS.ASK as MCPTool);
+  if (options.includeWebFetch ?? options.includeContinueMessage) tools.push(BUILTIN_TOOLS.WEB_FETCH as MCPTool);
+  if (options.includeContinueMessage) tools.push(BUILTIN_TOOLS.CONTINUE_MESSAGE as MCPTool);
   return tools;
 }
 
-/**
- * Check if a tool name is a built-in tool
- * @param name - Tool name to check
- * @returns True if the tool is a built-in tool
- */
+/** Background-executable built-ins only; client-side ask is deliberately excluded. */
 export function isBuiltinTool(name: string): boolean {
-  return (
-    name === 'google_search' ||
-    name === 'web_search' ||
-    name === 'web_fetch' ||
-    name === 'continue_message'
-  );
+  return name === 'google_search' || name === 'web_search' || name === 'web_fetch' || name === 'continue_message';
 }
