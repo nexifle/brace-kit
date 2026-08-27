@@ -11,6 +11,7 @@ import type { MCPTool, Message, APIMessage } from '../../types/index.ts';
 import { buildConversationSystemPrompt } from '../../utils/systemPrompt.ts';
 import { formatMessageForAPI } from '../../utils/formatMessageForAPI.ts';
 import { estimateRequestContextTokens } from '../../utils/requestContext.ts';
+import { getEffectiveMessages } from '../../utils/estimateTokens.ts';
 
 /**
  * Unified message builder hook
@@ -31,15 +32,9 @@ export function useMessageBuilder() {
 
       const sourceMessages = messages ?? state.messages;
 
-      const lastSummaryIndex = [...sourceMessages].reverse().findIndex(m => m.summary && m.condenseId);
-      const startIndex = lastSummaryIndex !== -1 ? sourceMessages.length - 1 - lastSummaryIndex : 0;
-
       const historyMessages: APIMessage[] = [];
 
-      for (let i = startIndex; i < sourceMessages.length; i++) {
-        const msg = sourceMessages[i];
-        if (msg.condenseParent) continue;
-
+      for (const msg of getEffectiveMessages(sourceMessages)) {
         const formatted = formatMessageForAPI(msg);
         if (formatted) {
           historyMessages.push(formatted);

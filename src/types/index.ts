@@ -67,6 +67,10 @@ export interface Message {
   summary?: string;
   condenseId?: string;
   condenseParent?: string;
+  /** Paths recorded on a checkpoint summary. */
+  compactDetails?: { readFiles: string[]; modifiedFiles: string[] };
+  /** Heuristic context size before/after this checkpoint. */
+  compactTokens?: { before: number; after: number };
   isCachedResult?: boolean;
   /** Wall-clock when the message was added. */
   createdAt?: number;
@@ -277,14 +281,17 @@ export interface ProviderConfig {
 
 export interface CompactConfig {
   enabled: boolean; // Auto-compact toggle (default true)
-  /** @deprecated Prefer reserveTokens. Kept for stored configs. */
-  threshold: number; // 0.0 to 1.0 (default 0.9)
+  /** Compact when usage exceeds this fraction of the model window. Default 0.87. */
+  threshold: number;
   defaultContextWindow: number; // default 128000
-  prompt: string; // Custom compact prompt (empty = use default)
-  /** Compact when estimated tokens > contextWindow - reserveTokens. Default 16384. */
+  /** Ignored at compact time; kept so old stored JSON still loads. */
+  prompt: string;
+  /** @deprecated Derived from threshold × window. Migration fallback. */
   reserveTokens?: number;
-  /** Leave a tail of roughly this many tokens uncompacted. Default 20000. */
+  /** @deprecated Derived from keepRecentRatio × window. Migration fallback. */
   keepRecentTokens?: number;
+  /** Fraction of the model window kept verbatim. Default 0.16. */
+  keepRecentRatio?: number;
 }
 
 export interface ProviderKeys {

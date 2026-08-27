@@ -94,4 +94,5 @@ export interface SummarySectionProps {
   summary: string;
   isExpanded: boolean;
   onToggle: () => void;
+  compactTokens?: { before: number; after: number };
 }

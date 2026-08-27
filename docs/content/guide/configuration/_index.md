@@ -43,8 +43,8 @@ BraceKit provides comprehensive settings to customize your AI assistant experien
 
 ### Compact Settings
 - [Enable Auto-Compact](./compact/#enable-auto-compact)
-- [Threshold Configuration](./compact/#threshold)
-- [Summary Prompt](./compact/#summary-prompt)
+- [Compact at](./compact/#compact-at)
+- [Keep recent](./compact/#keep-recent)
 
 ### Memory Settings
 - [Enable Memory](./memory/#enable-memory)

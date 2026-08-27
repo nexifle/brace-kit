@@ -4,6 +4,8 @@ import {
   estimateChars,
   shouldCompact,
   buildCompactUserMessage,
+  buildAgentSummarizationPlan,
+  combineAgentCompactSummary,
   isCompactUserMessage,
   lastRealUserMessage,
   workingFromSummary,
@@ -46,29 +48,49 @@ describe('shouldCompact / estimateChars', () => {
 });
 
 describe('workingFromSummary', () => {
-  it('keeps the leading system message and last real user turn', () => {
+  it('keeps the leading system message and a checkpoint plus recent tail', () => {
     const working: APIMessage[] = [
       { role: 'system', content: 'skill' },
       { role: 'user', content: 'Make a pitch deck' },
       { role: 'assistant', content: 'ok', toolCalls: [{ id: 't1', name: 'read_file', arguments: '{}' }] },
       { role: 'tool', toolCallId: 't1', name: 'read_file', content: 'x'.repeat(100) },
+      { role: 'user', content: 'continue' },
     ];
-    const next = workingFromSummary(working, '<summary>Did plan</summary>');
+    const next = workingFromSummary(working, '## Goal\nDid plan');
     expect(next[0]).toEqual({ role: 'system', content: 'skill' });
     expect(next.some((m) => m.role === 'user' && String(m.content).includes('Did plan'))).toBe(true);
-    expect(next[next.length - 1]).toEqual({ role: 'user', content: 'Make a pitch deck' });
-    expect(next.every((m) => m.role !== 'tool')).toBe(true);
+    expect(next.some((m) => m.role === 'user' && String(m.content).includes('continue'))).toBe(true);
+  });
+});
+
+describe('buildAgentSummarizationPlan', () => {
+  it('includes a turn-prefix request when the cut splits a turn', () => {
+    const working: APIMessage[] = [
+      { role: 'system', content: 'skill' },
+      { role: 'user', content: 'do the big job ' + 'x'.repeat(400) },
+      { role: 'assistant', content: 'calling', toolCalls: [{ id: 't1', name: 'read_file', arguments: '{"path":"a.ts"}' }] },
+      { role: 'tool', toolCallId: 't1', name: 'read_file', content: 'y'.repeat(800) },
+      { role: 'assistant', content: 'later ' + 'z'.repeat(40) },
+    ];
+    const plan = buildAgentSummarizationPlan(working, 30);
+    expect(plan).not.toBeNull();
+    expect(plan?.prefix).toBeDefined();
+    expect(String(plan!.prefix![1].content)).toContain('PREFIX of a turn');
+    expect(String(plan!.history[1].content)).toContain('## Goal');
+    expect(combineAgentCompactSummary('hist', 'pref')).toContain('Turn Context (split turn)');
   });
 });
 
 describe('compact user message', () => {
-  it('sits at the tail and is detectable', () => {
+  it('is a summarizer user prompt, not the agent system prompt', () => {
     const msg = buildCompactUserMessage();
-    expect(isCompactUserMessage(msg)).toBe(true);
-    expect(String(msg.content)).toContain(COMPACT_USER_MARKER);
+    expect(String(msg.content)).toContain('<conversation>');
+    expect(String(msg.content)).toContain('## Goal');
+    const checkpoint = { role: 'user' as const, content: `${COMPACT_USER_MARKER}\n## Goal` };
+    expect(isCompactUserMessage(checkpoint)).toBe(true);
     const last = lastRealUserMessage([
       { role: 'user', content: 'real' },
-      msg,
+      checkpoint,
     ]);
     expect(last?.content).toBe('real');
   });

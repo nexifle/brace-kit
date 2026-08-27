@@ -119,15 +119,29 @@ export function toolSnapshot(tools: MCPTool[] | undefined | null): { toolsTokens
   };
 }
 
-/** Effective history: from last summary, skipping condensed parents. */
+/** Latest checkpoint index, or -1. */
+export function lastCheckpointIndex(messages: Message[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].summary && messages[i].condenseId) return i;
+  }
+  return -1;
+}
+
+/**
+ * Active LLM context: latest checkpoint first, then every message that is
+ * not tagged as discarded. The checkpoint may be stored after the kept tail
+ * so it stays visible at the bottom of the transcript after compact.
+ */
 export function getEffectiveMessages(messages: Message[]): Message[] {
-  const lastSummaryIndex = [...messages].reverse().findIndex((m) => m.summary && m.condenseId);
-  const startIndex = lastSummaryIndex !== -1 ? messages.length - 1 - lastSummaryIndex : 0;
-  const out: Message[] = [];
-  for (let i = startIndex; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg.condenseParent) continue;
-    out.push(msg);
+  const checkpointAt = lastCheckpointIndex(messages);
+  if (checkpointAt === -1) {
+    return messages.filter((m) => !m.condenseParent);
+  }
+  const out: Message[] = [messages[checkpointAt]];
+  for (let i = 0; i < messages.length; i++) {
+    if (i === checkpointAt) continue;
+    if (messages[i].condenseParent) continue;
+    out.push(messages[i]);
   }
   return out;
 }
@@ -182,34 +196,36 @@ export function toolDefinitionDelta(last: Message, tools: MCPTool[] | undefined 
  */
 export function estimateContextTokens(input: EstimateContextInput): ContextTokenEstimate {
   const effective = getEffectiveMessages(input.messages);
-  const known = contextUsageIsKnown(input.messages);
-  const last = lastAssistantWithUsage(effective);
+  const checkpointAt = lastCheckpointIndex(input.messages);
+  const prefix =
+    estimateTextTokens(input.systemPrompt) + estimateToolsTokens(input.tools);
+
+  // Usage on kept-tail assistants is from before the checkpoint and must not
+  // be reused. Only provider usage from turns after the checkpoint is valid.
+  const afterCheckpoint =
+    checkpointAt >= 0 ? input.messages.slice(checkpointAt + 1) : effective;
+  const last = lastAssistantWithUsage(afterCheckpoint);
 
   if (last) {
     const usageTotal = calculateContextTokens(last.message.usage);
-    const after = effective.slice(last.index + 1);
+    const after = afterCheckpoint.slice(last.index + 1);
     const added = heuristicMessagesTokens(after);
     const extraTools = toolDefinitionDelta(last.message, input.tools);
-    return { tokens: usageTotal + added + extraTools, known };
+    return { tokens: usageTotal + added + extraTools, known: true };
   }
 
-  const prefix =
-    estimateTextTokens(input.systemPrompt) + estimateToolsTokens(input.tools);
-  return { tokens: heuristicMessagesTokens(effective) + prefix, known };
+  return {
+    tokens: heuristicMessagesTokens(effective) + prefix,
+    known: true,
+  };
 }
 
 /**
- * After compaction, usage is unknown until an assistant message after the
- * latest summary reports provider usage.
+ * True when the footer can show a token figure. After compact we still have a
+ * heuristic of the checkpoint + kept tail, so this stays true.
  */
 export function contextUsageIsKnown(messages: Message[]): boolean {
-  const lastSummaryIndex = [...messages].reverse().findIndex((m) => m.summary && m.condenseId);
-  if (lastSummaryIndex === -1) return true;
-  const startIndex = messages.length - 1 - lastSummaryIndex;
-  for (let i = startIndex + 1; i < messages.length; i++) {
-    if (isUsableAssistantUsage(messages[i])) return true;
-  }
-  return false;
+  return estimateContextTokens({ messages }).known;
 }
 
 export function clampMaxOutputTokens(args: {

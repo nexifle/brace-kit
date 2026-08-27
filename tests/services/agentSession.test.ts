@@ -329,12 +329,12 @@ describe('runAgentSession', () => {
     expect(result.content).toBe('ok after compact');
     expect(callCount).toBe(2);
     const compactReq = payloads[0];
+    expect(compactReq[0].role).toBe('system');
+    expect(String(compactReq[0].content)).toContain('context summarization assistant');
     expect(compactReq[compactReq.length - 1].role).toBe('user');
-    expect(String(compactReq[compactReq.length - 1].content)).toContain('CONTEXT SUMMARIZATION');
-    expect(compactReq[0]).toEqual({ role: 'system', content: 'skill-text' });
+    expect(String(compactReq[compactReq.length - 1].content)).toContain('## Goal');
     const after = payloads[1];
     expect(after[0]).toEqual({ role: 'system', content: 'skill-text' });
-    expect(after.every((m) => m.role !== 'tool')).toBe(true);
     expect(after.some((m) => String(m.content).includes('Prior work on /brief.md'))).toBe(true);
   });
 

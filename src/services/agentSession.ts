@@ -23,8 +23,9 @@ import type { SlidePendingAsk } from '../types/slides.ts';
 import { DEFAULT_SLIDE_AGENT_MAX_ROUNDS } from '../types/slides.ts';
 import {
   DEFAULT_AGENT_CONTEXT,
-  buildCompactUserMessage,
+  buildAgentSummarizationPlan,
   capToolResult,
+  combineAgentCompactSummary,
   shouldCompact,
   workingFromSummary,
   type AgentContextOptions,
@@ -356,20 +357,44 @@ async function runLoop(
       if (shouldCompact(working, ctx.charBudget) && compactFailures < 3) {
         const compactId = `${prefix}_compact_${round}_${Date.now().toString(36)}`;
         activeRequestId = compactId;
-        const compactResponse = await transport({
-          type: 'CHAT_REQUEST',
-          messages: [...working, buildCompactUserMessage()],
-          providerConfig: params.providerConfig,
-          tools: params.tools,
-          options: { ...params.chatOptions, stream: false },
-          requestId: compactId,
-        });
-        const summaryText = compactResponse.content?.trim();
-        if (!compactResponse.error && summaryText) {
-          const next = workingFromSummary(working, summaryText);
-          working.length = 0;
-          working.push(...next);
-          params.onCompact?.();
+        const summarizerPlan = buildAgentSummarizationPlan(working);
+        if (summarizerPlan) {
+          const compactResponse = await transport({
+            type: 'CHAT_REQUEST',
+            messages: summarizerPlan.history,
+            providerConfig: params.providerConfig,
+            tools: [],
+            options: { ...params.chatOptions, stream: false },
+            requestId: compactId,
+          });
+          let summaryText = compactResponse.content?.trim();
+          const historyOk = !compactResponse.error && !compactResponse.toolCalls?.length && Boolean(summaryText);
+          if (historyOk && summarizerPlan.prefix) {
+            const prefixId = `${compactId}_prefix`;
+            activeRequestId = prefixId;
+            const prefixResponse = await transport({
+              type: 'CHAT_REQUEST',
+              messages: summarizerPlan.prefix,
+              providerConfig: params.providerConfig,
+              tools: [],
+              options: { ...params.chatOptions, stream: false },
+              requestId: prefixId,
+            });
+            const prefixText = prefixResponse.content?.trim();
+            if (prefixResponse.error || prefixResponse.toolCalls?.length || !prefixText) {
+              summaryText = undefined;
+            } else {
+              summaryText = combineAgentCompactSummary(summaryText!, prefixText);
+            }
+          }
+          if (historyOk && summaryText) {
+            const next = workingFromSummary(working, summaryText);
+            working.length = 0;
+            working.push(...next);
+            params.onCompact?.();
+          } else {
+            compactFailures += 1;
+          }
         } else {
           compactFailures += 1;
         }

@@ -7,6 +7,7 @@
 export { useAutoCompact } from './useAutoCompact.ts';
 export {
   SUMMARY_PROMPT,
+  SUMMARIZATION_PROMPT,
   extractSummaryFromResponse,
   getContextWindow,
   createCondenseId,
@@ -15,6 +16,7 @@ export {
   getMessagesToCompact,
   shouldCompact,
   reserveTokensForConfig,
+  keepRecentTokensForConfig,
   sanitizeCompactConfigPatch,
   cloneMessagesForBranch,
 } from './compactUtils.ts';

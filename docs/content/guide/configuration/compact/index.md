@@ -10,77 +10,48 @@ category = "Configuration"
 
 # Compact Settings
 
-Configure how BraceKit handles long conversations by automatically summarizing older messages.
+Configure how BraceKit checkpoints long conversations: older turns become a structured summary, recent messages stay verbatim.
 
 ---
 
 ## Enable Auto-Compact
 
-Toggle automatic conversation compaction:
-
 | Setting | Behavior |
 |---------|----------|
-| **On** (default) | Automatically summarize when threshold is reached |
-| **Off** | Manual compact only via `/compact` command |
-
-When enabled, BraceKit monitors your conversation length and automatically creates a summary when approaching the context limit.
+| **On** (default) | Compact when usage exceeds the Compact-at share of the model window |
+| **Off** | Manual compact only via `/compact` |
 
 ---
 
-## Threshold
+## Compact at
 
-Set the percentage of context window usage that triggers auto-compact.
+Percentage of the **selected model's** context window. Auto-compact runs when estimated usage goes past this share (the remainder is reserved for the next reply).
 
 | Value | Behavior |
 |-------|----------|
-| **50%** | Compact early, more frequent summaries |
-| **70%** | Balanced approach |
-| **90%** (default) | Compact late, maximize context usage |
-| **95%** | Maximum context before compacting |
+| **50–70%** | Compact earlier, more often |
+| **87%** (default) | Matches a ~16k token reserve on a 128k window |
+| **95%** | Compact only when nearly full |
 
-### How It Works
-
-1. BraceKit tracks token usage in the current conversation
-2. When usage reaches the threshold percentage of the **selected model's** context window (Settings → AI → Advanced)
-3. Older messages are summarized into a compact summary
-4. The conversation continues with the summary as context
-
-> **Tip**: Lower thresholds (70-80%) are better for long, complex conversations. Higher thresholds (90-95%) preserve more detail.
+The settings page shows the equivalent reserved token count for the current model.
 
 ---
 
-## Summary Prompt
+## Keep recent
 
-Customize how BraceKit creates summaries.
+Share of the model window left as **verbatim** recent messages (not summarized). Default **16%** (~20k tokens on a 128k window).
 
-### Default Prompt
-
-The default prompt instructs the AI to preserve:
-- Key decisions and conclusions
-- Important code snippets
-- Action items and next steps
-- User preferences mentioned
-
-### Customizing the Prompt
-
-You can modify the prompt to:
-- Focus on specific types of information
-- Change the summary format
-- Add domain-specific instructions
-
-### Reset to Default
-
-Click **Reset** to restore the default prompt.
+BraceKit only cuts at safe points (never a tool result without its assistant call). If one turn is larger than this budget, the start of that turn is summarized separately.
 
 ---
 
 ## Manual Compact
 
-Even with auto-compact disabled, you can manually trigger a compact:
-
 1. Type `/compact` in the chat
-2. Press Enter
-3. The conversation will be summarized
+2. Optionally add extra instructions: `/compact preserve API error strings`
+3. Press Enter
+
+`/compact` extra text is one-shot guidance for that summarization only.
 
 ---
 

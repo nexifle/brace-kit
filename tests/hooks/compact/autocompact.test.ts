@@ -10,21 +10,13 @@ import {
   sanitizeCompactConfigPatch,
   cloneMessagesForBranch,
 } from '../../../src/hooks/compact/compactUtils.ts';
+import { getEffectiveMessages } from '../../../src/utils/estimateTokens.ts';
 
 /**
  * Mirrors buildAPIMessages filtering: start at last summary, skip condensed.
  */
 function buildEffectiveHistory(messages: Message[]): Message[] {
-  const lastSummaryIndex = [...messages].reverse().findIndex(m => m.summary && m.condenseId);
-  const startIndex = lastSummaryIndex !== -1 ? messages.length - 1 - lastSummaryIndex : 0;
-
-  const effectiveHistory: Message[] = [];
-  for (let i = startIndex; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg.condenseParent) continue;
-    effectiveHistory.push(msg);
-  }
-  return effectiveHistory;
+  return getEffectiveMessages(messages);
 }
 
 /**
@@ -82,6 +74,17 @@ describe('Autocompact Logic', () => {
       expect(effective).toHaveLength(2);
       expect(effective[0].content).toBe('Summary content');
       expect(effective[1].content).toBe('New 1');
+    });
+
+    it('puts the checkpoint first when it is appended after the kept tail', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'Old', condenseParent: 'c1' },
+        { role: 'user', content: 'Recent user' },
+        { role: 'assistant', content: 'Recent asst' },
+        { role: 'user', content: 'checkpoint', summary: 'checkpoint', condenseId: 'c1' },
+      ];
+      const effective = buildEffectiveHistory(messages);
+      expect(effective.map((m) => m.content)).toEqual(['checkpoint', 'Recent user', 'Recent asst']);
     });
 
     it('should handle nested/multiple generations of summaries', () => {
@@ -237,10 +240,15 @@ describe('Compact Utilities', () => {
       const message = createSummaryMessage(summary, condenseId);
 
       expect(message.role).toBe('user');
-      expect(message.content).toBe('[CONVERSATION SUMMARY]\nUser discussed React hooks and state management.');
+      expect(message.content).toBe('[CONTEXT CHECKPOINT]\nUser discussed React hooks and state management.');
       expect(message.summary).toBe(summary);
       expect(message.isCompacted).toBe(true);
       expect(message.condenseId).toBe(condenseId);
+    });
+
+    it('stores before/after compact token stats', () => {
+      const message = createSummaryMessage('s', 'c1', undefined, { before: 48000, after: 8200 });
+      expect(message.compactTokens).toEqual({ before: 48000, after: 8200 });
     });
   });
 
@@ -292,9 +300,12 @@ describe('Compact Utilities', () => {
   });
 
   describe('sanitizeCompactConfigPatch', () => {
-    it('clamps reserve and keep-recent to declared bounds', () => {
+    it('clamps reserve, keep-recent, and ratios', () => {
       expect(sanitizeCompactConfigPatch({ reserveTokens: 9_999_999 }).reserveTokens).toBe(128000);
       expect(sanitizeCompactConfigPatch({ keepRecentTokens: 50 }).keepRecentTokens).toBe(1024);
+      expect(sanitizeCompactConfigPatch({ threshold: 0.1 }).threshold).toBe(0.5);
+      expect(sanitizeCompactConfigPatch({ keepRecentRatio: 0.9 }).keepRecentRatio).toBe(0.4);
+      expect(sanitizeCompactConfigPatch({ prompt: 'custom' }).prompt).toBe('');
     });
   });
 
@@ -316,7 +327,7 @@ describe('Compact Utilities', () => {
       const messages: Message[] = [
         { role: 'user', content: 'Look', attachments: [imageAtt], condenseParent: 'c1', isCompacted: true },
         { role: 'assistant', content: 'A cat', condenseParent: 'c1', isCompacted: true },
-        { role: 'user', content: '[CONVERSATION SUMMARY]\nCat photo', summary: 'Cat photo', condenseId: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONTEXT CHECKPOINT]\nCat photo', summary: 'Cat photo', condenseId: 'c1', isCompacted: true },
         { role: 'user', content: 'After compact' },
       ];
 
@@ -331,7 +342,7 @@ describe('Compact Utilities', () => {
       const messages: Message[] = [
         { role: 'user', content: 'Old user', condenseParent: 'c1', isCompacted: true },
         { role: 'assistant', content: 'Old assistant', condenseParent: 'c1', isCompacted: true },
-        { role: 'user', content: '[CONVERSATION SUMMARY]\nS', summary: 'S', condenseId: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONTEXT CHECKPOINT]\nS', summary: 'S', condenseId: 'c1', isCompacted: true },
         { role: 'user', content: 'New 1' },
         { role: 'assistant', content: 'New 2' },
       ];
@@ -344,7 +355,7 @@ describe('Compact Utilities', () => {
     it('should drop the summary when branching on the summary itself', () => {
       const messages: Message[] = [
         { role: 'user', content: 'Old', condenseParent: 'c1', isCompacted: true },
-        { role: 'user', content: '[CONVERSATION SUMMARY]\nS', summary: 'S', condenseId: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONTEXT CHECKPOINT]\nS', summary: 'S', condenseId: 'c1', isCompacted: true },
       ];
 
       const branched = cloneMessagesForBranch(messages, 1);
@@ -377,7 +388,7 @@ describe('Compact Utilities', () => {
       const compacted: Message[] = [
         { role: 'user', content: 'Look', attachments: [imageAtt], condenseParent: 'c1', isCompacted: true },
         { role: 'assistant', content: 'A cat', condenseParent: 'c1', isCompacted: true },
-        { role: 'user', content: '[CONVERSATION SUMMARY]\nCat photo', summary: 'Cat photo', condenseId: 'c1', isCompacted: true },
+        { role: 'user', content: '[CONTEXT CHECKPOINT]\nCat photo', summary: 'Cat photo', condenseId: 'c1', isCompacted: true },
       ];
 
       const branched = cloneMessagesForBranch(compacted, 0);

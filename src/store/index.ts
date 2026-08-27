@@ -160,11 +160,10 @@ export const useStore = create<AppState>((set, get) => ({
   // Auto Compact
   compactConfig: {
     enabled: true,
-    threshold: 0.9,
+    threshold: 0.87,
     defaultContextWindow: 128000,
     prompt: '',
-    reserveTokens: 16384,
-    keepRecentTokens: 20000,
+    keepRecentRatio: 0.16,
   },
   isCompacting: false,
   isRenaming: false,
@@ -997,11 +996,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (data.compactConfig) {
         const compactDefaults = {
           enabled: true,
-          threshold: 0.9,
+          threshold: 0.87,
           defaultContextWindow: 128000,
           prompt: '',
-          reserveTokens: 16384,
-          keepRecentTokens: 20000,
+          keepRecentRatio: 0.16,
         };
         updates.compactConfig = {
           ...compactDefaults,

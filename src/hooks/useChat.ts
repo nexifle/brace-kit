@@ -103,7 +103,7 @@ export function useChat() {
   // Use extracted hooks
   const { buildAPIMessages, estimateTokenCount } = useMessageBuilder();
   const { getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel } = useTools();
-  const { compactConversation, checkAndAutoCompact } = useAutoCompact();
+  const { compactConversation, checkAndAutoCompact, tryOverflowRecovery } = useAutoCompact();
 
   const getProvider = useCallback(
     (providerId: string) => getProviderUtil(providerId, customProviders),
@@ -167,6 +167,12 @@ export function useChat() {
       });
 
       if (response?.error) {
+        const recovered = await tryOverflowRecovery(response.error, false);
+        if (recovered) {
+          const rebuilt = buildAPIMessages(useStore.getState().messages);
+          await dispatchChatRequest(rebuilt, opts);
+          return;
+        }
         if (activeConvId) currentState.setConversationStreaming(activeConvId, null);
         currentState.addMessage({ role: 'error', content: response.error });
         currentState.setIsStreaming(false);
@@ -210,7 +216,7 @@ export function useChat() {
       currentState.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       currentState.setIsStreaming(false);
     }
-  }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel]);
+  }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, tryOverflowRecovery, buildAPIMessages]);
 
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
     const currentState = useStore.getState();
@@ -220,8 +226,9 @@ export function useChat() {
     if (!text && validAttachments.length === 0) return;
 
     // Handle slash commands
-    if (text.trim() === '/compact') {
-      await compactConversation();
+    if (text.trim() === '/compact' || text.trim().startsWith('/compact ')) {
+      const extra = text.trim().slice('/compact'.length).trim();
+      await compactConversation(extra ? { customInstructions: extra } : undefined);
       return;
     }
 

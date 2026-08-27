@@ -167,16 +167,31 @@ describe('estimateContextTokens', () => {
     );
   });
 
-  it('reports unknown after compact until the next usage', () => {
+  it('uses a heuristic after compact so the meter is not stuck unknown', () => {
     const messages: Message[] = [
       { role: 'user', content: 'old', condenseParent: 'c1' },
-      { role: 'user', content: '[CONVERSATION SUMMARY]\nsum', summary: 'sum', condenseId: 'c1' },
+      { role: 'user', content: '[CONTEXT CHECKPOINT]\nsum', summary: 'sum', condenseId: 'c1' },
       { role: 'user', content: 'new' },
     ];
     const est = estimateContextTokens({ messages });
-    expect(est.known).toBe(false);
+    expect(est.known).toBe(true);
     expect(est.tokens).toBeGreaterThan(0);
-    expect(contextUsageIsKnown(messages)).toBe(false);
+    expect(contextUsageIsKnown(messages)).toBe(true);
+  });
+
+  it('does not reuse pre-checkpoint assistant usage', () => {
+    const messages: Message[] = [
+      { role: 'user', content: 'old', condenseParent: 'c1' },
+      {
+        role: 'assistant',
+        content: 'kept',
+        usage: { promptTokenCount: 90000, candidatesTokenCount: 10, totalTokenCount: 90010 },
+      },
+      { role: 'user', content: '[CONTEXT CHECKPOINT]\nsum', summary: 'sum', condenseId: 'c1' },
+    ];
+    const est = estimateContextTokens({ messages });
+    expect(est.tokens).toBeLessThan(1000);
+    expect(est.known).toBe(true);
   });
 });
 

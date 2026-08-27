@@ -30,7 +30,7 @@ export function useStreaming() {
   const { extractMemories } = useMemory();
   const { buildAPIMessages } = useMessageBuilder();
   const { getAllTools, supportsFunctionCalling } = useTools();
-  const { checkAndAutoCompact } = useAutoCompact();
+  const { checkAndAutoCompact, tryOverflowRecovery } = useAutoCompact();
   const streamProcessor = useStreamProcessor();
   const { warning } = useToast();
 
@@ -362,33 +362,85 @@ export function useStreaming() {
    * Handle stream error
    */
   const handleStreamError = useCallback((error: string) => {
-    const state = useStore.getState();
-    const activeConvId = state.activeConversationId;
-    const requestId = state.currentRequestId;
+    void (async () => {
+      const state = useStore.getState();
+      const activeConvId = state.activeConversationId;
+      const requestId = state.currentRequestId;
 
-    // Preserve any partially streamed content before clearing state
-    const partialContent = state.streamingContent;
-    const partialReasoning = state.streamingReasoningContent;
-    if (partialContent.trim()) {
-      store.addMessage({
-        role: 'assistant',
-        content: partialContent,
-        ...(partialReasoning ? { reasoningContent: partialReasoning } : {}),
-        truncated: true,
-        truncatedReason: 'network_error',
-      });
-    }
+      const partialContent = state.streamingContent;
+      const partialReasoning = state.streamingReasoningContent;
+      if (partialContent.trim()) {
+        store.addMessage({
+          role: 'assistant',
+          content: partialContent,
+          ...(partialReasoning ? { reasoningContent: partialReasoning } : {}),
+          truncated: true,
+          truncatedReason: 'network_error',
+        });
+      }
 
-    if (activeConvId) store.setConversationStreaming(activeConvId, null);
-    store.addMessage({ role: 'error', content: error });
-    // Error surfaced — remove the buffer so reopen recovery doesn't show it again
-    notifyStreamConsumed(requestId, activeConvId);
-    store.setIsStreaming(false);
-    store.setCurrentRequestId(null);
-    store.setStreamingContent('');
-    store.setStreamingReasoningContent('');
-    streamProcessor.reset();
-  }, [store, streamProcessor, notifyStreamConsumed]);
+      const recovered = await tryOverflowRecovery(error, Boolean(partialContent.trim()));
+      if (recovered) {
+        notifyStreamConsumed(requestId, activeConvId);
+        store.setStreamingContent('');
+        store.setStreamingReasoningContent('');
+        streamProcessor.reset();
+        const msgs = buildAPIMessages(useStore.getState().messages);
+        const tools = await getAllTools();
+        const model = useStore.getState().providerConfig.model || '';
+        const prepared = prepareChatRequest({
+          getState: () => useStore.getState(),
+          rawTools: tools,
+          supportsFunctionCalling: supportsFunctionCalling(model),
+        });
+        const retryId = `req_${Date.now()}`;
+        useStore.getState().setIsStreaming(true);
+        useStore.getState().setCurrentRequestId(retryId);
+        if (activeConvId) {
+          useStore.getState().setConversationStreaming(activeConvId, { requestId: retryId });
+        }
+        const failRetry = () => {
+          useStore.getState().addMessage({
+            role: 'error',
+            content: 'Context overflow recovery failed after one compact-and-retry attempt.',
+          });
+          if (activeConvId) useStore.getState().setConversationStreaming(activeConvId, null);
+          notifyStreamConsumed(retryId, activeConvId);
+          useStore.getState().setIsStreaming(false);
+          useStore.getState().setCurrentRequestId(null);
+          useStore.getState().setStreamingContent('');
+          useStore.getState().setStreamingReasoningContent('');
+          streamProcessor.reset();
+        };
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: 'CHAT_REQUEST',
+            messages: msgs,
+            providerConfig: useStore.getState().providerConfig,
+            tools: prepared.tools,
+            options: prepared.options,
+            requestId: retryId,
+            conversationId: activeConvId,
+          });
+          if (response?.error) {
+            failRetry();
+          }
+        } catch {
+          failRetry();
+        }
+        return;
+      }
+
+      if (activeConvId) store.setConversationStreaming(activeConvId, null);
+      store.addMessage({ role: 'error', content: error });
+      notifyStreamConsumed(requestId, activeConvId);
+      store.setIsStreaming(false);
+      store.setCurrentRequestId(null);
+      store.setStreamingContent('');
+      store.setStreamingReasoningContent('');
+      streamProcessor.reset();
+    })();
+  }, [store, streamProcessor, notifyStreamConsumed, tryOverflowRecovery, buildAPIMessages, getAllTools, supportsFunctionCalling]);
 
   // Recovery: query background untuk streaming yang berjalan saat sidebar tutup
   const hasRecoveredRef = useRef(false);
