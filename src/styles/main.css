@@ -442,6 +442,27 @@
     animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes bk-stream-chunk {
+    from {
+        opacity: 0.2;
+        filter: blur(2px);
+    }
+    to {
+        opacity: 1;
+        filter: blur(0);
+    }
+}
+
+.bk-stream-chunk {
+    animation: bk-stream-chunk 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bk-stream-chunk {
+        animation: none;
+    }
+}
+
 /* ===== MERMAID DIAGRAM STYLES ===== */
 .mermaid-diagram-content {
     /* Ensure SVG scales properly */
