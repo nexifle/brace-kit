@@ -115,6 +115,90 @@ describe('clipboardComposerFiles', () => {
     expect(out.some((f) => f.name === 'brief.txt')).toBe(true);
   });
 
+  test('does not double a screenshot present in both items and files', () => {
+    const png = new File([new Uint8Array([1, 2])], '', { type: '' });
+    const items = [
+      {
+        kind: 'file',
+        type: 'image/png',
+        getAsFile: () => png,
+      },
+    ] as unknown as DataTransferItemList;
+    const files = {
+      length: 1,
+      0: png,
+      item: (i: number) => (i === 0 ? png : null),
+      [Symbol.iterator]: function* () {
+        yield png;
+      },
+    } as unknown as FileList;
+
+    const dt = { items, files } as unknown as DataTransfer;
+    const out = clipboardComposerFiles(dt, { allowPdf: false });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.name).toBe('pasted-image.png');
+    expect(out[0]!.type).toBe('image/png');
+  });
+
+  test('does not double a named image present in both lists', () => {
+    const img = new File([new Uint8Array([9])], 'logo.png', { type: 'image/png' });
+    const items = [
+      { kind: 'file', type: 'image/png', getAsFile: () => img },
+    ] as unknown as DataTransferItemList;
+    const files = {
+      length: 1,
+      0: img,
+      item: (i: number) => (i === 0 ? img : null),
+      [Symbol.iterator]: function* () {
+        yield img;
+      },
+    } as unknown as FileList;
+    const dt = { items, files } as unknown as DataTransfer;
+    expect(clipboardComposerFiles(dt, { allowPdf: false })).toHaveLength(1);
+  });
+
+  test('does not take a second image from files when items already has one', () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const raw = new File([bytes], '', { type: '' });
+    const named = new File([bytes], 'image.png', { type: 'image/png' });
+    const items = [
+      { kind: 'file', type: 'image/png', getAsFile: () => raw },
+    ] as unknown as DataTransferItemList;
+    const files = {
+      length: 1,
+      0: named,
+      item: (i: number) => (i === 0 ? named : null),
+      [Symbol.iterator]: function* () {
+        yield named;
+      },
+    } as unknown as FileList;
+    const dt = { items, files } as unknown as DataTransfer;
+    const out = clipboardComposerFiles(dt, { allowPdf: false });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.name).toBe('pasted-image.png');
+  });
+
+  test('still attaches two named images of different sizes', () => {
+    const a = new File([new Uint8Array([1])], 'a.png', { type: 'image/png' });
+    const b = new File([new Uint8Array([1, 2])], 'b.png', { type: 'image/png' });
+    const items = [
+      { kind: 'file', type: 'image/png', getAsFile: () => a },
+      { kind: 'file', type: 'image/png', getAsFile: () => b },
+    ] as unknown as DataTransferItemList;
+    const files = {
+      length: 2,
+      0: a,
+      1: b,
+      item: (i: number) => (i === 0 ? a : i === 1 ? b : null),
+      [Symbol.iterator]: function* () {
+        yield a;
+        yield b;
+      },
+    } as unknown as FileList;
+    const dt = { items, files } as unknown as DataTransfer;
+    expect(clipboardComposerFiles(dt, { allowPdf: false })).toHaveLength(2);
+  });
+
   test('rejects pdf when allowPdf is false', () => {
     const pdf = new File(['%PDF'], 'a.pdf', { type: 'application/pdf' });
     const items = [

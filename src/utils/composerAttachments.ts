@@ -123,13 +123,13 @@ export function clipboardImageFiles(clipboardData: DataTransfer | null): File[] 
 }
 
 function fileDedupeKey(file: File): string {
-  return `${file.name}\0${file.size}\0${file.lastModified}\0${file.type}`;
+  return `${file.name}\0${file.size}\0${file.type}`;
 }
 
 /**
- * Collect composer-eligible Files from a paste (images + txt, optional pdf).
- * Covers OS file-manager paste via `clipboardData.files` as well as
- * `items` (screenshots often have empty File.name until normalize).
+ * Composer paste files. Images come from `items` the same way as main chat
+ * (`clipboardImageFiles`) so a screenshot is not also picked up from
+ * `clipboardData.files`. Txt/pdf still merge `files` for OS file-manager paste.
  */
 export function clipboardComposerFiles(
   clipboardData: DataTransfer | null,
@@ -138,6 +138,7 @@ export function clipboardComposerFiles(
   if (!clipboardData) return [];
   const seen = new Set<string>();
   const out: File[] = [];
+
   const add = (file: File | null) => {
     if (!file) return;
     if (!classifyComposerFile(file, options)) return;
@@ -147,22 +148,29 @@ export function clipboardComposerFiles(
     out.push(file);
   };
 
+  const images = clipboardImageFiles(clipboardData);
+  for (const image of images) add(image);
+
   const items = clipboardData.items;
   if (items) {
     for (const item of Array.from(items)) {
       if (item.kind && item.kind !== 'file') continue;
-      const image = normalizeClipboardImageFile(item);
-      if (image) {
-        add(image);
-        continue;
-      }
+      if (item.type.startsWith('image/')) continue;
       add(item.getAsFile());
     }
   }
 
   const files = clipboardData.files;
-  if (files?.length) {
-    for (const file of Array.from(files)) add(file);
+  if (!files?.length) return out;
+
+  // Images already taken from items (main-chat path). Only pull extra
+  // images from `files` when items had none (some OS file-manager pastes).
+  const takeImagesFromFiles = images.length === 0;
+  for (const file of Array.from(files)) {
+    const kind = classifyComposerFile(file, options);
+    if (!kind) continue;
+    if (kind === 'image' && !takeImagesFromFiles) continue;
+    add(file);
   }
   return out;
 }
