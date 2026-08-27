@@ -1,34 +1,26 @@
-import { describe, expect, it } from 'bun:test';
-import { createElement } from 'react';
+import { describe, expect, it, mock } from 'bun:test';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AskPrompt } from '../../../src/components/slides/AskPrompt.tsx';
 import type { PendingAsk } from '../../../src/types/ask.ts';
 
-const mediaQueryList = {
-  matches: false,
-  media: '',
-  onchange: null,
-  addListener() {},
-  removeListener() {},
-  addEventListener() {},
-  removeEventListener() {},
-  dispatchEvent() {
-    return false;
-  },
-};
+/** SSR has no DOM event target; stub motion so markup tests don't attach listeners. */
+function Pass({
+  children,
+  initial: _initial,
+  animate: _animate,
+  exit: _exit,
+  transition: _transition,
+  ...props
+}: { children?: ReactNode } & Record<string, unknown>) {
+  return createElement('div', props, children);
+}
+mock.module('framer-motion', () => ({
+  AnimatePresence: ({ children }: { children?: ReactNode }) => children ?? null,
+  motion: { div: Pass },
+  useReducedMotion: () => false,
+}));
 
-const g = globalThis as typeof globalThis & Window & { window: Window };
-if (typeof g.matchMedia !== 'function') {
-  g.matchMedia = () => mediaQueryList as unknown as MediaQueryList;
-}
-if (typeof g.addEventListener !== 'function') {
-  g.addEventListener = () => {};
-  g.removeEventListener = () => {};
-}
-if (!g.window) g.window = g;
-if (typeof g.window.matchMedia !== 'function') {
-  g.window.matchMedia = g.matchMedia;
-}
+const { AskPrompt } = await import('../../../src/components/slides/AskPrompt.tsx');
 
 function ask(questions: PendingAsk['payload']['questions']): PendingAsk {
   return {
