@@ -7,47 +7,17 @@
 
 import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
-import type { Message, APIMessage } from '../../types/index.ts';
-import { buildMemoryBlockFromSelection } from '../../utils/memorySampler.ts';
-import { buildSystemPrompt } from '../../utils/systemPrompt.ts';
+import type { MCPTool, Message, APIMessage } from '../../types/index.ts';
+import { buildConversationSystemPrompt } from '../../utils/systemPrompt.ts';
 import { formatMessageForAPI } from '../../utils/formatMessageForAPI.ts';
+import { estimateRequestContextTokens } from '../../utils/requestContext.ts';
+import { getEffectiveMessages } from '../../utils/estimateTokens.ts';
 
 /**
  * Unified message builder hook
  * Replaces both buildAPIMessages and buildAPIMessagesFromList from useChat.ts
  */
 export function useMessageBuilder() {
-  // Use selective selectors - only subscribe to state needed for rendering decisions
-  // Most operations use useStore.getState() inside callbacks to avoid subscriptions
-
-  /**
-   * Build memory block for system prompt
-   * Uses conversation-specific memory selection for consistency throughout the conversation
-   */
-  const buildMemoryBlock = useCallback((selectedMemoryIds?: string[]) => {
-    const state = useStore.getState();
-    if (!state.memoryEnabled || state.memories.length === 0) return '';
-
-    // Use selected memories from conversation if available, otherwise build from all (fallback)
-    if (selectedMemoryIds && selectedMemoryIds.length > 0) {
-      return buildMemoryBlockFromSelection(state.memories, selectedMemoryIds);
-    }
-
-    // Fallback: include all memories (for backward compatibility or when selection not yet created)
-    return buildMemoryBlockFromSelection(state.memories, state.memories.map(m => m.id));
-  }, []);
-
-  /**
-   * Build metadata block for system prompt
-   * Uses static timestamp from conversation for prompt caching efficiency
-   */
-  const buildMetadataBlock = useCallback(() => {
-    const state = useStore.getState();
-    const activeConv = state.conversations.find((c) => c.id === state.activeConversationId);
-    const timestamp = activeConv?.metadataTimestamp || new Date().toISOString();
-    return `\n\n<metadata>{"currentTime": "${timestamp}"}</metadata>`;
-  }, []);
-
   /**
    * Build API messages from a message list
    * UNIFIED: Replaces both buildAPIMessages and buildAPIMessagesFromList
@@ -58,79 +28,36 @@ export function useMessageBuilder() {
     (messages?: Message[]): APIMessage[] => {
       const state = useStore.getState();
       const msgs: APIMessage[] = [];
-      const activeConv = state.conversations.find((c) => c.id === state.activeConversationId);
-      const memoryBlock = buildMemoryBlock(activeConv?.selectedMemoryIds);
-      const metadataBlock = buildMetadataBlock();
-      const customPrompt = activeConv?.systemPrompt || state.providerConfig.systemPrompt || '';
-      const systemContent = buildSystemPrompt(customPrompt, memoryBlock, metadataBlock);
+      const systemContent = buildConversationSystemPrompt(state);
 
-      // Use provided messages or store messages
       const sourceMessages = messages ?? state.messages;
-
-      // Find the last summary message for the "fresh start" model
-      const lastSummaryIndex = [...sourceMessages].reverse().findIndex(m => m.summary && m.condenseId);
-      const startIndex = lastSummaryIndex !== -1 ? sourceMessages.length - 1 - lastSummaryIndex : 0;
 
       const historyMessages: APIMessage[] = [];
 
-      for (let i = startIndex; i < sourceMessages.length; i++) {
-        const msg = sourceMessages[i];
-
-        // Skip if message is condensed (has a parent)
-        if (msg.condenseParent) continue;
-
-        // If this is the summary message itself, we add it to history if it's the role we expect
-        // or we handle its content differently if needed.
-        // In our case, the summary message should be included in the history as a system or user message.
-
+      for (const msg of getEffectiveMessages(sourceMessages)) {
         const formatted = formatMessageForAPI(msg);
         if (formatted) {
           historyMessages.push(formatted);
         }
       }
 
-      // Add system message if we have content
       if (systemContent) {
         msgs.push({ role: 'system', content: systemContent });
       }
 
       return [...msgs, ...historyMessages];
     },
-    [buildMemoryBlock, buildMetadataBlock]
+    []
   );
 
-  /**
-   * Estimate token count for messages
-   * Uses a simple character-based estimation (4 chars ≈ 1 token)
-   */
-  const estimateTokenCount = useCallback((messages: Message[]) => {
-    let totalChars = 0;
-
-    // Use the same filtering logic as buildAPIMessages
-    const lastSummaryIndex = [...messages].reverse().findIndex(m => m.summary && m.condenseId);
-    const startIndex = lastSummaryIndex !== -1 ? messages.length - 1 - lastSummaryIndex : 0;
-
-    for (let i = startIndex; i < messages.length; i++) {
-      const msg = messages[i];
-      if (msg.condenseParent) continue;
-
-      if (typeof msg.content === 'string') {
-        totalChars += msg.content.length;
-      }
-      if (msg.attachments) {
-        for (const att of msg.attachments) {
-          totalChars += (att.name?.length || 0) + (att.data?.length || 0);
-        }
-      }
-    }
-    return Math.ceil(totalChars / 4);
+  const estimateTokenCount = useCallback((messages: Message[], tools?: MCPTool[] | null) => {
+    const state = useStore.getState();
+    return estimateRequestContextTokens({ ...state, messages }, tools).tokens;
   }, []);
 
   return {
     buildAPIMessages,
     formatMessageForAPI,
-    buildMemoryBlock,
-    buildMetadataBlock,
     estimateTokenCount,
   };
 }

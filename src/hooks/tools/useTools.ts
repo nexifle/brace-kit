@@ -206,8 +206,20 @@ export function useTools() {
    * Get chat options for current provider/model
    */
   const getChatOptions = useCallback(
-    (options?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
-      return buildChatOptions(chatOptionsStateFromStore(() => useStore.getState()), options);
+    (options?: {
+      aspectRatio?: string;
+      enableReasoning?: boolean;
+      reasoningLevel?: ReasoningLevel;
+      tools?: import('../../types/index.ts').MCPTool[];
+    }) => {
+      const tools = options?.tools;
+      return buildChatOptions(
+        chatOptionsStateFromStore(() => ({
+          ...useStore.getState(),
+          ...(tools ? { tools } : {}),
+        })),
+        options,
+      );
     },
     [],
   );

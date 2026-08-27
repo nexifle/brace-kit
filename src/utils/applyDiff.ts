@@ -416,6 +416,20 @@ export function parseApplyPatch(patch: string): ParsedApplyPatch {
  * lines, without any `*** Update File:` header). Used by {@link applyDiff} so a
  * single-file diff can be applied like the PRD examples.
  */
+/** Git unified hunk header, e.g. `@@ -10,3 +10,4 @@` or `@@ -10,3 +10,4 @@ fn`. */
+const GIT_HUNK_HEADER = /^@@\s+-\d/;
+
+function isEnvelopeOrGitFileHeader(line: string): boolean {
+  const t = line.trim();
+  if (t === BEGIN_PATCH_MARKER || t === END_PATCH_MARKER) return true;
+  if (t.startsWith(ADD_FILE_MARKER) || t.startsWith(DELETE_FILE_MARKER) || t.startsWith(UPDATE_FILE_MARKER)) {
+    return true;
+  }
+  if (t.startsWith('--- a/') || t.startsWith('+++ b/') || t === '---' || t === '+++') return true;
+  if (t.startsWith('diff --git ')) return true;
+  return false;
+}
+
 export function parseUpdateChunks(diff: string): UpdateFileChunk[] {
   const normalized = diff.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   if (normalized.length === 0) return [];
@@ -424,11 +438,15 @@ export function parseUpdateChunks(diff: string): UpdateFileChunk[] {
   for (const rawLine of lines) {
     let line = rawLine;
     if (line.endsWith('\r')) line = line.slice(0, -1);
+    if (isEnvelopeOrGitFileHeader(line)) continue;
     const update = line.trimEnd();
     const last = chunks.length > 0 ? chunks[chunks.length - 1] : undefined;
     const hasEmptyChunk = !!last && last.oldLines.length === 0 && last.newLines.length === 0;
 
-    if (update === EMPTY_CHANGE_CONTEXT_MARKER) {
+    const isBareOrGitHunk =
+      update === EMPTY_CHANGE_CONTEXT_MARKER || GIT_HUNK_HEADER.test(update);
+
+    if (isBareOrGitHunk) {
       if (hasEmptyChunk) {
         throw new Error(
           `Unexpected line found in update hunk: '${line}'. Every line should start with a '@@', ' ', '+', or '-' marker`,
@@ -497,6 +515,66 @@ interface Replacement {
   inline?: { old: string; next: string };
 }
 
+function findContextLine(lines: string[], context: string, start: number): number | null {
+  let idx = seekSequence(lines, [context], start, false);
+  if (idx === null && context.length > 0) {
+    const normCtx = normalise(context);
+    for (let i = start; i < lines.length; i++) {
+      if (normalise(lines[i]).includes(normCtx)) {
+        idx = i;
+        break;
+      }
+    }
+  }
+  return idx;
+}
+
+function seekOldLines(
+  originalLines: string[],
+  pattern: string[],
+  start: number,
+  eof: boolean,
+): number | null {
+  let found = seekSequence(originalLines, pattern, start, eof);
+  if (found === null && start > 0) {
+    found = seekSequence(originalLines, pattern, 0, eof);
+  }
+  return found;
+}
+
+function nearestMismatchHint(originalLines: string[], oldLines: string[]): string {
+  const first = oldLines[0] ?? '';
+  const needle = normalise(first);
+  let bestI = 0;
+  let bestScore = -1;
+  for (let i = 0; i < originalLines.length; i++) {
+    const hay = normalise(originalLines[i]);
+    let score = 0;
+    const n = Math.min(hay.length, needle.length);
+    for (let k = 0; k < n; k++) {
+      if (hay[k] === needle[k]) score++;
+    }
+    if (needle.length > 0 && (hay.includes(needle) || needle.includes(hay))) score += 40;
+    if (score > bestScore) {
+      bestScore = score;
+      bestI = i;
+    }
+  }
+  const preview = oldLines.slice(0, 8).join('\n');
+  const fileLine = originalLines[bestI] ?? '';
+  return (
+    `Looking for:\n${preview}\n` +
+    `First mismatch vs nearest file lines (around line ${bestI + 1}):\n` +
+    `  expected: ${first}\n` +
+    `  file:     ${fileLine}\n` +
+    `Re-read the file and send a smaller hunk (3–8 context lines) that copies file bytes exactly.`
+  );
+}
+
+function expectedLinesError(path: string, originalLines: string[], oldLines: string[]): string {
+  return `Failed to find expected lines in ${path}\n${nearestMismatchHint(originalLines, oldLines)}`;
+}
+
 function computeReplacements(
   originalLines: string[],
   path: string,
@@ -506,25 +584,24 @@ function computeReplacements(
   let lineIndex = 0;
   for (const chunk of chunks) {
     if (chunk.changeContext !== null) {
-      // The `@@` context is a hint that must exist somewhere in the file. Try
-      // exact line, then substring (models often echo only the changing
-      // fragment of a single-line file like /deck.json). Reject only when the
-      // context is absent entirely — never silently continue past a wrong
-      // context, so a model that references a nonexistent heading is corrected.
-      let idx = seekSequence(originalLines, [chunk.changeContext], lineIndex, false);
-      if (idx === null && chunk.changeContext.length > 0) {
-        const normCtx = normalise(chunk.changeContext);
-        for (let i = lineIndex; i < originalLines.length; i++) {
-          if (normalise(originalLines[i]).includes(normCtx)) {
-            idx = i;
-            break;
-          }
-        }
+      // `@@ heading` is a locator. Models often repeat that heading as the first
+      // context/`-` line — do not skip past it. A bogus heading is ignored when
+      // oldLines can still be found (wrong @@ comments are common on CSS).
+      let idx = findContextLine(originalLines, chunk.changeContext, lineIndex);
+      if (idx === null && lineIndex > 0) {
+        idx = findContextLine(originalLines, chunk.changeContext, 0);
       }
       if (idx === null) {
-        return { rej: true, error: `Failed to find context '${chunk.changeContext}' in ${path}` };
+        if (chunk.oldLines.length === 0) {
+          return { rej: true, error: `Failed to find context '${chunk.changeContext}' in ${path}` };
+        }
+        // Keep lineIndex; seekOldLines will retry from 0 if needed.
+      } else if (chunk.oldLines.length === 0) {
+        lineIndex = idx + 1;
+      } else {
+        // Search from the heading line itself so a duplicated @@ selector still matches.
+        lineIndex = idx;
       }
-      lineIndex = idx + 1;
     }
 
     if (chunk.oldLines.length === 0) {
@@ -535,14 +612,14 @@ function computeReplacements(
     }
 
     let pattern = chunk.oldLines;
-    let found = seekSequence(originalLines, pattern, lineIndex, chunk.isEndOfFile);
     let newSlice = chunk.newLines;
+    let found = seekOldLines(originalLines, pattern, lineIndex, chunk.isEndOfFile);
     if (found === null && pattern.length > 0 && pattern[pattern.length - 1] === '') {
       pattern = pattern.slice(0, -1);
       if (newSlice.length > 0 && newSlice[newSlice.length - 1] === '') {
         newSlice = newSlice.slice(0, -1);
       }
-      found = seekSequence(originalLines, pattern, lineIndex, chunk.isEndOfFile);
+      found = seekOldLines(originalLines, pattern, lineIndex, chunk.isEndOfFile);
     }
 
     if (found !== null) {
@@ -576,13 +653,13 @@ function computeReplacements(
       } else {
         return {
           rej: true,
-          error: `Failed to find expected lines in ${path}:\n${chunk.oldLines.join('\n')}`,
+          error: expectedLinesError(path, originalLines, chunk.oldLines),
         };
       }
     } else {
       return {
         rej: true,
-        error: `Failed to find expected lines in ${path}:\n${chunk.oldLines.join('\n')}`,
+        error: expectedLinesError(path, originalLines, chunk.oldLines),
       };
     }
   }
@@ -709,12 +786,41 @@ export function parseCreateDiff(diff: string): ApplyDiffResult {
  *   {@link parseCreateDiff}. Use this from `create_file` (not default + empty
  *   original), matching `applyDiff("", diff, "create")` in the SDK docs.
  */
+/**
+ * True when an update diff is only `+` lines (and optional `@@` headers): models
+ * use this as a whole-file rewrite after a failed surgical hunk.
+ */
+function isPlusOnlyRewrite(diff: string): boolean {
+  const lines = normalizeDiffLines(diff).filter((l) => !isEnvelopeOrGitFileHeader(l));
+  const namedHeading = lines.some((l) => {
+    const t = l.trimEnd();
+    return t.startsWith(CHANGE_CONTEXT_MARKER) && !GIT_HUNK_HEADER.test(t);
+  });
+  // A named `@@ selector` is a locator, not a full-file rewrite.
+  if (namedHeading) return false;
+  const content = lines.filter(
+    (l) =>
+      l.trim() !== EMPTY_CHANGE_CONTEXT_MARKER &&
+      !l.trimEnd().startsWith(CHANGE_CONTEXT_MARKER) &&
+      l.trim() !== EOF_MARKER &&
+      !GIT_HUNK_HEADER.test(l.trimEnd()),
+  );
+  if (content.length === 0) return false;
+  const anyPlus = content.some((l) => l.startsWith('+'));
+  return anyPlus && content.every((l) => l.startsWith('+') || l.length === 0);
+}
+
 export function applyDiff(
   originalText: string,
   diff: string,
   mode: ApplyDiffMode = 'default',
+  path = '<file>',
 ): ApplyDiffResult {
   if (mode === 'create') {
+    return parseCreateDiff(diff);
+  }
+
+  if (isPlusOnlyRewrite(diff)) {
     return parseCreateDiff(diff);
   }
 
@@ -725,5 +831,5 @@ export function applyDiff(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
   if (chunks.length === 0) return { ok: false, error: 'Error: empty diff' };
-  return deriveNewContents(originalText ?? '', chunks);
+  return deriveNewContents(originalText ?? '', chunks, path);
 }

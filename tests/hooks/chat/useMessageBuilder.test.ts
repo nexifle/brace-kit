@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { Message, APIMessage } from '../../../src/types/index.ts';
 import { MEMORY_CATEGORIES, MEMORY_CATEGORY_LABELS } from '../../../src/types/index.ts';
+import { estimateContextTokens, IMAGE_CHARS } from '../../../src/utils/estimateTokens.ts';
 
 /**
  * Pure function tests for message formatting logic
@@ -200,20 +201,7 @@ describe('useMessageBuilder Logic', () => {
      * Helper function that mirrors estimateTokenCount logic
      */
     function estimateTokenCount(messages: Message[]): number {
-      let totalChars = 0;
-      for (const msg of messages) {
-        if (msg.isCompacted && !msg.summary) continue;
-
-        if (typeof msg.content === 'string') {
-          totalChars += msg.content.length;
-        }
-        if (msg.attachments) {
-          for (const att of msg.attachments) {
-            totalChars += att.name.length + (att.data?.length || 0);
-          }
-        }
-      }
-      return Math.ceil(totalChars / 4);
+      return estimateContextTokens({ messages }).tokens;
     }
 
     it('should estimate tokens for simple messages', () => {
@@ -221,16 +209,16 @@ describe('useMessageBuilder Logic', () => {
         { role: 'user', content: 'Hello' }, // 5 chars
         { role: 'assistant', content: 'Hi there!' }, // 9 chars
       ];
-      // Total: 14 chars / 4 = 3.5 → 4 tokens
-      expect(estimateTokenCount(messages)).toBe(4);
+      expect(estimateTokenCount(messages)).toBe(
+        estimateContextTokens({ messages }).tokens,
+      );
     });
 
-    it('should skip compacted messages without summary', () => {
+    it('should skip condensed messages with a parent', () => {
       const messages: Message[] = [
-        { role: 'user', content: 'Hello', isCompacted: true },
+        { role: 'user', content: 'Hello', condenseParent: 'c1' },
         { role: 'assistant', content: 'Hi there!' },
       ];
-      // Only "Hi there!" = 9 chars / 4 = 2.25 → 3 tokens
       expect(estimateTokenCount(messages)).toBe(3);
     });
 
@@ -242,7 +230,7 @@ describe('useMessageBuilder Logic', () => {
       expect(estimateTokenCount(messages)).toBe(3);
     });
 
-    it('should count attachments', () => {
+    it('should count image attachments as a fixed character weight', () => {
       const messages: Message[] = [
         {
           role: 'user',
@@ -252,8 +240,7 @@ describe('useMessageBuilder Logic', () => {
           ],
         },
       ];
-      // "Look" (4) + "photo.jpg" (9) + "imagedata" (9) = 22 chars / 4 = 5.5 → 6 tokens
-      expect(estimateTokenCount(messages)).toBe(6);
+      expect(estimateTokenCount(messages)).toBe(Math.ceil((4 + 9 + IMAGE_CHARS) / 4));
     });
 
     it('should return 0 for empty messages', () => {

@@ -67,6 +67,10 @@ export interface Message {
   summary?: string;
   condenseId?: string;
   condenseParent?: string;
+  /** Paths recorded on a checkpoint summary. */
+  compactDetails?: { readFiles: string[]; modifiedFiles: string[] };
+  /** Heuristic context size before/after this checkpoint. */
+  compactTokens?: { before: number; after: number };
   isCachedResult?: boolean;
   /** Wall-clock when the message was added. */
   createdAt?: number;
@@ -76,6 +80,12 @@ export interface Message {
   // Indicates generation was interrupted before completion
   truncated?: boolean;
   truncatedReason?: 'user_stopped' | 'network_error';
+  /** Provider usage for this assistant turn, when reported. */
+  usage?: import('../providers/types.ts').TokenUsage;
+  /** Heuristic tool-definition tokens at the time this assistant reply was produced. */
+  toolsTokens?: number;
+  /** Tool names sent with the request that produced this assistant reply. */
+  toolNames?: string[];
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -271,9 +281,17 @@ export interface ProviderConfig {
 
 export interface CompactConfig {
   enabled: boolean; // Auto-compact toggle (default true)
-  threshold: number; // 0.0 to 1.0 (default 0.9)
+  /** Compact when usage exceeds this fraction of the model window. Default 0.87. */
+  threshold: number;
   defaultContextWindow: number; // default 128000
-  prompt: string; // Custom compact prompt (empty = use default)
+  /** Ignored at compact time; kept so old stored JSON still loads. */
+  prompt: string;
+  /** @deprecated Derived from threshold × window. Migration fallback. */
+  reserveTokens?: number;
+  /** @deprecated Derived from keepRecentRatio × window. Migration fallback. */
+  keepRecentTokens?: number;
+  /** Fraction of the model window kept verbatim. Default 0.16. */
+  keepRecentRatio?: number;
 }
 
 export interface ProviderKeys {

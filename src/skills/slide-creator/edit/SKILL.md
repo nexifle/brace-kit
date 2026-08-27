@@ -81,10 +81,16 @@ truth, not your memory of how the deck was built.
   `/deck.json` is code-owned and NOT writable — any `apply_patch` on it returns
   `status: failed`. Anything else (e.g. a stray new path) is denied by the
   harness and returns `status: failed`.
+- **`update_file` hunks:** prefer a bare `@@` line. Do **not** put the first
+  context selector on the `@@` heading *and* again as a context line — that
+  duplicates the locator. Each context line is one leading space then the file
+  line **verbatim** from `read_file`. Patch **one rule** (about 3–8 lines), not
+  a whole stylesheet. To replace an entire existing file, send only `+` lines
+  (optional bare `@@`).
 - **On `failed`: read the file, simplify/re-issue a corrected patch** — do not
   retry the identical failing patch, and never bypass the allowlist. The most
-  common cause is a stale context line — re-read the target and re-issue a
-  minimal diff that matches the real contents. Recover, don't force.
+  common cause is a stale or oversized context — re-read the target and re-issue
+  a minimal diff that copies the real bytes. Recover, don't force.
 
 ## Editing precepts
 

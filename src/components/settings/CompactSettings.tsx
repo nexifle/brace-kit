@@ -1,44 +1,53 @@
-// =============================================================================
-// Imports
-// =============================================================================
 import { useStore } from '../../store/index.ts';
-import { DEFAULT_SUMMARY_PROMPT } from '../../hooks/compact/compactUtils.ts';
-import { HelpCircleIcon } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/index.ts';
+import {
+  compactAtRatio,
+  DEFAULT_COMPACT_AT,
+  DEFAULT_KEEP_RECENT_RATIO,
+  keepRecentRatioForConfig,
+  keepRecentTokensForConfig,
+  reserveTokensForConfig,
+} from '../../hooks/compact/compactUtils.ts';
+import { getContextWindow } from '../../hooks/compact/compactUtils.ts';
 
-// =============================================================================
-// Compact Settings Component
-// =============================================================================
 export function CompactSettings() {
   const store = useStore();
-  // Provide defaults for backward compatibility with existing stored configs
   const compactConfig = {
     enabled: store.compactConfig.enabled ?? true,
-    threshold: store.compactConfig.threshold ?? 0.9,
-    prompt: store.compactConfig.prompt ?? '',
+    threshold: store.compactConfig.threshold ?? DEFAULT_COMPACT_AT,
+    prompt: '',
+    defaultContextWindow: store.compactConfig.defaultContextWindow ?? 128000,
+    keepRecentRatio: store.compactConfig.keepRecentRatio ?? DEFAULT_KEEP_RECENT_RATIO,
   };
 
-  // Use custom prompt if set, otherwise show default
-  const displayPrompt = compactConfig.prompt.trim() || DEFAULT_SUMMARY_PROMPT;
-  const isUsingCustomPrompt = compactConfig.prompt.trim().length > 0;
+  const windowTokens = getContextWindow(
+    store.providerConfig,
+    store.customProviders,
+    store.compactConfig,
+    store.fetchedModels?.[store.providerConfig.providerId || ''] ?? null,
+  ) || compactConfig.defaultContextWindow;
+
+  const compactAt = Math.round(compactAtRatio(store.compactConfig) * 100);
+  const keepRecent = Math.round(keepRecentRatioForConfig(store.compactConfig) * 100);
+  const reserveTokens = reserveTokensForConfig(store.compactConfig, windowTokens);
+  const keepRecentTokens = keepRecentTokensForConfig(store.compactConfig, windowTokens);
 
   return (
     <section className="flex flex-col gap-3 py-3 border-b border-border last:border-0">
-      {/* Header */}
       <div className="flex flex-col gap-0.5 px-0.5">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">Auto Compact</h3>
-        <p className="text-sm text-muted-foreground leading-none">Configure conversation compaction settings</p>
+        <p className="text-sm text-muted-foreground leading-none">
+          Summarize older turns into a checkpoint and keep recent messages verbatim
+        </p>
       </div>
 
       <div className="flex flex-col gap-3">
-        {/* Enable/Disable Toggle */}
         <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40 border border-border/50 hover:bg-secondary/60 transition-colors">
           <div className="flex flex-col gap-0.5 pr-2">
             <span className="text-sm font-medium text-foreground">Enable Auto Compact</span>
             <span className="text-sm text-muted-foreground leading-tight">
               {compactConfig.enabled
-                ? 'Automatically compact when threshold reached'
-                : 'Manual compact only via /compact command'}
+                ? 'Automatically compact when the threshold is reached'
+                : 'Manual compact only via /compact'}
             </span>
           </div>
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -47,7 +56,7 @@ export function CompactSettings() {
               className="sr-only peer"
               checked={compactConfig.enabled}
               onChange={(e) => {
-                store.setCompactConfig({ enabled: e.target.checked });
+                store.setCompactConfig({ enabled: e.target.checked, prompt: '' });
                 store.saveToStorage();
               }}
             />
@@ -55,75 +64,58 @@ export function CompactSettings() {
           </label>
         </div>
 
-        {/* Threshold Configuration - Only show when enabled */}
         {compactConfig.enabled && (
-          <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
-                Compact Threshold
-              </label>
-              <span className="text-sm text-muted-foreground tabular-nums">
-                {Math.round(compactConfig.threshold * 100)}%
-              </span>
+          <div className="flex flex-col gap-3 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="compact-at" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
+                  Compact at
+                </label>
+                <span className="text-sm text-muted-foreground tabular-nums">{compactAt}%</span>
+              </div>
+              <input
+                id="compact-at"
+                type="range"
+                min={50}
+                max={95}
+                step={1}
+                value={compactAt}
+                onChange={(e) => {
+                  store.setCompactConfig({ threshold: Number(e.target.value) / 100, prompt: '' });
+                  store.saveToStorage();
+                }}
+                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+              <p className="text-sm text-muted-foreground/70">
+                Compact when estimated usage exceeds this share of the model context window.
+                ≈ {reserveTokens.toLocaleString()} tokens reserved on this model ({windowTokens.toLocaleString()} window).
+              </p>
             </div>
-            <input
-              type="range"
-              min="50"
-              max="95"
-              step="5"
-              value={compactConfig.threshold * 100}
-              onChange={(e) => {
-                store.setCompactConfig({ threshold: parseInt(e.target.value) / 100 });
-                store.saveToStorage();
-              }}
-              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-            />
-            <p className="text-sm text-muted-foreground/70">
-              Compact when context reaches {Math.round(compactConfig.threshold * 100)}% of window
-            </p>
-          </div>
-        )}
-
-        {/* Compact Prompt - Only show when enabled */}
-        {compactConfig.enabled && (
-          <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className="flex items-center justify-between">
-              <label htmlFor="compact-prompt" className="flex items-center space-x-2 text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
-                <span>Compact Prompt</span>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <span className="cursor-help"><HelpCircleIcon size={16} /></span>
-                  </TooltipTrigger>
-                  <TooltipContent>Inspired from RooCode</TooltipContent>
-                </Tooltip>
-              </label>
-              {isUsingCustomPrompt && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    store.setCompactConfig({ prompt: '' });
-                    store.saveToStorage();
-                  }}
-                  className="text-sm text-primary hover:text-primary/80 transition-colors"
-                  title="Reset to default"
-                >
-                  Reset
-                </button>
-              )}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="keep-recent" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
+                  Keep recent
+                </label>
+                <span className="text-sm text-muted-foreground tabular-nums">{keepRecent}%</span>
+              </div>
+              <input
+                id="keep-recent"
+                type="range"
+                min={5}
+                max={40}
+                step={1}
+                value={keepRecent}
+                onChange={(e) => {
+                  store.setCompactConfig({ keepRecentRatio: Number(e.target.value) / 100, prompt: '' });
+                  store.saveToStorage();
+                }}
+                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+              <p className="text-sm text-muted-foreground/70">
+                Share of the window to leave as verbatim recent messages (not summarized).
+                ≈ {keepRecentTokens.toLocaleString()} tokens on this model.
+              </p>
             </div>
-            <textarea
-              id="compact-prompt"
-              rows={8}
-              className="w-full min-h-[180px] max-h-[400px] px-2.5 py-2 text-sm bg-muted/40 border border-input rounded-md focus-visible:ring-1 focus-visible:ring-ring outline-none transition-all text-foreground max-inline-max field-sizing-content resize-none font-mono"
-              value={displayPrompt}
-              onChange={(e) => {
-                store.setCompactConfig({ prompt: e.target.value });
-                store.saveToStorage();
-              }}
-            />
-            <p className="text-sm text-muted-foreground/70">
-              {isUsingCustomPrompt ? 'Using custom prompt' : 'Using default prompt (edit to customize)'}
-            </p>
           </div>
         )}
       </div>

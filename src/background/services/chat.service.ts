@@ -74,6 +74,27 @@ export interface ChatServiceResponse {
   reasoning_content?: string;
   reasoning_signature?: string;
   toolCalls?: ToolCall[];
+  usage?: TokenUsage;
+}
+
+function parseUsageFromBody(data: Record<string, unknown>): TokenUsage | undefined {
+  const usage = (data.usage || data.usageMetadata) as Record<string, unknown> | undefined;
+  if (!usage || typeof usage !== 'object') return undefined;
+  const promptTokenCount = Number(
+    usage.prompt_tokens ?? usage.input_tokens ?? usage.promptTokenCount ?? 0,
+  );
+  const candidatesTokenCount = Number(
+    usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount ?? 0,
+  );
+  const totalTokenCount = Number(
+    usage.total_tokens ?? usage.totalTokenCount ?? promptTokenCount + candidatesTokenCount,
+  );
+  if (!totalTokenCount && !promptTokenCount && !candidatesTokenCount) return undefined;
+  return {
+    promptTokenCount,
+    candidatesTokenCount,
+    totalTokenCount: totalTokenCount || promptTokenCount + candidatesTokenCount,
+  };
 }
 
 export interface ChatService {
@@ -300,6 +321,7 @@ export function createChatService(): ChatService {
             reasoning_content: reasoning || undefined,
             reasoning_signature: result.reasoning_signature,
             toolCalls: toolCalls?.length ? toolCalls : undefined,
+            usage: parseUsageFromBody(data),
           });
           return;
         }

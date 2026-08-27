@@ -4,11 +4,22 @@
 // Prompt caches (OpenAI/Gemini auto-prefix, Anthropic cache_control) require
 // that prefix bytes never change. So we:
 //   A. Cap each tool result ONCE when it is ingested (never rewrite later).
-//   C. Rare stop-the-world compact: same prefix + a summarize user message at
-//      the tail; then replace working with system + summary + last real user.
+//   C. Rare stop-the-world compact: dedicated summarizer, then rebuild as
+//      system + structured checkpoint + recent verbatim tail.
 
-import type { APIMessage } from '../types/index.ts';
-import { DEFAULT_SUMMARY_PROMPT, extractSummaryFromResponse } from '../hooks/compact/compactUtils.ts';
+import type { APIMessage, Message } from '../types/index.ts';
+import { extractSummaryFromResponse } from '../hooks/compact/compactUtils.ts';
+import {
+  applyCompaction,
+  buildSummarizationApiMessages,
+  buildSummarizationUserPrompt,
+  combineSplitTurnSummary,
+  computeFileLists,
+  formatFileOperations,
+  prepareCompaction,
+  serializeConversation,
+} from '../hooks/compact/prepareCompaction.ts';
+import { DEFAULT_KEEP_RECENT_TOKENS, getEffectiveMessages } from '../utils/estimateTokens.ts';
 
 /** Max characters kept in a tool result that enters `working`. */
 export const DEFAULT_TOOL_RESULT_CAP = 12_000;
@@ -22,7 +33,7 @@ export const DEFAULT_AGENT_CHAR_BUDGET = 320_000;
 const HEAD_FRAC = 0.4;
 const TAIL_FRAC = 0.4;
 
-export const COMPACT_USER_MARKER = 'SYSTEM OPERATION — CONTEXT SUMMARIZATION';
+export const COMPACT_USER_MARKER = '[CONTEXT CHECKPOINT]';
 
 export function capToolResult(
   content: string,
@@ -72,10 +83,36 @@ export function shouldCompact(
 export function buildCompactUserMessage(): APIMessage {
   return {
     role: 'user',
-    content: `${DEFAULT_SUMMARY_PROMPT}
-
-After the summary, the session will continue. Preserve user intent, file paths touched, and unfinished work. Do not call tools.`,
+    content: buildSummarizationUserPrompt({ conversationText: '' }),
   };
+}
+
+export function apiMessagesToMessages(messages: APIMessage[]): Message[] {
+  return messages.map((m) => ({
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+    toolCalls: m.toolCalls,
+    toolCallId: m.toolCallId,
+    name: m.name,
+    reasoningContent: m.reasoningContent,
+    reasoningSignature: m.reasoningSignature,
+  }));
+}
+
+export function messagesToApi(messages: Message[]): APIMessage[] {
+  return messages
+    .filter((m) => m.role !== 'error')
+    .map((m) => ({
+      role: m.role === 'system' || m.role === 'user' || m.role === 'assistant' || m.role === 'tool'
+        ? m.role
+        : 'user',
+      content: m.content,
+      toolCalls: m.toolCalls,
+      toolCallId: m.toolCallId,
+      name: m.name,
+      reasoningContent: m.reasoningContent,
+      reasoningSignature: m.reasoningSignature,
+    }));
 }
 
 export function isCompactUserMessage(msg: APIMessage): boolean {
@@ -99,26 +136,75 @@ export function leadingSystem(messages: APIMessage[]): APIMessage | undefined {
 export function workingFromSummary(
   messages: APIMessage[],
   rawSummary: string,
+  keepRecentTokens: number = DEFAULT_KEEP_RECENT_TOKENS,
 ): APIMessage[] {
   const summary = extractSummaryFromResponse(rawSummary).trim() || rawSummary.trim();
-  const system = leadingSystem(messages);
-  const lastUser = lastRealUserMessage(messages);
-  const out: APIMessage[] = [];
-  if (system) out.push(system);
-  out.push({
+  const asMessages = apiMessagesToMessages(messages);
+  const prep = prepareCompaction(asMessages, keepRecentTokens, undefined, { force: true });
+  const details = prep ? computeFileLists(prep.fileOps) : { readFiles: [], modifiedFiles: [] };
+  const body = `${summary}${formatFileOperations(details)}`;
+  const checkpoint: Message = {
     role: 'user',
-    content:
-      `[SESSION SUMMARY]\n${summary}\n\n` +
-      'Continue from this summary. Use list_files and read_file for current workspace files; do not assume stale file bodies from the summary.',
-  });
-  if (lastUser) {
-    const lastText = typeof lastUser.content === 'string' ? lastUser.content : '';
-    const already =
-      typeof out[out.length - 1]?.content === 'string' &&
-      (out[out.length - 1].content as string).includes(lastText.slice(0, 80));
-    if (lastText && !already) out.push(lastUser);
+    content: `[CONTEXT CHECKPOINT]\n${body}`,
+    summary: body,
+    isCompacted: true,
+    condenseId: `condense_agent_${Date.now()}`,
+    compactDetails: details,
+  };
+  if (!prep) {
+    const system = leadingSystem(messages);
+    const lastUser = lastRealUserMessage(messages);
+    const out: APIMessage[] = [];
+    if (system) out.push(system);
+    out.push({ role: 'user', content: checkpoint.content });
+    if (lastUser) out.push(lastUser);
+    return out;
   }
-  return out;
+  const next = applyCompaction(asMessages, checkpoint.condenseId!, prep.firstKeptIndex, checkpoint);
+  const kept = getEffectiveMessages(next);
+  const system = leadingSystem(messages);
+  const api = messagesToApi(kept);
+  if (system && api[0]?.role !== 'system') return [system, ...api];
+  return api;
+}
+
+export interface AgentSummarizationPlan {
+  history: APIMessage[];
+  prefix?: APIMessage[];
+}
+
+export function buildAgentSummarizationPlan(
+  working: APIMessage[],
+  keepRecentTokens: number = DEFAULT_KEEP_RECENT_TOKENS,
+): AgentSummarizationPlan | null {
+  const asMessages = apiMessagesToMessages(working);
+  const prep = prepareCompaction(asMessages, keepRecentTokens, undefined, { force: true });
+  if (!prep) return null;
+  const historyText = serializeConversation(prep.messagesToSummarize);
+  const history = buildSummarizationApiMessages(buildSummarizationUserPrompt({
+    conversationText: historyText || '(empty)',
+    previousSummary: prep.previousSummary,
+  }));
+  if (prep.isSplitTurn && prep.turnPrefixMessages.length) {
+    const prefixText = serializeConversation(prep.turnPrefixMessages);
+    return {
+      history,
+      prefix: buildSummarizationApiMessages(buildSummarizationUserPrompt({
+        conversationText: prefixText,
+        splitTurnPrefix: true,
+      })),
+    };
+  }
+  return { history };
+}
+
+export function buildAgentSummarizationRequest(working: APIMessage[]): APIMessage[] | null {
+  return buildAgentSummarizationPlan(working)?.history ?? null;
+}
+
+export function combineAgentCompactSummary(historySummary: string, prefixSummary?: string): string {
+  if (!prefixSummary?.trim()) return historySummary;
+  return combineSplitTurnSummary(historySummary, prefixSummary);
 }
 
 export interface AgentContextOptions {

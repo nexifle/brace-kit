@@ -13,6 +13,8 @@ import { cn } from '../utils/cn.ts';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip/index.ts';
 import { useCapabilityGuard } from '../hooks/useCapabilityGuard.ts';
 import { composerAcceptAttribute } from '../utils/modelCapability.ts';
+import { resolveReserveTokens } from '../utils/estimateTokens.ts';
+import { estimateRequestContextTokens } from '../utils/requestContext.ts';
 
 const SLASH_COMMANDS = [
   { cmd: '/compact', desc: 'Summarize and compress conversation' },
@@ -32,7 +34,7 @@ export function InputArea() {
   const store = useStore();
   const pendingAsk = useStore((state) => state.pendingAsk);
   const mode = useStore((state) => state.mode);
-  const { sendMessage, stopStreaming, estimateTokenCount } = useChat();
+  const { sendMessage, stopStreaming } = useChat();
   const { attachments, handleFileSelect, handlePaste } = useFileAttachments();
   const { selectedText, pageContext: hasPageContext } = usePageContext();
   const { syncAndReconnect } = useMCP();
@@ -56,19 +58,25 @@ export function InputArea() {
     return SLASH_COMMANDS.filter(c => c.cmd.startsWith(text));
   }, [text]);
 
-  // Token usage for autocompact indicator (only when enabled)
-  const tokens = estimateTokenCount(store.messages);
+  const contextEstimate = estimateRequestContextTokens(store);
   const contextWindow = getEffectiveContextWindow(
     store.providerConfig,
     store.customProviders.find((p) => p.id === store.providerConfig.providerId),
     store.compactConfig,
     store.fetchedModels[store.providerConfig.providerId],
   );
-  const threshold = store.compactConfig.threshold ?? 0.9;
   const compactEnabled = store.compactConfig.enabled ?? true;
-  const usagePercent = (tokens / contextWindow) * 100;
-  const compactThresholdPercent = (threshold * 100);
-  const percentUntilCompact = Math.max(0, compactThresholdPercent - usagePercent);
+  const reserveTokens = resolveReserveTokens(
+    store.compactConfig.reserveTokens,
+    store.compactConfig.threshold,
+    contextWindow,
+  );
+  const compactAt = Math.max(0, contextWindow - reserveTokens);
+  const tokens = contextEstimate.known ? contextEstimate.tokens : null;
+  const percentUntilCompact =
+    tokens != null && contextWindow > 0
+      ? Math.max(0, ((compactAt - tokens) / contextWindow) * 100)
+      : null;
 
   // Update default aspect ratio when provider changes (Gemini doesn't support 'auto')
   useEffect(() => {
@@ -353,18 +361,27 @@ export function InputArea() {
 
         {/* Bottom Toolbar — composer chips + actions in one row */}
         {/* Context usage indicator - own row above toolbar */}
-        {compactEnabled && percentUntilCompact <= 15 && (
+        {compactEnabled && (tokens == null || (percentUntilCompact != null && percentUntilCompact <= 15)) && (
           <div className="flex justify-end p-2">
             <span
-              className={`inline-flex text-2xs font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${percentUntilCompact <= 5
+              className={`inline-flex text-2xs font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border transition-all duration-300 ${
+                tokens == null
+                  ? 'text-muted-foreground bg-muted/20 border-border'
+                  : percentUntilCompact != null && percentUntilCompact <= 5
                 ? 'text-destructive bg-destructive/10 border-destructive/20 animate-pulse'
-                : percentUntilCompact <= 10
+                : percentUntilCompact != null && percentUntilCompact <= 10
                   ? 'text-warning bg-warning/10 border-warning/20'
                   : 'text-muted-foreground bg-muted/20 border-border'
                 }`}
-              title={`${tokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens used. Auto-compact at ${compactThresholdPercent}%.`}
+              title={
+                tokens == null
+                  ? `Context size unknown until the next reply. Auto-compact at ${compactAt.toLocaleString()} tokens.`
+                  : `${tokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens used. Auto-compact at ${compactAt.toLocaleString()} tokens.`
+              }
             >
-              {Math.round(percentUntilCompact)}% until autocompact
+              {tokens == null
+                ? 'Context usage unknown'
+                : `${Math.round(percentUntilCompact ?? 0)}% until autocompact`}
             </span>
           </div>
         )}

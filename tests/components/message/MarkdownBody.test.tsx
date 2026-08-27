@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   MARKDOWN_BODY_PROSE_CLASS,
   MarkdownBody,
+  markdownTextLength,
+  wrapStreamingSuffix,
 } from '../../../src/components/message/MarkdownBody.tsx';
 import { renderMarkdown } from '../../../src/utils/markdown.ts';
 
@@ -68,6 +70,28 @@ describe('MarkdownBody', () => {
     const html = renderToStaticMarkup(
       createElement(MarkdownBody, { content: md, isStreaming: true }),
     );
-    expect(html).toContain('<strong>world</strong>');
+    expect(html).toMatch(/<strong[\s>][\s\S]*world/);
+  });
+
+  it('streaming wrap keeps markdown tags on the new suffix', () => {
+    const wrapped = wrapStreamingSuffix(
+      createElement('p', null, ['Hello ', createElement('strong', null, 'world')]),
+      5,
+    );
+    const html = renderToStaticMarkup(createElement('div', null, wrapped.node));
+    expect(html).toContain('bk-stream-chunk');
+    expect(html).toContain('<strong>');
+    expect(html).toContain('world');
+    expect(markdownTextLength(wrapped.node)).toBe(11);
+  });
+
+  it('streaming headings and fences still render as markdown, not plaintext', () => {
+    const md = ['## Title', '', '```js', 'const x = 1', '```'].join('\n');
+    const html = renderToStaticMarkup(
+      createElement(MarkdownBody, { content: md, isStreaming: true }),
+    );
+    expect(html).toMatch(/<h2[\s>]/);
+    expect(html).toMatch(/<code[\s>]|language-/);
+    expect(html).toContain('bk-stream-chunk');
   });
 });

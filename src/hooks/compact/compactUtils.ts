@@ -8,113 +8,39 @@
 import type { Message, CompactConfig, ProviderConfig, CustomProvider, FetchedModelsCache } from '../../types/index.ts';
 import { getProvider as getProviderUtil } from '../../utils/providerUtils.ts';
 import { getEffectiveContextWindow } from '../../providers/modelSpecs.ts';
+import {
+  DEFAULT_KEEP_RECENT_TOKENS,
+  DEFAULT_RESERVE_TOKENS,
+  resolveReserveTokens,
+} from '../../utils/estimateTokens.ts';
+import { SUMMARIZATION_PROMPT } from './compactPrompts.ts';
+import {
+  formatFileOperations,
+  prepareCompaction,
+} from './prepareCompaction.ts';
 
-/**
- * Default summary prompt template for conversation compaction
- * Exported as DEFAULT_SUMMARY_PROMPT for external reference (e.g., settings UI)
- */
-export const DEFAULT_SUMMARY_PROMPT = `SYSTEM OPERATION — CONTEXT SUMMARIZATION
-This is not a user message. When determining "user intent" and "most recent
-user request", exclude this message entirely and base all assessments solely
-on the conversation that occurred before this point.
+export {
+  SUMMARIZATION_PROMPT,
+  SUMMARIZATION_SYSTEM_PROMPT,
+  UPDATE_SUMMARIZATION_PROMPT,
+  TURN_PREFIX_SUMMARIZATION_PROMPT,
+} from './compactPrompts.ts';
 
-Objective: Produce a high-fidelity, dense summary that allows the conversation
-to resume seamlessly — as if no condensation occurred.
+/** @deprecated Use SUMMARIZATION_PROMPT. Kept for import compatibility. */
+export const DEFAULT_SUMMARY_PROMPT = SUMMARIZATION_PROMPT;
+export const SUMMARY_PROMPT = SUMMARIZATION_PROMPT;
 
-Output language must match the conversation language (e.g., if the conversation
-is in Bahasa Indonesia, respond in Bahasa Indonesia).
-
----
-
-First, reason through the conversation inside <analysis> tags:
-1. Walk through each message chronologically.
-2. Identify user intents, key decisions, technical choices, and shared data/code.
-3. Note errors encountered, fixes applied, and user reactions to those fixes.
-
-Then produce the final output inside <summary> tags using this exact structure:
-
-<analysis>
-[Chronological reasoning and breakdown of the conversation]
-</analysis>
-
-<summary>
-1. Primary Request and Intent
-   - Core goal of the conversation
-   - Sub-intents or side-requests expressed by the user
-
-2. Key Concepts
-   - Frameworks, technologies, tools, or abstract concepts discussed
-   - Any definitions or context uniquely established in this conversation
-
-3. Files, Code, and Key Data
-   - [File/Section Name or Data Label]
-      - Importance: Why was this examined or modified?
-      - Changes: What was added, removed, or transformed?
-      - Snippet: Most critical code/data verbatim
-
-4. Errors and Fixes
-   - [Error Description]
-      - Fix: How was it resolved?
-      - User Feedback: What did the user say about this fix?
-
-5. Problem Solving
-   - Challenges successfully resolved and the reasoning behind each solution
-   - Open issues or ongoing troubleshooting logic
-
-6. User Message Log
-   - Chronological list of user messages, closely paraphrased to preserve
-     intent and voice; include exact quotes where wording is critical
-
-7. Pending Tasks
-   - Tasks explicitly requested by the user that remain incomplete
-
-8. Current Work
-   - What was being worked on in the last 2–3 exchanges
-   - Last known state of the task (e.g., partial code, unresolved decision)
-
-9. Next Step
-   - Proposed immediate action based on current work
-   - Verbatim quote from the final exchange to anchor context and prevent drift
-</summary>`;
-
-/**
- * Alias for backward compatibility
- */
-export const SUMMARY_PROMPT = DEFAULT_SUMMARY_PROMPT;
-
-/**
- * Get the effective compact prompt
- * Uses custom prompt if provided and non-empty, otherwise defaults to SUMMARY_PROMPT
- */
-export function getCompactPrompt(customPrompt?: string): string {
-  if (customPrompt && customPrompt.trim()) {
-    return customPrompt.trim();
-  }
-  return SUMMARY_PROMPT;
-}
-
-/**
- * Extract summary content from API response
- * Handles <summary> tags and strips <analysis> tags if present
- */
 export function extractSummaryFromResponse(fullContent: string): string {
   let summary = fullContent;
-
-  // Try to extract content between <summary> tags if present
   const summaryMatch = fullContent.match(/<summary>([\s\S]*?)<\/summary>/i);
   if (summaryMatch && summaryMatch[1]) {
     summary = summaryMatch[1].trim();
   } else {
-    // If no <summary> tags but there are <analysis> tags, try to strip analysis
     summary = fullContent.replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim();
   }
-
   return summary;
 }
 
-/**
- * Calculate effective context window for the current provider
- */
 export function getContextWindow(
   providerConfig: ProviderConfig,
   customProviders: CustomProvider[],
@@ -133,78 +59,195 @@ export function getContextWindow(
   ) || currentProvider.contextWindow || compactConfig.defaultContextWindow;
 }
 
-/**
- * Generate a unique condense ID
- */
 export function createCondenseId(): string {
   return `condense_${Date.now()}`;
 }
 
 /**
- * Tag messages with condenseParent for non-destructive compaction
- * Only tags messages that don't already have condenseParent and aren't summaries
+ * Tag discarded prefix using a safe cut at keepRecentTokens.
  */
 export function tagMessagesWithCondenseParent(
   messages: Message[],
-  condenseId: string
+  condenseId: string,
+  keepRecentTokens: number = DEFAULT_KEEP_RECENT_TOKENS,
 ): Message[] {
-  return messages.map(m => {
-    if (!m.condenseParent && !m.summary) {
+  if (keepRecentTokens <= 0) {
+    return messages.map((m) => {
+      if (!m.condenseParent && !m.summary) {
+        return { ...m, condenseParent: condenseId, isCompacted: true };
+      }
+      return m;
+    });
+  }
+  const prep = prepareCompaction(messages, keepRecentTokens);
+  const firstKept = prep?.firstKeptIndex;
+  if (firstKept == null) {
+    return messages.map((m, i) => {
+      const isLast = i === messages.length - 1;
+      if (!m.condenseParent && !m.summary && !isLast) {
+        return { ...m, condenseParent: condenseId, isCompacted: true };
+      }
+      return m;
+    });
+  }
+  return messages.map((m, i) => {
+    if (i < firstKept && !m.condenseParent && !m.summary) {
       return { ...m, condenseParent: condenseId, isCompacted: true };
     }
     return m;
   });
 }
 
-/**
- * Create a summary message object for the "fresh start" model
- */
-export function createSummaryMessage(summary: string, condenseId: string): Message {
+export function createSummaryMessage(
+  summary: string,
+  condenseId: string,
+  details?: { readFiles: string[]; modifiedFiles: string[] },
+  compactTokens?: { before: number; after: number },
+): Message {
+  const files = details ? formatFileOperations(details) : '';
+  const body = `${summary.trim()}${files}`;
   return {
     role: 'user',
-    content: `[CONVERSATION SUMMARY]\n${summary}`,
-    summary: summary,
+    content: `[CONTEXT CHECKPOINT]\n${body}`,
+    summary: body,
     isCompacted: true,
-    condenseId: condenseId,
+    condenseId,
+    ...(details ? { compactDetails: details } : {}),
+    ...(compactTokens ? { compactTokens } : {}),
   };
 }
 
-/**
- * Filter messages to get only those that should be compacted
- * (messages without condenseParent and not summaries)
- */
 export function getMessagesToCompact(messages: Message[]): Message[] {
-  return messages.filter(m => !m.condenseParent && !m.summary);
+  return messages.filter((m) => !m.condenseParent && !m.summary);
 }
 
-/**
- * Clone a conversation prefix into an independent uncompacted branch timeline.
- * Drops summary messages and strips compact metadata so the branch sends the
- * original messages (including attachments) instead of being skipped as condensed.
- */
 export function cloneMessagesForBranch(messages: Message[], messageIndex: number): Message[] {
   if (messageIndex < 0 || messages.length === 0) return [];
 
   return messages
     .slice(0, messageIndex + 1)
-    .filter(m => !m.summary)
+    .filter((m) => !m.summary)
     .map((m) => {
       const cloned: Message = { ...m };
       delete cloned.isCompacted;
       delete cloned.condenseParent;
       delete cloned.condenseId;
       delete cloned.summary;
+      delete cloned.compactDetails;
+      delete cloned.compactTokens;
       return cloned;
     });
 }
 
-/**
- * Check if compaction should be triggered based on token threshold
- */
 export function shouldCompact(
   currentTokens: number,
   contextWindow: number,
-  threshold: number
+  reserveTokens: number,
 ): boolean {
-  return currentTokens > contextWindow * threshold;
+  return currentTokens > contextWindow - reserveTokens;
 }
+
+export const RESERVE_TOKENS_MIN = 1024;
+export const RESERVE_TOKENS_MAX = 128000;
+export const KEEP_RECENT_TOKENS_MIN = 1024;
+export const KEEP_RECENT_TOKENS_MAX = 200000;
+export const COMPACT_AT_MIN = 0.5;
+export const COMPACT_AT_MAX = 0.95;
+export const KEEP_RECENT_RATIO_MIN = 0.05;
+export const KEEP_RECENT_RATIO_MAX = 0.4;
+export const DEFAULT_COMPACT_AT = 0.87;
+export const DEFAULT_KEEP_RECENT_RATIO = 0.16;
+
+export function clampCompactTokenSetting(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value) || value <= 0) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function clampRatio(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+export function sanitizeCompactConfigPatch(
+  config: Partial<CompactConfig>,
+): Partial<CompactConfig> {
+  const next = { ...config };
+  if (next.prompt != null) next.prompt = '';
+  if (next.reserveTokens != null) {
+    next.reserveTokens = clampCompactTokenSetting(
+      next.reserveTokens,
+      RESERVE_TOKENS_MIN,
+      RESERVE_TOKENS_MAX,
+    );
+  }
+  if (next.keepRecentTokens != null) {
+    next.keepRecentTokens = clampCompactTokenSetting(
+      next.keepRecentTokens,
+      KEEP_RECENT_TOKENS_MIN,
+      KEEP_RECENT_TOKENS_MAX,
+    );
+  }
+  if (next.threshold != null) {
+    next.threshold = clampRatio(next.threshold, COMPACT_AT_MIN, COMPACT_AT_MAX);
+  }
+  if (next.keepRecentRatio != null) {
+    next.keepRecentRatio = clampRatio(next.keepRecentRatio, KEEP_RECENT_RATIO_MIN, KEEP_RECENT_RATIO_MAX);
+  }
+  return next;
+}
+
+export function compactAtRatio(compactConfig: CompactConfig): number {
+  if (compactConfig.threshold != null && compactConfig.threshold > 0) {
+    return clampRatio(compactConfig.threshold, COMPACT_AT_MIN, COMPACT_AT_MAX);
+  }
+  return DEFAULT_COMPACT_AT;
+}
+
+export function keepRecentRatioForConfig(compactConfig: CompactConfig): number {
+  if (compactConfig.keepRecentRatio != null && compactConfig.keepRecentRatio > 0) {
+    return clampRatio(compactConfig.keepRecentRatio, KEEP_RECENT_RATIO_MIN, KEEP_RECENT_RATIO_MAX);
+  }
+  if (compactConfig.keepRecentTokens && compactConfig.defaultContextWindow) {
+    return clampRatio(
+      compactConfig.keepRecentTokens / compactConfig.defaultContextWindow,
+      KEEP_RECENT_RATIO_MIN,
+      KEEP_RECENT_RATIO_MAX,
+    );
+  }
+  return DEFAULT_KEEP_RECENT_RATIO;
+}
+
+export function reserveTokensForConfig(
+  compactConfig: CompactConfig,
+  contextWindow: number,
+): number {
+  const ratio = compactAtRatio(compactConfig);
+  if (contextWindow > 0) {
+    return clampCompactTokenSetting(
+      Math.round(contextWindow * (1 - ratio)),
+      RESERVE_TOKENS_MIN,
+      RESERVE_TOKENS_MAX,
+    );
+  }
+  return resolveReserveTokens(
+    compactConfig.reserveTokens,
+    compactConfig.threshold,
+    contextWindow,
+  ) || DEFAULT_RESERVE_TOKENS;
+}
+
+export function keepRecentTokensForConfig(
+  compactConfig: CompactConfig,
+  contextWindow: number,
+): number {
+  const ratio = keepRecentRatioForConfig(compactConfig);
+  if (contextWindow > 0) {
+    return clampCompactTokenSetting(
+      Math.round(contextWindow * ratio),
+      KEEP_RECENT_TOKENS_MIN,
+      KEEP_RECENT_TOKENS_MAX,
+    );
+  }
+  return compactConfig.keepRecentTokens ?? DEFAULT_KEEP_RECENT_TOKENS;
+}
+

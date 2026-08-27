@@ -399,11 +399,11 @@ describe('runPlanPhase', () => {
 
     let modelTurns = 0;
     const transport: PlanPhaseParams['transport'] = async (req) => {
-      const last = req.messages?.[req.messages.length - 1];
+      const first = req.messages?.[0];
       if (
-        last?.role === 'user' &&
-        typeof last.content === 'string' &&
-        last.content.includes('CONTEXT SUMMARIZATION')
+        first?.role === 'system' &&
+        typeof first.content === 'string' &&
+        first.content.includes('context summarization assistant')
       ) {
         return { content: '<summary>Prior plan work</summary>' };
       }

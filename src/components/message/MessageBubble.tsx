@@ -440,6 +440,7 @@ export function MessageBubble({
           summary={message.summary}
           isExpanded={showSummaryContent}
           onToggle={() => setShowSummaryContent(!showSummaryContent)}
+          compactTokens={message.compactTokens}
         />
       );
     }
@@ -476,6 +477,7 @@ export function MessageBubble({
     message.displayContent,
     message.role,
     message.summary,
+    message.compactTokens,
     showSummaryContent,
     hasAfterMessages,
     message.pageContext,
@@ -565,6 +567,23 @@ export function MessageBubble({
 
   const { favId, isFavorited } = getLightboxFavData();
 
+  if (message.summary) {
+    return (
+      <div
+        className={`w-full max-w-full self-stretch ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'}`}
+      >
+        <div className="rounded-lg border border-border/70 bg-muted/25 dark:bg-muted/20 px-3 py-2.5">
+          <SummarySection
+            summary={message.summary}
+            isExpanded={showSummaryContent}
+            onToggle={() => setShowSummaryContent(!showSummaryContent)}
+            compactTokens={message.compactTokens}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`group flex flex-col gap-1 ${bubbleWidthClass} ${isStreaming ? '' : 'animate-in fade-in slide-in-from-bottom-2 duration-300'} ${message.role === 'user' ? 'self-end' : 'self-start'}`}
@@ -576,7 +595,7 @@ export function MessageBubble({
         )}
       </div>
       <div
-        className={`prose dark:prose-invert prose-sm prose-p:my-2 prose-hr:my-4 max-w-none relative break-words px-3.5 py-0 ${bubbleBgClass} ${isEditing ? 'ring-2 ring-primary/30' : ''} ${message.summary ? 'border-dashed border-primary/30 bg-primary/5' : ''}`}
+        className={`prose dark:prose-invert prose-sm prose-p:my-2 prose-hr:my-4 max-w-none relative break-words px-3.5 py-0 ${bubbleBgClass} ${isEditing ? 'ring-2 ring-primary/30' : ''}`}
         ref={bubbleRef}
         onMouseUp={handleMouseUp}
       >

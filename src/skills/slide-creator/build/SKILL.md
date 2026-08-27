@@ -91,6 +91,10 @@ it to the matching pixel dimensions and safe-zone from the design system.
   `status: failed`. Any attempt to write anything else (e.g. `/brief.md`,
   `/design.md`, or a path outside that set) is denied by the harness and
   returns `status: failed`.
+- **`update_file` hunks:** prefer a bare `@@`. Do not repeat the first context
+  line in the `@@` heading. Context lines are one leading space plus the file
+  line verbatim. Keep hunks to one rule (3–8 lines). Only `+` lines replaces
+  the whole file.
 - **On `failed`: read the file, simplify/re-issue the patch** — do not retry
   the identical failing patch, and never bypass the allowlist. Recover, don't
   force.
