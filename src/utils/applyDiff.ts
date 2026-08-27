@@ -740,10 +740,21 @@ function withTrailingNewline(text: string): string {
  * - blank lines without a `+` are treated as empty content lines when the rest
  *   of the body is `+`-prefixed
  */
+function isHunkHeaderLine(line: string): boolean {
+  if (isEnvelopeOrGitFileHeader(line)) return true;
+  const t = line.trimEnd();
+  return (
+    t === EMPTY_CHANGE_CONTEXT_MARKER ||
+    t.startsWith(CHANGE_CONTEXT_MARKER) ||
+    GIT_HUNK_HEADER.test(t) ||
+    t === EOF_MARKER
+  );
+}
+
 export function parseCreateDiff(diff: string): ApplyDiffResult {
   const lines = normalizeDiffLines(diff);
-  // Drop optional update-style hunk headers models copy from update examples.
-  const contentLines = lines.filter((l) => l !== EMPTY_CHANGE_CONTEXT_MARKER && !l.startsWith(CHANGE_CONTEXT_MARKER));
+  // Drop @@ headings, git/Codex envelopes — create/rewrite bodies are file bytes.
+  const contentLines = lines.filter((l) => !isHunkHeaderLine(l));
 
   if (contentLines.length === 0) {
     return { ok: false, error: 'Error: empty diff' };
@@ -791,22 +802,11 @@ export function parseCreateDiff(diff: string): ApplyDiffResult {
  * use this as a whole-file rewrite after a failed surgical hunk.
  */
 function isPlusOnlyRewrite(diff: string): boolean {
-  const lines = normalizeDiffLines(diff).filter((l) => !isEnvelopeOrGitFileHeader(l));
-  const namedHeading = lines.some((l) => {
-    const t = l.trimEnd();
-    return t.startsWith(CHANGE_CONTEXT_MARKER) && !GIT_HUNK_HEADER.test(t);
-  });
-  // A named `@@ selector` is a locator, not a full-file rewrite.
-  if (namedHeading) return false;
-  const content = lines.filter(
-    (l) =>
-      l.trim() !== EMPTY_CHANGE_CONTEXT_MARKER &&
-      !l.trimEnd().startsWith(CHANGE_CONTEXT_MARKER) &&
-      l.trim() !== EOF_MARKER &&
-      !GIT_HUNK_HEADER.test(l.trimEnd()),
-  );
+  const content = normalizeDiffLines(diff).filter((l) => !isHunkHeaderLine(l));
   if (content.length === 0) return false;
   const anyPlus = content.some((l) => l.startsWith('+'));
+  // No ` ` context and no `-` deletions: this is a full-file body, even if the
+  // model put a path or selector on the @@ heading (`@@ /pages/index.html`).
   return anyPlus && content.every((l) => l.startsWith('+') || l.length === 0);
 }
 

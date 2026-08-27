@@ -30,7 +30,7 @@ function makeSkillFetcher() {
     fetcher: async (url: string) => {
       // URL looks like "skills://skills/slide-creator/plan/SKILL.md" — derive
       // the phase-relative key ("plan/SKILL.md") for lookup.
-      const key = url.replace('skills://skills/slide-creator/', '');
+      const key = url.replace(/^skills:\/\/skills\/builder\/(?:slides|web)\//, '');
       const store: Record<string, string> = {
         'plan/SKILL.md':
           '---\nname: slide-creator-plan\ndescription: Plan skill.\n---\nplan skill **refs here** (`references/brief-template.md`)',
@@ -601,7 +601,7 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
 describe('createSlideAgent — build + follow-up (US-024)', () => {
   it('runs build to ready and refreshes the deck files onto the project', async () => {
     const skills = makeSkillFetcher();
-    const { transport } = makeTransport([
+    const { transport, seenMessages } = makeTransport([
       () => ({
         content: 'building',
         toolCalls: [
@@ -621,6 +621,14 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     });
 
     await agent.runBuild();
+
+    const kickoff = seenMessages[0] ?? [];
+    const kickoffText = kickoff
+      .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+      .join('\n');
+    expect(kickoffText).toContain('my deck');
+    expect(kickoffText).toContain('The plan is approved');
+    expect(kickoffText).toContain('/brief.md');
 
     expect(h.phase).toBe('ready');
     expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
@@ -1381,7 +1389,7 @@ it('surfaces verification issues on a truncated edit whose deck fails verificati
 describe('deriveSlideTitle', () => {
   it('derives a short title and caps whitespace + length', () => {
     expect(deriveSlideTitle('  build   a coffee deck  ')).toBe('build a coffee deck');
-    expect(deriveSlideTitle('   ')).toBe('Untitled deck');
+    expect(deriveSlideTitle('   ')).toBe('Untitled project');
     expect(deriveSlideTitle('x'.repeat(200)).length).toBeLessThanOrEqual(60);
   });
 });

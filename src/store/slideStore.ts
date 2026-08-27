@@ -90,6 +90,8 @@ export interface SlideStoreState {
   roundIndex: number;
   /** UI-level default Plan/Agent mode applied to newly created projects (no active project yet). */
   defaultMode: 'plan' | 'agent';
+  /** Kind chosen on the empty workspace before the first prompt. */
+  pendingKind: import('../types/slides.ts').BuilderKind;
 
 
   // --- selection / project lifecycle ---
@@ -176,6 +178,7 @@ export interface SlideStoreState {
   setMessages: (messages: SlideMainMessage[]) => void;
   addMessage: (message: SlideMainMessage) => void;
   setPanelView: (panelView: SlidePanelView) => void;
+  setPendingKind: (kind: import('../types/slides.ts').BuilderKind) => void;
   reset: () => void;
 }
 
@@ -203,6 +206,7 @@ const INITIAL_STATE = {
   rounds: [] as SlideRound[],
   roundIndex: -1 as number,
   defaultMode: 'plan' as 'plan' | 'agent',
+  pendingKind: 'slides' as import('../types/slides.ts').BuilderKind,
 };
 
 /**
@@ -588,6 +592,7 @@ export const useSlideStore = create<SlideStoreState>((set, get) => ({
     set((state) => ({ messages: [...state.messages, message] })),
 
   setPanelView: (panelView) => set({ panelView }),
+  setPendingKind: (pendingKind) => set({ pendingKind }),
 
   reset: () => set({ ...INITIAL_STATE }),
 }));

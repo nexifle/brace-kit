@@ -28,10 +28,13 @@ import type {
   ToolCall,
 } from '../types/index.ts';
 import type {
+  BuilderKind,
   SlideActivityEvent,
   SlidePendingAsk,
   SlidePhase,
 } from '../types/slides.ts';
+import { normalizeBuilderKind } from '../types/slides.ts';
+import { artifactFor } from './artifacts/index.ts';
 import {
   runAgentSession,
   resumeAgentSession,
@@ -51,14 +54,10 @@ import {
 } from './applyPatchHarness.ts';
 import {
   collectSlideIds,
-  deckSlideCount,
-  formatDeckJsonIssues,
   getSlideFile,
-  hasHardDeckJsonErrors,
   reorderSlideFiles,
   slideHtmlPath,
   syncDeckJson,
-  validateDeckJson,
 } from '../utils/slideVfs.ts';
 import { getToolsForPhase, type SlidePatchPhase } from './slideTools.ts';
 import {
@@ -198,6 +197,7 @@ function dispatchApplyPatch(
   currentFiles: import('../types/slides.ts').SlideFile[],
   onFilesChange: ((files: import('../types/slides.ts').SlideFile[]) => void) | undefined,
   emitter: ReturnType<typeof createActivityEmitter>,
+  kind: BuilderKind = 'slides',
 ): { content: string } {
   const row = emitter.started(toolCall, round);
   const parsed = parseApplyPatchArgs(args<unknown>(toolCall));
@@ -206,7 +206,8 @@ function dispatchApplyPatch(
     return { content: parsed.error };
   }
   const op = parsed.operation;
-  const result = applyPatchOperation(currentFiles, phase, op);
+  const k = normalizeBuilderKind(kind);
+  const result = applyPatchOperation(currentFiles, phase, op, k);
   if (result.status !== 'completed' || !result.files) {
     emitter.failed(row, result.output);
     return { content: result.output };
@@ -215,7 +216,7 @@ function dispatchApplyPatch(
   currentFiles.length = 0;
   currentFiles.push(...result.files);
   if (phase === 'build' || phase === 'edit') {
-    const synced = syncDeckJson(currentFiles);
+    const synced = artifactFor(k).sync(currentFiles);
     currentFiles.length = 0;
     currentFiles.push(...synced);
   }
@@ -348,14 +349,14 @@ function createActivityEmitter(phase: SlideActivityPhase, sink?: SlideActivitySi
 
 
     /** Emit `phase_completed` on a terminal success; build carries the slide count. */
-    phaseCompleted(opts?: { slideCount?: number }): void {
+    phaseCompleted(opts?: { slideCount?: number; label?: string }): void {
       sink?.push({
         id: `${phase}_phase_completed_${++seq}`,
         type: 'phase_completed',
         status: 'completed',
         ts: Date.now(),
         phase,
-        label: phaseCompletedLabel(phase, opts),
+        label: opts?.label ?? phaseCompletedLabel(phase, opts),
       });
     },
     /** Emit `phase_stopped` on a user cancel; settle the connecting spinner if no round started. */
@@ -473,6 +474,8 @@ export interface PlanPhaseParams {
   chatOptions?: Record<string, unknown>;
   /** Initial VFS. Copies it; patches never mutate the caller's array. */
   files: import('../types/slides.ts').SlideFile[];
+  /** Artifact kind; defaults to slides. */
+  kind?: BuilderKind;
   /** Tool set override; defaults to `getToolsForPhase('plan')`. */
   tools?: MCPTool[];
   /** Cap on model turns. */
@@ -679,6 +682,7 @@ function buildPlanSession(params: PlanPhaseParams, seedMessages?: APIMessage[]) 
           currentFiles,
           params.onFilesChange,
           emitter,
+          params.kind,
         );
       case 'ask': {
         const pendingAsk = buildPendingAsk(toolCall);
@@ -744,6 +748,8 @@ export interface BuildPhaseParams {
   chatOptions?: Record<string, unknown>;
   /** Current VFS, including the approved `/brief.md` + `/design.md`. Copied; never mutated. */
   files: import('../types/slides.ts').SlideFile[];
+  /** Artifact kind; defaults to slides. */
+  kind?: BuilderKind;
   /** Tool set override; defaults to `getToolsForPhase('build')`. */
   tools?: MCPTool[];
   /** Cap on model turns. */
@@ -819,11 +825,14 @@ export async function runBuildPhase(
   emitter.phaseStarted();
   const result = await runAgentSession(sessionParams);
 
-  const mapped = mapBuildResult(result, currentFiles);
+  const mapped = mapBuildResult(result, currentFiles, params.kind);
   emitPhaseTerminal(emitter, mapped.status, {
     ...(mapped.error ? { error: mapped.error } : {}),
     ...(mapped.status === 'ready' && mapped.slideCount != null
       ? { slideCount: mapped.slideCount }
+      : {}),
+    ...(mapped.status === 'ready'
+      ? { completedLabel: artifactFor(params.kind).readyActivityLabel(mapped.slideCount ?? 0) }
       : {}),
     noDeliverable: mapped.truncated
       ? maxRoundsNoDeliverable('build', mapped.rounds, mapped.slideCount)
@@ -879,8 +888,15 @@ function buildBuildSession(params: BuildPhaseParams) {
           currentFiles,
           params.onFilesChange,
           emitter,
+          params.kind,
         );
       case 'reorder_slides':
+        if (!artifactFor(params.kind).supportsReorderSlides) {
+          return {
+            content:
+              'Error: reorder_slides is only for slide decks. Reorder pages by updating /site.json.',
+          };
+        }
         return dispatchReorderSlides(
           toolCall,
           round,
@@ -951,6 +967,7 @@ function composePlanDocsSystemPrompt(
 function mapBuildResult(
   result: AgentSessionResult,
   files: import('../types/slides.ts').SlideFile[],
+  kind: BuilderKind = 'slides',
 ): BuildPhaseResult {
   const base = { files: files.slice() };
   switch (result.status) {
@@ -966,31 +983,16 @@ function mapBuildResult(
       // Projection is the readiness source — but a max-rounds truncation is never
       // a successful full deck even if one early slide already projects, and a
       // structurally invalid deck.json is never a valid deliverable either.
-      const slideCount = deckSlideCount(files);
       const truncated = !!result.truncated;
-      const v = validateDeckJson(files);
-      // Surface a specific error only for HARD contract violations: invalid
-      // JSON/non-object, a present-but-wrong canvas, a present-but-malformed
-      // slideOrder, or a non-path theme. Extra top-level keys and the `aspect`
-      // key are advisory (the projection ignores them) and do NOT block
-      // readiness — the agent may add properties as long as the required values
-      // are correct. Soft warnings (missing canvas/slideOrder, which degrade
-      // gracefully) do not block. A deck.json entirely absent is a plain
-      // no-deliverable and keeps the generic narration (deleting it is allowed).
-      const hasDeck = !!getSlideFile(files, '/deck.json');
-      const contractError =
-        !truncated && hasDeck && hasHardDeckJsonErrors(v)
-          ? formatDeckJsonIssues(v.issues)
-          : undefined;
-      const ready = !truncated && slideCount > 0 && !contractError;
+      const deliverable = artifactFor(kind).isBuildDeliverable(files, truncated);
       return {
         ...base,
-        status: ready ? 'ready' : 'done',
-        slideCount,
+        status: deliverable.ready ? 'ready' : 'done',
+        slideCount: deliverable.count,
         content: result.content,
         rounds: result.rounds,
         ...(truncated ? { truncated: true } : {}),
-        ...(contractError ? { error: contractError } : {}),
+        ...(deliverable.error ? { error: deliverable.error } : {}),
       };
     }
   }
@@ -1010,6 +1012,8 @@ export interface EditPhaseParams {
   chatOptions?: Record<string, unknown>;
   /** Current VFS, including the built `/deck.json`, `/theme.css`, `/slides/*`. Copied; never mutated. */
   files: import('../types/slides.ts').SlideFile[];
+  /** Artifact kind; defaults to slides. */
+  kind?: BuilderKind;
   /** Tool set override; defaults to `getToolsForPhase('edit')`. */
   tools?: MCPTool[];
   /** Cap on model turns. */
@@ -1085,7 +1089,7 @@ export async function runEditPhase(
   emitter.phaseStarted();
   const result = await runAgentSession(sessionParams);
 
-  const mapped = mapBuildResult(result, currentFiles);
+  const mapped = mapBuildResult(result, currentFiles, params.kind);
   emitPhaseTerminal(emitter, mapped.status, {
     ...(mapped.error ? { error: mapped.error } : {}),
     noDeliverable: mapped.truncated
@@ -1141,8 +1145,15 @@ function buildEditSession(params: EditPhaseParams) {
           currentFiles,
           params.onFilesChange,
           emitter,
+          params.kind,
         );
       case 'reorder_slides':
+        if (!artifactFor(params.kind).supportsReorderSlides) {
+          return {
+            content:
+              'Error: reorder_slides is only for slide decks. Reorder pages by updating /site.json.',
+          };
+        }
         return dispatchReorderSlides(
           toolCall,
           round,
@@ -1241,7 +1252,7 @@ type PhaseTerminalStatus = PlanPhaseStatus | BuildPhaseStatus | EditPhaseStatus;
 function emitPhaseTerminal(
   emitter: ReturnType<typeof createActivityEmitter>,
   status: PhaseTerminalStatus,
-  opts: { error?: string; slideCount?: number; noDeliverable?: string }
+  opts: { error?: string; slideCount?: number; noDeliverable?: string; completedLabel?: string }
 ): void {
   switch (status) {
     case 'error':
@@ -1255,7 +1266,11 @@ function emitPhaseTerminal(
     case 'plan_ready':
     case 'ready':
       emitter.phaseCompleted(
-        opts?.slideCount != null ? { slideCount: opts.slideCount } : undefined
+        opts?.slideCount != null
+          ? { slideCount: opts.slideCount, ...(opts.completedLabel ? { label: opts.completedLabel } : {}) }
+          : opts.completedLabel
+            ? { label: opts.completedLabel }
+            : undefined
       );
       break;
     case 'done':
@@ -1382,7 +1397,11 @@ async function dispatchLoadSkill(
   toolCall: ToolCall,
   round: number,
   phase: SlidePhaseKey,
-  params: { skillFetcher?: SlideSkillFetcher; skillBaseUrl?: string },
+  params: {
+    skillFetcher?: SlideSkillFetcher;
+    skillBaseUrl?: string;
+    kind?: import('../types/slides.ts').BuilderKind;
+  },
   emitter: ReturnType<typeof createActivityEmitter>,
   loadedSkills: Set<string>,
 ): Promise<AgentToolDispatch> {
@@ -1394,6 +1413,7 @@ async function dispatchLoadSkill(
     return { content };
   }
   const content = await loadSlideSkillResource(phase, name, {
+    pack: artifactFor(params.kind).skillPack,
     ...(params.skillFetcher ? { fetcher: params.skillFetcher } : {}),
     ...(params.skillBaseUrl ? { baseUrl: params.skillBaseUrl } : {}),
     alreadyLoaded: loadedSkills,

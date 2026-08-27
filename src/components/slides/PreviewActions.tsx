@@ -6,6 +6,8 @@ import { SLIDE_CANVAS_PRESETS } from '../../types/index.ts';
 import { collectFilesTouched } from '../../utils/slideFilesTouched.ts';
 import { RoundHistory } from './RoundHistory.tsx';
 import { ExportDeck } from './ExportDeck.tsx';
+import { ExportSite } from './ExportSite.tsx';
+import { isWebBuilderKind, normalizeBuilderKind } from '../../types/index.ts';
 import { SlideCodeViewer } from './SlideCodeViewer.tsx';
 
 const MENU_GAP = 6;
@@ -38,7 +40,9 @@ export function PreviewActions({ compact = false }: { compact?: boolean }) {
   const canvas = useSlideStore((s) => s.canvas);
   const preset = canvas ? SLIDE_CANVAS_PRESETS[canvas] : null;
 
-  const hasDeck = !!activeProject && deckSlides.length > 0;
+  const kind = normalizeBuilderKind(activeProject?.kind);
+  const hasDeck = !!activeProject && (isWebBuilderKind(kind) || deckSlides.length > 0);
+  const exportBtn = isWebBuilderKind(kind) ? <ExportSite /> : <ExportDeck />;
   const position = hasDeck
     ? `${Math.min(currentSlideIndex + 1, deckSlides.length)} / ${deckSlides.length}`
     : null;
@@ -165,7 +169,7 @@ export function PreviewActions({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <div className="flex items-center gap-2 min-w-0">
-        <ExportDeck />
+        {exportBtn}
         {sizeChip}
         {prevNext}
         <div className="relative">
@@ -209,7 +213,7 @@ export function PreviewActions({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <RoundHistory />
-      <ExportDeck />
+      {exportBtn}
       <SlideCodeViewer />
       {sizeChip}
       {prevNext}

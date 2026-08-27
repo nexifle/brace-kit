@@ -27,6 +27,10 @@ import { useElementSize } from '../../hooks/index.ts';
 import { fitBox } from '../../utils/slideFit.ts';
 import { SlidePreview } from './SlidePreview.tsx';
 import { SlideFilmstrip } from './SlideFilmstrip.tsx';
+import { KindPicker } from './KindPicker.tsx';
+import { WebPreview } from './WebPreview.tsx';
+import { isWebBuilderKind, normalizeBuilderKind } from '../../types/index.ts';
+import { collectPageHtmlPaths } from '../../utils/siteVfs.ts';
 import { PreviewActions } from './PreviewActions.tsx';
 import { SlideProjectList } from './SlideProjectList.tsx';
 import { PlanDocs } from './PlanDocs.tsx';
@@ -44,6 +48,9 @@ const RAIL_WIDTH = 400;
 function PreviewCanvas({ onStartDeck }: { onStartDeck?: () => void }) {
   const canvas = useSlideStore((s) => s.canvas);
   const busy = useSlideStore((s) => s.busy);
+  const activeKind = useSlideStore((s) => s.activeProject?.kind);
+  const pendingKind = useSlideStore((s) => s.pendingKind);
+  const web = isWebBuilderKind(normalizeBuilderKind(activeKind ?? pendingKind));
   // Layout-only frame when size is unset — not a chosen project canvas.
   const ratio = canvas ? SLIDE_CANVAS_PRESETS[canvas].width / SLIDE_CANVAS_PRESETS[canvas].height : 16 / 9;
   const { ref, width, height } = useElementSize<HTMLDivElement>();
@@ -72,7 +79,7 @@ function PreviewCanvas({ onStartDeck }: { onStartDeck?: () => void }) {
           <div
             key={canvas}
             role="img"
-            aria-label="Empty slide preview"
+            aria-label={web ? 'Empty site preview' : 'Empty slide preview'}
             className="relative flex flex-col items-center justify-center rounded-xl border border-border bg-background shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] overflow-hidden animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none"
             style={{ width: box.width, height: box.height }}
           >
@@ -85,10 +92,14 @@ function PreviewCanvas({ onStartDeck }: { onStartDeck?: () => void }) {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-foreground tracking-tight">
-                    Slides will appear as they are written…
+                    {web
+                      ? 'Pages will appear as they are written…'
+                      : 'Slides will appear as they are written…'}
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed max-w-[240px]">
-                    The agent is building your deck — this preview updates as slides land.
+                    {web
+                      ? 'The agent is building your site — this preview updates as pages land.'
+                      : 'The agent is building your deck — this preview updates as slides land.'}
                   </p>
                 </div>
               </div>
@@ -102,10 +113,10 @@ function PreviewCanvas({ onStartDeck }: { onStartDeck?: () => void }) {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-foreground tracking-tight">
-                    Your slides preview
+                    Preview
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed max-w-[260px]">
-                    Describe a deck and the agent will plan, build, and render it right here.
+                    Pick slides or a website — then describe what to build.
                   </p>
                 </div>
                 <Btn
@@ -114,7 +125,7 @@ function PreviewCanvas({ onStartDeck }: { onStartDeck?: () => void }) {
                   className="rounded-full! gap-1.5 mt-1 opacity-80"
                   onClick={onStartDeck}
                 >
-                  Start a deck
+                  Start building
                   <ArrowUpRight size={14} />
                 </Btn>
               </div>
@@ -155,7 +166,12 @@ function PreviewPane({
   const deckSlides = useSlideStore((s) => s.deckSlides);
   const busy = useSlideStore((s) => s.busy);
   const [capturingThumbs, setCapturingThumbs] = useState(false);
-  const hasDeck = !!activeProject && deckSlides.length > 0;
+  const kind = normalizeBuilderKind(activeProject?.kind);
+  const hasWeb =
+    !!activeProject &&
+    isWebBuilderKind(kind) &&
+    collectPageHtmlPaths(activeProject.files).length > 0;
+  const hasDeck = hasWeb || (!!activeProject && deckSlides.length > 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -193,10 +209,20 @@ function PreviewPane({
       )}
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {hasDeck ? <SlidePreview /> : <PreviewCanvas onStartDeck={onStartDeck} />}
+        {hasDeck ? (
+          isWebBuilderKind(kind) ? (
+            <WebPreview />
+          ) : (
+            <SlidePreview />
+          )
+        ) : (
+          <PreviewCanvas onStartDeck={onStartDeck} />
+        )}
       </div>
 
-      {hasDeck && <SlideFilmstrip onCapturingChange={setCapturingThumbs} />}
+      {hasDeck && !isWebBuilderKind(kind) && (
+        <SlideFilmstrip onCapturingChange={setCapturingThumbs} />
+      )}
     </div>
   );
 }
@@ -235,7 +261,7 @@ function SegmentedToggle({
     <div
       className="flex items-center shrink-0 rounded-none border border-border/80 bg-muted/50 p-0.5"
       role="group"
-      aria-label="Slide Creator view"
+      aria-label="Builder view"
     >
       {options.map((o) => (
         <button
@@ -292,7 +318,7 @@ function ModeToggle() {
     <div
       className="flex items-center shrink-0 rounded-none border border-border/80 bg-muted/50 p-0.5"
       role="group"
-      aria-label="Slide Creator mode"
+      aria-label="Builder mode"
     >
       {options.map((o) => (
         <button
@@ -351,7 +377,7 @@ function ChatRail({
   const [seedText, setSeedText] = useState<string | undefined>();
   const [seedKey, setSeedKey] = useState(0);
 
-  const title = activeProject?.title?.trim() || 'New deck';
+  const title = activeProject?.title?.trim() || 'New project';
 
   return (
     <AnimatePresence initial={false}>
@@ -388,14 +414,14 @@ function ChatRail({
                       onClick={() => onHistory(!historyOpen)}
                       aria-pressed={historyOpen}
                       className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                      title="Previous decks"
+                      title="Previous projects"
                     >
                       <History size={14} />
                     </button>
                     <button
                       type="button"
                       className="flex items-center gap-1 px-2 h-7 rounded-md text-2xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                      title="New deck"
+                      title="New project"
                       onClick={onNew}
                     >
                       <Plus size={14} />
@@ -422,6 +448,11 @@ function ChatRail({
                     setSeedKey((k) => k + 1);
                   }}
                 />
+                {!activeProject && (
+                  <div className="px-3 pb-2">
+                    <KindPicker />
+                  </div>
+                )}
                 <SlideChatComposer
                   onSend={onSend}
                   onStop={onStop}
@@ -463,7 +494,13 @@ export function SlideCreatorShell() {
   // Narrow collapses the default 'split' view to the deck preview.
   const narrowView = panelView === 'chat' ? 'chat' : 'preview';
 
-  const promptPlaceholder = slideComposerPlaceholder(activeProject, phase, sessionStatus);
+  const pendingKind = useSlideStore((s) => s.pendingKind);
+  const promptPlaceholder = slideComposerPlaceholder(
+    activeProject,
+    phase,
+    sessionStatus,
+    pendingKind,
+  );
 
   const handleSend = (
     text: string,
@@ -485,7 +522,7 @@ export function SlideCreatorShell() {
   const blocked = !agent.canUseFunctionCalling();
   const back = () => store.closeSlideCreator();
   const openInTab = async () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('tab.html') + '?open=slide-creator' });
+    chrome.tabs.create({ url: chrome.runtime.getURL('tab.html') + '?open=builder' });
     // Close the side panel so only the standalone tab stays open.
     try {
       const win = await chrome.windows.getCurrent();
@@ -538,8 +575,13 @@ export function SlideCreatorShell() {
               BraceKit
             </span>
             <span className="inline-flex items-center text-2xs font-mono uppercase tracking-[0.25em] text-muted-foreground/70 border-l border-border pl-3 truncate">
-              Slide Creator
+              Builder
             </span>
+            {activeProject && (
+              <span className="hidden sm:inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {normalizeBuilderKind(activeProject.kind)}
+              </span>
+            )}
             <PhaseChip busy={busy && !!activeProject} label={phaseLabel} />
           </div>
         </div>
@@ -562,8 +604,8 @@ export function SlideCreatorShell() {
                 onClick={() => setHistoryOpen((o) => !o)}
                 aria-pressed={historyOpen}
                 className={`flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${historyOpen ? 'bg-muted text-foreground' : ''}`}
-                title="Previous decks"
-                aria-label="Previous decks"
+                title="Previous projects"
+                aria-label="Previous projects"
               >
                 <FolderOpen size={15} />
               </button>
@@ -571,8 +613,8 @@ export function SlideCreatorShell() {
                 type="button"
                 onClick={handleNew}
                 className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                title="New deck"
-                aria-label="New deck"
+                title="New project"
+                aria-label="New project"
               >
                 <Plus size={15} />
               </button>
@@ -640,6 +682,11 @@ export function SlideCreatorShell() {
               )}
             </div>
 
+            {!activeProject && (
+              <div className="px-3 pt-2">
+                <KindPicker compact />
+              </div>
+            )}
             {/* Always-visible composer */}
             <SlideChatComposer
               onSend={handleSend}

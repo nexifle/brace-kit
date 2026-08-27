@@ -14,7 +14,8 @@
 // recover from failures. Atomicity is per-operation (FR-30): multiple apply_patch
 // calls in one turn are applied sequentially, each with its own result.
 
-import type { SlideFile } from '../types/index.ts';
+import type { BuilderKind, SlideFile } from '../types/index.ts';
+import { normalizeBuilderKind } from '../types/index.ts';
 import {
   MAX_SLIDE_FILE_BYTES,
   getSlideFile,
@@ -168,7 +169,14 @@ function coerceObject(value: unknown): Record<string, unknown> | null {
 // `/deck.json` is code-owned ({@link syncDeckJson}) and deliberately NOT in any
 // allowlist: the agent can list/read it but never patch it.
 const ALLOWED_PLAN_FILES: string[] = ['/brief.md', '/design.md'];
-const ALLOWED_BUILD_PREFIXES: string[] = ['/slides/', '/theme.css'];
+const ALLOWED_SLIDES_BUILD: string[] = ['/slides/', '/theme.css'];
+const ALLOWED_WEB_BUILD: string[] = [
+  '/pages/',
+  '/layouts/',
+  '/scripts/',
+  '/theme.css',
+  '/site.json',
+];
 const ALLOWED_EDIT_FILES: string[] = ['/brief.md', '/design.md'];
 
 /**
@@ -181,15 +189,20 @@ function pathAllowed(path: string, patterns: readonly string[]): boolean {
   );
 }
 
-/** Resolve the set of paths `phase` may patch. */
-export function allowlistForPhase(phase: SlidePatchPhase): readonly string[] {
+/** Resolve the set of paths `phase` may patch for a project kind. */
+export function allowlistForPhase(
+  phase: SlidePatchPhase,
+  kind: BuilderKind = 'slides',
+): readonly string[] {
+  const k = normalizeBuilderKind(kind);
+  const buildPrefixes = k === 'slides' ? ALLOWED_SLIDES_BUILD : ALLOWED_WEB_BUILD;
   switch (phase) {
     case 'plan':
       return ALLOWED_PLAN_FILES;
     case 'build':
-      return ALLOWED_BUILD_PREFIXES;
+      return buildPrefixes;
     case 'edit':
-      return [...ALLOWED_BUILD_PREFIXES, ...ALLOWED_EDIT_FILES];
+      return [...buildPrefixes, ...ALLOWED_EDIT_FILES];
     case 'main':
     default:
       return [];
@@ -208,13 +221,14 @@ export function applyPatchOperation(
   files: SlideFile[],
   phase: SlidePatchPhase,
   operation: SlidePatchOperation,
+  kind: BuilderKind = 'slides',
 ): ApplyPatchResult {
   const path = safeSlidePath(operation.path);
   if (!path) {
     return { status: 'failed', output: `Error: Invalid path: ${operation.path}` };
   }
 
-  if (!pathAllowed(path, allowlistForPhase(phase))) {
+  if (!pathAllowed(path, allowlistForPhase(phase, kind))) {
     return {
       status: 'failed',
       output: `Error: Path not allowed in ${phase} phase: ${path}`,
@@ -229,7 +243,7 @@ export function applyPatchOperation(
     case 'delete_file':
       return deleteFile(files, path);
     case 'rename_file':
-      return renameFile(files, path, safeSlidePath(operation.newPath), phase);
+      return renameFile(files, path, safeSlidePath(operation.newPath), phase, kind);
     default:
       return { status: 'failed', output: `Error: Unknown operation type` };
   }
@@ -333,6 +347,7 @@ function renameFile(
   path: string,
   newPath: string | null,
   phase: SlidePatchPhase,
+  kind: BuilderKind = 'slides',
 ): ApplyPatchResult {
   if (!newPath) {
     return {
@@ -340,7 +355,7 @@ function renameFile(
       output: `Error: Invalid newPath: ${path}`,
     };
   }
-  if (!pathAllowed(newPath, allowlistForPhase(phase))) {
+  if (!pathAllowed(newPath, allowlistForPhase(phase, kind))) {
     return {
       status: 'failed',
       output: `Error: Path not allowed in ${phase} phase for rename target: ${newPath}`,

@@ -1,7 +1,7 @@
 // ==================== Slide phase skill loader ====================
 //
-// Packed phase skills live under `dist/skills/slide-creator/{phase}/` (copied
-// by build.ts/dev.ts and exposed via `web_accessible_resources`). The isolated
+// Packed phase skills live under `dist/skills/builder/{slides|web}/{phase}/`
+// (copied by build.ts/dev.ts). The isolated
 // phase agent does NOT receive the full SKILL.md + references in its system
 // prompt — that would dump tens of KB on every turn. Instead:
 //
@@ -12,7 +12,16 @@
 //
 // In tests (no `chrome`) the caller injects a `fetcher` transport.
 
+import { normalizeBuilderKind } from '../types/slides.ts';
+
 export type SlidePhaseKey = 'plan' | 'build' | 'edit';
+
+/** Which skill tree to load. Website projects use `web`. */
+export type BuilderSkillPack = 'slides' | 'web';
+
+export function skillPackForKind(kind: unknown): BuilderSkillPack {
+  return normalizeBuilderKind(kind) === 'site' ? 'web' : 'slides';
+}
 
 /** Fetch a text resource by URL. Injectable so tests never need `chrome`. */
 export type SlideSkillFetcher = (url: string) => Promise<string>;
@@ -21,6 +30,8 @@ export interface SlideSkillLoadOpts {
   fetcher?: SlideSkillFetcher;
   /** Override the runtime URL root (tests use a fake/dist path). */
   baseUrl?: string;
+  /** Skill tree. Defaults to slides. */
+  pack?: BuilderSkillPack;
   /**
    * Normalized skill ids already loaded this session. When set and the requested
    * id is present, `loadSlideSkillResource` returns an already-loaded notice
@@ -38,11 +49,9 @@ export interface SlideSkillCatalogEntry {
   description: string;
 }
 
-const PHASE_ROOT: Record<SlidePhaseKey, string> = {
-  plan: 'skills/slide-creator/plan',
-  build: 'skills/slide-creator/build',
-  edit: 'skills/slide-creator/edit',
-};
+function phaseRoot(pack: BuilderSkillPack, phase: SlidePhaseKey): string {
+  return `skills/builder/${pack}/${phase}`;
+}
 
 /**
  * Terse chat-output directives appended to every phase's system prompt, so all
@@ -78,11 +87,12 @@ terse. All technical substance stays; only fluff goes.
 diff — is written in normal prose/code, never compressed.
 `;
 
-const PHASE_STUB: Record<SlidePhaseKey, string> = {
-  plan: `# Slide Creator — Plan phase
+const SLIDES_STUB: Record<SlidePhaseKey, string> = {
+  plan: `# Builder — Slides plan
 
-You are the **planning** sub-agent. Produce \`/brief.md\` (per-slide content)
-and \`/design.md\` (whole-deck visual system). Do not write slide HTML/CSS.
+You are the **planning** sub-agent for a **slide deck**. Produce \`/brief.md\`
+(per-slide content) and \`/design.md\` (whole-deck visual system). Do not write
+slide HTML/CSS. This is not a website.
 
 ## Always-on harness rules
 
@@ -92,11 +102,11 @@ and \`/design.md\` (whole-deck visual system). Do not write slide HTML/CSS.
 - Questions go through \`ask\` only. Finish with \`submit_plan\` (\`summary\` + \`canvas\`) once both files exist and every ask is answered.
 - Load \`SKILL.md\` with \`load_skill\` **once** before the first write (and each reference once when needed). Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
 `,
-  build: `# Slide Creator — Build phase
+  build: `# Builder — Slides build
 
-You are the **build** sub-agent. Implement the approved \`/brief.md\` +
-\`/design.md\` as \`/theme.css\` and \`/slides/{id}.html\` + \`/slides/{id}.css\`.
-Do not re-plan. You have no \`ask\` / \`submit_plan\`.
+You are the **build** sub-agent for a **slide deck**. Implement the approved
+\`/brief.md\` + \`/design.md\` as \`/theme.css\` and \`/slides/{id}.html\` +
+\`/slides/{id}.css\`. Do not re-plan. You have no \`ask\` / \`submit_plan\`.
 
 ## Always-on harness rules
 
@@ -106,11 +116,11 @@ Do not re-plan. You have no \`ask\` / \`submit_plan\`.
 - HTML + CSS only — no \`<script>\`. Google Fonts via \`@import\` at the top of \`/theme.css\`.
 - Load \`SKILL.md\` with \`load_skill\` **once** before the first write (and \`references/deck-file-contract.md\` once when needed). Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
 `,
-  edit: `# Slide Creator — Edit phase
+  edit: `# Builder — Slides edit
 
-You are the **edit** sub-agent. Apply the user's follow-up as a surgical
-change to an already-built deck. Do not rebuild from scratch. You have no
-\`ask\` / \`submit_plan\`.
+You are the **edit** sub-agent for a **slide deck**. Apply the user's follow-up
+as a surgical change to an already-built deck. Do not rebuild from scratch. You
+have no \`ask\` / \`submit_plan\`.
 
 ## Always-on harness rules
 
@@ -120,6 +130,52 @@ change to an already-built deck. Do not rebuild from scratch. You have no
 - Load \`SKILL.md\` with \`load_skill\` **once** before the first write. Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
 `,
 };
+
+const WEB_STUB: Record<SlidePhaseKey, string> = {
+  plan: `# Builder — Web plan
+
+You are the **planning** sub-agent for a **website**. Produce
+\`/brief.md\` (IA + copy) and \`/design.md\` (visual system). Do not write HTML.
+This is not a slide deck — no canvas presets, no \`/slides/**\`, no \`/deck.json\`.
+
+## Always-on harness rules
+
+- \`apply_patch\` is the ONLY write tool. Flat args: \`{ "type": "create_file"|"update_file"|"delete_file"|"rename_file", "path": "...", "diff": "..." }\`.
+- Writable paths: \`/brief.md\`, \`/design.md\` only.
+- Questions go through \`ask\` only. Do **not** ask for slide size. Finish with \`submit_plan\` once both files exist.
+- Load \`SKILL.md\` with \`load_skill\` **once** before the first write (and each reference once when needed). Do **not** reload a name already loaded this session while that result is still in context. After a context summary/compact, you may load again if you need the body.
+`,
+  build: `# Builder — Web build
+
+You are the **build** sub-agent for a **website**. Implement
+\`/brief.md\` + \`/design.md\` as \`/pages/**\`, \`/layouts/base.html\`,
+\`/theme.css\`, optional \`/scripts/*.js\`, and \`/site.json\`. Do not re-plan.
+No \`ask\` / \`submit_plan\`. This is not a slide deck.
+
+## Always-on harness rules
+
+- \`apply_patch\` is the ONLY write tool. Read-then-write.
+- Writable paths: \`/pages/**\`, \`/layouts/**\`, \`/scripts/**\`, \`/theme.css\`, \`/site.json\`. Never \`/slides/**\` or \`/deck.json\`.
+- Limited JS: inline, \`/scripts/*.js\`, classic CDN \`<script src="https://…">\`. No ES modules.
+- Load \`SKILL.md\` with \`load_skill\` **once** before the first write (and \`references/site-file-contract.md\` once when needed).
+`,
+  edit: `# Builder — Web edit
+
+You are the **edit** sub-agent for a **website**. Surgical
+follow-up. Do not rebuild. No \`ask\` / \`submit_plan\`. Not a slide deck.
+
+## Always-on harness rules
+
+- \`apply_patch\` is the ONLY write tool. Prefer small \`update_file\` diffs after \`read_file\`.
+- Writable paths: \`/pages/**\`, \`/layouts/**\`, \`/scripts/**\`, \`/theme.css\`, \`/site.json\`; plan docs only if the user asks. Never \`/slides/**\`.
+- Limited JS as in build. \`reorder_slides\` is not available.
+- Load \`SKILL.md\` with \`load_skill\` **once** before the first write.
+`,
+};
+
+function phaseStub(pack: BuilderSkillPack, phase: SlidePhaseKey): string {
+  return (pack === 'web' ? WEB_STUB : SLIDES_STUB)[phase];
+}
 
 /** Browser default source for a packed skill resource. */
 function chromeSkillUrl(root: string): string {
@@ -150,7 +206,8 @@ function fetcherOf(opts: SlideSkillLoadOpts): SlideSkillFetcher {
 }
 
 function urlOf(opts: SlideSkillLoadOpts, phase: SlidePhaseKey, rel: string): string {
-  const base = baseUrlOf(opts, PHASE_ROOT[phase]);
+  const pack = opts.pack ?? 'slides';
+  const base = baseUrlOf(opts, phaseRoot(pack, phase));
   return `${base}/${rel}`;
 }
 
@@ -337,6 +394,7 @@ export function collectLoadedSkillIds(
 export function buildSlidePhaseStub(
   phase: SlidePhaseKey,
   catalog: SlideSkillCatalogEntry[],
+  pack: BuilderSkillPack = 'slides',
 ): string {
   const lines = catalog.map((e) => `- \`${e.id}\` — ${e.description}`);
   const catalogBlock = `
@@ -350,7 +408,7 @@ After a context summary/compact, you may load again if you need the body.
 
 ${lines.join('\n')}
 `;
-  return PHASE_STUB[phase] + catalogBlock + SLIDE_CHAT_TERSE_BLOCK;
+  return phaseStub(pack, phase) + catalogBlock + SLIDE_CHAT_TERSE_BLOCK;
 }
 
 /**
@@ -362,5 +420,5 @@ export async function loadSlideSkill(
   opts: SlideSkillLoadOpts = {},
 ): Promise<string> {
   const catalog = await listSlideSkillCatalog(phase, opts);
-  return buildSlidePhaseStub(phase, catalog);
+  return buildSlidePhaseStub(phase, catalog, opts.pack ?? 'slides');
 }

@@ -2,7 +2,7 @@
 
 # BraceKit — AI Sidebar for Chrome
 
-An AI-powered Chrome sidebar that reads the current page content and lets you chat with multiple LLM providers. Features **Slide Creator** (agent-built HTML slide decks), MCP (Model Context Protocol) support, conversation branching, an AI floating toolbar, and streaming responses with markdown rendering.
+An AI-powered Chrome sidebar that reads the current page content and lets you chat with multiple LLM providers. Features **Builder** (agent-built HTML slides and websites), MCP (Model Context Protocol) support, conversation branching, an AI floating toolbar, and streaming responses with markdown rendering.
 
 > **Bring Your Own Key (BYOK)** — BraceKit is free to use. You supply your own API keys (or sign in with Grok OAuth). No subscriptions, no telemetry, no data sent to BraceKit servers.
 
@@ -15,7 +15,7 @@ An AI-powered Chrome sidebar that reads the current page content and lets you ch
 
 - **Page Context Reading** — Read entire page content or grab highlighted text
 - **Streaming AI Chat** — Real-time streaming responses with markdown rendering
-- **Slide Creator** — Plan, build, and edit HTML slide decks with a live preview, HITL questions, and PNG export
+- **Builder** — Plan, build, and edit HTML slide decks and websites with a live preview, HITL questions, PNG (slides) or HTML zip (web) export
 - **Multi-Provider Support** — OpenAI, Claude, Gemini, xAI (API key or Grok OAuth), Groq, DeepSeek, Ollama, and custom endpoints
 - **Per-Model Capabilities** — Vision, tools, and composer features are gated per model so unsupported models fail closed
 - **MCP Support** — Connect MCP servers for tool usage

@@ -1,5 +1,5 @@
 +++
-title = "Slide Creator"
+title = "Builder"
 description = "Create, review, edit, and export presentation decks with BraceKit."
 weight = 15
 template = "page.html"
@@ -8,9 +8,9 @@ template = "page.html"
 category = "Core Features"
 +++
 
-# Slide Creator
+# Builder
 
-Slide Creator turns a plain-language idea into a presentation deck. Describe what you want, answer a few questions, review the plan, and let BraceKit build the slides in an interactive workspace. You can then ask for changes and export the finished deck as a ZIP of PNG images.
+Builder turns a plain-language idea into slides or a website (one page or many). Choose the kind of project, describe what you want, answer a few questions, review the plan, and let BraceKit build it in an interactive workspace. You can then ask for changes. Slides export as a ZIP of PNG images; sites export as a static HTML zip.
 
 ## Before you begin
 
@@ -18,7 +18,7 @@ Slide Creator uses your selected AI model to plan and build the deck. Choose a m
 
 The generated slides are presentation-ready HTML and CSS. You do not need to write code yourself; describe the content and visual direction in your messages.
 
-## Open Slide Creator
+## Open Builder
 
 1. Open the BraceKit sidebar.
 2. Choose **Slide Creator** from the feature picker or workspace controls.

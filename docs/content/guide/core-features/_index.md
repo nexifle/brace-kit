@@ -18,7 +18,7 @@ BraceKit is more than a chat widget — it's a fully-featured AI workspace embed
 | Feature | What it does |
 |---------|--------------|
 | **[Chat Interface](/guide/core-features/chat/)** | Full markdown support, streaming, reasoning display |
-| **[Slide Creator](/guide/core-features/slide-creator/)** | Plan, build, edit, preview, and export presentation decks |
+| **[Builder](/guide/core-features/slide-creator/)** | Plan, build, edit, preview, and export slides and websites |
 | **[AI Floating Toolbar](/guide/core-features/ai-floating-toolbar/)** | Instant AI actions when you select text |
 | **[Page Context](/guide/core-features/page-context/)** | AI reads and understands webpages |
 | **[Text Selection](/guide/core-features/text-selection/)** | Ask questions about highlighted text |

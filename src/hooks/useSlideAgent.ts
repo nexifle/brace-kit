@@ -32,8 +32,8 @@ import {
   composeSlideHtml,
   projectDeckSlides,
   rebuildDeckProjection,
-  syncDeckJson,
 } from '../utils/slideVfs.ts';
+import { artifactFor } from '../services/artifacts/index.ts';
 import type { SandboxParentToSandbox, SandboxToParent } from '../utils/slideRendererProtocol.ts';
 import type { MCPTool } from '../types/index.ts';
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../types/index.ts';
@@ -178,6 +178,7 @@ export function useSlideAgent() {
         prompt,
         useSlideStore.getState().defaultMode,
         attachments,
+        useSlideStore.getState().pendingKind,
       ),
     runBuild: agent.runBuild,
     sendFollowUp: agent.sendFollowUp,
@@ -256,7 +257,7 @@ export async function generateSlideProjectTitle(projectId: string): Promise<void
     // round that landed while the title request was in flight.
     const current = useSlideStore.getState().activeProject;
     if (!current || current.id !== projectId || current.autoTitled) return;
-    const files = syncDeckJson(current.files, { title });
+    const files = artifactFor(current.kind).sync(current.files, { title });
     const next = { ...current, title, autoTitled: true, files };
     setLastActiveSlideProject(next.id);
     saveSlideProject(next).catch(() => {});

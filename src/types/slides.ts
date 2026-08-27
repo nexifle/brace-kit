@@ -1,6 +1,28 @@
-// ==================== Slide Creator Types ====================
-// Shared types for the agentic HTML/CSS slide-deck builder.
+// ==================== Bracekit Builder Types ====================
+// Shared types for the agentic HTML/CSS (and limited JS) builder.
 // These power the VFS, projection, store, and phase runners across modules.
+
+/** Artifact a Builder project produces. Legacy projects without this field are slides. */
+export type BuilderKind = 'slides' | 'site';
+
+export const BUILDER_KINDS: readonly BuilderKind[] = ['slides', 'site'];
+
+export function isBuilderKind(value: unknown): value is BuilderKind {
+  return value === 'slides' || value === 'site';
+}
+
+/**
+ * Missing/unknown kind (old IndexedDB rows) is slides.
+ * Former `landing` projects are websites (one or more pages).
+ */
+export function normalizeBuilderKind(value: unknown): BuilderKind {
+  if (value === 'site' || value === 'landing') return 'site';
+  return 'slides';
+}
+
+export function isWebBuilderKind(kind: BuilderKind): boolean {
+  return kind === 'site';
+}
 
 // Type-only import to avoid a runtime cycle (index.ts re-exports from here).
 import type { APIMessage } from './index.ts';
@@ -157,9 +179,31 @@ export interface SlidePendingAsk {
 
 // ==================== Project ====================
 
-/** A durable slide-deck workspace unit persisted in IndexedDB. */
+/** One page in a site manifest (`/site.json`). */
+export interface SitePage {
+  id: string;
+  /** Public URL path, e.g. `/` or `/about`. */
+  path: string;
+  htmlPath: string;
+  title?: string;
+}
+
+/** Decoded site structure projected from `/site.json` + `/pages`. */
+export interface SiteManifest {
+  kind: 'site';
+  title: string;
+  home: string;
+  pages: SitePage[];
+  layout?: string;
+  theme?: string;
+  scripts?: string[];
+}
+
+/** A durable Builder workspace unit persisted in IndexedDB. */
 export interface SlideProject {
   id: string;
+  /** Artifact type. Omitted on legacy rows — treat as `slides`. */
+  kind?: BuilderKind;
   /** Provisional user title (from the initial prompt) until plan completes. */
   title: string;
   createdAt: number;
