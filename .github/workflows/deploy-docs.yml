@@ -16,10 +16,11 @@ jobs:
           submodules: recursive
 
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
           workingDirectory: docs
+          wranglerVersion: "4"
           packageManager: npm
           command: deploy
