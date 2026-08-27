@@ -80,6 +80,54 @@ describe('groupMessagesForDisplay', () => {
     expect(items[2].message.content).toBe('Here are the trends.');
   });
 
+  it('puts hosted web_search backendItems in the tool-group chain', () => {
+    const messages: Message[] = [
+      msg({ role: 'user', content: 'latest docs?' }),
+      msg({
+        role: 'assistant',
+        content: 'Here they are.',
+        createdAt: 50,
+        backendItems: [
+          {
+            type: 'web_search_call',
+            id: 'ws_1',
+            status: 'completed',
+            action: { type: 'search', query: 'xai docs', sources: [{ url: 'https://docs.x.ai', title: 'Docs' }] },
+          },
+        ],
+      }),
+    ];
+    const items = groupMessagesForDisplay(messages, true);
+    expect(items.map((i) => i.type)).toEqual(['message', 'tool-group', 'message']);
+    if (items[1].type !== 'tool-group') throw new Error('expected tool-group');
+    expect(items[1].tools).toHaveLength(1);
+    expect(items[1].tools[0].name).toBe('web_search');
+    expect(items[1].tools[0].toolCallId).toBe('ws_1');
+    expect(items[1].tools[0].toolArguments?.query).toBe('xai docs');
+  });
+
+  it('does not duplicate hosted rows already in the transcript', () => {
+    const messages: Message[] = [
+      msg({
+        role: 'tool',
+        name: 'web_search',
+        content: 'xai docs',
+        toolCallId: 'ws_1',
+        toolExecution: 'hosted',
+        toolArguments: { query: 'xai docs' },
+      }),
+      msg({
+        role: 'assistant',
+        content: 'Here.',
+        backendItems: [{ type: 'web_search_call', id: 'ws_1', action: { query: 'xai docs' } }],
+      }),
+    ];
+    const items = groupMessagesForDisplay(messages, true);
+    expect(items.map((i) => i.type)).toEqual(['tool-group', 'message']);
+    if (items[0].type !== 'tool-group') throw new Error('expected tool-group');
+    expect(items[0].tools).toHaveLength(1);
+  });
+
   it('leaves endedAt unset while no following assistant exists', () => {
     const messages: Message[] = [
       msg({ role: 'tool', name: 'web_search', content: 'a', createdAt: 1 }),

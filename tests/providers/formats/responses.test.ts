@@ -7,6 +7,7 @@ import {
   formatResponses,
   parseResponsesStream,
   extractResponsesText,
+  extractHostedWebSearchItems,
 } from '../../../src/providers/formats/responses.ts';
 import type { Message, MCPTool } from '../../../src/types/index.ts';
 
@@ -303,6 +304,79 @@ describe('Grok Responses Format', () => {
         },
       ]);
     });
+
+    it('should emit hosted web_search and drop a colliding function tool', () => {
+      const tools: MCPTool[] = [
+        { name: 'web_search', description: 'Search', inputSchema: { type: 'object' } },
+        { name: 'web_fetch', description: 'Fetch', inputSchema: { type: 'object' } },
+      ];
+      const messages: Message[] = [{ role: 'user', content: 'Hi' }];
+      const config = formatResponses(provider, messages, tools, {});
+      const body = JSON.parse(config.options.body as string);
+
+      expect(body.tools).toEqual([
+        {
+          type: 'function',
+          name: 'web_fetch',
+          description: 'Fetch',
+          parameters: { type: 'object' },
+        },
+        { type: 'web_search' },
+      ]);
+    });
+
+    it('should replay stored web_search_call items before the assistant message', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'latest docs?' },
+        {
+          role: 'assistant',
+          content: 'Here they are.',
+          backendItems: [
+            {
+              type: 'web_search_call',
+              id: 'ws_1',
+              status: 'completed',
+              action: { type: 'search', query: 'xai docs' },
+            },
+          ],
+        },
+      ];
+      const config = formatResponses(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+      const input = body.input as Array<Record<string, unknown>>;
+
+      expect(input[0].role).toBe('user');
+      expect(input[1]).toEqual({
+        type: 'web_search_call',
+        id: 'ws_1',
+        status: 'completed',
+        action: { type: 'search', query: 'xai docs' },
+      });
+      expect(input[2].role).toBe('assistant');
+    });
+
+    it('does not send hosted tool rows as function_call_output', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'q' },
+        {
+          role: 'tool',
+          name: 'web_search',
+          toolCallId: 'ws_1',
+          content: 'hits',
+          toolExecution: 'hosted',
+        },
+        {
+          role: 'assistant',
+          content: 'ok',
+          backendItems: [{ type: 'web_search_call', id: 'ws_1' }],
+        },
+      ];
+      const config = formatResponses(provider, messages, [], {});
+      const body = JSON.parse(config.options.body as string);
+      const input = body.input as Array<Record<string, unknown>>;
+      expect(input.some((it) => it.type === 'function_call_output')).toBe(false);
+      expect(input.some((it) => it.type === 'web_search_call')).toBe(true);
+    });
   });
 
   describe('parseResponsesStream', () => {
@@ -417,6 +491,32 @@ describe('Grok Responses Format', () => {
       expect(results).toEqual([{ type: 'error', content: 'Server exploded' }]);
     });
 
+    it('should emit hosted_web_search and not a client tool_call for web_search_call', async () => {
+      const item = {
+        type: 'web_search_call',
+        id: 'ws_1',
+        status: 'completed',
+        action: { type: 'search', query: 'honda wiring' },
+      };
+      const chunks = [
+        `data: ${JSON.stringify({ type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress' } })}\n\n`,
+        `data: ${JSON.stringify({ type: 'response.output_item.done', output_index: 0, item })}\n\n`,
+        'data: {"type":"response.output_text.delta","delta":"Here is what I found."}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      const results = [];
+      for await (const chunk of parseResponsesStream(createMockResponse(chunks))) {
+        results.push(chunk);
+      }
+
+      expect(results.filter((c) => c.type === 'tool_call_start')).toEqual([]);
+      expect(results[0].type).toBe('hosted_web_search');
+      expect(results[0].content).toBe('honda wiring');
+      expect(results[0].id).toBe('ws_1');
+      expect(results.some((c) => c.type === 'text' && c.content === 'Here is what I found.')).toBe(true);
+    });
+
     it('[REGRESSION] should render text from the real chat-proxy event sequence', async () => {
       // Mirrors the production SSE trace for a plain "Hey" reply: reasoning
       // summary first, then the assistant message lifecycle.
@@ -473,6 +573,17 @@ describe('Grok Responses Format', () => {
     it('should return empty when no text present', () => {
       expect(extractResponsesText({ output: [{ type: 'function_call_output', output: '{}' }] })).toBe('');
       expect(extractResponsesText({})).toBe('');
+    });
+  });
+
+  describe('extractHostedWebSearchItems', () => {
+    it('should collect web_search_call output items', () => {
+      const ws = { type: 'web_search_call', id: 'ws_1', action: { query: 'q' } };
+      expect(
+        extractHostedWebSearchItems({
+          output: [{ type: 'message', content: [] }, ws, { type: 'function_call', name: 'x' }],
+        })
+      ).toEqual([ws]);
     });
   });
 });

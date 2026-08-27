@@ -96,6 +96,7 @@ export function apiMessagesToMessages(messages: APIMessage[]): Message[] {
     name: m.name,
     reasoningContent: m.reasoningContent,
     reasoningSignature: m.reasoningSignature,
+    backendItems: m.backendItems,
   }));
 }
 
@@ -112,6 +113,7 @@ export function messagesToApi(messages: Message[]): APIMessage[] {
       name: m.name,
       reasoningContent: m.reasoningContent,
       reasoningSignature: m.reasoningSignature,
+      backendItems: m.backendItems,
     }));
 }
 

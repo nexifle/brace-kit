@@ -62,6 +62,12 @@ export interface Message {
   toolCallId?: string;
   name?: string;
   toolArguments?: Record<string, unknown>;
+  /**
+   * How this tool row was produced. `hosted` is a server-side tool (Grok
+   * `web_search_call`): it belongs in the tool-call timeline like any other
+   * tool, but is not replayed as a client `function_call_output`.
+   */
+  toolExecution?: 'client' | 'hosted';
   generatedImages?: GeneratedImage[];
   isCompacted?: boolean;
   summary?: string;
@@ -86,6 +92,11 @@ export interface Message {
   toolsTokens?: number;
   /** Tool names sent with the request that produced this assistant reply. */
   toolNames?: string[];
+  /**
+   * Hosted Responses items (e.g. `web_search_call`) that ran server-side on
+   * this assistant turn. Replayed as sibling input items on later turns.
+   */
+  backendItems?: Record<string, unknown>[];
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -98,6 +109,7 @@ export interface APIMessage {
   name?: string;
   reasoningContent?: string;
   reasoningSignature?: string;
+  backendItems?: Record<string, unknown>[];
 }
 
 export interface GroundingChunk {
@@ -438,6 +450,7 @@ export interface StreamingBufferEntry {
   reasoningContent?: string;
   reasoningSignature?: string;
   groundingMetadata?: unknown;
+  backendItems?: Record<string, unknown>[];
   usage?: import('../providers/types.ts').TokenUsage;
   errorMessage?: string;
   startedAt: number;
@@ -457,6 +470,8 @@ export interface AppState {
   currentRequestId: string | null;
   streamingContent: string;
   streamingReasoningContent: string;
+  /** In-flight hosted web_search query (Grok backend search). */
+  streamingHostedSearch: string;
   streamingConversations: Record<string, ConversationStreamingState>;
   /** Question currently awaiting an answer in the active chat conversation. */
   pendingAsk: PendingAsk | null;
@@ -562,6 +577,7 @@ export interface AppState {
   setCurrentRequestId: (requestId: string | null) => void;
   setStreamingContent: (content: string) => void;
   setStreamingReasoningContent: (content: string) => void;
+  setStreamingHostedSearch: (query: string) => void;
   setConversationStreaming: (convId: string, state: ConversationStreamingState | null) => void;
   setPendingAsk: (pendingAsk: PendingAsk | null) => void;
   suspendConversationOnAsk: (pendingAsk: PendingAsk) => Promise<void>;

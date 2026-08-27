@@ -15,6 +15,7 @@ import type { Message, MCPTool, ProviderConfig, ToolCall, StreamingBufferEntry }
 import { isOllamaLocalhost } from '../../utils/providerUtils.ts';
 import { getGrokAccessToken } from '../../utils/grokOAuth.ts';
 import { getFriendlyErrorMessage, isThinkingParamError } from '../utils/errors';
+import { extractHostedWebSearchItems } from '../../providers';
 import {
   createStreamingService,
   type StreamingService,
@@ -47,6 +48,7 @@ interface StreamDoneMessage {
   toolCalls?: ToolCall[];
   groundingMetadata?: unknown;
   images?: Array<{ mimeType: string; data: string }>;
+  backendItems?: Record<string, unknown>[];
   usage?: TokenUsage;
   requestId?: string;
   conversationId?: string;
@@ -56,6 +58,8 @@ interface StreamChunkMessage {
   type: 'CHAT_STREAM_CHUNK';
   content: string;
   chunkType?: string;
+  id?: string;
+  arguments?: string;
   requestId?: string;
   conversationId?: string;
 }
@@ -74,6 +78,7 @@ export interface ChatServiceResponse {
   reasoning_content?: string;
   reasoning_signature?: string;
   toolCalls?: ToolCall[];
+  backendItems?: Record<string, unknown>[];
   usage?: TokenUsage;
 }
 
@@ -316,11 +321,13 @@ export function createChatService(): ChatService {
             reasoning = '';
           }
 
+          const backendItems = extractHostedWebSearchItems(data);
           sendResponse({
             content,
             reasoning_content: reasoning || undefined,
             reasoning_signature: result.reasoning_signature,
             toolCalls: toolCalls?.length ? toolCalls : undefined,
+            backendItems: backendItems.length > 0 ? backendItems : undefined,
             usage: parseUsageFromBody(data),
           });
           return;
@@ -367,6 +374,7 @@ export function createChatService(): ChatService {
       const reasoningChunks: string[] = [];
       const reasoningSignatureChunks: string[] = [];
       const toolCalls: ToolCallFragment[] = [];
+      const backendItemsById = new Map<string, Record<string, unknown>>();
       const images: Array<{ mimeType: string; data: string }> = [];
       let currentToolCall: ToolCallFragment | undefined = undefined;
       let groundingMetadata: unknown = null;
@@ -463,6 +471,29 @@ export function createChatService(): ChatService {
             }
             if (!dest) dest = currentToolCall;
             if (dest) dest.arguments += chunk.content || '';
+          } else if (chunk.type === 'hosted_web_search') {
+            if (chunk.arguments) {
+              try {
+                const item = JSON.parse(chunk.arguments) as Record<string, unknown>;
+                const key =
+                  (typeof item.id === 'string' && item.id) ||
+                  chunk.id ||
+                  `ws_${backendItemsById.size}`;
+                backendItemsById.set(key, item);
+              } catch {
+                // ignore malformed hosted-search payload
+              }
+            }
+            streamingStarted = true;
+            chrome.runtime.sendMessage({
+              type: 'CHAT_STREAM_CHUNK',
+              chunkType: 'hosted_web_search',
+              content: chunk.content || '',
+              id: chunk.id,
+              arguments: chunk.arguments,
+              requestId: message.requestId,
+              conversationId: message.conversationId,
+            } as StreamChunkMessage);
           } else if (chunk.type === 'grounding_metadata') {
             groundingMetadata = chunk.groundingMetadata;
           } else if (chunk.type === 'usage') {
@@ -502,6 +533,7 @@ export function createChatService(): ChatService {
 
       // Merge tool calls
       const mergedToolCalls = streamingService.mergeToolCalls(toolCalls);
+      const backendItems = Array.from(backendItemsById.values());
 
       // Mark buffer entry as completed dengan semua final data
       if (bufferEntry && message.conversationId) {
@@ -512,6 +544,7 @@ export function createChatService(): ChatService {
         bufferEntry.reasoningContent = reasoningChunks.length > 0 ? reasoningChunks.join('') : undefined;
         bufferEntry.reasoningSignature = reasoningSignatureChunks.length > 0 ? reasoningSignatureChunks.join('') : undefined;
         bufferEntry.groundingMetadata = groundingMetadata;
+        bufferEntry.backendItems = backendItems.length > 0 ? backendItems : undefined;
         bufferEntry.usage = tokenUsage;
         bufferEntry.completedAt = Date.now();
         scheduleBufferCleanup(message.conversationId);
@@ -531,6 +564,7 @@ export function createChatService(): ChatService {
             : undefined,
         groundingMetadata: groundingMetadata,
         images: images.length > 0 ? images : undefined,
+        backendItems: backendItems.length > 0 ? backendItems : undefined,
         usage: tokenUsage,
         requestId: message.requestId,
         conversationId: message.conversationId,

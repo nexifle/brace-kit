@@ -100,7 +100,12 @@ export { formatXAIImageRequest, parseXAIImageResponse } from './formats/xai.ts';
 export { formatOllama, parseOllamaStream, fetchOllamaModels, fetchOllamaModelSpec } from './formats/ollama.ts';
 
 // OpenAI Responses API format (Grok OAuth)
-export { formatResponses, parseResponsesStream, extractResponsesText } from './formats/responses.ts';
+export {
+  formatResponses,
+  parseResponsesStream,
+  extractResponsesText,
+  extractHostedWebSearchItems,
+} from './formats/responses.ts';
 
 // ==================== Internal Imports for Unified Interfaces ====================
 
