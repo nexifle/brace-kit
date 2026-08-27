@@ -201,14 +201,64 @@ describe('applyDiff failure on bad context', () => {
     if (!res.ok) expect(res.error).toContain('Failed to find');
   });
 
-  test('fails when a referenced context heading is not present', () => {
+  test('ignores a bogus @@ heading when oldLines still match', () => {
     const res = applyDiff(css, '@@ .does-not-exist {\n-  font-size: 48px;\n+  color: red;\n');
+    expect(res).toEqual({ ok: true, text: '.title {\n  color: red;\n}\n' });
+  });
+
+  test('fails context-only insert when the heading is missing', () => {
+    const res = applyDiff(css, '@@ .does-not-exist {\n+  color: red;\n');
     expect(res.ok).toBe(false);
   });
 
   test('rejects an unknown diff line', () => {
     const res = applyDiff(css, '@@\nBOGUS LINE\n');
     expect(res.ok).toBe(false);
+  });
+
+  test('error names the expected line and a nearby file line', () => {
+    const res = applyDiff(css, '@@\n .ic--arm:before {\n-  font-size: 48px;\n+  font-size: 12px;\n');
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain('Failed to find expected lines');
+      expect(res.error).toContain('expected:');
+      expect(res.error).toContain('file:');
+      expect(res.error).toContain('.title {');
+    }
+  });
+});
+
+describe('applyDiff update robustness (model-shaped hunks)', () => {
+  const css = '.title {\n  font-size: 48px;\n  color: #333;\n}\n.ic--arm:before {\n  width: 8px;\n}\n';
+
+  test('@@ heading that repeats the first old line still matches', () => {
+    const res = applyDiff(
+      css,
+      '@@ .title {\n .title {\n-  font-size: 48px;\n+  font-size: 64px;\n',
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain('font-size: 64px;');
+  });
+
+  test('git unified hunk header is ignored', () => {
+    const diff =
+      '--- a/slides/03.css\n+++ b/slides/03.css\n@@ -1,3 +1,3 @@\n .title {\n-  font-size: 48px;\n+  font-size: 20px;\n';
+    const res = applyDiff(css, diff);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain('font-size: 20px;');
+  });
+
+  test('Codex envelope around a bare hunk is ignored', () => {
+    const diff =
+      '*** Begin Patch\n*** Update File: /slides/03.css\n@@\n-  color: #333;\n+  color: #111;\n*** End Patch';
+    const res = applyDiff(css, diff);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain('color: #111;');
+  });
+
+  test('plus-only update_file rewrites the whole file', () => {
+    const res = applyDiff(css, '@@\n+.next {\n+  color: red;\n+}\n');
+    expect(res).toEqual({ ok: true, text: '.next {\n  color: red;\n}\n' });
   });
 });
 

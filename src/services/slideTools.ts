@@ -99,7 +99,10 @@ const APPLY_PATCH_TOOL: MCPTool = {
     'Pass flat arguments — NOT nested under "operation": ' +
     '{ "type": "create_file", "path": "/brief.md", "diff": "+# Title\\n+body\\n" }. ' +
     'create_file: full new file; every content line in diff starts with "+". ' +
-    'update_file: V4A hunks with "@@" and " "/"+"/"-" lines; read_file first. ' +
+    'update_file: V4A hunks; prefer a bare "@@" (do NOT repeat the first context line in the @@ heading). ' +
+    'Context lines: one leading space then the file line verbatim. Additions "+", deletions "-". ' +
+    'read_file first; keep hunks to one CSS/HTML rule (3–8 context lines). ' +
+    'To replace an entire existing file, send only "+" lines (optional bare @@). ' +
     'delete_file: path only (omit diff). ' +
     'rename_file: path + newPath (omit diff); renames one file in place — prefer the reorder_slides tool for reordering slides. ' +
     'Prefer small focused patches.',
@@ -127,8 +130,8 @@ const APPLY_PATCH_TOOL: MCPTool = {
         type: 'string',
         description:
           'V4A diff body. create_file: one "+" line per file line, e.g. "+line one\\n+line two\\n". ' +
-          'update_file: "@@" sections with context (" "), additions ("+"), deletions ("-"). ' +
-          'Omit for delete_file / rename_file.',
+          'update_file: "@@" then " " context / "+" add / "-" delete. Use a bare @@; copy context bytes from read_file. ' +
+          'Only "+" lines = replace the whole file. Omit for delete_file / rename_file.',
       },
     },
     required: ['type', 'path'],

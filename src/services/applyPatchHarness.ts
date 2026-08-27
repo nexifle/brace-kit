@@ -291,7 +291,7 @@ function updateFile(
     };
   }
 
-  const result = applyDiff(current.content, diff);
+  const result = applyDiff(current.content, diff, 'default', path);
   if (!result.ok) {
     return {
       status: 'failed',

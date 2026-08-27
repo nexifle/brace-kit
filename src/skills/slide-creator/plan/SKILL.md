@@ -130,7 +130,10 @@ Apply a well-formed story arc (see `references/deck-structure.md`):
   phase's job. Any attempt to create or patch a file under `/slides/` is denied
   by the harness and returns `status: failed`.
 - Prefer `read_file` before `update_file` when the current contents matter.
-- Use **small, focused diffs**, one operation per `apply_patch` call.
+- Use **small, focused diffs**, one operation per `apply_patch` call. For
+  `update_file`, use a bare `@@` and copy context lines verbatim (leading
+  space + file bytes). Do not put the same heading on `@@` and the first
+  context line. Only `+` lines replaces the whole file.
 - Value dumps belong in the files, NOT in chat prose. Keep narrative turns short;
   the content goes into `/brief.md` and `/design.md`.
 - **`apply_patch` args are FLAT** (do not nest under `operation`):
