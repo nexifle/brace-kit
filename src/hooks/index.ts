@@ -27,6 +27,7 @@ export {
   createSummaryMessage,
   getMessagesToCompact,
   shouldCompact,
+  reserveTokensForConfig,
 } from './compact/index.ts';
 
 // Other hooks

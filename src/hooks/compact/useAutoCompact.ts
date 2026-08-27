@@ -8,20 +8,24 @@
 import { useCallback } from 'react';
 import { useStore } from '../../store/index.ts';
 import { useMessageBuilder } from '../chat/useMessageBuilder.ts';
+import { useTools } from '../tools/useTools.ts';
+import { prepareChatRequest } from '../../utils/chatOptions.ts';
 import {
   getCompactPrompt,
   extractSummaryFromResponse,
-  getContextWindow,
   createCondenseId,
   tagMessagesWithCondenseParent,
   createSummaryMessage,
   getMessagesToCompact,
   shouldCompact,
+  reserveTokensForConfig,
 } from './compactUtils.ts';
+import { DEFAULT_KEEP_RECENT_TOKENS } from '../../utils/estimateTokens.ts';
 
 export function useAutoCompact() {
   // Compose message builder for dependencies
-  const { buildAPIMessages, estimateTokenCount } = useMessageBuilder();
+  const { buildAPIMessages } = useMessageBuilder();
+  const { getAllTools, supportsFunctionCalling, isXAIImageModel } = useTools();
 
   /**
    * Compact the conversation by creating a summary and tagging old messages
@@ -61,7 +65,8 @@ export function useAutoCompact() {
         // Tag existing messages with condenseParent (non-destructive)
         const updatedMessages = tagMessagesWithCondenseParent(
           currentState.messages,
-          condenseId
+          condenseId,
+          currentState.compactConfig.keepRecentTokens ?? DEFAULT_KEEP_RECENT_TOKENS,
         );
 
         // Create summary message for fresh start model
@@ -69,6 +74,7 @@ export function useAutoCompact() {
 
         // Update state with compacted messages + summary
         currentState.setMessages([...updatedMessages, summaryMessage]);
+        currentState.setTokenUsage(null);
         await currentState.saveActiveConversation();
       } else if (response?.error) {
         console.error('[useAutoCompact] Compaction failed:', response.error);
@@ -92,28 +98,28 @@ export function useAutoCompact() {
       return false;
     }
 
-    // Calculate context window for current provider
-    const contextWindow = getContextWindow(
-      currentState.providerConfig,
-      currentState.customProviders,
-      currentState.compactConfig,
-      currentState.fetchedModels[currentState.providerConfig.providerId],
-    );
+    const tools = await getAllTools();
+    const model = currentState.providerConfig.model || '';
+    const prepared = prepareChatRequest({
+      getState: () => useStore.getState(),
+      rawTools: tools,
+      supportsFunctionCalling: supportsFunctionCalling(model),
+      isXAIImageModel: isXAIImageModel(model),
+    });
+    const contextWindow = prepared.contextWindow;
+    const currentTokens = prepared.estimatedContextTokens;
 
-    // Estimate current token count
-    const currentTokens = estimateTokenCount(currentState.messages);
-
-    // Check if threshold exceeded
-    if (shouldCompact(currentTokens, contextWindow, currentState.compactConfig.threshold)) {
+    const reserve = reserveTokensForConfig(currentState.compactConfig, contextWindow);
+    if (shouldCompact(currentTokens, contextWindow, reserve)) {
       console.log('[useAutoCompact] Threshold reached, auto compacting...', {
         currentTokens,
-        threshold: contextWindow * currentState.compactConfig.threshold,
+        threshold: contextWindow - reserve,
       });
       await compactConversation();
       return true;
     }
     return false;
-  }, [compactConversation, estimateTokenCount]);
+  }, [compactConversation, getAllTools, supportsFunctionCalling, isXAIImageModel]);
 
   return {
     compactConversation,

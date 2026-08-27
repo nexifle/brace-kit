@@ -76,6 +76,12 @@ export interface Message {
   // Indicates generation was interrupted before completion
   truncated?: boolean;
   truncatedReason?: 'user_stopped' | 'network_error';
+  /** Provider usage for this assistant turn, when reported. */
+  usage?: import('../providers/types.ts').TokenUsage;
+  /** Heuristic tool-definition tokens at the time this assistant reply was produced. */
+  toolsTokens?: number;
+  /** Tool names sent with the request that produced this assistant reply. */
+  toolNames?: string[];
 }
 
 export type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
@@ -271,9 +277,14 @@ export interface ProviderConfig {
 
 export interface CompactConfig {
   enabled: boolean; // Auto-compact toggle (default true)
+  /** @deprecated Prefer reserveTokens. Kept for stored configs. */
   threshold: number; // 0.0 to 1.0 (default 0.9)
   defaultContextWindow: number; // default 128000
   prompt: string; // Custom compact prompt (empty = use default)
+  /** Compact when estimated tokens > contextWindow - reserveTokens. Default 16384. */
+  reserveTokens?: number;
+  /** Leave a tail of roughly this many tokens uncompacted. Default 20000. */
+  keepRecentTokens?: number;
 }
 
 export interface ProviderKeys {

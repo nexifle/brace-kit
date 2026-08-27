@@ -4,6 +4,32 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { AskPrompt } from '../../../src/components/slides/AskPrompt.tsx';
 import type { PendingAsk } from '../../../src/types/ask.ts';
 
+const mediaQueryList = {
+  matches: false,
+  media: '',
+  onchange: null,
+  addListener() {},
+  removeListener() {},
+  addEventListener() {},
+  removeEventListener() {},
+  dispatchEvent() {
+    return false;
+  },
+};
+
+const g = globalThis as typeof globalThis & Window & { window: Window };
+if (typeof g.matchMedia !== 'function') {
+  g.matchMedia = () => mediaQueryList as unknown as MediaQueryList;
+}
+if (typeof g.addEventListener !== 'function') {
+  g.addEventListener = () => {};
+  g.removeEventListener = () => {};
+}
+if (!g.window) g.window = g;
+if (typeof g.window.matchMedia !== 'function') {
+  g.window.matchMedia = g.matchMedia;
+}
+
 function ask(questions: PendingAsk['payload']['questions']): PendingAsk {
   return {
     id: 'ask_1',

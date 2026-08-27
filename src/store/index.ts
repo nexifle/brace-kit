@@ -41,6 +41,7 @@ import { migrateCustomProvider } from '../providers/modelSpecs.ts';
 import { DEFAULT_PREFERENCES, migratePreferences } from '../utils/migratePreferences.ts';
 import { findPendingAsk, normalizeAskPayload } from '../utils/ask.ts';
 import { INTERNAL_SYSTEM_PROMPT } from '../utils/systemPrompt.ts';
+import { sanitizeCompactConfigPatch } from '../hooks/compact/compactUtils.ts';
 
 // Type for chrome.storage.local.get() return value
 interface StorageData {
@@ -162,6 +163,8 @@ export const useStore = create<AppState>((set, get) => ({
     threshold: 0.9,
     defaultContextWindow: 128000,
     prompt: '',
+    reserveTokens: 16384,
+    keepRecentTokens: 20000,
   },
   isCompacting: false,
   isRenaming: false,
@@ -711,7 +714,10 @@ export const useStore = create<AppState>((set, get) => ({
   // Auto Compact Actions
   setCompactConfig: (config) =>
     set((state) => ({
-      compactConfig: { ...state.compactConfig, ...config },
+      compactConfig: {
+        ...state.compactConfig,
+        ...sanitizeCompactConfigPatch(config),
+      },
     })),
 
   setIsCompacting: (isCompacting) => set({ isCompacting }),
@@ -989,7 +995,18 @@ export const useStore = create<AppState>((set, get) => ({
         updates.security = data.security;
       }
       if (data.compactConfig) {
-        updates.compactConfig = data.compactConfig;
+        const compactDefaults = {
+          enabled: true,
+          threshold: 0.9,
+          defaultContextWindow: 128000,
+          prompt: '',
+          reserveTokens: 16384,
+          keepRecentTokens: 20000,
+        };
+        updates.compactConfig = {
+          ...compactDefaults,
+          ...sanitizeCompactConfigPatch(data.compactConfig),
+        };
       }
       if (data.theme) {
         updates.theme = data.theme;

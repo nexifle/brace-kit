@@ -1,3 +1,6 @@
+import { buildMemoryBlockFromSelection } from './memorySampler.ts';
+import type { Conversation, Memory } from '../types/index.ts';
+
 /** Core instructions that remain active in every Main Chat request. */
 export const INTERNAL_SYSTEM_PROMPT = `You are BraceKit, a helpful AI assistant. Help users understand page content or selected text. Be concise and factual. Use the built-in \`ask\` tool when clarification is needed; do not guess when information is missing.
 
@@ -18,4 +21,27 @@ export function buildSystemPrompt(customPrompt: string, ...contextBlocks: string
   return [INTERNAL_SYSTEM_PROMPT, customPrompt.trim(), ...contextBlocks.map((block) => block.trim())]
     .filter(Boolean)
     .join('\n\n');
+}
+
+/** System text actually prefixed onto Main Chat requests (internal + custom + memory + metadata). */
+export function buildConversationSystemPrompt(state: {
+  providerConfig: { systemPrompt?: string };
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  memoryEnabled: boolean;
+  memories: Memory[];
+}): string {
+  const activeConv = state.conversations.find((c) => c.id === state.activeConversationId);
+  const customPrompt = activeConv?.systemPrompt || state.providerConfig.systemPrompt || '';
+  let memoryBlock = '';
+  if (state.memoryEnabled && state.memories.length > 0) {
+    const ids =
+      activeConv?.selectedMemoryIds && activeConv.selectedMemoryIds.length > 0
+        ? activeConv.selectedMemoryIds
+        : state.memories.map((m) => m.id);
+    memoryBlock = buildMemoryBlockFromSelection(state.memories, ids);
+  }
+  const timestamp = activeConv?.metadataTimestamp || new Date().toISOString();
+  const metadataBlock = `\n\n<metadata>{"currentTime": "${timestamp}"}</metadata>`;
+  return buildSystemPrompt(customPrompt, memoryBlock, metadataBlock);
 }

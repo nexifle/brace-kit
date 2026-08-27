@@ -16,6 +16,8 @@ export function CompactSettings() {
     enabled: store.compactConfig.enabled ?? true,
     threshold: store.compactConfig.threshold ?? 0.9,
     prompt: store.compactConfig.prompt ?? '',
+    reserveTokens: store.compactConfig.reserveTokens ?? 16384,
+    keepRecentTokens: store.compactConfig.keepRecentTokens ?? 20000,
   };
 
   // Use custom prompt if set, otherwise show default
@@ -55,32 +57,64 @@ export function CompactSettings() {
           </label>
         </div>
 
-        {/* Threshold Configuration - Only show when enabled */}
         {compactConfig.enabled && (
-          <div className="flex flex-col gap-1.5 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
-                Compact Threshold
-              </label>
-              <span className="text-sm text-muted-foreground tabular-nums">
-                {Math.round(compactConfig.threshold * 100)}%
-              </span>
+          <div className="flex flex-col gap-3 px-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="reserve-tokens" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
+                  Reserve tokens
+                </label>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {compactConfig.reserveTokens.toLocaleString()}
+                </span>
+              </div>
+              <input
+                id="reserve-tokens"
+                type="number"
+                min={1024}
+                max={128000}
+                step={1024}
+                value={compactConfig.reserveTokens}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  if (!Number.isFinite(n) || n <= 0) return;
+                  store.setCompactConfig({ reserveTokens: n });
+                  store.saveToStorage();
+                }}
+                className="w-full h-8 px-2 rounded-md bg-muted/40 border border-border text-sm"
+              />
+              <p className="text-sm text-muted-foreground/70">
+                Compact when estimated context exceeds the model window minus this reserve
+              </p>
             </div>
-            <input
-              type="range"
-              min="50"
-              max="95"
-              step="5"
-              value={compactConfig.threshold * 100}
-              onChange={(e) => {
-                store.setCompactConfig({ threshold: parseInt(e.target.value) / 100 });
-                store.saveToStorage();
-              }}
-              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-            />
-            <p className="text-sm text-muted-foreground/70">
-              Compact when context reaches {Math.round(compactConfig.threshold * 100)}% of window
-            </p>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="keep-recent-tokens" className="text-sm font-bold uppercase tracking-wider text-muted-foreground/80">
+                  Keep recent tokens
+                </label>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {compactConfig.keepRecentTokens.toLocaleString()}
+                </span>
+              </div>
+              <input
+                id="keep-recent-tokens"
+                type="number"
+                min={1024}
+                max={200000}
+                step={1024}
+                value={compactConfig.keepRecentTokens}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  if (!Number.isFinite(n) || n <= 0) return;
+                  store.setCompactConfig({ keepRecentTokens: n });
+                  store.saveToStorage();
+                }}
+                className="w-full h-8 px-2 rounded-md bg-muted/40 border border-border text-sm"
+              />
+              <p className="text-sm text-muted-foreground/70">
+                Leave a tail of roughly this many tokens unsummarized
+              </p>
+            </div>
           </div>
         )}
 

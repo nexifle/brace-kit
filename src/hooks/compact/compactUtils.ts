@@ -8,6 +8,11 @@
 import type { Message, CompactConfig, ProviderConfig, CustomProvider, FetchedModelsCache } from '../../types/index.ts';
 import { getProvider as getProviderUtil } from '../../utils/providerUtils.ts';
 import { getEffectiveContextWindow } from '../../providers/modelSpecs.ts';
+import {
+  DEFAULT_KEEP_RECENT_TOKENS,
+  estimateMessageTokens,
+  resolveReserveTokens,
+} from '../../utils/estimateTokens.ts';
 
 /**
  * Default summary prompt template for conversation compaction
@@ -146,10 +151,31 @@ export function createCondenseId(): string {
  */
 export function tagMessagesWithCondenseParent(
   messages: Message[],
-  condenseId: string
+  condenseId: string,
+  keepRecentTokens: number = DEFAULT_KEEP_RECENT_TOKENS,
 ): Message[] {
-  return messages.map(m => {
-    if (!m.condenseParent && !m.summary) {
+  const compactableIndexes: number[] = [];
+  messages.forEach((m, i) => {
+    if (!m.condenseParent && !m.summary) compactableIndexes.push(i);
+  });
+
+  const keep = new Set<number>();
+  if (keepRecentTokens > 0) {
+    let kept = 0;
+    for (let k = compactableIndexes.length - 1; k >= 0; k--) {
+      const idx = compactableIndexes[k];
+      const tokens = estimateMessageTokens(messages[idx]);
+      if (keep.size > 0 && kept + tokens > keepRecentTokens) break;
+      keep.add(idx);
+      kept += tokens;
+    }
+    if (keep.size === compactableIndexes.length && compactableIndexes.length > 1) {
+      keep.delete(compactableIndexes[0]);
+    }
+  }
+
+  return messages.map((m, i) => {
+    if (!m.condenseParent && !m.summary && !keep.has(i)) {
       return { ...m, condenseParent: condenseId, isCompacted: true };
     }
     return m;
@@ -204,7 +230,49 @@ export function cloneMessagesForBranch(messages: Message[], messageIndex: number
 export function shouldCompact(
   currentTokens: number,
   contextWindow: number,
-  threshold: number
+  reserveTokens: number,
 ): boolean {
-  return currentTokens > contextWindow * threshold;
+  return currentTokens > contextWindow - reserveTokens;
+}
+
+export const RESERVE_TOKENS_MIN = 1024;
+export const RESERVE_TOKENS_MAX = 128000;
+export const KEEP_RECENT_TOKENS_MIN = 1024;
+export const KEEP_RECENT_TOKENS_MAX = 200000;
+
+export function clampCompactTokenSetting(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value) || value <= 0) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function sanitizeCompactConfigPatch(
+  config: Partial<CompactConfig>,
+): Partial<CompactConfig> {
+  const next = { ...config };
+  if (next.reserveTokens != null) {
+    next.reserveTokens = clampCompactTokenSetting(
+      next.reserveTokens,
+      RESERVE_TOKENS_MIN,
+      RESERVE_TOKENS_MAX,
+    );
+  }
+  if (next.keepRecentTokens != null) {
+    next.keepRecentTokens = clampCompactTokenSetting(
+      next.keepRecentTokens,
+      KEEP_RECENT_TOKENS_MIN,
+      KEEP_RECENT_TOKENS_MAX,
+    );
+  }
+  return next;
+}
+
+export function reserveTokensForConfig(
+  compactConfig: CompactConfig,
+  contextWindow: number,
+): number {
+  return resolveReserveTokens(
+    compactConfig.reserveTokens,
+    compactConfig.threshold,
+    contextWindow,
+  );
 }

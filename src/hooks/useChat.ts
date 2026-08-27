@@ -18,6 +18,7 @@ import { useTools } from './tools/useTools.ts';
 import { useAutoCompact, cloneMessagesForBranch } from './compact/index.ts';
 import { executeChatToolCall, finishRequestAsSuspended, updateToolMessage, type ChatToolExecutionResult } from '../services/chatToolExecutor.ts';
 import { isChatSendBlocked } from '../utils/ask.ts';
+import { prepareChatRequest } from '../utils/chatOptions.ts';
 
 /**
  * Generate a title for the given conversation (or the active one if no ID provided).
@@ -101,7 +102,7 @@ export function useChat() {
 
   // Use extracted hooks
   const { buildAPIMessages, estimateTokenCount } = useMessageBuilder();
-  const { getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions } = useTools();
+  const { getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel } = useTools();
   const { compactConversation, checkAndAutoCompact } = useAutoCompact();
 
   const getProvider = useCallback(
@@ -142,12 +143,16 @@ export function useChat() {
 
     // Get tools using unified hook
     const tools = await getAllTools();
-
-    // Get chat options using unified hook
-    const chatOptions = getChatOptions({
-      aspectRatio: (isXAIImg || isGeminiImg) ? opts?.aspectRatio : undefined,
-      enableReasoning: opts?.enableReasoning,
-      reasoningLevel: opts?.reasoningLevel,
+    const prepared = prepareChatRequest({
+      getState: () => useStore.getState(),
+      rawTools: tools,
+      supportsFunctionCalling: canUseFunctionCalling,
+      isXAIImageModel: isXAIImg,
+      overrides: {
+        aspectRatio: (isXAIImg || isGeminiImg) ? opts?.aspectRatio : undefined,
+        enableReasoning: opts?.enableReasoning,
+        reasoningLevel: opts?.reasoningLevel,
+      },
     });
 
     try {
@@ -155,8 +160,8 @@ export function useChat() {
         type: 'CHAT_REQUEST',
         messages: apiMessages,
         providerConfig: currentState.providerConfig,
-        tools: (canUseFunctionCalling && !(isXAIImg && !opts?.aspectRatio)) ? tools : [],
-        options: chatOptions,
+        tools: prepared.tools,
+        options: prepared.options,
         requestId,
         conversationId: activeConvId,
       });
@@ -174,7 +179,10 @@ export function useChat() {
           ...(response.reasoning_content && { reasoningContent: response.reasoning_content }),
           ...(response.reasoning_signature && { reasoningSignature: response.reasoning_signature }),
           ...(toolCalls.length && { toolCalls }),
+          ...(response.usage && { usage: response.usage }),
+          ...prepared.snapshot,
         };
+        if (response.usage) currentState.setTokenUsage(response.usage);
         currentState.addMessage(assistantMsg);
 
         // Handle tool calls for non-streaming (if any)
@@ -202,7 +210,7 @@ export function useChat() {
       currentState.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       currentState.setIsStreaming(false);
     }
-  }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel, getChatOptions]);
+  }, [getAllTools, supportsFunctionCalling, isXAIImageModel, isGeminiImageModel]);
 
   const sendMessage = useCallback(async (text: string, sendOptions?: { aspectRatio?: string; enableReasoning?: boolean; reasoningLevel?: ReasoningLevel }) => {
     const currentState = useStore.getState();
@@ -494,6 +502,12 @@ export function useChat() {
 
     // Get tools using unified hook
     const tools = await getAllTools();
+    const currentModel = freshState.providerConfig.model || '';
+    const prepared = prepareChatRequest({
+      getState: () => useStore.getState(),
+      rawTools: tools,
+      supportsFunctionCalling: supportsFunctionCalling(currentModel),
+    });
 
     const requestId = `req_${Date.now()}`;
     freshState.setIsStreaming(true);
@@ -504,17 +518,13 @@ export function useChat() {
       freshState.setConversationStreaming(activeConvId, { requestId });
     }
 
-    const chatOptions = getChatOptions();
-    const currentModel = freshState.providerConfig.model || '';
-    const canUseFunctionCalling = supportsFunctionCalling(currentModel);
-
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: msgs,
         providerConfig: freshState.providerConfig,
-        tools: canUseFunctionCalling ? tools : [],
-        options: chatOptions,
+        tools: prepared.tools,
+        options: prepared.options,
         requestId,
         conversationId: activeConvId,
       });
@@ -531,8 +541,11 @@ export function useChat() {
           content: response.content || '',
           ...(response.reasoning_content && { reasoningContent: response.reasoning_content }),
           ...(followUpToolCalls.length && { toolCalls: followUpToolCalls }),
+          ...(response.usage && { usage: response.usage }),
+          ...prepared.snapshot,
         };
         const finalState = useStore.getState();
+        if (response.usage) finalState.setTokenUsage(response.usage);
         finalState.addMessage(assistantMsg);
         finalState.setIsStreaming(false);
         finalState.setCurrentRequestId(null);
@@ -553,7 +566,7 @@ export function useChat() {
       useStore.getState().setIsStreaming(false);
     }
     return 'completed';
-  }, [buildAPIMessages, getAllTools, supportsFunctionCalling, getChatOptions, checkAndAutoCompact]);
+  }, [buildAPIMessages, getAllTools, supportsFunctionCalling, checkAndAutoCompact]);
 
   return {
     sendMessage,

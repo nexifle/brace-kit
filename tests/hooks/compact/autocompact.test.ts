@@ -7,6 +7,7 @@ import {
   createSummaryMessage,
   getMessagesToCompact,
   shouldCompact,
+  sanitizeCompactConfigPatch,
   cloneMessagesForBranch,
 } from '../../../src/hooks/compact/compactUtils.ts';
 
@@ -184,7 +185,7 @@ describe('Compact Utilities', () => {
         { role: 'assistant', content: 'Msg 2' },
       ];
 
-      const tagged = tagMessagesWithCondenseParent(messages, 'condense_123');
+      const tagged = tagMessagesWithCondenseParent(messages, 'condense_123', 0);
 
       expect(tagged[0].condenseParent).toBe('condense_123');
       expect(tagged[0].isCompacted).toBe(true);
@@ -198,7 +199,7 @@ describe('Compact Utilities', () => {
         { role: 'assistant', content: 'Msg 2' },
       ];
 
-      const tagged = tagMessagesWithCondenseParent(messages, 'condense_123');
+      const tagged = tagMessagesWithCondenseParent(messages, 'condense_123', 0);
 
       expect(tagged[0].condenseParent).toBe('old_id'); // Unchanged
       expect(tagged[1].condenseParent).toBe('condense_123'); // Tagged
@@ -210,10 +211,21 @@ describe('Compact Utilities', () => {
         { role: 'assistant', content: 'Msg 2' },
       ];
 
-      const tagged = tagMessagesWithCondenseParent(messages, 'condense_123');
+      const tagged = tagMessagesWithCondenseParent(messages, 'condense_123', 0);
 
       expect(tagged[0].condenseParent).toBeUndefined(); // Summary not tagged
       expect(tagged[1].condenseParent).toBe('condense_123'); // Regular message tagged
+    });
+
+    it('should leave a recent tail untagged when keepRecentTokens is set', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'a'.repeat(400) },
+        { role: 'assistant', content: 'b'.repeat(400) },
+        { role: 'user', content: 'c'.repeat(8) },
+      ];
+      const tagged = tagMessagesWithCondenseParent(messages, 'condense_keep', 10);
+      expect(tagged[0].condenseParent).toBe('condense_keep');
+      expect(tagged[2].condenseParent).toBeUndefined();
     });
   });
 
@@ -261,22 +273,28 @@ describe('Compact Utilities', () => {
   });
 
   describe('shouldCompact', () => {
-    it('should return true when tokens exceed threshold', () => {
-      // 100 tokens, 1000 context window, 0.9 threshold = 900 tokens threshold
-      expect(shouldCompact(950, 1000, 0.9)).toBe(true);
+    it('should return true when tokens exceed window minus reserve', () => {
+      expect(shouldCompact(111617, 128000, 16384)).toBe(true);
     });
 
-    it('should return false when tokens are below threshold', () => {
-      expect(shouldCompact(800, 1000, 0.9)).toBe(false);
+    it('should return false at the reserve cutoff', () => {
+      expect(shouldCompact(111616, 128000, 16384)).toBe(false);
     });
 
-    it('should return false when tokens equal threshold', () => {
-      expect(shouldCompact(900, 1000, 0.9)).toBe(false);
+    it('compacts before a large tool payload would exceed window minus reserve', () => {
+      const contextWindow = 20000;
+      const reserve = 16384;
+      const messageTokens = 1000;
+      const toolTokens = 4000;
+      expect(shouldCompact(messageTokens, contextWindow, reserve)).toBe(false);
+      expect(shouldCompact(messageTokens + toolTokens, contextWindow, reserve)).toBe(true);
     });
+  });
 
-    it('should handle different threshold values', () => {
-      expect(shouldCompact(500, 1000, 0.5)).toBe(false); // 500 = threshold
-      expect(shouldCompact(501, 1000, 0.5)).toBe(true);  // 501 > threshold
+  describe('sanitizeCompactConfigPatch', () => {
+    it('clamps reserve and keep-recent to declared bounds', () => {
+      expect(sanitizeCompactConfigPatch({ reserveTokens: 9_999_999 }).reserveTokens).toBe(128000);
+      expect(sanitizeCompactConfigPatch({ keepRecentTokens: 50 }).keepRecentTokens).toBe(1024);
     });
   });
 

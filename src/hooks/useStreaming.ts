@@ -6,9 +6,11 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { toolSnapshot } from '../utils/estimateTokens.ts';
+import { prepareChatRequest } from '../utils/chatOptions.ts';
 import { useStore } from '../store/index.ts';
 import { useToast } from '../components/ui/toast/useToast.ts';
-import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message, ActiveStreamsResponse, StreamingBufferEntry } from '../types/index.ts';
+import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message, ActiveStreamsResponse, StreamingBufferEntry, MCPTool } from '../types/index.ts';
 import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
 import { executeChatToolCall, finishRequestAsSuspended, updateToolMessage } from '../services/chatToolExecutor.ts';
 import { useMemory } from './useMemory.ts';
@@ -27,13 +29,14 @@ export function useStreaming() {
   const store = useStore();
   const { extractMemories } = useMemory();
   const { buildAPIMessages } = useMessageBuilder();
-  const { getAllTools, supportsFunctionCalling, getChatOptions } = useTools();
+  const { getAllTools, supportsFunctionCalling } = useTools();
   const { checkAndAutoCompact } = useAutoCompact();
   const streamProcessor = useStreamProcessor();
   const { warning } = useToast();
 
   // Track processed request IDs to prevent double processing
   const processedDoneRequestsRef = useRef<Set<string>>(new Set());
+  const requestToolsRef = useRef<MCPTool[]>([]);
 
   /**
    * Tell the background that a stream has been consumed and persisted, so it
@@ -62,6 +65,7 @@ export function useStreaming() {
       reasoningContent?: string;
       reasoningSignature?: string;
       toolCalls?: ToolCall[];
+      usage?: TokenUsage;
     }
   ) => {
     try {
@@ -73,6 +77,7 @@ export function useStreaming() {
         ...(message.toolCalls?.length && { toolCalls: message.toolCalls }),
         ...(message.reasoningContent && { reasoningContent: message.reasoningContent }),
         ...(message.reasoningSignature && { reasoningSignature: message.reasoningSignature }),
+        ...(message.usage && { usage: message.usage }),
       };
 
       await saveConversationMessages(convId, [...existingMsgs, assistantMsg]);
@@ -226,17 +231,21 @@ export function useStreaming() {
       useStore.getState().setConversationStreaming(activeConvId, { requestId });
     }
 
-    const chatOptions = getChatOptions();
     const currentModel = store.providerConfig.model || '';
-    const canUseFunctionCalling = supportsFunctionCalling(currentModel);
+    const prepared = prepareChatRequest({
+      getState: () => useStore.getState(),
+      rawTools: tools,
+      supportsFunctionCalling: supportsFunctionCalling(currentModel),
+    });
+    requestToolsRef.current = prepared.tools;
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'CHAT_REQUEST',
         messages: msgs,
         providerConfig: store.providerConfig,
-        tools: canUseFunctionCalling ? tools : [],
-        options: chatOptions,
+        tools: prepared.tools,
+        options: prepared.options,
         requestId,
         conversationId: activeConvId,
       });
@@ -251,7 +260,7 @@ export function useStreaming() {
       store.addMessage({ role: 'error', content: `Request failed: ${(e as Error).message}` });
       store.setIsStreaming(false);
     }
-  }, [store, buildAPIMessages, getAllTools, supportsFunctionCalling, getChatOptions, streamProcessor, handleMCPDisconnect]);
+  }, [store, buildAPIMessages, getAllTools, supportsFunctionCalling, streamProcessor, handleMCPDisconnect]);
 
   /**
    * Finish stream and create assistant message
@@ -263,7 +272,8 @@ export function useStreaming() {
       _groundingMetadata?: GroundingMetadata,
       generatedImages?: GeneratedImage[],
       reasoningContent?: string,
-      reasoningSignature?: string
+      reasoningSignature?: string,
+      usage?: TokenUsage,
     ) => {
       const result = streamProcessor.getFinalResult(fullContent, reasoningContent);
 
@@ -287,6 +297,9 @@ export function useStreaming() {
         generatedImages?: GeneratedImage[];
         reasoningContent?: string;
         reasoningSignature?: string;
+        usage?: TokenUsage;
+        toolsTokens?: number;
+        toolNames?: string[];
       } = {
         role: 'assistant',
         content: result.content || '',
@@ -295,6 +308,8 @@ export function useStreaming() {
         ...(finalImages && finalImages.length > 0 && { generatedImages: finalImages }),
         ...(result.reasoningContent && { reasoningContent: result.reasoningContent }),
         ...(reasoningSignature && { reasoningSignature }),
+        ...(usage && { usage }),
+        ...toolSnapshot(requestToolsRef.current),
       };
 
       store.addMessage(assistantMsg);
@@ -429,7 +444,8 @@ export function useStreaming() {
                   entry.groundingMetadata as GroundingMetadata | undefined,
                   entry.images as GeneratedImage[] | undefined,
                   entry.reasoningContent,
-                  entry.reasoningSignature
+                  entry.reasoningSignature,
+                  entry.usage,
                 );
               } else {
                 // Background conv — save ke IDB
@@ -438,6 +454,7 @@ export function useStreaming() {
                   reasoningContent: entry.reasoningContent,
                   reasoningSignature: entry.reasoningSignature,
                   toolCalls: entry.toolCalls,
+                  usage: entry.usage,
                 });
               }
             } else if (entry.status === 'in_progress') {
@@ -602,7 +619,8 @@ export function useStreaming() {
             message.groundingMetadata || streamProcessor.getGroundingMetadata() || undefined,
             message.images || streamProcessor.getImages(),
             finalReasoningContent,
-            message.reasoningSignature
+            message.reasoningSignature,
+            message.usage,
           );
           break;
 

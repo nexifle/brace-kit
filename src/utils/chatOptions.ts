@@ -1,11 +1,16 @@
-import type { ModelParameters, ModelSpec, ReasoningLevel } from '../types/index.ts';
+import type { CompactConfig, ModelParameters, ModelSpec, ReasoningLevel } from '../types/index.ts';
 import {
   GEMINI_IMAGE_MODELS,
   GEMINI_NO_TOOLS_MODELS,
   XAI_IMAGE_MODELS,
 } from '../providers/presets.ts';
-import { specSupportsGoogleSearch, specSupportsReasoning } from '../providers/modelSpecs.ts';
+import { getEffectiveMaxOutput, specSupportsGoogleSearch, specSupportsReasoning } from '../providers/modelSpecs.ts';
 import { resolveSpecFromAppState } from './modelCapability.ts';
+import { clampMaxOutputTokens } from './estimateTokens.ts';
+import { getEffectiveContextWindow } from '../providers/modelSpecs.ts';
+import { eligibleChatTools, estimateRequestContextTokens } from './requestContext.ts';
+import { toolSnapshot } from './estimateTokens.ts';
+import type { Conversation, CustomProvider, FetchedModelsCache, MCPTool, Memory, Message } from '../types/index.ts';
 
 /** Slice of app state needed to build a CHAT_REQUEST `options` payload. */
 export interface ChatOptionsState {
@@ -14,6 +19,7 @@ export interface ChatOptionsState {
     format?: string;
     model?: string;
     modelParameters?: ModelParameters;
+    systemPrompt?: string;
   };
   enableGoogleSearch: boolean;
   enableReasoning: boolean;
@@ -21,6 +27,9 @@ export interface ChatOptionsState {
   enableStreaming: boolean;
   groqEnabledBuiltinTools?: string[];
   modelSpec?: ModelSpec;
+  contextWindow?: number;
+  estimatedContextTokens?: number;
+  tools?: MCPTool[];
 }
 
 export interface BuildChatOptionsOverrides {
@@ -29,6 +38,7 @@ export interface BuildChatOptionsOverrides {
   reasoningLevel?: ReasoningLevel;
   /** Force stream on/off; defaults to state.enableStreaming. */
   stream?: boolean;
+  tools?: MCPTool[];
 }
 
 export interface ChatRequestOptions {
@@ -69,8 +79,24 @@ export function buildChatOptions(
     enableReasoning: wantReasoning && (spec ? specSupportsReasoning(spec, currentModel) : true),
     reasoningLevel: overrides?.reasoningLevel ?? state.reasoningLevel,
     stream: overrides?.stream ?? state.enableStreaming,
-    modelParameters: state.providerConfig.modelParameters,
+    modelParameters: { ...state.providerConfig.modelParameters },
   };
+
+  const contextWindow = state.contextWindow ?? 0;
+  if (contextWindow > 0) {
+    const clamped = clampMaxOutputTokens({
+      contextWindow,
+      estimatedContextTokens: state.estimatedContextTokens ?? 0,
+      requestedMaxTokens: state.providerConfig.modelParameters?.maxTokens,
+      modelMaxTokens: state.modelSpec ? getEffectiveMaxOutput(state.modelSpec) : undefined,
+    });
+    if (clamped !== undefined) {
+      chatOptions.modelParameters = {
+        ...chatOptions.modelParameters,
+        maxTokens: clamped,
+      };
+    }
+  }
 
   if ((isXAIImg || isGeminiImg) && overrides?.aspectRatio) {
     chatOptions.aspectRatio = overrides.aspectRatio;
@@ -87,23 +113,62 @@ export function buildChatOptions(
   return chatOptions;
 }
 
-/** Read live main-store fields into a ChatOptionsState (call at request time). */
-export function chatOptionsStateFromStore(getState: () => {
-  providerConfig: ChatOptionsState['providerConfig'] & { model: string; providerId: string };
+export type ChatOptionsStoreSnapshot = {
+  providerConfig: ChatOptionsState['providerConfig'] & {
+    model: string;
+    providerId: string;
+    systemPrompt?: string;
+  };
   enableGoogleSearch: boolean;
   enableReasoning: boolean;
   reasoningLevel: ReasoningLevel;
   enableStreaming: boolean;
   groqEnabledBuiltinTools: string[];
-  customProviders?: import('../types/index.ts').CustomProvider[];
-  fetchedModels?: import('../types/index.ts').AppState['fetchedModels'];
-}): ChatOptionsState {
+  customProviders?: CustomProvider[];
+  fetchedModels?: Record<string, FetchedModelsCache>;
+  compactConfig?: CompactConfig;
+  messages?: Message[];
+  conversations?: Conversation[];
+  activeConversationId?: string | null;
+  memoryEnabled?: boolean;
+  memories?: Memory[];
+  tools?: MCPTool[];
+};
+
+/** Read live main-store fields into a ChatOptionsState (call at request time). */
+export function chatOptionsStateFromStore(getState: () => ChatOptionsStoreSnapshot): ChatOptionsState {
   const s = getState();
+  const custom = (s.customProviders ?? []).find((p) => p.id === s.providerConfig.providerId);
+  const fetchedRaw = s.fetchedModels ?? {};
+  const fetched = (fetchedRaw as Record<string, FetchedModelsCache>)[s.providerConfig.providerId];
   const modelSpec = resolveSpecFromAppState({
     providerConfig: s.providerConfig,
     customProviders: s.customProviders ?? [],
     fetchedModels: s.fetchedModels ?? {},
   });
+  const compactConfig = s.compactConfig ?? {
+    enabled: true,
+    threshold: 0.9,
+    defaultContextWindow: 128000,
+    prompt: '',
+  };
+  const contextWindow = getEffectiveContextWindow(
+    s.providerConfig as import('../types/index.ts').ProviderConfig,
+    custom,
+    compactConfig,
+    fetched,
+  );
+  const estimatedContextTokens = estimateRequestContextTokens(
+    {
+      messages: s.messages ?? [],
+      providerConfig: s.providerConfig,
+      conversations: s.conversations ?? [],
+      activeConversationId: s.activeConversationId ?? null,
+      memoryEnabled: s.memoryEnabled ?? false,
+      memories: s.memories ?? [],
+    },
+    s.tools,
+  ).tokens;
   return {
     providerConfig: s.providerConfig,
     enableGoogleSearch: s.enableGoogleSearch,
@@ -112,5 +177,45 @@ export function chatOptionsStateFromStore(getState: () => {
     enableStreaming: s.enableStreaming,
     groqEnabledBuiltinTools: s.groqEnabledBuiltinTools,
     modelSpec,
+    contextWindow,
+    estimatedContextTokens,
+  };
+}
+
+export interface PreparedChatRequest {
+  tools: MCPTool[];
+  options: ChatRequestOptions;
+  estimatedContextTokens: number;
+  contextWindow: number;
+  snapshot: ReturnType<typeof toolSnapshot>;
+}
+
+/**
+ * One request context for send, stream follow-up, clamp, and auto-compact.
+ * Eligible tools, estimate, and chat options all come from the same list.
+ */
+export function prepareChatRequest(args: {
+  getState: () => ChatOptionsStoreSnapshot;
+  rawTools: MCPTool[];
+  supportsFunctionCalling: boolean;
+  isXAIImageModel?: boolean;
+  overrides?: BuildChatOptionsOverrides;
+}): PreparedChatRequest {
+  const tools = eligibleChatTools({
+    tools: args.rawTools,
+    supportsFunctionCalling: args.supportsFunctionCalling,
+    isXAIImageModel: args.isXAIImageModel,
+    aspectRatio: args.overrides?.aspectRatio,
+  });
+  const state = chatOptionsStateFromStore(() => ({
+    ...args.getState(),
+    tools,
+  }));
+  return {
+    tools,
+    options: buildChatOptions(state, args.overrides),
+    estimatedContextTokens: state.estimatedContextTokens ?? 0,
+    contextWindow: state.contextWindow ?? 0,
+    snapshot: toolSnapshot(tools),
   };
 }
