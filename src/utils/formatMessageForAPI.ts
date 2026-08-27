@@ -16,10 +16,15 @@ export function formatMessageForAPI(msg: Message): APIMessage | null {
       })),
       ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
       ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),
+      ...(msg.backendItems && msg.backendItems.length > 0 && { backendItems: msg.backendItems }),
     };
   }
 
   if (msg.role === 'tool') {
+    // Hosted tools are transcript rows for the grouped tool chain. The API
+    // replay is the sibling `web_search_call` on the following assistant
+    // (`backendItems`), matching grok-build's BackendToolCall items.
+    if (msg.toolExecution === 'hosted') return null;
     const images = (msg.attachments ?? []).filter((a) => a.type === 'image' && a.data);
     if (images.length === 0) {
       return {
@@ -68,5 +73,8 @@ export function formatMessageForAPI(msg: Message): APIMessage | null {
     content: msg.content,
     ...(msg.reasoningContent && { reasoningContent: msg.reasoningContent }),
     ...(msg.reasoningSignature && { reasoningSignature: msg.reasoningSignature }),
+    ...(msg.role === 'assistant' &&
+      msg.backendItems &&
+      msg.backendItems.length > 0 && { backendItems: msg.backendItems }),
   };
 }

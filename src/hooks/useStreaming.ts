@@ -12,7 +12,8 @@ import { useStore } from '../store/index.ts';
 import { useToast } from '../components/ui/toast/useToast.ts';
 import type { ToolCall, GroundingMetadata, GeneratedImage, TokenUsage, Message, ActiveStreamsResponse, StreamingBufferEntry, MCPTool } from '../types/index.ts';
 import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
-import { executeChatToolCall, finishRequestAsSuspended, updateToolMessage } from '../services/chatToolExecutor.ts';
+import { executeChatToolCall, ensureHostedWebSearchTools, finishRequestAsSuspended, updateToolMessage, upsertHostedWebSearchTool } from '../services/chatToolExecutor.ts';
+import { hostedToolMessageFromItem } from '../utils/hostedWebSearch.ts';
 import { useMemory } from './useMemory.ts';
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
@@ -65,16 +66,24 @@ export function useStreaming() {
       reasoningContent?: string;
       reasoningSignature?: string;
       toolCalls?: ToolCall[];
+      backendItems?: Record<string, unknown>[];
       usage?: TokenUsage;
     }
   ) => {
     try {
-      const existingMsgs = await getConversationMessages(convId) || [];
+      let existingMsgs = await getConversationMessages(convId) || [];
 
+      if (message.backendItems?.length) {
+        const tools = message.backendItems.map((item) =>
+          hostedToolMessageFromItem(item, Date.now()),
+        );
+        existingMsgs = [...existingMsgs, ...tools];
+      }
       const assistantMsg: Message = {
         role: 'assistant',
         content: message.fullContent || '',
         ...(message.toolCalls?.length && { toolCalls: message.toolCalls }),
+        ...(message.backendItems?.length && { backendItems: message.backendItems }),
         ...(message.reasoningContent && { reasoningContent: message.reasoningContent }),
         ...(message.reasoningSignature && { reasoningSignature: message.reasoningSignature }),
         ...(message.usage && { usage: message.usage }),
@@ -135,6 +144,7 @@ export function useStreaming() {
     state.setCurrentRequestId(null);
     state.setStreamingContent('');
     state.setStreamingReasoningContent('');
+    state.setStreamingHostedSearch('');
     streamProcessor.reset();
 
     // Toast warning
@@ -227,6 +237,7 @@ export function useStreaming() {
     store.setCurrentRequestId(requestId);
     store.setStreamingContent('');
     store.setStreamingReasoningContent('');
+    store.setStreamingHostedSearch('');
     if (activeConvId) {
       useStore.getState().setConversationStreaming(activeConvId, { requestId });
     }
@@ -274,6 +285,7 @@ export function useStreaming() {
       reasoningContent?: string,
       reasoningSignature?: string,
       usage?: TokenUsage,
+      backendItems?: Record<string, unknown>[],
     ) => {
       const result = streamProcessor.getFinalResult(fullContent, reasoningContent);
 
@@ -300,6 +312,7 @@ export function useStreaming() {
         usage?: TokenUsage;
         toolsTokens?: number;
         toolNames?: string[];
+        backendItems?: Record<string, unknown>[];
       } = {
         role: 'assistant',
         content: result.content || '',
@@ -309,14 +322,17 @@ export function useStreaming() {
         ...(result.reasoningContent && { reasoningContent: result.reasoningContent }),
         ...(reasoningSignature && { reasoningSignature }),
         ...(usage && { usage }),
+        ...(backendItems && backendItems.length > 0 && { backendItems }),
         ...toolSnapshot(requestToolsRef.current),
       };
 
+      ensureHostedWebSearchTools(backendItems);
       store.addMessage(assistantMsg);
 
       // Reset state
       store.setStreamingContent('');
       store.setStreamingReasoningContent('');
+      store.setStreamingHostedSearch('');
       streamProcessor.reset();
       // Clear per-conversation streaming state (handleToolCalls will re-set it if needed)
       if (!toolCalls || toolCalls.length === 0) {
@@ -384,6 +400,7 @@ export function useStreaming() {
         notifyStreamConsumed(requestId, activeConvId);
         store.setStreamingContent('');
         store.setStreamingReasoningContent('');
+        store.setStreamingHostedSearch('');
         streamProcessor.reset();
         const msgs = buildAPIMessages(useStore.getState().messages);
         const tools = await getAllTools();
@@ -410,6 +427,7 @@ export function useStreaming() {
           useStore.getState().setCurrentRequestId(null);
           useStore.getState().setStreamingContent('');
           useStore.getState().setStreamingReasoningContent('');
+          useStore.getState().setStreamingHostedSearch('');
           streamProcessor.reset();
         };
         try {
@@ -438,6 +456,7 @@ export function useStreaming() {
       store.setCurrentRequestId(null);
       store.setStreamingContent('');
       store.setStreamingReasoningContent('');
+      store.setStreamingHostedSearch('');
       streamProcessor.reset();
     })();
   }, [store, streamProcessor, notifyStreamConsumed, tryOverflowRecovery, buildAPIMessages, getAllTools, supportsFunctionCalling]);
@@ -498,6 +517,7 @@ export function useStreaming() {
                   entry.reasoningContent,
                   entry.reasoningSignature,
                   entry.usage,
+                  entry.backendItems,
                 );
               } else {
                 // Background conv — save ke IDB
@@ -506,6 +526,7 @@ export function useStreaming() {
                   reasoningContent: entry.reasoningContent,
                   reasoningSignature: entry.reasoningSignature,
                   toolCalls: entry.toolCalls,
+                  backendItems: entry.backendItems,
                   usage: entry.usage,
                 });
               }
@@ -574,9 +595,12 @@ export function useStreaming() {
       reasoningContent?: string;
       reasoningSignature?: string;
       chunkType?: string;
+      id?: string;
+      arguments?: string;
       toolCalls?: ToolCall[];
       groundingMetadata?: GroundingMetadata;
       images?: GeneratedImage[];
+      backendItems?: Record<string, unknown>[];
       usage?: TokenUsage;
       error?: string;
     }) => {
@@ -596,7 +620,7 @@ export function useStreaming() {
         if (message.type === 'CHAT_STREAM_CHUNK') {
           // Akumulasikan chunk ke streamingConversations agar saat user switch kembali,
           // konten yang sudah diterima tidak hilang
-          if (message.content) {
+          if (message.content && message.chunkType !== 'hosted_web_search' && message.chunkType !== 'reasoning') {
             useStore.setState(s => {
               const current = s.streamingConversations[bgConvId];
               if (!current) return s;
@@ -635,6 +659,24 @@ export function useStreaming() {
             store.setStreamingReasoningContent(
               useStore.getState().streamingReasoningContent + message.content
             );
+          } else if (message.chunkType === 'hosted_web_search') {
+            let item: Record<string, unknown> | null = null;
+            if (message.arguments) {
+              try {
+                item = JSON.parse(message.arguments) as Record<string, unknown>;
+              } catch {
+                item = null;
+              }
+            }
+            if (!item) {
+              item = {
+                type: 'web_search_call',
+                id: message.id,
+                status: 'in_progress',
+                action: { type: 'search', query: message.content || '' },
+              };
+            }
+            upsertHostedWebSearchTool(item);
           } else if (message.content) {
             const currentContent = useStore.getState().streamingContent;
             store.setStreamingContent(currentContent + message.content);
@@ -673,6 +715,7 @@ export function useStreaming() {
             finalReasoningContent,
             message.reasoningSignature,
             message.usage,
+            message.backendItems,
           );
           break;
 

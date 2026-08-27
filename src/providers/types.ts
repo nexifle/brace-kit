@@ -86,7 +86,9 @@ export type StreamChunkType =
   | 'error'
   | 'reasoning'
   | 'reasoning_signature'
-  | 'usage';
+  | 'usage'
+  /** Server-side hosted web_search (not a client function call). */
+  | 'hosted_web_search';
 
 /**
  * Streaming response chunk

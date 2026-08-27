@@ -16,7 +16,7 @@ import { getProvider as getProviderUtil, isCustomProvider as isCustomProviderUti
 import { useMessageBuilder } from './chat/useMessageBuilder.ts';
 import { useTools } from './tools/useTools.ts';
 import { useAutoCompact, cloneMessagesForBranch } from './compact/index.ts';
-import { executeChatToolCall, finishRequestAsSuspended, updateToolMessage, type ChatToolExecutionResult } from '../services/chatToolExecutor.ts';
+import { executeChatToolCall, ensureHostedWebSearchTools, finishRequestAsSuspended, updateToolMessage, type ChatToolExecutionResult } from '../services/chatToolExecutor.ts';
 import { isChatSendBlocked } from '../utils/ask.ts';
 import { prepareChatRequest } from '../utils/chatOptions.ts';
 
@@ -185,10 +185,12 @@ export function useChat() {
           ...(response.reasoning_content && { reasoningContent: response.reasoning_content }),
           ...(response.reasoning_signature && { reasoningSignature: response.reasoning_signature }),
           ...(toolCalls.length && { toolCalls }),
+          ...(response.backendItems?.length && { backendItems: response.backendItems }),
           ...(response.usage && { usage: response.usage }),
           ...prepared.snapshot,
         };
         if (response.usage) currentState.setTokenUsage(response.usage);
+        ensureHostedWebSearchTools(response.backendItems);
         currentState.addMessage(assistantMsg);
 
         // Handle tool calls for non-streaming (if any)
@@ -370,6 +372,7 @@ export function useChat() {
     currentState.setCurrentRequestId(null);
     currentState.setStreamingContent('');
     currentState.setStreamingReasoningContent('');
+    currentState.setStreamingHostedSearch('');
   }, []);
 
   const newChat = useCallback(() => {
@@ -521,6 +524,7 @@ export function useChat() {
     freshState.setCurrentRequestId(requestId);
     freshState.setStreamingContent('');
     freshState.setStreamingReasoningContent('');
+    freshState.setStreamingHostedSearch('');
     if (activeConvId) {
       freshState.setConversationStreaming(activeConvId, { requestId });
     }
@@ -548,11 +552,13 @@ export function useChat() {
           content: response.content || '',
           ...(response.reasoning_content && { reasoningContent: response.reasoning_content }),
           ...(followUpToolCalls.length && { toolCalls: followUpToolCalls }),
+          ...(response.backendItems?.length && { backendItems: response.backendItems }),
           ...(response.usage && { usage: response.usage }),
           ...prepared.snapshot,
         };
         const finalState = useStore.getState();
         if (response.usage) finalState.setTokenUsage(response.usage);
+        ensureHostedWebSearchTools(response.backendItems);
         finalState.addMessage(assistantMsg);
         finalState.setIsStreaming(false);
         finalState.setCurrentRequestId(null);

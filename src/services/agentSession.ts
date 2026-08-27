@@ -41,6 +41,7 @@ export interface AgentChatResponse {
   reasoning_content?: string;
   reasoning_signature?: string;
   toolCalls?: ToolCall[];
+  backendItems?: Record<string, unknown>[];
 }
 
 /** Result of dispatching one model tool call within the loop. */
@@ -242,6 +243,8 @@ export function createStreamingTransport(
           if (msg.chunkType === 'reasoning') {
             reasoningAccum += chunk;
             onDelta?.({ reasoning: chunk });
+          } else if (msg.chunkType === 'hosted_web_search') {
+            // Server-side search; not assistant text.
           } else {
             onDelta?.({ text: chunk });
           }
@@ -258,6 +261,9 @@ export function createStreamingTransport(
               : {}),
             ...(Array.isArray(msg.toolCalls) && msg.toolCalls.length
               ? { toolCalls: msg.toolCalls as ToolCall[] }
+              : {}),
+            ...(Array.isArray(msg.backendItems) && msg.backendItems.length
+              ? { backendItems: msg.backendItems as Record<string, unknown>[] }
               : {}),
           });
         } else if (msg.type === 'CHAT_STREAM_ERROR') {
@@ -438,6 +444,9 @@ async function runLoop(
           ...(response.toolCalls?.length ? { toolCalls: response.toolCalls } : {}),
           ...(response.reasoning_content
             ? { reasoningContent: response.reasoning_content }
+            : {}),
+          ...(response.backendItems?.length
+            ? { backendItems: response.backendItems }
             : {}),
         });
       }

@@ -31,4 +31,16 @@ describe('formatMessageForAPI ask attachments', () => {
       { type: 'image_url', image_url: { url: dataUrl } },
     ]);
   });
+
+  it('omits hosted web_search tool rows from the API payload', () => {
+    const api = formatMessageForAPI({
+      role: 'tool',
+      name: 'web_search',
+      toolCallId: 'ws_1',
+      content: 'query',
+      toolExecution: 'hosted',
+      toolArguments: { query: 'xai docs' },
+    });
+    expect(api).toBeNull();
+  });
 });

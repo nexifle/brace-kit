@@ -69,6 +69,13 @@ export function formatResponses(
         content: toResponsesUserContent(msg.content as MessageContent),
       });
     } else if (msg.role === 'assistant') {
+      // Hosted backend items (web_search_call) must precede the assistant
+      // message so later turns replay the same prefix as grok-build.
+      if (Array.isArray(msg.backendItems)) {
+        for (const item of msg.backendItems) {
+          if (item && typeof item === 'object') input.push(item);
+        }
+      }
       // Assistant messages carry only output_text content. Each tool call is
       // emitted as a separate top-level `function_call` input item — the shape
       // the chat proxy's untagged `ModelInput` enum accepts. Nesting a
@@ -89,6 +96,7 @@ export function formatResponses(
         }
       }
     } else if (msg.role === 'tool') {
+      if (msg.toolExecution === 'hosted') continue;
       const media = extractToolResultMedia(msg);
       const output = media.images.length === 0
         ? media.text
@@ -134,14 +142,22 @@ export function formatResponses(
     if (effort) body.reasoning = { effort };
   }
 
-  // Add tools if available
-  if (tools.length > 0) {
-    body.tools = tools.map((t) => ({
+  // Function tools, plus hosted `web_search` when the client offered it.
+  // A function named web_search is dropped so the proxy never sees a duplicate
+  // of the hosted tool (same as grok-build).
+  const hostedWebSearch = tools.some((t) => t.name === 'web_search');
+  const functionTools = tools
+    .filter((t) => t.name !== 'web_search')
+    .map((t) => ({
       type: 'function',
       name: t.name,
       description: t.description,
       parameters: cleanSchema(t.inputSchema),
     }));
+  if (hostedWebSearch || functionTools.length > 0) {
+    body.tools = hostedWebSearch
+      ? [...functionTools, { type: 'web_search' }]
+      : functionTools;
   }
 
   // Ensure URL ends with /responses
@@ -173,6 +189,48 @@ export function formatResponses(
       body: JSON.stringify(body),
     },
   };
+}
+
+function webSearchQuery(item: Record<string, unknown>): string {
+  const action = item.action;
+  if (action && typeof action === 'object') {
+    const query = (action as { query?: unknown }).query;
+    if (typeof query === 'string') return query;
+  }
+  return typeof item.query === 'string' ? item.query : '';
+}
+
+function hostedWebSearchChunk(
+  item: Record<string, unknown>,
+  index?: number
+): StreamChunk {
+  const id = (item.id as string | undefined) || undefined;
+  return {
+    type: 'hosted_web_search',
+    id,
+    index,
+    name: 'web_search',
+    content: webSearchQuery(item),
+    arguments: JSON.stringify(item),
+  };
+}
+
+/**
+ * Collect completed `web_search_call` items from a Responses `output` array
+ * for history replay.
+ */
+export function extractHostedWebSearchItems(
+  data: Record<string, unknown>
+): Record<string, unknown>[] {
+  const output = data.output;
+  if (!Array.isArray(output)) return [];
+  const items: Record<string, unknown>[] = [];
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    if (record.type === 'web_search_call') items.push(record);
+  }
+  return items;
 }
 
 /** Flatten Message.content to a single string (instructions / assistant output). */
@@ -290,16 +348,21 @@ export async function* parseResponsesStream(
           continue;
         }
 
-        if (type === 'response.output_item.added') {
+        if (type === 'response.output_item.added' || type === 'response.output_item.done') {
           const item = json.item as Record<string, unknown> | undefined;
           const itemType = item?.type as string | undefined;
-          if (item && itemType === 'function_call') {
+          if (item && itemType === 'function_call' && type === 'response.output_item.added') {
             const id = item.id as string | undefined;
             const index = json.output_index as number | undefined;
             const name = item.name as string | undefined;
             yield { type: 'tool_call_start', id, index, name };
             const args = item.arguments as string | undefined;
             if (args) yield { type: 'tool_call_delta', id, index, content: args };
+          } else if (item && itemType === 'web_search_call') {
+            // Hosted search: do not emit tool_call_start (that would block the
+            // client waiting to execute). Surface status so the UI can show
+            // activity; persist the raw item for history replay.
+            yield hostedWebSearchChunk(item, json.output_index as number | undefined);
           }
           // Reasoning / summary items are skipped: xAI reasoning is encrypted
           // under the chat proxy — there is no plaintext to surface.

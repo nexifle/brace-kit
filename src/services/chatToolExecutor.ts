@@ -1,6 +1,7 @@
 import { useStore } from '../store/index.ts';
 import type { ToolCall } from '../types/index.ts';
 import { MCP_DISCONNECT_PREFIX } from '../types/index.ts';
+import { hostedToolMessageFromItem, parseHostedWebSearchItem } from '../utils/hostedWebSearch.ts';
 
 export type ChatToolExecutionResult = 'completed' | 'suspended' | 'disconnected';
 
@@ -13,6 +14,7 @@ export function finishRequestAsSuspended(): void {
   state.setCurrentRequestId(null);
   state.setStreamingContent('');
   state.setStreamingReasoningContent('');
+  state.setStreamingHostedSearch('');
 }
 
 /** Execute a chat tool through the correct client, local, or background path. */
@@ -72,6 +74,38 @@ export async function executeChatToolCall(
   } catch (error) {
     updateToolMessage(toolCall.id, `Error: ${(error as Error).message}`);
     return 'completed';
+  }
+}
+
+/**
+ * Record a hosted (server-executed) web_search in the same tool-call chain
+ * as client tools. Updates in place when the same call id already exists.
+ */
+export function upsertHostedWebSearchTool(item: Record<string, unknown>): void {
+  const parsed = parseHostedWebSearchItem(item);
+  const store = useStore.getState();
+  const index = store.messages.findIndex(
+    (message) => message.role === 'tool' && String(message.toolCallId) === String(parsed.id),
+  );
+  if (index === -1) {
+    store.addMessage(hostedToolMessageFromItem(item, Date.now()));
+    return;
+  }
+  const messages = [...store.messages];
+  messages[index] = {
+    ...messages[index],
+    content: parsed.content,
+    toolArguments: parsed.args,
+    toolExecution: 'hosted',
+    name: 'web_search',
+  };
+  store.setMessages(messages);
+}
+
+export function ensureHostedWebSearchTools(items: Record<string, unknown>[] | undefined): void {
+  if (!items?.length) return;
+  for (const item of items) {
+    if (item && typeof item === 'object') upsertHostedWebSearchTool(item);
   }
 }
 

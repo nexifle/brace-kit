@@ -94,6 +94,7 @@ export const useStore = create<AppState>((set, get) => ({
   currentRequestId: null,
   streamingContent: '',
   streamingReasoningContent: '',
+  streamingHostedSearch: '',
   streamingConversations: {} as Record<string, ConversationStreamingState>,
   pendingAsk: null as PendingAsk | null,
 
@@ -247,6 +248,7 @@ export const useStore = create<AppState>((set, get) => ({
   setCurrentRequestId: (currentRequestId) => set({ currentRequestId }),
   setStreamingContent: (streamingContent) => set({ streamingContent }),
   setStreamingReasoningContent: (streamingReasoningContent) => set({ streamingReasoningContent }),
+  setStreamingHostedSearch: (streamingHostedSearch) => set({ streamingHostedSearch }),
   setPendingAsk: (pendingAsk) => set({ pendingAsk }),
   setConversationStreaming: (convId, state) => {
     if (state === null) {
@@ -463,6 +465,7 @@ export const useStore = create<AppState>((set, get) => ({
       // Restore snapshot jika conv tujuan masih streaming, atau kosongkan jika tidak
       streamingContent: targetConvStreaming?.streamingContent || '',
       streamingReasoningContent: '',
+      streamingHostedSearch: '',
       pendingAsk: null,
     });
     try {

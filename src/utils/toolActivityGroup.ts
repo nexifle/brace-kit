@@ -1,6 +1,36 @@
 import type { Message } from '../types/index.ts';
 import type { ToolMessageData } from '../components/ToolMessage.tsx';
 import { truncateActivity } from './toolActivityLabel.ts';
+import { hostedToolMessageFromItem } from './hostedWebSearch.ts';
+
+/**
+ * Hosted `web_search_call` items live on the assistant as `backendItems`
+ * (API replay). The grouped tool chain is `role: tool` rows. Insert any
+ * hosted rows that are not already in the transcript so history matches
+ * grok-build: backend tool calls are first-class chain entries.
+ */
+export function materializeHostedToolRows(messages: Message[]): Message[] {
+  const seen = new Set(
+    messages
+      .filter((m) => m.role === 'tool' && m.toolCallId)
+      .map((m) => String(m.toolCallId)),
+  );
+  const out: Message[] = [];
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && msg.backendItems?.length) {
+      for (const item of msg.backendItems) {
+        if (!item || typeof item !== 'object') continue;
+        const row = hostedToolMessageFromItem(item, msg.createdAt);
+        const id = row.toolCallId ? String(row.toolCallId) : '';
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        out.push(row);
+      }
+    }
+    out.push(msg);
+  }
+  return out;
+}
 
 export function isEmptyAssistant(msg: Message): boolean {
   if (msg.role !== 'assistant') return false;
@@ -155,5 +185,6 @@ function groupDetailed(messages: Message[]): ProcessedChatItem[] {
 }
 
 export function groupMessagesForDisplay(messages: Message[], timeline: boolean): ProcessedChatItem[] {
-  return timeline ? groupTimeline(messages) : groupDetailed(messages);
+  const expanded = materializeHostedToolRows(messages);
+  return timeline ? groupTimeline(expanded) : groupDetailed(expanded);
 }
