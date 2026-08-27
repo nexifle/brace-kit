@@ -18,6 +18,7 @@ BraceKit is more than a chat widget — it's a fully-featured AI workspace embed
 | Feature | What it does |
 |---------|--------------|
 | **[Chat Interface](/guide/core-features/chat/)** | Full markdown support, streaming, reasoning display |
+| **[Slide Creator](/guide/core-features/slide-creator/)** | Plan, build, edit, preview, and export presentation decks |
 | **[AI Floating Toolbar](/guide/core-features/ai-floating-toolbar/)** | Instant AI actions when you select text |
 | **[Page Context](/guide/core-features/page-context/)** | AI reads and understands webpages |
 | **[Text Selection](/guide/core-features/text-selection/)** | Ask questions about highlighted text |
@@ -54,6 +55,17 @@ BraceKit is more than a chat widget — it's a fully-featured AI workspace embed
 2. Click the BraceKit icon that appears
 3. Choose an action: Summarize, Explain, Translate, or Rephrase
 4. Copy the result or apply it directly (in editable fields)
+
+### Creating a Slide Deck
+
+1. Open Slide Creator from the BraceKit sidebar
+2. Describe the audience, story, slide count, and visual direction
+3. Answer the canvas or clarifying questions
+4. Review the Brief and Design, then select **Build slides**
+5. Inspect the preview and ask for focused follow-up edits
+6. Export the completed deck as a ZIP of PNG images
+
+See the full [Slide Creator tutorial](/guide/core-features/slide-creator/).
 
 ### Analyzing a Webpage
 
