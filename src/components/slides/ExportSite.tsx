@@ -3,7 +3,7 @@ import { Download, Loader2 } from 'lucide-react';
 import { useToast } from '../ui/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
 import { filesForSiteZip } from '../../utils/siteVfs.ts';
-import { buildZip, slugify, type ZipEntry } from '../../utils/zipWriter.ts';
+import { buildZip, fileContentToZipBytes, slugify, type ZipEntry } from '../../utils/zipWriter.ts';
 import { isWebBuilderKind, normalizeBuilderKind } from '../../types/slides.ts';
 
 export function ExportSite() {
@@ -21,10 +21,9 @@ export function ExportSite() {
     if (!activeProject || disabled) return;
     setExporting(true);
     try {
-      const encoder = new TextEncoder();
       const entries: ZipEntry[] = zipFiles.map((f) => ({
         name: f.path.replace(/^\//, ''),
-        data: encoder.encode(f.content),
+        data: fileContentToZipBytes(f.path, f.content),
       }));
       const zip = buildZip(entries);
       const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' });

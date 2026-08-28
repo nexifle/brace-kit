@@ -41,8 +41,9 @@ export function PreviewActions({ compact = false }: { compact?: boolean }) {
   const preset = canvas ? SLIDE_CANVAS_PRESETS[canvas] : null;
 
   const kind = normalizeBuilderKind(activeProject?.kind);
-  const hasDeck = !!activeProject && (isWebBuilderKind(kind) || deckSlides.length > 0);
-  const exportBtn = isWebBuilderKind(kind) ? <ExportSite /> : <ExportDeck />;
+  const isWeb = isWebBuilderKind(kind);
+  const hasDeck = !!activeProject && (isWeb || deckSlides.length > 0);
+  const exportBtn = isWeb ? <ExportSite /> : <ExportDeck />;
   const position = hasDeck
     ? `${Math.min(currentSlideIndex + 1, deckSlides.length)} / ${deckSlides.length}`
     : null;
@@ -118,25 +119,29 @@ export function PreviewActions({ compact = false }: { compact?: boolean }) {
         <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
         Rendering
       </span>
-    ) : (
+    ) : isWeb ? null : (
       <span className="text-2xs text-muted-foreground/50">
         {preset ? `${preset.label} · ${preset.width}×${preset.height}` : 'Choose a slide size to continue'}
       </span>
     );
   }
 
-  const sizeChip = preset ? (
-    <span
-      className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
-      title={`${preset.label} · ${preset.width}×${preset.height} (export / canvas size)`}
-    >
-      {preset.width}×{preset.height}
-    </span>
-  ) : (
-    <span className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium text-muted-foreground">
-      Size not set
-    </span>
-  );
+  const sizeChip = isWeb
+    ? null
+    : preset
+      ? (
+        <span
+          className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium tabular-nums tracking-tight text-foreground/80"
+          title={`${preset.label} · ${preset.width}×${preset.height} (export / canvas size)`}
+        >
+          {preset.width}×{preset.height}
+        </span>
+      )
+      : (
+        <span className="shrink-0 rounded-full border border-border/80 bg-muted/70 px-2 py-0.5 text-2xs font-medium text-muted-foreground">
+          Size not set
+        </span>
+      );
 
   const prevNext = (
     <div className="flex items-center gap-1">

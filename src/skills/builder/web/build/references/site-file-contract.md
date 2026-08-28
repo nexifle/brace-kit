@@ -30,5 +30,9 @@ The harness also heals `pages` from `/pages/*.html` after each patch.
 
 ## Preview
 
-Pages render as a real document (`srcdoc`). Inline `<script>` and classic CDN
-scripts run. ES modules and `fetch()` often fail (`Origin: null`).
+Pages render as a real document inside a Chrome sandbox frame (relaxed CSP).
+Inline `<script>` and classic HTTPS CDN scripts run. ES modules and `fetch()`
+often fail (`Origin: null`). Clicks on links to other `pages[].path` values
+(e.g. `/plants`) are intercepted by a script injected into the preview srcdoc
+(the nested sandbox is opaque, so the parent cannot attach listeners) and swap
+the preview document — they are not live `chrome-extension://` URLs.

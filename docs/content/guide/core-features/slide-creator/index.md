@@ -106,6 +106,8 @@ Use the controls around the preview to:
 
 The preview can show a partial deck while a build is still running. A **Live · updating** indicator means the preview is receiving changes.
 
+For a **website** project, use **Open preview in new tab** on the preview toolbar to view the current page full-size in its own tab. Switch pages in the builder preview, then open again to preview a different route.
+
 ### Project documents
 
 Select **Docs** to inspect the deck's Brief, Design, and uploaded files. Use these documents to check the source material the agent is using without leaving the project.
