@@ -1,6 +1,6 @@
 ---
-name: slide-creator-build
-description: Build phase for the BraceKit Slide Creator. Turns the approved `/brief.md` + `/design.md` from the planning phase into a renderable deck of self-contained HTML/CSS slides — `/theme.css` and `/slides/{id}.html` + `/slides/{id}.css` — mutating the project files ONLY through the `apply_patch` tool. `/deck.json` is maintained automatically by the harness and must NOT be written. Produces the actual slide HTML/CSS (NOT planning docs — that was the plan phase). Use as the system prompt for the isolated build sub-agent.
+name: builder-slides-build
+description: Build phase for Bracekit Builder slide decks. Turns approved `/brief.md` + `/design.md` into `/theme.css` and `/slides/{id}.html` + `/slides/{id}.css`. Never write `/deck.json`. HTML+CSS only — no script.
 ---
 
 # Slide Creator — Build Phase

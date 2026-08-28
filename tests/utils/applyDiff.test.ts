@@ -206,9 +206,9 @@ describe('applyDiff failure on bad context', () => {
     expect(res).toEqual({ ok: true, text: '.title {\n  color: red;\n}\n' });
   });
 
-  test('fails context-only insert when the heading is missing', () => {
+  test('named @@ plus-only is a whole-file rewrite, not a failed insert', () => {
     const res = applyDiff(css, '@@ .does-not-exist {\n+  color: red;\n');
-    expect(res.ok).toBe(false);
+    expect(res).toEqual({ ok: true, text: '  color: red;\n' });
   });
 
   test('rejects an unknown diff line', () => {
@@ -259,6 +259,38 @@ describe('applyDiff update robustness (model-shaped hunks)', () => {
   test('plus-only update_file rewrites the whole file', () => {
     const res = applyDiff(css, '@@\n+.next {\n+  color: red;\n+}\n');
     expect(res).toEqual({ ok: true, text: '.next {\n  color: red;\n}\n' });
+  });
+
+  test('plus-only rewrite ignores @@ /path heading (agent HTML rewrite)', () => {
+    const oldHtml = '<!DOCTYPE html>\n<html>\n<body>old</body>\n</html>\n';
+    const diff =
+      '@@ /pages/index.html\n+<!DOCTYPE html>\n+<html lang="en">\n+<body>\n+  <header>Dashboard</header>\n+</body>\n+</html>\n';
+    const res = applyDiff(oldHtml, diff);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.text).toBe(
+        '<!DOCTYPE html>\n<html lang="en">\n<body>\n  <header>Dashboard</header>\n</body>\n</html>\n',
+      );
+      expect(res.text).not.toContain('old');
+    }
+  });
+
+  test('plus-only rewrite does not append when @@ heading matches a file line', () => {
+    const oldHtml = '<!DOCTYPE html>\n<html>\n<body>old</body>\n</html>\n';
+    const diff = '@@ <!DOCTYPE html>\n+<!DOCTYPE html>\n+<html>\n+<body>new</body>\n+</html>\n';
+    const res = applyDiff(oldHtml, diff);
+    expect(res).toEqual({
+      ok: true,
+      text: '<!DOCTYPE html>\n<html>\n<body>new</body>\n</html>\n',
+    });
+  });
+
+  test('plus-only rewrite strips a Codex envelope instead of leaking markers', () => {
+    const oldHtml = '<p>old</p>\n';
+    const diff =
+      '*** Begin Patch\n*** Update File: /pages/index.html\n@@\n+<p>new</p>\n*** End Patch';
+    const res = applyDiff(oldHtml, diff);
+    expect(res).toEqual({ ok: true, text: '<p>new</p>\n' });
   });
 });
 

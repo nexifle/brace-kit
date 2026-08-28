@@ -1,4 +1,5 @@
 import type { SlideActivityEvent, SlideFile, SlideProject, SlideRound } from '../types/index.ts';
+import { normalizeBuilderKind } from '../types/slides.ts';
 
 // ==================== Slide Project IndexedDB ====================
 // Dedicated database for Slide Creator projects — separate from the main chat
@@ -99,6 +100,7 @@ export interface StoredSlideProject {
   phase: SlideProject['phase'];
   mode: SlideProject['mode'];
   canvas: SlideProject['canvas'];
+  kind?: SlideProject['kind'];
   pendingAsk?: SlideProject['pendingAsk'];
   stopped?: boolean;
   autoTitled?: boolean;
@@ -139,6 +141,7 @@ function toMetadata(project: SlideProject): StoredSlideProject {
     phase: project.phase,
     mode: project.mode,
     canvas: project.canvas,
+    kind: normalizeBuilderKind(project.kind),
     pendingAsk: project.pendingAsk,
     stopped: project.stopped,
     autoTitled: project.autoTitled,
@@ -372,6 +375,7 @@ export async function getSlideProject(id: string): Promise<FullSlideProject | nu
       phase: metadata.phase,
       mode: metadata.mode ?? 'plan',
       canvas: metadata.canvas,
+      kind: normalizeBuilderKind(metadata.kind),
       pendingAsk: metadata.pendingAsk,
       stopped: metadata.stopped,
       autoTitled: metadata.autoTitled,

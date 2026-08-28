@@ -7,9 +7,9 @@ import { useStore } from './store/index.ts';
 // Run in standalone full-tab mode (mode persists for this page's store instance only)
 useStore.getState().setMode('tab');
 
-// A tab opened with ?open=slide-creator (from the sidebar suggestion dialog)
-// should land directly in the Slide Creator workspace.
-if (new URLSearchParams(location.search).get('open') === 'slide-creator') {
+// A tab opened with ?open=builder (legacy: slide-creator) lands in Builder.
+const openParam = new URLSearchParams(location.search).get('open');
+if (openParam === 'builder' || openParam === 'slide-creator') {
   useStore.getState().openSlideCreator();
 }
 

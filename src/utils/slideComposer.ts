@@ -17,12 +17,27 @@ export function slideComposerPlaceholder(
   project: SlideProject | null,
   phase: SlidePhase,
   sessionStatus: SlideSessionStatus,
+  pendingKind: SlideProject['kind'] = 'slides',
 ): string {
-  if (!project) return 'Describe the deck you want…';
+  const kind = project?.kind ?? pendingKind ?? 'slides';
+  if (!project) {
+    if (kind === 'site') return 'Describe the website you want…';
+    return 'Describe the deck you want…';
+  }
   if (sessionStatus === 'error') return 'Fix settings or retry your request…';
-  if (phase === 'plan_ready') return 'Edit the plan above, or press Build slides';
-  if (phase === 'ready') return 'Ask for changes, e.g. “Make the title darker”';
-  return 'Send a message about this deck…';
+  if (phase === 'plan_ready') {
+    return kind === 'slides'
+      ? 'Edit the plan above, or press Build slides'
+      : 'Edit the plan above, or press Build';
+  }
+  if (phase === 'ready') {
+    return kind === 'slides'
+      ? 'Ask for changes, e.g. “Make the title darker”'
+      : 'Ask for changes, e.g. “Make the hero taller”';
+  }
+  return kind === 'slides'
+    ? 'Send a message about this deck…'
+    : 'Send a message about this project…';
 }
 
 /**

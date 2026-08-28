@@ -188,9 +188,9 @@ export function SlideProjectList({
           <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-muted text-muted-foreground">
             <History size={22} />
           </div>
-          <p className="text-sm font-semibold text-foreground">No decks yet</p>
+          <p className="text-sm font-semibold text-foreground">No projects yet</p>
           <p className="text-xs text-muted-foreground leading-relaxed max-w-[240px]">
-            Decks you create in Slide Creator will show up here so you can reopen and keep editing them.
+            Projects you create in Builder will show up here so you can reopen and keep editing them.
           </p>
         </div>
       ) : (
@@ -205,8 +205,8 @@ export function SlideProjectList({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search decks…"
-                aria-label="Search decks"
+                placeholder="Search projects…"
+                aria-label="Search projects"
                 className="w-full h-8 pl-9 pr-8 text-sm bg-muted/40 border border-transparent focus:border-primary/40 focus:bg-background rounded-md outline-none transition-all placeholder:text-muted-foreground/40 text-foreground"
               />
               {query && (
@@ -359,7 +359,7 @@ export function SlideProjectList({
                                       active ? 'text-primary font-semibold' : 'text-foreground font-medium'
                                     )}
                                   >
-                                    {p.title || 'Untitled deck'}
+                                    {p.title || 'Untitled project'}
                                   </p>
                                   <div className="flex items-center gap-1.5 pt-0.5 text-2xs text-muted-foreground">
                                     <span className="flex items-center gap-1">
@@ -369,7 +369,9 @@ export function SlideProjectList({
                                     <span className="text-muted-foreground/30">·</span>
                                     <span className="flex items-center gap-1 text-muted-foreground/80">
                                       <MetaIcon phase={p.phase} />
-                                      {preset?.label ?? 'Size unset'}
+                                      {p.kind && p.kind !== 'slides'
+                                        ? p.kind
+                                        : (preset?.label ?? 'Size unset')}
                                     </span>
                                   </div>
                                 </div>

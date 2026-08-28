@@ -12,7 +12,7 @@ import {
 /** Serve skill resources from an in-memory map (no chrome/fetch). */
 function fetcherFrom(store: Record<string, string>) {
   return async (url: string) => {
-    const key = url.replace('skills://skills/slide-creator/', '');
+    const key = url.replace(/^skills:\/\/skills\/builder\/(?:slides|web)\//, '');
     const text = store[key];
     if (text === undefined) throw new Error(`not found: ${key}`);
     return text;
@@ -86,7 +86,7 @@ describe('listSlideSkillCatalog / loadSlideSkill', () => {
     const fetchUrls: string[] = [];
     const fetcher = async (url: string) => {
       fetchUrls.push(url);
-      const key = url.replace('skills://skills/slide-creator/', '');
+      const key = url.replace(/^skills:\/\/skills\/builder\/(?:slides|web)\//, '');
       if (key === 'plan/SKILL.md') {
         return 'a `references/element-palette.md` and again `references/element-palette.md`';
       }
@@ -112,6 +112,24 @@ describe('listSlideSkillCatalog / loadSlideSkill', () => {
       });
       expect(prompt).toContain('Terse chat output (token-efficient)');
     }
+  });
+
+  it('does not mix slide and web harness stubs', async () => {
+    const slides = await loadSlideSkill('plan', {
+      pack: 'slides',
+      fetcher: fetcherFrom({ 'plan/SKILL.md': 'slides skill' }),
+    });
+    expect(slides).toContain('slide deck');
+    expect(slides).toContain('Canvas is REQUIRED');
+    expect(slides).not.toContain('Writable paths: `/pages/**`');
+
+    const web = await loadSlideSkill('plan', {
+      pack: 'web',
+      fetcher: fetcherFrom({ 'plan/SKILL.md': 'web skill' }),
+    });
+    expect(web).toContain('website');
+    expect(web).not.toContain('Canvas is REQUIRED');
+    expect(web).not.toContain('per-slide content');
   });
 });
 

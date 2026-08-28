@@ -77,6 +77,8 @@ describe('buildAgentSummarizationPlan', () => {
     expect(plan?.prefix).toBeDefined();
     expect(String(plan!.prefix![1].content)).toContain('PREFIX of a turn');
     expect(String(plan!.history[1].content)).toContain('## Goal');
+    const withExtra = buildAgentSummarizationPlan(working, 30, 'keep file ops');
+    expect(String(withExtra!.history[1].content)).toContain('keep file ops');
     expect(combineAgentCompactSummary('hist', 'pref')).toContain('Turn Context (split turn)');
   });
 });

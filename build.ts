@@ -29,7 +29,7 @@ if (!existsSync(outDir)) {
 
 // Build the React app
 const result = await build({
-  entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts', './src/google-docs-bridge.ts', './src/slide-renderer.ts'],
+  entrypoints: ['./src/index.tsx', './src/tab.tsx', './src/content.ts', './src/onboarding.tsx', './src/background/index.ts', './src/google-docs-bridge.ts', './src/slide-renderer.ts', './src/site-preview.ts', './src/site-preview-frame.ts'],
   outdir: outDir,
   format: 'esm',
   target: 'browser',
@@ -53,6 +53,8 @@ if (result.success) {
     { from: './public/tab.html', to: `${outDir}/tab.html` },
     { from: './public/onboarding.html', to: `${outDir}/onboarding.html` },
     { from: './public/slide-renderer.html', to: `${outDir}/slide-renderer.html` },
+    { from: './public/site-preview.html', to: `${outDir}/site-preview.html` },
+    { from: './public/site-preview-frame.html', to: `${outDir}/site-preview-frame.html` },
     { from: './manifest.json', to: `${outDir}/manifest.json` },
   ];
 
@@ -125,7 +127,7 @@ if (result.success) {
   // Flatten dist/src/* to dist/ (Bun preserves src/ subdir structure)
   const srcOutDir = join(outDir, 'src');
   if (existsSync(srcOutDir)) {
-    const flatFiles = ['index.js', 'tab.js', 'content.js', 'index.css', 'onboarding.js', 'onboarding.css', 'google-docs-bridge.js', 'slide-renderer.js'];
+    const flatFiles = ['index.js', 'tab.js', 'content.js', 'index.css', 'onboarding.js', 'onboarding.css', 'google-docs-bridge.js', 'slide-renderer.js', 'site-preview.js', 'site-preview-frame.js'];
     for (const file of flatFiles) {
       const from = join(srcOutDir, file);
       const to = join(outDir, file);

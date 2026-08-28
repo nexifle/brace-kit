@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test';
-import { buildZip, crc32, dataUrlToBytes, slugify, type ZipEntry } from '../../src/utils/zipWriter.ts';
+import {
+  buildZip,
+  crc32,
+  dataUrlToBytes,
+  fileContentToZipBytes,
+  slugify,
+  type ZipEntry,
+} from '../../src/utils/zipWriter.ts';
 
 /** Minimal ZIP local-file-header parser to prove the archive is well-formed. */
 function parseLocalHeaders(bytes: Uint8Array): { name: string; crc: number; size: number }[] {
@@ -96,6 +103,27 @@ describe('dataUrlToBytes', () => {
   it('rejects non-base64 data URLs', () => {
     expect(() => dataUrlToBytes('data:text/plain,hello')).toThrow(/base64/);
     expect(() => dataUrlToBytes('http://example.com/x.png')).toThrow(/base64/);
+  });
+});
+
+describe('fileContentToZipBytes', () => {
+  it('decodes uploaded image data URLs into original binary bytes', () => {
+    const raw = new Uint8Array([0, 137, 80, 78, 71, 255]);
+    const b64 = Buffer.from(raw).toString('base64');
+
+    expect(fileContentToZipBytes('/uploads/hero.png', `data:image/png;base64,${b64}`)).toEqual(raw);
+  });
+
+  it('keeps ordinary files as UTF-8 text', () => {
+    expect(fileContentToZipBytes('/pages/index.html', '<h1>こんにちは</h1>')).toEqual(
+      new TextEncoder().encode('<h1>こんにちは</h1>'),
+    );
+  });
+
+  it('does not decode data URLs outside the uploads directory', () => {
+    expect(fileContentToZipBytes('/pages/index.html', 'data:text/plain;base64,SGk=')).toEqual(
+      new TextEncoder().encode('data:text/plain;base64,SGk='),
+    );
   });
 });
 

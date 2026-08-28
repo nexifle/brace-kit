@@ -16,12 +16,14 @@ import type {
   ProviderConfig,
 } from '../types/index.ts';
 import type {
+  BuilderKind,
   SlideMainMessage,
   SlideProject,
   SlideCanvas,
   SlideFile,
   SlideUserAttachment,
 } from '../types/slides.ts';
+import { normalizeBuilderKind } from '../types/slides.ts';
 import type { SlidePendingAttachment } from '../utils/slideUploads.ts';
 import {
   hydrateAttachments,
@@ -48,8 +50,15 @@ import {
   type SlideToolOptions,
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
-import type { AgentTransport, AgentAbortFn, StreamDelta } from './agentSession.ts';
-import { isSlideCanvas, rebuildDeckProjection, syncDeckJson, verifyDeck } from '../utils/slideVfs.ts';
+import {
+  compactAgentWorking,
+  type AgentTransport,
+  type AgentAbortFn,
+  type StreamDelta,
+  type AgentChatResponse,
+} from './agentSession.ts';
+import { isSlideCanvas } from '../utils/slideVfs.ts';
+import { artifactFor, type ArtifactStrategy } from './artifacts/index.ts';
 import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
 import type { SlideAskState } from '../store/slideStore.ts';
 
@@ -60,7 +69,24 @@ export const SLIDE_FUNCTION_CALLING_BLOCKED =
 /** Derive a short provisional title from the user's deck prompt. */
 export function deriveSlideTitle(prompt: string): string {
   const cleaned = prompt.trim().replace(/\s+/g, ' ').slice(0, 60).trim();
-  return cleaned.length > 0 ? cleaned : 'Untitled deck';
+  return cleaned.length > 0 ? cleaned : 'Untitled project';
+}
+
+export type AgentTranscriptField = 'planTranscript' | 'editTranscript' | 'buildTranscript';
+
+/** Which persisted agent transcript `/compact` should rewrite. */
+export function pickAgentTranscriptField(project: SlideProject): AgentTranscriptField | null {
+  if (project.phase === 'build' && project.buildTranscript?.length) return 'buildTranscript';
+  if (
+    project.editTranscript?.length &&
+    (project.phase === 'ready' || project.phase === 'error' || project.phase === 'edit')
+  ) {
+    return 'editTranscript';
+  }
+  if (project.planTranscript?.length) return 'planTranscript';
+  if (project.editTranscript?.length) return 'editTranscript';
+  if (project.buildTranscript?.length) return 'buildTranscript';
+  return null;
 }
 
 export { buildPlanSessionMessages } from '../utils/slideVisionTranscript.ts';
@@ -187,7 +213,7 @@ export interface SlideAgentDeps {
 interface AgentRunState {
   running: boolean;
   paused: PlanPhaseResult['paused'] | null;
-  skills: Partial<Record<SlidePhaseKey, string>>;
+  skills: Record<string, string>;
   abort: AbortController | null;
   /** Corrective verification rounds used this phase entry (cap 1, Phase 1). */
   verifyRetries: number;
@@ -264,14 +290,18 @@ export function createSlideAgent(
    * this surfaces the verification failure in the feed and lets
    * `retryFailedPhase` route a retry back to the failed phase.
    */
-  function emitVerifyFailed(phase: 'build' | 'edit', issues: string[]): void {
+  function emitVerifyFailed(
+    phase: 'build' | 'edit',
+    issues: string[],
+    artifact: ArtifactStrategy,
+  ): void {
     activitySink()?.push({
       id: `${phase}_verify_failed`,
       type: 'phase_failed',
       status: 'failed',
       ts: Date.now(),
       phase,
-      label: 'Deck failed verification',
+      label: artifact.verifyFailMessage(issues).split('\n')[0] ?? 'Failed verification',
       detail: issues.join('\n'),
     });
   }
@@ -287,12 +317,14 @@ export function createSlideAgent(
     return true;
   }
 
-  async function skill(phase: SlidePhaseKey): Promise<string> {
-    if (state.skills[phase]) return state.skills[phase] as string;
+  async function skill(phase: SlidePhaseKey, artifact: ArtifactStrategy): Promise<string> {
+    const key = `${artifact.skillPack}:${phase}`;
+    if (state.skills[key]) return state.skills[key];
     const text = await loadSlideSkill(phase, {
+      pack: artifact.skillPack,
       ...(deps.skillFetcher ? { fetcher: deps.skillFetcher } : {}),
     });
-    state.skills[phase] = text;
+    state.skills[key] = text;
     return text;
   }
 
@@ -313,38 +345,13 @@ export function createSlideAgent(
     }
   }
 
-  /** Project-knowledge block derived from the VFS at phase start (stable per run). */
-  function projectKnowledge(files: SlideFile[]): string {
-    const deck = rebuildDeckProjection(files);
-    const paths = files
-      .map((f) => f.path)
-      .filter(Boolean)
-      .sort()
-      .join(', ');
-    return (
-      '\n\n## Project state\n' +
-      `- canvas: ${deck.canvas ?? 'unset'}\n` +
-      `- slide count: ${deck.slideOrder.length}\n` +
-      `- files: ${paths || 'none'}`
-    );
-  }
-
-  /**
-   * Compose the byte-stable system prompt for a phase run: the compact phase
-   * stub + skill catalog (NOT the full SKILL.md / references) + a
-   * project-knowledge block + (optional) workspace rules. The prefix is
-   * load-bearing for provider prompt caching — it MUST stay byte-identical
-   * across every turn of the phase run, so build it ONCE per run and never
-   * reorder or re-read it mid-conversation or the cache misses. All variable
-   * content (file reads, load_skill results, history, latest message,
-   * error_context) lives in the message tail, never here.
-   */
   async function phaseSystemPrompt(
     phaseKey: SlidePhaseKey,
     project: SlideProject,
   ): Promise<string> {
-    const base = await skill(phaseKey);
-    const knowledge = projectKnowledge(project.files);
+    const artifact = artifactFor(project.kind);
+    const base = await skill(phaseKey, artifact);
+    const knowledge = artifact.projectKnowledge(project.files);
     const rules = await workspaceRules();
     return base + knowledge + (rules ? `\n\n## Workspace rules (AGENTS.md)\n${rules}` : '');
   }
@@ -407,6 +414,7 @@ export function createSlideAgent(
       providerConfig: providerConfig(),
       chatOptions: chatOptions(),
       files: project.files,
+      kind: normalizeBuilderKind(project.kind),
       signal: abort.signal,
       maxRounds: deps.maxRounds,
       transport: deps.transport,
@@ -442,7 +450,10 @@ export function createSlideAgent(
       const canvas = pickCanvas(project.canvas, result.canvasChoice);
       const next: SlideProject = {
         ...project,
-        files: syncDeckJson(result.files, { title: project.title, canvas: canvas ?? undefined }),
+        files: artifactFor(project.kind).sync(result.files, {
+          title: project.title,
+          canvas: canvas ?? undefined,
+        }),
         phase: 'plan_ready',
         canvas,
         pendingAsk: undefined,
@@ -495,6 +506,7 @@ export function createSlideAgent(
     prompt: string,
     mode: 'plan' | 'agent' = 'plan',
     pending?: SlidePendingAttachment[],
+    kind: BuilderKind = 'slides',
   ): Promise<void> {
     const text = prompt.trim();
     const pendingList = (pending ?? []).filter((a) => a.type !== 'error' && a.data);
@@ -509,6 +521,7 @@ export function createSlideAgent(
       updatedAt: now,
       phase: 'plan',
       mode,
+      kind: normalizeBuilderKind(kind),
       canvas: null,
 
       messages: [makeMsg('user', display, attachments)],
@@ -549,6 +562,7 @@ export function createSlideAgent(
         providerConfig: providerConfig(),
         chatOptions: chatOptions(),
         files: project.files,
+        kind: normalizeBuilderKind(project.kind),
         signal: abort.signal,
         maxRounds: deps.maxRounds,
         transport: deps.transport,
@@ -589,7 +603,10 @@ export function createSlideAgent(
       const canvas = pickCanvas(project.canvas, result.canvasChoice);
       const next: SlideProject = {
         ...current,
-        files: syncDeckJson(result.files, { title: project.title, canvas: canvas ?? undefined }),
+        files: artifactFor(project.kind).sync(result.files, {
+          title: project.title,
+          canvas: canvas ?? undefined,
+        }),
         phase: 'plan_ready',
         canvas,
         pendingAsk: undefined,
@@ -663,10 +680,11 @@ export function createSlideAgent(
     phase: 'build' | 'edit',
     files: SlideFile[],
     messages: APIMessage[],
+    artifact: ArtifactStrategy,
   ): Promise<{ retry: boolean }> {
-    const v = verifyDeck(files);
+    const v = artifact.verify(files);
     let renderFailures: string[] = [];
-    if (v.ok) {
+    if (v.ok && artifact.sandboxRenderProbe) {
       try {
         renderFailures = (await host.verifyRender?.(files)) ?? [];
       } catch {
@@ -683,7 +701,7 @@ export function createSlideAgent(
     messages.push({
       role: 'user',
       content:
-        `[verification] The previous ${phase} produced a deck that failed verification:\n` +
+        `[verification] The previous ${phase} failed verification:\n` +
         lines.join('\n') +
         '\nFix the specific issues above and re-issue the needed apply_patch changes. Do not undo unrelated completed work.',
     });
@@ -703,9 +721,27 @@ export function createSlideAgent(
     active.mode === 'agent' ? active : { ...active, mode: 'agent' as const };
     if (project !== active) host.landProject(project);
 
-    await runBuildCore(project, [
-      { role: 'user', content: 'Build the deck from the approved brief and design.' },
-    ]);
+    await runBuildCore(project, buildKickoffMessages(project));
+  }
+
+  /** First user turn on the main transcript — the request that started the project. */
+  function originalUserTurn(project: SlideProject): SlideMainMessage | undefined {
+    return project.messages.find((m) => m.role === 'user');
+  }
+
+  /**
+   * Bridge plan → build: send the original request plus the kind-owned execute
+   * instruction. Plan mode and agent auto-continue use the same kickoff.
+   */
+  function buildKickoffMessages(project: SlideProject): APIMessage[] {
+    const execute = artifactFor(project.kind).buildKickoffInstruction;
+    const first = originalUserTurn(project);
+    const original = first?.content?.trim() ?? '';
+    const attachments = hydrateAttachments(first?.attachments, project.files);
+    const content = original
+      ? `Original request:\n${original}\n\n${execute}`
+      : execute;
+    return [slideApiUserMessage(content, attachments, { sendImageParts: sendImageParts() })];
   }
 
   /**
@@ -736,6 +772,7 @@ export function createSlideAgent(
     project: SlideProject,
     messages: APIMessage[],
   ): Promise<void> {
+    const artifact = artifactFor(project.kind);
     state.verifyRetries = 0;
     const systemPrompt = await phaseSystemPrompt('build', project);
     const abort = new AbortController();
@@ -753,6 +790,7 @@ export function createSlideAgent(
         providerConfig: providerConfig(),
         chatOptions: chatOptions(),
         files,
+        kind: normalizeBuilderKind(project.kind),
         signal: abort.signal,
         maxRounds: deps.maxRounds,
         transport: deps.transport,
@@ -775,11 +813,12 @@ export function createSlideAgent(
     let verifyFailed = false;
     let verifyIssues: string[] = [];
     if (shouldVerify) {
-      const verdict = await verifyAndRetry('build', result.files, messages);
+      const artifact = artifactFor(project.kind);
+      const verdict = await verifyAndRetry('build', result.files, messages, artifact);
       if (verdict.retry) {
         result = await invoke(messages, result.files);
       }
-      const v = verifyDeck(result.files);
+      const v = artifact.verify(result.files);
       verifyFailed = !v.ok;
       verifyIssues = v.issues;
     }
@@ -789,7 +828,7 @@ export function createSlideAgent(
     host.setBusy(false);
 
     /**
-     * Build the landing project for a build round. Re-reads the freshest active
+     * Assemble the project snapshot for a build round. Re-reads the freshest active
      * project instead of the start-of-build snapshot so a concurrent auto-title
      * (which lands mid-build in agent mode) is never reverted, and re-syncs
      * deck.json.title with the current project title so the export basename
@@ -799,7 +838,7 @@ export function createSlideAgent(
       const current = host.getActiveProject() ?? project;
       return {
         ...current,
-        files: syncDeckJson(files, { title: current.title }),
+        files: artifactFor(current.kind ?? project.kind).sync(files, { title: current.title }),
         updatedAt: Date.now(),
         buildTranscript: result.transcript ?? current.buildTranscript,
         ...patch,
@@ -816,16 +855,13 @@ export function createSlideAgent(
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
-        emitVerifyFailed('build', verifyIssues);
+        emitVerifyFailed('build', verifyIssues, artifact);
         if (slides > 0) {
-          recordRound(
-            next.files,
-            `Deck built · ${slides} slide${slides === 1 ? '' : 's'} (needs review)`,
-          );
+          recordRound(next.files, artifact.builtRoundLabel(slides, { needsReview: true }));
         }
         appendMessage(
           next,
-          makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
+          makeMsg('error', artifact.verifyFailMessage(verifyIssues)),
         );
         return;
       }
@@ -837,18 +873,10 @@ export function createSlideAgent(
       host.setPhase('ready');
       // slideCount comes from the same mapBuildResult projection as the activity feed.
       const slides = result.slideCount ?? 0;
-      recordRound(
-        next.files,
-        slides > 0 ? `Deck built · ${slides} slide${slides === 1 ? '' : 's'}` : 'Deck built',
-      );
+      recordRound(next.files, artifact.builtRoundLabel(slides));
       appendMessage(
         next,
-        assistantOrFallback(
-          result.content,
-          slides > 0
-            ? `Deck built with ${slides} slide${slides === 1 ? '' : 's'}.`
-            : 'Deck built.',
-        ),
+        assistantOrFallback(result.content, artifact.builtFallback(slides)),
       );
       return;
     }
@@ -875,13 +903,13 @@ export function createSlideAgent(
         if (narration) {
           landed = appendMessage(landed, makeMsg('assistant', narration));
         }
-        if (verifyFailed) emitVerifyFailed('build', verifyIssues);
+        if (verifyFailed) emitVerifyFailed('build', verifyIssues, artifact);
         appendMessage(
           landed,
           makeMsg(
             'error',
             (verifyFailed
-              ? 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')
+              ? artifactFor(project.kind).verifyFailMessage(verifyIssues)
               : maxRoundsNoDeliverable('build', result.rounds, result.slideCount)),
           ),
         );
@@ -993,6 +1021,7 @@ export function createSlideAgent(
         providerConfig: providerConfig(),
         chatOptions: chatOptions(),
         files,
+        kind: normalizeBuilderKind(project.kind),
         signal: abort.signal,
         maxRounds: deps.maxRounds,
         transport: deps.transport,
@@ -1013,11 +1042,12 @@ export function createSlideAgent(
     let verifyFailed = false;
     let verifyIssues: string[] = [];
     if (shouldVerify) {
-      const verdict = await verifyAndRetry('edit', result.files, messages);
+      const artifact = artifactFor(project.kind);
+      const verdict = await verifyAndRetry('edit', result.files, messages, artifact);
       if (verdict.retry) {
         result = await invoke(messages, result.files);
       }
-      const v = verifyDeck(result.files);
+      const v = artifact.verify(result.files);
       verifyFailed = !v.ok;
       verifyIssues = v.issues;
     }
@@ -1043,11 +1073,11 @@ export function createSlideAgent(
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
-        emitVerifyFailed('edit', verifyIssues);
+        emitVerifyFailed('edit', verifyIssues, artifactFor(project.kind));
         if (slides > 0) recordRound(result.files, 'Continue edit (needs review)');
         appendMessage(
           next,
-          makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
+          makeMsg('error', artifactFor(project.kind).verifyFailMessage(verifyIssues)),
         );
         return;
       }
@@ -1085,13 +1115,13 @@ export function createSlideAgent(
         const narration = result.content?.trim();
         let landed = next;
         if (narration) landed = appendMessage(landed, makeMsg('assistant', narration));
-        if (verifyFailed) emitVerifyFailed('edit', verifyIssues);
+        if (verifyFailed) emitVerifyFailed('edit', verifyIssues, artifactFor(project.kind));
         appendMessage(
           landed,
           makeMsg(
             'error',
             verifyFailed
-              ? 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')
+              ? artifactFor(project.kind).verifyFailMessage(verifyIssues)
               : maxRoundsNoDeliverable('edit', result.rounds, result.slideCount),
           ),
         );
@@ -1200,6 +1230,7 @@ export function createSlideAgent(
         providerConfig: providerConfig(),
         chatOptions: chatOptions(),
         files,
+        kind: normalizeBuilderKind(project.kind),
         signal: abort.signal,
         maxRounds: deps.maxRounds,
         transport: deps.transport,
@@ -1220,11 +1251,12 @@ export function createSlideAgent(
     let verifyFailed = false;
     let verifyIssues: string[] = [];
     if (shouldVerify) {
-      const verdict = await verifyAndRetry('edit', result.files, messages);
+      const artifact = artifactFor(project.kind);
+      const verdict = await verifyAndRetry('edit', result.files, messages, artifact);
       if (verdict.retry) {
         result = await invoke(messages, result.files);
       }
-      const v = verifyDeck(result.files);
+      const v = artifact.verify(result.files);
       verifyFailed = !v.ok;
       verifyIssues = v.issues;
     }
@@ -1248,11 +1280,11 @@ export function createSlideAgent(
         host.landProject(next);
         host.setPhase(next.phase);
         host.setPendingAsk(null);
-        emitVerifyFailed('edit', verifyIssues);
+        emitVerifyFailed('edit', verifyIssues, artifactFor(project.kind));
         if (slides > 0) recordRound(result.files, `${display} (needs review)`);
         appendMessage(
           next,
-          makeMsg('error', 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')),
+          makeMsg('error', artifactFor(project.kind).verifyFailMessage(verifyIssues)),
         );
         return;
       }
@@ -1293,13 +1325,13 @@ export function createSlideAgent(
         if (narration) {
           landed = appendMessage(landed, makeMsg('assistant', narration));
         }
-        if (verifyFailed) emitVerifyFailed('edit', verifyIssues);
+        if (verifyFailed) emitVerifyFailed('edit', verifyIssues, artifactFor(project.kind));
         appendMessage(
           landed,
           makeMsg(
             'error',
             verifyFailed
-              ? 'Deck failed verification:\n' + verifyIssues.map((i) => `- ${i}`).join('\n')
+              ? artifactFor(project.kind).verifyFailMessage(verifyIssues)
               : maxRoundsNoDeliverable('edit', result.rounds, result.slideCount),
           ),
         );
@@ -1336,6 +1368,35 @@ export function createSlideAgent(
     }
   }
 
+  async function compactProject(customInstructions?: string): Promise<void> {
+    if (state.running) return;
+    const project = host.getActiveProject();
+    if (!project) return;
+    const field = pickAgentTranscriptField(project);
+    if (!field) return;
+    const working = project[field];
+    if (!working?.length) return;
+
+    const transport: AgentTransport =
+      deps.transport ??
+      ((request) => chrome.runtime.sendMessage(request) as Promise<AgentChatResponse>);
+    const compacted = await compactAgentWorking(working, {
+      transport,
+      providerConfig: providerConfig(),
+      chatOptions: { ...(deps.getChatOptions?.() ?? {}), stream: false },
+      customInstructions,
+      requestIdPrefix: 'slide_compact',
+    });
+    if (!compacted.ok) return;
+    const current = host.getActiveProject();
+    if (!current || current.id !== project.id) return;
+    host.landProject({
+      ...current,
+      [field]: compacted.messages,
+      updatedAt: Date.now(),
+    });
+  }
+
   /** Abort the in-flight phase, leaving partial VFS consistent. */
   function stop(): void {
     state.abort?.abort();
@@ -1362,6 +1423,7 @@ export function createSlideAgent(
     /** Resume a stopped build with the user's follow-up message. */
     runBuildContinue,
     sendFollowUp,
+    compactProject,
     /** Re-run plan/build after a phase failure without a fake "continue" turn. */
     retryFailedPhase,
     stop,

@@ -478,6 +478,100 @@
     shape-rendering: geometricPrecision;
 }
 
+/* Theme-aware markdown and builder code blocks */
+.md-codeblock-wrapper {
+    background: var(--muted);
+    border-color: var(--border);
+}
+
+.md-codeblock-wrapper > div {
+    background: color-mix(in oklch, var(--muted) 70%, var(--background));
+    border-color: var(--border);
+}
+
+.md-codeblock-wrapper .copy-code-btn,
+.md-codeblock-wrapper > div > span {
+    color: var(--muted-foreground);
+}
+
+.md-codeblock-wrapper .copy-code-btn:hover {
+    color: var(--foreground);
+    background: var(--accent);
+}
+
+.md-codeblock-wrapper .hljs,
+.builder-code-highlight.hljs {
+    background: transparent;
+    color: var(--foreground);
+}
+
+/* Highlight.js ships with a dark theme globally; override its tokens in light mode. */
+[data-theme="light"] .hljs .hljs-doctag,
+[data-theme="light"] .hljs .hljs-keyword,
+[data-theme="light"] .hljs .hljs-meta .hljs-keyword,
+[data-theme="light"] .hljs .hljs-template-tag,
+[data-theme="light"] .hljs .hljs-template-variable,
+[data-theme="light"] .hljs .hljs-type,
+[data-theme="light"] .hljs .hljs-variable.language_ {
+    color: #d73a49;
+}
+
+[data-theme="light"] .hljs .hljs-title,
+[data-theme="light"] .hljs .hljs-title.class_,
+[data-theme="light"] .hljs .hljs-title.function_ {
+    color: #6f42c1;
+}
+
+[data-theme="light"] .hljs .hljs-attr,
+[data-theme="light"] .hljs .hljs-attribute,
+[data-theme="light"] .hljs .hljs-literal,
+[data-theme="light"] .hljs .hljs-meta,
+[data-theme="light"] .hljs .hljs-number,
+[data-theme="light"] .hljs .hljs-operator,
+[data-theme="light"] .hljs .hljs-selector-attr,
+[data-theme="light"] .hljs .hljs-selector-class,
+[data-theme="light"] .hljs .hljs-selector-id,
+[data-theme="light"] .hljs .hljs-variable {
+    color: #005cc5;
+}
+
+[data-theme="light"] .hljs .hljs-string,
+[data-theme="light"] .hljs .hljs-regexp {
+    color: #032f62;
+}
+
+[data-theme="light"] .hljs .hljs-built_in,
+[data-theme="light"] .hljs .hljs-symbol {
+    color: #e36209;
+}
+
+[data-theme="light"] .hljs .hljs-code,
+[data-theme="light"] .hljs .hljs-comment,
+[data-theme="light"] .hljs .hljs-formula {
+    color: #6a737d;
+}
+
+[data-theme="light"] .hljs .hljs-name,
+[data-theme="light"] .hljs .hljs-quote,
+[data-theme="light"] .hljs .hljs-selector-pseudo,
+[data-theme="light"] .hljs .hljs-selector-tag {
+    color: #22863a;
+}
+
+[data-theme="light"] .hljs .hljs-subst,
+[data-theme="light"] .hljs .hljs-emphasis,
+[data-theme="light"] .hljs .hljs-strong {
+    color: var(--foreground);
+}
+
+[data-theme="light"] .hljs .hljs-section {
+    color: #005cc5;
+}
+
+[data-theme="light"] .hljs .hljs-bullet {
+    color: #735c0f;
+}
+
 /* Light theme mermaid overrides */
 [data-theme="light"] .mermaid-diagram-content svg {
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));

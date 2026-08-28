@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useSlideStore } from '../../../store/slideStore.ts';
 import {
   AttachmentChip,
@@ -127,19 +128,30 @@ export function AgentReasoningRow({
         ) : null}
       </button>
 
-      {open && hasBody ? (
-        <div className="mt-1.5 max-h-48 overflow-y-auto border-l border-border/60 pl-3 scrollbar-thin">
-          <p className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-muted-foreground/90">
-            {content}
-            {live ? (
-              <span
-                aria-hidden
-                className="ml-0.5 inline-block h-3 w-0.5 translate-y-0.5 animate-pulse bg-primary"
-              />
-            ) : null}
-          </p>
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {open && hasBody ? (
+          <motion.div
+            key="reasoning-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="mt-1.5 max-h-48 overflow-y-auto border-l border-border/60 pl-3 scrollbar-thin">
+              <p className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-muted-foreground/90">
+                {content}
+                {live ? (
+                  <span
+                    aria-hidden
+                    className="ml-0.5 inline-block h-3 w-0.5 translate-y-0.5 animate-pulse bg-primary"
+                  />
+                ) : null}
+              </p>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -255,42 +267,53 @@ export function AgentFileCard({
           <Loader2 size={12} className="shrink-0 animate-spin text-primary" />
         ) : null}
       </button>
-      {open ? (
-        <ul className="space-y-0.5 border-t border-border/50 px-2.5 py-1.5">
-          {item.paths.map((path) => (
-            <li key={path}>
-              <button
-                type="button"
-                onClick={() => onPathClick?.(path)}
-                className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left font-mono text-[12px] text-muted-foreground ${
-                  onPathClick
-                    ? 'hover:bg-muted/50 hover:text-foreground'
-                    : 'cursor-default'
-                }`}
-              >
-                <span
-                  className={
-                    sym === '+'
-                      ? 'text-success'
-                      : sym === '-'
-                        ? 'text-destructive'
-                        : 'text-primary'
-                  }
-                >
-                  {sym}
-                </span>
-                <FileCode2 size={12} className="shrink-0 opacity-60" />
-                <span className="min-w-0 truncate">{path}</span>
-              </button>
-            </li>
-          ))}
-          {item.detail ? (
-            <li className="px-1.5 pt-0.5 text-[11px] text-muted-foreground/80 whitespace-pre-wrap">
-              {item.detail}
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="file-card-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <ul className="space-y-0.5 border-t border-border/50 px-2.5 py-1.5">
+              {item.paths.map((path) => (
+                <li key={path}>
+                  <button
+                    type="button"
+                    onClick={() => onPathClick?.(path)}
+                    className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left font-mono text-[12px] text-muted-foreground ${
+                      onPathClick
+                        ? 'hover:bg-muted/50 hover:text-foreground'
+                        : 'cursor-default'
+                    }`}
+                  >
+                    <span
+                      className={
+                        sym === '+'
+                          ? 'text-success'
+                          : sym === '-'
+                            ? 'text-destructive'
+                            : 'text-primary'
+                      }
+                    >
+                      {sym}
+                    </span>
+                    <FileCode2 size={12} className="shrink-0 opacity-60" />
+                    <span className="min-w-0 truncate">{path}</span>
+                  </button>
+                </li>
+              ))}
+              {item.detail ? (
+                <li className="px-1.5 pt-0.5 text-[11px] text-muted-foreground/80 whitespace-pre-wrap">
+                  {item.detail}
+                </li>
+              ) : null}
+            </ul>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -408,20 +431,31 @@ export function AgentTurnFooter({
         ) : null}
       </button>
 
-      {open ? (
-        <dl className="mt-2 space-y-1.5 border-l border-border/60 pl-3">
-          {rows.map((row) => (
-            <div key={row.label} className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-3">
-              <dt className="shrink-0 text-[12px] text-muted-foreground/75 sm:w-[6.75rem]">
-                {row.label}
-              </dt>
-              <dd className="min-w-0 flex-1 text-[12.5px] leading-snug text-foreground/90 break-words">
-                {row.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="turn-footer-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <dl className="mt-2 space-y-1.5 border-l border-border/60 pl-3">
+              {rows.map((row) => (
+                <div key={row.label} className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-3">
+                  <dt className="shrink-0 text-[12px] text-muted-foreground/75 sm:w-[6.75rem]">
+                    {row.label}
+                  </dt>
+                  <dd className="min-w-0 flex-1 text-[12.5px] leading-snug text-foreground/90 break-words">
+                    {row.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {item.canRetry && onRetry ? (
         <div className="mt-2 flex justify-end">
@@ -475,13 +509,24 @@ export function AgentGroup({
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span>{item.title}</span>
       </button>
-      {open ? (
-        <div className="space-y-1.5 border-l border-border/50 pl-3">
-          {item.children.map((c, i) => (
-            <div key={'id' in c ? c.id : `${item.id}_${i}`}>{renderChild(c)}</div>
-          ))}
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="agent-group-body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-1.5 border-l border-border/50 pl-3">
+              {item.children.map((c, i) => (
+                <div key={'id' in c ? c.id : `${item.id}_${i}`}>{renderChild(c)}</div>
+              ))}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

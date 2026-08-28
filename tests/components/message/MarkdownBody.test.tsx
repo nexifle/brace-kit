@@ -49,6 +49,8 @@ describe('MarkdownBody', () => {
     expect(html).toMatch(/<h2[\s>]/); // heading rendered
     expect(html).toMatch(/<strong>Plus Jakarta Sans<\/strong>/);
     expect(html).toMatch(/<code[\s>]|class="[^"]*language-/); // fenced code
+    expect(html).toContain('md-codeblock-wrapper');
+    expect(html).not.toContain('bg-[#0d1117]');
   });
 
   it('bare variant omits prose shell so parents own bubble chrome', () => {

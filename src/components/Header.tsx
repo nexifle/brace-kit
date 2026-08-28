@@ -31,7 +31,7 @@ export function Header() {
   };
 
   const openInTab = async (openSlideCreator = false) => {
-    const url = chrome.runtime.getURL('tab.html') + (openSlideCreator ? '?open=slide-creator' : '');
+    const url = chrome.runtime.getURL('tab.html') + (openSlideCreator ? '?open=builder' : '');
     chrome.tabs.create({ url });
     // Close the side panel so only the standalone tab stays open.
     try {
@@ -57,7 +57,7 @@ export function Header() {
   const commonActions = (
     <div className="flex gap-1 items-center">
       <IconButton
-        title="Slide Creator"
+        title="Builder"
         onClick={() => {
           if (store.mode === 'sidebar' && !store.preferences.slideCreatorTabSuggestionDismissed) {
             setShowSlideTabDialog(true);

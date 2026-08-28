@@ -61,7 +61,7 @@ export function SlideCreatorTabDialog({ isOpen, onOpenInTab, onCancel }: SlideCr
                 </div>
                 <div className="min-w-0">
                   <h3 id="slide-tab-title" className="text-lg font-bold tracking-tight text-foreground leading-snug">
-                    Slide Creator works best in a new tab
+                    Builder works best in a new tab
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed mt-1">
                     The full canvas, preview, and editing tools are easier to use with more room. Open it as a focused workspace instead of in the side panel.

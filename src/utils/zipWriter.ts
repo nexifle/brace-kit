@@ -152,6 +152,14 @@ export function dataUrlToBytes(dataUrl: string): { mimeType: string; data: Uint8
   return { mimeType, data };
 }
 
+/** Encode a VFS file for a ZIP, decoding uploaded data-URL images to binary. */
+export function fileContentToZipBytes(path: string, content: string): Uint8Array {
+  if (path.startsWith('/uploads/') && content.startsWith('data:')) {
+    return dataUrlToBytes(content).data;
+  }
+  return new TextEncoder().encode(content);
+}
+
 /**
  * Slugify a string into a safe ZIP entry basename (ASCII, dashed). Empty input
  * yields `""` — callers should fall back to a stable token.

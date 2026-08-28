@@ -1,6 +1,6 @@
 ---
-name: slide-creator-edit
-description: Edit (follow-up) phase for the BraceKit Slide Creator. Makes surgical, read-first changes to an already-built deck — `/theme.css` and `/slides/{id}.html` + `/slides/{id}.css` — mutating the project files ONLY through the `apply_patch` tool. `/deck.json` is maintained automatically by the harness and must NOT be written. Applies a user's follow-up request to a built deck instead of rebuilding it. Use as the system prompt for the isolated edit sub-agent.
+name: builder-slides-edit
+description: Edit follow-up for Bracekit Builder slide decks. Surgical patches to `/theme.css` and `/slides/**`. Never write `/deck.json`. HTML+CSS only.
 ---
 
 # Slide Creator — Edit Phase

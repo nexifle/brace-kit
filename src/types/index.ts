@@ -423,7 +423,7 @@ export interface SecuritySettings {
 export interface Preferences {
   toolMessageDisplay: 'detailed' | 'compact';
   startOnWelcome: boolean;
-  /** When true, the "open Slide Creator in a new tab" suggestion is never shown again. */
+  /** When true, the "open Builder in a new tab" suggestion is never shown again. */
   slideCreatorTabSuggestionDismissed: boolean;
   /** Bumped when a one-shot default/schema change must run on load. */
   preferencesVersion?: number;
@@ -648,7 +648,7 @@ export interface AppState {
   setMode: (mode: 'sidebar' | 'tab') => void;
   setRailCollapsed: (collapsed: boolean) => void;
 
-  /** Enter/leave the dedicated Slide Creator workspace. */
+  /** Enter/leave the dedicated Builder workspace. */
   openSlideCreator: () => void;
   closeSlideCreator: () => void;
   setHistoryDrawerOpen: (open: boolean) => void;
@@ -714,9 +714,12 @@ export const MEMORY_CATEGORY_LABELS: Record<MemoryCategory, string> = {
 /** System prompt for conversation title generation (used by auto-rename and /rename command) */
 export const TITLE_GENERATION_SYSTEM_PROMPT = `Generate a short title (max 6 words, no punctuation) for the conversation based on the user messages provided. Match the language of the messages. Output ONLY the title.`;
 
-// ==================== Slide Creator Types ====================
+// ==================== Bracekit Builder Types ====================
 
 export type {
+  BuilderKind,
+  SiteManifest,
+  SitePage,
   Slide,
   SlideActivityEvent,
   SlideActivityEventType,
@@ -738,8 +741,12 @@ export type {
   SlideUserAttachment,
 } from './slides.ts';
 export {
+  BUILDER_KINDS,
   DEFAULT_SLIDE_AGENT_MAX_ROUNDS,
   DEFAULT_SLIDE_CANVAS,
+  isBuilderKind,
+  isWebBuilderKind,
+  normalizeBuilderKind,
   SLIDE_CANVAS_PRESETS,
   SLIDE_PHASE_STATUS_COPY,
 } from './slides.ts';

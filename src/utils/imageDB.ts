@@ -159,6 +159,95 @@ export async function saveImagesForConversation(
   return keys;
 }
 
+export interface ImagePage {
+  images: StoredImageRecord[];
+  hasMore: boolean;
+}
+
+export async function getImagePage(offset: number, limit: number): Promise<ImagePage> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const index = tx.objectStore(STORE_NAME).index('by_created');
+      const images: StoredImageRecord[] = [];
+      let skipped = 0;
+      let request: IDBRequest<IDBCursorWithValue | null>;
+
+      request = index.openCursor(null, 'prev');
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (!cursor) {
+          resolve({ images, hasMore: false });
+          return;
+        }
+        if (skipped < offset) {
+          skipped += 1;
+          cursor.continue();
+          return;
+        }
+        if (images.length < limit) {
+          images.push(cursor.value as StoredImageRecord);
+          cursor.continue();
+          return;
+        }
+        resolve({ images, hasMore: true });
+      };
+      request.onerror = (e) => {
+        console.warn('[ImageDB] Failed to get image page:', (e.target as IDBRequest).error);
+        resolve({ images: [], hasMore: false });
+      };
+    });
+  } catch (e) {
+    console.warn('[ImageDB] getImagePage error:', e);
+    return { images: [], hasMore: false };
+  }
+}
+
+export async function getImages(keys: string[]): Promise<StoredImageRecord[]> {
+  if (keys.length === 0) return [];
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const results: StoredImageRecord[] = [];
+      let pending = keys.length;
+      let failed = false;
+
+      for (const key of keys) {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          if (request.result) results.push(request.result as StoredImageRecord);
+          if (--pending === 0) resolve(failed ? [] : results);
+        };
+        request.onerror = (e) => {
+          failed = true;
+          console.warn('[ImageDB] Failed to get image:', (e.target as IDBRequest).error);
+          if (--pending === 0) resolve([]);
+        };
+      }
+    });
+  } catch (e) {
+    console.warn('[ImageDB] getImages error:', e);
+    return [];
+  }
+}
+
+export async function getImageCount(): Promise<number> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).count();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(0);
+    });
+  } catch (e) {
+    console.warn('[ImageDB] getImageCount error:', e);
+    return 0;
+  }
+}
+
 export async function getAllImages(): Promise<StoredImageRecord[]> {
   try {
     const db = await openDB();

@@ -3,6 +3,7 @@ import {
   buildPlanSessionMessages,
   createSlideAgent,
   deriveSlideTitle,
+  pickAgentTranscriptField,
 } from '../../src/services/slideOrchestrator.ts';
 import type {
   SlideActivityEvent,
@@ -30,7 +31,7 @@ function makeSkillFetcher() {
     fetcher: async (url: string) => {
       // URL looks like "skills://skills/slide-creator/plan/SKILL.md" — derive
       // the phase-relative key ("plan/SKILL.md") for lookup.
-      const key = url.replace('skills://skills/slide-creator/', '');
+      const key = url.replace(/^skills:\/\/skills\/builder\/(?:slides|web)\//, '');
       const store: Record<string, string> = {
         'plan/SKILL.md':
           '---\nname: slide-creator-plan\ndescription: Plan skill.\n---\nplan skill **refs here** (`references/brief-template.md`)',
@@ -601,7 +602,7 @@ describe('createSlideAgent — createFromPrompt → plan (US-024)', () => {
 describe('createSlideAgent — build + follow-up (US-024)', () => {
   it('runs build to ready and refreshes the deck files onto the project', async () => {
     const skills = makeSkillFetcher();
-    const { transport } = makeTransport([
+    const { transport, seenMessages } = makeTransport([
       () => ({
         content: 'building',
         toolCalls: [
@@ -621,6 +622,14 @@ describe('createSlideAgent — build + follow-up (US-024)', () => {
     });
 
     await agent.runBuild();
+
+    const kickoff = seenMessages[0] ?? [];
+    const kickoffText = kickoff
+      .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+      .join('\n');
+    expect(kickoffText).toContain('my deck');
+    expect(kickoffText).toContain('The plan is approved');
+    expect(kickoffText).toContain('/brief.md');
 
     expect(h.phase).toBe('ready');
     expect(h.active?.files.some((f) => f.path === '/slides/01.html')).toBe(true);
@@ -1381,7 +1390,7 @@ it('surfaces verification issues on a truncated edit whose deck fails verificati
 describe('deriveSlideTitle', () => {
   it('derives a short title and caps whitespace + length', () => {
     expect(deriveSlideTitle('  build   a coffee deck  ')).toBe('build a coffee deck');
-    expect(deriveSlideTitle('   ')).toBe('Untitled deck');
+    expect(deriveSlideTitle('   ')).toBe('Untitled project');
     expect(deriveSlideTitle('x'.repeat(200)).length).toBeLessThanOrEqual(60);
   });
 });
@@ -2304,6 +2313,94 @@ describe('createSlideAgent — live providerConfig (provider switch)', () => {
     for (const pc of seenProviders) {
       expect(pc.providerId).toBe('cline');
     }
+  });
+});
+
+describe('pickAgentTranscriptField', () => {
+  it('prefers build transcript while a build is in progress', () => {
+    expect(
+      pickAgentTranscriptField({
+        ...builtProject(),
+        phase: 'build',
+        buildTranscript: [{ role: 'user', content: 'build' }],
+        planTranscript: [{ role: 'user', content: 'plan' }],
+      }),
+    ).toBe('buildTranscript');
+  });
+
+  it('prefers edit transcript once the deck is ready', () => {
+    expect(
+      pickAgentTranscriptField({
+        ...builtProject(),
+        phase: 'ready',
+        editTranscript: [{ role: 'user', content: 'edit' }],
+        planTranscript: [{ role: 'user', content: 'plan' }],
+      }),
+    ).toBe('editTranscript');
+  });
+
+  it('falls back to plan transcript', () => {
+    expect(
+      pickAgentTranscriptField({
+        ...builtProject(),
+        phase: 'plan_ready',
+        planTranscript: [{ role: 'user', content: 'plan' }],
+      }),
+    ).toBe('planTranscript');
+  });
+
+  it('returns null when no transcript exists', () => {
+    expect(pickAgentTranscriptField(builtProject())).toBeNull();
+  });
+});
+
+describe('compactProject', () => {
+  it('rewrites the chosen transcript and does not append a user message', async () => {
+    const longUser = 'u'.repeat(400);
+    const h = makeHost();
+    h.host.landProject({
+      ...builtProject(),
+      phase: 'plan_ready',
+      planTranscript: [
+        { role: 'system', content: 'skill' },
+        { role: 'user', content: longUser },
+        {
+          role: 'assistant',
+          content: 'ok',
+          toolCalls: [{ id: 't1', name: 'read_file', arguments: '{}' }],
+        },
+        { role: 'tool', toolCallId: 't1', name: 'read_file', content: 'x'.repeat(200) },
+        { role: 'user', content: 'continue' },
+      ],
+    });
+    const beforeMsgs = h.active!.messages.length;
+    const { transport } = makeTransport([() => ({ content: '## Goal\nSummarized plan' })]);
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: makeSkillFetcher().fetcher,
+    });
+    await agent.compactProject();
+    expect(h.active!.messages.length).toBe(beforeMsgs);
+    expect(h.active!.planTranscript?.some((m) => String(m.content).includes('Summarized plan'))).toBe(
+      true,
+    );
+    expect(h.active!.planTranscript?.some((m) => m.role === 'user' && m.content === longUser)).toBe(
+      false,
+    );
+  });
+
+  it('no-ops without a transcript', async () => {
+    const h = makeHost();
+    h.host.landProject(builtProject());
+    const { transport, calls } = makeTransport([() => ({ content: 'nope' })]);
+    const agent = createSlideAgent(h.host, {
+      providerConfig,
+      transport,
+      skillFetcher: makeSkillFetcher().fetcher,
+    });
+    await agent.compactProject();
+    expect(calls()).toBe(0);
   });
 });
 
