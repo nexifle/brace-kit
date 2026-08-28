@@ -259,11 +259,11 @@ export function SlideCodeViewer() {
               </div>
 
               {/* Code body */}
-              <div className="min-h-0 flex-1 overflow-auto bg-[#0d0f14]">
+              <div className="min-h-0 flex-1 overflow-auto bg-muted/30">
                 {!slide ? (
                   <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 p-8 text-center">
-                    <Code2 size={22} className="text-zinc-500" />
-                    <p className="text-xs text-zinc-400">Select a slide to view its source.</p>
+                    <Code2 size={22} className="text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">Select a slide to view its source.</p>
                   </div>
                 ) : tab === 'html' ? (
                   <CodePane code={html} language="html" empty={<span>No HTML on disk for {slide.htmlPath}.</span>} />
@@ -271,8 +271,8 @@ export function SlideCodeViewer() {
                   <CodePane code={css} language="css" empty={null} />
                 ) : (
                   <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 p-8 text-center">
-                    <Braces size={22} className="text-zinc-500" />
-                    <p className="max-w-sm text-xs leading-relaxed text-zinc-400">
+                    <Braces size={22} className="text-muted-foreground" />
+                    <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
                       This slide has no separate CSS file — its styling is inlined into the HTML or
                       shared via the deck theme.
                     </p>
@@ -346,8 +346,8 @@ function CodePane({
   if (!lines.length) {
     return (
       <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 p-8 text-center">
-        <FileCode2 size={22} className="text-zinc-500" />
-        <p className="max-w-sm text-xs leading-relaxed text-zinc-400">{empty}</p>
+        <FileCode2 size={22} className="text-muted-foreground" />
+        <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">{empty}</p>
       </div>
     );
   }
@@ -355,7 +355,7 @@ function CodePane({
     <div className="flex min-h-full w-full text-left font-mono text-[12px] leading-5">
       <div
         aria-hidden
-        className="sticky left-0 shrink-0 select-none border-r border-white/10 bg-[#0d0f14] px-3 py-3 text-right text-zinc-500"
+        className="sticky left-0 shrink-0 select-none border-r border-border bg-muted/30 px-3 py-3 text-right text-muted-foreground"
       >
         {lines.map((_, i) => (
           <div key={i} className="h-5">
@@ -368,7 +368,7 @@ function CodePane({
         gutter row height stays 20px (theme defaults add padding and a solid bg).
       */}
       <pre className="m-0 flex-1 overflow-visible px-4 py-3 whitespace-pre">
-        <code className={`hljs language-${language} block bg-transparent p-0 text-zinc-200`}>
+        <code className={`hljs language-${language} builder-code-highlight block bg-transparent p-0`}>
           {lines.map((lineHtml, i) => (
             <div
               key={i}

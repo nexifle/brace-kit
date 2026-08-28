@@ -642,14 +642,14 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
       }
 
       return `
-        <div class="not-prose md-codeblock-wrapper group relative my-4 rounded-md border border-white/10 bg-[#0d1117] overflow-hidden shadow-xl">
-          <div class="flex items-center justify-between px-3 py-1.5 bg-black/30 border-b border-white/5">
-            <span class="text-2xs font-bold uppercase tracking-widest text-white/50">${lang}</span>
-            <button class="copy-code-btn group/copy h-6 px-2 flex items-center gap-1.5 text-2xs font-bold uppercase tracking-tight text-white/50 hover:text-white transition-all rounded-sm hover:bg-white/10" data-code="${escapedCode}" title="Copy code">
+        <div class="not-prose md-codeblock-wrapper group relative my-4 rounded-md border overflow-hidden shadow-xl">
+          <div class="flex items-center justify-between px-3 py-1.5 border-b">
+            <span class="text-2xs font-bold uppercase tracking-widest">${lang}</span>
+            <button class="copy-code-btn group/copy h-6 px-2 flex items-center gap-1.5 text-2xs font-bold uppercase tracking-tight transition-all rounded-sm" data-code="${escapedCode}" title="Copy code">
               <span class="flex items-center gap-1.5 group-data-[state=success]/copy:hidden">
                 ${COPY_ICON}
               </span>
-              <span class="hidden items-center gap-1.5 group-data-[state=success]/copy:flex text-green-400">
+              <span class="hidden items-center gap-1.5 group-data-[state=success]/copy:flex text-success">
                 ${CHECK_ICON}
               </span>
             </button>
@@ -678,14 +678,14 @@ export function renderMarkdown(text: string, isStreaming?: boolean): string {
       }
 
       return `
-        <div class="not-prose md-codeblock-wrapper group relative my-4 rounded-md border border-white/10 bg-[#0d1117] overflow-hidden shadow-xl">
-          <div class="flex items-center justify-between px-3 py-1.5 bg-black/30 border-b border-white/5">
-            <span class="text-2xs font-bold uppercase tracking-widest text-white/50">code</span>
-            <button class="copy-code-btn group/copy h-6 px-2 flex items-center gap-1.5 text-2xs font-bold uppercase tracking-tight text-white/50 hover:text-white transition-all rounded-sm hover:bg-white/10" data-code="${escapedCode}" title="Copy code">
+        <div class="not-prose md-codeblock-wrapper group relative my-4 rounded-md border overflow-hidden shadow-xl">
+          <div class="flex items-center justify-between px-3 py-1.5 border-b">
+            <span class="text-2xs font-bold uppercase tracking-widest">code</span>
+            <button class="copy-code-btn group/copy h-6 px-2 flex items-center gap-1.5 text-2xs font-bold uppercase tracking-tight transition-all rounded-sm" data-code="${escapedCode}" title="Copy code">
               <span class="flex items-center gap-1.5 group-data-[state=success]/copy:hidden">
                 ${COPY_ICON}
               </span>
-              <span class="hidden items-center gap-1.5 group-data-[state=success]/copy:flex text-green-400">
+              <span class="hidden items-center gap-1.5 group-data-[state=success]/copy:flex text-success">
                 ${CHECK_ICON}
               </span>
             </button>
