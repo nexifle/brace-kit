@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useStore } from '../store/index.ts';
-import { getAllImages } from '../utils/imageDB.ts';
+import { getImageCount, getImagePage, getImages } from '../utils/imageDB.ts';
 import type { StoredImageRecord } from '../types/index.ts';
 import {
   XIcon,
@@ -57,14 +57,25 @@ async function getMarkdownImages(conversations: { id: string; updatedAt: number;
 export function GalleryView() {
   const store = useStore();
   const mode = useStore((state) => state.mode);
+  const PAGE_SIZE = 30;
   const [images, setImages] = useState<StoredImageRecord[]>([]);
   const [markdownImages, setMarkdownImages] = useState<MarkdownImage[]>([]);
+  const [imageCount, setImageCount] = useState(0);
+  const [hasMoreImages, setHasMoreImages] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [visibleItemCount, setVisibleItemCount] = useState(PAGE_SIZE);
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favoriteDbImages, setFavoriteDbImages] = useState<StoredImageRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'favorites'>('all');
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const scrollPositionRef = useRef<number>(0);
+  const loadingMoreRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   // Load favorites
   useEffect(() => {
@@ -75,6 +86,20 @@ export function GalleryView() {
       }
     });
   }, []);
+
+  // Fetch DB records for favorited image keys
+  useEffect(() => {
+    const keys = Array.from(favorites)
+      .filter((id) => id.startsWith('db:'))
+      .map((id) => id.slice(3));
+    let cancelled = false;
+    getImages(keys).then((records) => {
+      if (!cancelled) setFavoriteDbImages(records);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [favorites]);
 
   // Sync scroll
   useEffect(() => {
@@ -114,46 +139,110 @@ export function GalleryView() {
     [images, markdownImages]
   );
 
+  // Complete favorites list, fetched by key instead of discovered via pagination
+  const favoriteItems = useMemo<GalleryItem[]>(() => {
+    const items: GalleryItem[] = [];
+    for (const id of favorites) {
+      if (id.startsWith('db:')) {
+        const record = favoriteDbImages.find((r) => `db:${r.key}` === id);
+        if (record) items.push(record);
+      } else if (id.startsWith('md:')) {
+        const rest = id.slice(3);
+        const sep = rest.indexOf('::');
+        if (sep === -1) continue;
+        const conversationId = rest.slice(0, sep);
+        const url = rest.slice(sep + 2);
+        const md = markdownImages.find((m) => m.conversationId === conversationId && m.url === url);
+        if (md) items.push(md);
+      }
+    }
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  }, [favorites, favoriteDbImages, markdownImages]);
+
   const sortedFilteredItems = useMemo(() => {
-    const sorted = [...allItems].sort((a, b) => {
+    if (activeTab === 'favorites') return favoriteItems;
+    return [...allItems].sort((a, b) => {
       const aFav = favorites.has(getItemId(a)) ? 1 : 0;
       const bFav = favorites.has(getItemId(b)) ? 1 : 0;
       return bFav - aFav || (b.createdAt - a.createdAt);
     });
-    return activeTab === 'favorites'
-      ? sorted.filter((item) => favorites.has(getItemId(item)))
-      : sorted;
-  }, [allItems, favorites, activeTab]);
+  }, [allItems, favorites, activeTab, favoriteItems]);
 
-  const activeFavoriteCount = useMemo(
-    () => allItems.filter((item) => favorites.has(getItemId(item))).length,
-    [allItems, favorites]
+  const displayedItems = useMemo(
+    () => sortedFilteredItems.slice(0, visibleItemCount),
+    [sortedFilteredItems, visibleItemCount]
   );
 
+  const activeFavoriteCount = favoriteItems.length;
+
+  const loadMoreImages = useCallback(async () => {
+    if (loadingMoreRef.current) return;
+    const sourceLength = activeTab === 'favorites' ? favoriteItems.length : allItems.length;
+    if (visibleItemCount < sourceLength) {
+      setVisibleItemCount((prev) => prev + PAGE_SIZE);
+      return;
+    }
+    if (activeTab === 'favorites' || !hasMoreImages) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await getImagePage(images.length, PAGE_SIZE);
+      setImages((prev) => [...prev, ...page.images]);
+      setVisibleItemCount((prev) => prev + PAGE_SIZE);
+      setHasMoreImages(page.hasMore);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [activeTab, allItems.length, favoriteItems.length, hasMoreImages, images.length, visibleItemCount]);
+
   useEffect(() => {
+    const requestId = ++requestIdRef.current;
+    loadingMoreRef.current = true;
+    setLoading(true);
+    setLoadingMore(false);
+    setImages([]);
+    setMarkdownImages([]);
+    setImageCount(0);
+    setVisibleItemCount(PAGE_SIZE);
+    setHasMoreImages(true);
+    setLoadError(false);
+
     Promise.all([
-      getAllImages(),
+      getImagePage(0, PAGE_SIZE),
+      getImageCount(),
       getMarkdownImages(store.conversations),
-    ]).then(([imgs, mdImgs]) => {
-      setImages(imgs);
+    ]).then(([page, count, mdImgs]) => {
+      if (requestId !== requestIdRef.current) return;
+      setImages(page.images);
+      setImageCount(count);
+      setHasMoreImages(page.hasMore);
       setMarkdownImages(mdImgs);
+      setLoadError(count > 0 && page.images.length === 0);
       setLoading(false);
 
-      // Bersihkan stale favorites — hapus ID yang sudah tidak ada di gallery
-      const validIds = new Set([
-        ...imgs.map((img) => getItemId(img)),
-        ...mdImgs.map((md) => getItemId(md)),
-      ]);
-      setFavorites((prev) => {
-        const cleaned = new Set([...prev].filter((id) => validIds.has(id)));
-        if (cleaned.size !== prev.size) {
-          saveFavorites(cleaned);
-          return cleaned;
-        }
-        return prev;
-      });
+    }).finally(() => {
+      if (requestId === requestIdRef.current) loadingMoreRef.current = false;
     });
-  }, [store.conversations, saveFavorites]);
+  }, [store.conversations, reloadKey, saveFavorites]);
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    const container = scrollContainerRef.current;
+    const hasMoreFeed = activeTab === 'favorites'
+      ? visibleItemCount < favoriteItems.length
+      : hasMoreImages || visibleItemCount < allItems.length;
+    if (!sentinel || !container || loading || !hasMoreFeed) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) void loadMoreImages();
+      },
+      { root: container, rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [activeTab, allItems.length, favoriteItems.length, hasMoreImages, loadMoreImages, loading, visibleItemCount]);
 
   const getConvTitle = useCallback((conversationId: string): string => {
     const conv = store.conversations.find((c) => c.id === conversationId);
@@ -233,7 +322,7 @@ export function GalleryView() {
           <span className="text-base font-bold text-foreground">Gallery</span>
           {!loading && (
             <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-2xs font-black uppercase tracking-widest text-primary">
-              {images.length + markdownImages.length} items
+              {imageCount + markdownImages.length} items
             </div>
           )}
         </div>
@@ -283,6 +372,22 @@ export function GalleryView() {
             </div>
           </div>
         ) : images.length === 0 && markdownImages.length === 0 ? (
+          loadError ? (
+            <div className="flex flex-col items-center justify-center py-32 text-center text-muted-foreground gap-5">
+              <div className="w-20 h-20 bg-muted/20 rounded-lg flex items-center justify-center">
+                <ImageIcon size={32} className="opacity-20 translate-y-1" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-sm font-bold text-foreground">Couldn't load gallery</p>
+                <span className="text-xs max-w-[200px] leading-relaxed opacity-60">
+                  Something went wrong while fetching your images.
+                </span>
+              </div>
+              <Btn variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+                Retry
+              </Btn>
+            </div>
+          ) : (
           <div className="flex flex-col items-center justify-center py-32 text-center text-muted-foreground gap-5">
             <div className="w-20 h-20 bg-muted/20 rounded-lg flex items-center justify-center">
               <ImageIcon size={32} className="opacity-20 translate-y-1" />
@@ -294,6 +399,7 @@ export function GalleryView() {
               </span>
             </div>
           </div>
+          )
         ) : (() => {
           if (sortedFilteredItems.length === 0) {
             return (
@@ -309,7 +415,7 @@ export function GalleryView() {
           return (
             <div className={`mx-auto w-full ${mode === 'tab' ? 'max-w-[1200px]' : ''}`}>
               <div className={`grid gap-4 ${mode === 'tab' ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3'}`}>
-              {sortedFilteredItems.map((item) => {
+              {displayedItems.map((item) => {
                 const isMd = isMarkdownImage(item);
                 const itemKey = getItemId(item);
                 const imgSrc = isMd ? item.url : `data:${item.mimeType};base64,${item.data}`;
@@ -327,6 +433,8 @@ export function GalleryView() {
                         alt="Gallery Asset"
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                         crossOrigin={isMd ? "anonymous" : undefined}
+                        loading="lazy"
+                        decoding="async"
                       />
 
                       {/* Favorite/Action Overlays */}
@@ -357,6 +465,11 @@ export function GalleryView() {
                   </div>
                 );
               })}
+              </div>
+              <div ref={loadMoreRef} className="h-16 flex items-center justify-center text-2xs text-muted-foreground/50">
+                {(loadingMore || (activeTab === 'favorites'
+                  ? visibleItemCount < favoriteItems.length
+                  : hasMoreImages || visibleItemCount < allItems.length)) && 'Loading more...'}
               </div>
             </div>
           );
