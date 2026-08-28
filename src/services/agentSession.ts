@@ -330,6 +330,64 @@ export function resumeAgentSession(
   return runLoop(params, resume.messages, resume.round);
 }
 
+/** Force-compact a working transcript (slash `/compact` and the in-loop budget path). */
+export async function compactAgentWorking(
+  working: APIMessage[],
+  opts: {
+    transport: AgentTransport;
+    providerConfig: ProviderConfig;
+    chatOptions: Record<string, unknown>;
+    customInstructions?: string;
+    requestIdPrefix?: string;
+    keepRecentTokens?: number;
+    signal?: AbortSignal;
+    onRequestId?: (id: string | undefined) => void;
+  },
+): Promise<{ ok: true; messages: APIMessage[] } | { ok: false }> {
+  if (opts.signal?.aborted) return { ok: false };
+  const plan = buildAgentSummarizationPlan(
+    working,
+    opts.keepRecentTokens,
+    opts.customInstructions,
+  );
+  if (!plan) return { ok: false };
+  const prefix = opts.requestIdPrefix ?? 'agent';
+  const compactId = `${prefix}_compact_${Date.now().toString(36)}`;
+  opts.onRequestId?.(compactId);
+  const compactResponse = await opts.transport({
+    type: 'CHAT_REQUEST',
+    messages: plan.history,
+    providerConfig: opts.providerConfig,
+    tools: [],
+    options: { ...opts.chatOptions, stream: false },
+    requestId: compactId,
+  });
+  let summaryText = compactResponse.content?.trim();
+  const historyOk =
+    !compactResponse.error && !compactResponse.toolCalls?.length && Boolean(summaryText);
+  if (historyOk && plan.prefix) {
+    const prefixId = `${compactId}_prefix`;
+    opts.onRequestId?.(prefixId);
+    const prefixResponse = await opts.transport({
+      type: 'CHAT_REQUEST',
+      messages: plan.prefix,
+      providerConfig: opts.providerConfig,
+      tools: [],
+      options: { ...opts.chatOptions, stream: false },
+      requestId: prefixId,
+    });
+    const prefixText = prefixResponse.content?.trim();
+    if (prefixResponse.error || prefixResponse.toolCalls?.length || !prefixText) {
+      summaryText = undefined;
+    } else {
+      summaryText = combineAgentCompactSummary(summaryText!, prefixText);
+    }
+  }
+  opts.onRequestId?.(undefined);
+  if (!historyOk || !summaryText) return { ok: false };
+  return { ok: true, messages: workingFromSummary(working, summaryText) };
+}
+
 /** Shared loop core — parametrised by the starting transcript + round. */
 async function runLoop(
   params: AgentSessionParams,
@@ -361,46 +419,20 @@ async function runLoop(
       if (signal?.aborted) return cancel(params, working, round);
 
       if (shouldCompact(working, ctx.charBudget) && compactFailures < 3) {
-        const compactId = `${prefix}_compact_${round}_${Date.now().toString(36)}`;
-        activeRequestId = compactId;
-        const summarizerPlan = buildAgentSummarizationPlan(working);
-        if (summarizerPlan) {
-          const compactResponse = await transport({
-            type: 'CHAT_REQUEST',
-            messages: summarizerPlan.history,
-            providerConfig: params.providerConfig,
-            tools: [],
-            options: { ...params.chatOptions, stream: false },
-            requestId: compactId,
-          });
-          let summaryText = compactResponse.content?.trim();
-          const historyOk = !compactResponse.error && !compactResponse.toolCalls?.length && Boolean(summaryText);
-          if (historyOk && summarizerPlan.prefix) {
-            const prefixId = `${compactId}_prefix`;
-            activeRequestId = prefixId;
-            const prefixResponse = await transport({
-              type: 'CHAT_REQUEST',
-              messages: summarizerPlan.prefix,
-              providerConfig: params.providerConfig,
-              tools: [],
-              options: { ...params.chatOptions, stream: false },
-              requestId: prefixId,
-            });
-            const prefixText = prefixResponse.content?.trim();
-            if (prefixResponse.error || prefixResponse.toolCalls?.length || !prefixText) {
-              summaryText = undefined;
-            } else {
-              summaryText = combineAgentCompactSummary(summaryText!, prefixText);
-            }
-          }
-          if (historyOk && summaryText) {
-            const next = workingFromSummary(working, summaryText);
-            working.length = 0;
-            working.push(...next);
-            params.onCompact?.();
-          } else {
-            compactFailures += 1;
-          }
+        const compacted = await compactAgentWorking(working, {
+          transport,
+          providerConfig: params.providerConfig,
+          chatOptions: params.chatOptions,
+          requestIdPrefix: `${prefix}_compact_${round}`,
+          signal,
+          onRequestId: (id) => {
+            activeRequestId = id;
+          },
+        });
+        if (compacted.ok) {
+          working.length = 0;
+          working.push(...compacted.messages);
+          params.onCompact?.();
         } else {
           compactFailures += 1;
         }

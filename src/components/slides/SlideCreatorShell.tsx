@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store/index.ts';
 import { useSlideStore } from '../../store/slideStore.ts';
-import { useSlideAgent } from '../../hooks/useSlideAgent.ts';
+import { applySlideProjectTitle, generateSlideProjectTitle, useSlideAgent } from '../../hooks/useSlideAgent.ts';
+import { parseSlashCommand, SLASH_HELP_URL } from '../../utils/slashCommands.ts';
 import { Btn } from '../ui/Btn.tsx';
 import { Logo } from '../ui/Logo.tsx';
 import { SLIDE_CANVAS_PRESETS, SLIDE_PHASE_STATUS_COPY } from '../../types/index.ts';
@@ -358,6 +359,7 @@ function ChatRail({
   onHistory,
   placeholder,
   blocked,
+  processingCommand,
 }: {
   railOpen: boolean;
   onClose: () => void;
@@ -371,6 +373,7 @@ function ChatRail({
   onHistory: (open: boolean) => void;
   placeholder: string;
   blocked?: boolean;
+  processingCommand?: 'compacting' | 'renaming' | null;
 }) {
   const activeProject = useSlideStore((s) => s.activeProject);
   const sessionStatus = useSlideStore((s) => s.sessionStatus);
@@ -461,6 +464,7 @@ function ChatRail({
                   blocked={blocked}
                   seedText={seedText}
                   seedKey={seedKey}
+                  processingCommand={processingCommand}
                 />
               </>
             )}
@@ -502,12 +506,45 @@ export function SlideCreatorShell() {
     pendingKind,
   );
 
+  const [processingCommand, setProcessingCommand] = useState<
+    'compacting' | 'renaming' | null
+  >(null);
+
   const handleSend = (
     text: string,
     attachments?: SlidePendingAttachment[],
   ) => {
     const pending = (attachments ?? []).filter((a) => a.type !== 'error' && a.data);
     if (!text.trim() && pending.length === 0) return;
+
+    const slash = parseSlashCommand(text);
+    if (slash) {
+      if (slash.kind === 'help') {
+        window.open(SLASH_HELP_URL, '_blank');
+        return;
+      }
+      if (slash.kind === 'rename') {
+        if (!activeProject || processingCommand) return;
+        if (slash.title) {
+          applySlideProjectTitle(activeProject.id, slash.title);
+          return;
+        }
+        setProcessingCommand('renaming');
+        void generateSlideProjectTitle(activeProject.id, { force: true }).finally(() => {
+          setProcessingCommand(null);
+        });
+        return;
+      }
+      if (slash.kind === 'compact') {
+        if (!activeProject || processingCommand) return;
+        setProcessingCommand('compacting');
+        void agent.compactProject(slash.extra || undefined).finally(() => {
+          setProcessingCommand(null);
+        });
+        return;
+      }
+    }
+
     // In narrow mode the conversation is a separate view — bring the user to it
     // so they can see the assistant's reply as soon as they send.
     if (narrow && narrowView === 'preview') setPanelView('chat');
@@ -697,6 +734,7 @@ export function SlideCreatorShell() {
               seedText={seedText}
               seedKey={seedKey}
               focusKey={composerFocusKey}
+              processingCommand={processingCommand}
             />
           </div>
         ) : (
@@ -714,6 +752,7 @@ export function SlideCreatorShell() {
               onHistory={setHistoryOpen}
               placeholder={promptPlaceholder}
               blocked={blocked}
+              processingCommand={processingCommand}
             />
             <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
               <PreviewPane

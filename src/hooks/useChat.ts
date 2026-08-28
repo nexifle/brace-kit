@@ -19,6 +19,7 @@ import { useAutoCompact, cloneMessagesForBranch } from './compact/index.ts';
 import { executeChatToolCall, ensureHostedWebSearchTools, finishRequestAsSuspended, updateToolMessage, type ChatToolExecutionResult } from '../services/chatToolExecutor.ts';
 import { isChatSendBlocked } from '../utils/ask.ts';
 import { prepareChatRequest } from '../utils/chatOptions.ts';
+import { parseSlashCommand, SLASH_HELP_URL } from '../utils/slashCommands.ts';
 
 /**
  * Generate a title for the given conversation (or the active one if no ID provided).
@@ -227,20 +228,25 @@ export function useChat() {
     const validAttachments = currentState.attachments.filter((a) => a.type !== 'error');
     if (!text && validAttachments.length === 0) return;
 
-    // Handle slash commands
-    if (text.trim() === '/compact' || text.trim().startsWith('/compact ')) {
-      const extra = text.trim().slice('/compact'.length).trim();
-      await compactConversation(extra ? { customInstructions: extra } : undefined);
+    const slash = parseSlashCommand(text);
+    if (slash?.kind === 'compact') {
+      await compactConversation(slash.extra ? { customInstructions: slash.extra } : undefined);
       return;
     }
-
-    if (text.trim() === '/rename') {
+    if (slash?.kind === 'rename') {
+      if (slash.title) {
+        const convId = currentState.activeConversationId;
+        if (convId) {
+          const title = slash.title.replace(/^["']|["']$/g, '').slice(0, 50);
+          currentState.updateConversationTitle(convId, title);
+        }
+        return;
+      }
       await renameConversation();
       return;
     }
-
-    if (text.trim() === '/help') {
-      window.open('https://bracekit.nexifle.com/guide', '_blank');
+    if (slash?.kind === 'help') {
+      window.open(SLASH_HELP_URL, '_blank');
       return;
     }
 

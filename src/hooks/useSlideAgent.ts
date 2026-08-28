@@ -182,6 +182,7 @@ export function useSlideAgent() {
       ),
     runBuild: agent.runBuild,
     sendFollowUp: agent.sendFollowUp,
+    compactProject: agent.compactProject,
     retryFailedPhase: agent.retryFailedPhase,
     answerAsk: agent.answerAsk,
     stop: agent.stop,
@@ -197,9 +198,13 @@ export function useSlideAgent() {
  * project is re-read right before writing so a concurrently-landed build/edit
  * round's files are not clobbered by a stale snapshot.
  */
-export async function generateSlideProjectTitle(projectId: string): Promise<void> {
+export async function generateSlideProjectTitle(
+  projectId: string,
+  opts?: { force?: boolean },
+): Promise<void> {
   const project = useSlideStore.getState().activeProject;
-  if (!project || project.id !== projectId || project.autoTitled) return;
+  if (!project || project.id !== projectId) return;
+  if (project.autoTitled && !opts?.force) return;
 
   // Title messages: only user messages, first 2 + last 1 (deduplicated), 300
   // chars each — same heuristic as chat's auto-title.
@@ -251,20 +256,29 @@ export async function generateSlideProjectTitle(projectId: string): Promise<void
     });
 
     if (!response?.title || response.error) return;
-    const title = response.title.trim().replace(/^["']|["']$/g, '').slice(0, 50);
-
-    // Re-read the active project at write time so we don't clobber a build/edit
-    // round that landed while the title request was in flight.
-    const current = useSlideStore.getState().activeProject;
-    if (!current || current.id !== projectId || current.autoTitled) return;
-    const files = artifactFor(current.kind).sync(current.files, { title });
-    const next = { ...current, title, autoTitled: true, files };
-    setLastActiveSlideProject(next.id);
-    saveSlideProject(next).catch(() => {});
-    useSlideStore.getState().setActiveProjectData(next);
+    applySlideProjectTitle(projectId, response.title, { requireUntitled: !opts?.force });
   } catch (e) {
     console.error('[generateSlideProjectTitle] Failed:', e);
   }
+}
+
+/** Persist a project title (slash `/rename Title` and auto-title). */
+export function applySlideProjectTitle(
+  projectId: string,
+  rawTitle: string,
+  opts?: { requireUntitled?: boolean },
+): boolean {
+  const title = rawTitle.trim().replace(/^["']|["']$/g, '').slice(0, 50);
+  if (!title) return false;
+  const current = useSlideStore.getState().activeProject;
+  if (!current || current.id !== projectId) return false;
+  if (opts?.requireUntitled && current.autoTitled) return false;
+  const files = artifactFor(current.kind).sync(current.files, { title });
+  const next = { ...current, title, autoTitled: true, files };
+  setLastActiveSlideProject(next.id);
+  saveSlideProject(next).catch(() => {});
+  useSlideStore.getState().setActiveProjectData(next);
+  return true;
 }
 
 /**

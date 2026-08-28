@@ -50,7 +50,13 @@ import {
   type SlideToolOptions,
 } from './slidePhases.ts';
 import { loadSlideSkill, type SlidePhaseKey, type SlideSkillFetcher } from './slideSkills.ts';
-import type { AgentTransport, AgentAbortFn, StreamDelta } from './agentSession.ts';
+import {
+  compactAgentWorking,
+  type AgentTransport,
+  type AgentAbortFn,
+  type StreamDelta,
+  type AgentChatResponse,
+} from './agentSession.ts';
 import { isSlideCanvas } from '../utils/slideVfs.ts';
 import { artifactFor, type ArtifactStrategy } from './artifacts/index.ts';
 import { supportsFunctionCalling as geminiSupportsFunctionCalling } from '../providers/presets.ts';
@@ -64,6 +70,23 @@ export const SLIDE_FUNCTION_CALLING_BLOCKED =
 export function deriveSlideTitle(prompt: string): string {
   const cleaned = prompt.trim().replace(/\s+/g, ' ').slice(0, 60).trim();
   return cleaned.length > 0 ? cleaned : 'Untitled project';
+}
+
+export type AgentTranscriptField = 'planTranscript' | 'editTranscript' | 'buildTranscript';
+
+/** Which persisted agent transcript `/compact` should rewrite. */
+export function pickAgentTranscriptField(project: SlideProject): AgentTranscriptField | null {
+  if (project.phase === 'build' && project.buildTranscript?.length) return 'buildTranscript';
+  if (
+    project.editTranscript?.length &&
+    (project.phase === 'ready' || project.phase === 'error' || project.phase === 'edit')
+  ) {
+    return 'editTranscript';
+  }
+  if (project.planTranscript?.length) return 'planTranscript';
+  if (project.editTranscript?.length) return 'editTranscript';
+  if (project.buildTranscript?.length) return 'buildTranscript';
+  return null;
 }
 
 export { buildPlanSessionMessages } from '../utils/slideVisionTranscript.ts';
@@ -1345,6 +1368,35 @@ export function createSlideAgent(
     }
   }
 
+  async function compactProject(customInstructions?: string): Promise<void> {
+    if (state.running) return;
+    const project = host.getActiveProject();
+    if (!project) return;
+    const field = pickAgentTranscriptField(project);
+    if (!field) return;
+    const working = project[field];
+    if (!working?.length) return;
+
+    const transport: AgentTransport =
+      deps.transport ??
+      ((request) => chrome.runtime.sendMessage(request) as Promise<AgentChatResponse>);
+    const compacted = await compactAgentWorking(working, {
+      transport,
+      providerConfig: providerConfig(),
+      chatOptions: { ...(deps.getChatOptions?.() ?? {}), stream: false },
+      customInstructions,
+      requestIdPrefix: 'slide_compact',
+    });
+    if (!compacted.ok) return;
+    const current = host.getActiveProject();
+    if (!current || current.id !== project.id) return;
+    host.landProject({
+      ...current,
+      [field]: compacted.messages,
+      updatedAt: Date.now(),
+    });
+  }
+
   /** Abort the in-flight phase, leaving partial VFS consistent. */
   function stop(): void {
     state.abort?.abort();
@@ -1371,6 +1423,7 @@ export function createSlideAgent(
     /** Resume a stopped build with the user's follow-up message. */
     runBuildContinue,
     sendFollowUp,
+    compactProject,
     /** Re-run plan/build after a phase failure without a fake "continue" turn. */
     retryFailedPhase,
     stop,

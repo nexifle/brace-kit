@@ -15,12 +15,8 @@ import { useCapabilityGuard } from '../hooks/useCapabilityGuard.ts';
 import { composerAcceptAttribute } from '../utils/modelCapability.ts';
 import { resolveReserveTokens } from '../utils/estimateTokens.ts';
 import { estimateRequestContextTokens } from '../utils/requestContext.ts';
-
-const SLASH_COMMANDS = [
-  { cmd: '/compact', desc: 'Summarize and compress conversation' },
-  { cmd: '/rename', desc: 'Rename conversation based on history' },
-  { cmd: '/help', desc: 'Help and documentation' },
-];
+import { slashComposerGhost, slashGhostCmd, slashMatches } from '../utils/slashCommands.ts';
+import { SlashCommandPopover } from './SlashCommandPopover.tsx';
 
 export function InputArea() {
   const [text, setText] = useState('');
@@ -46,17 +42,9 @@ export function InputArea() {
   const isImageGenerationModel = isXAIImageModel || isGeminiImageModel;
 
 
-  // Autocomplete suggestion logic
-  const autocompleteSuggestion = useMemo(() => {
-    if (!text.startsWith('/') || text.includes(' ')) return null;
-    const match = SLASH_COMMANDS.find(c => c.cmd.startsWith(text) && c.cmd !== text);
-    return match ? match.cmd : null;
-  }, [text]);
-
-  const filteredCommands = useMemo(() => {
-    if (!text.startsWith('/') || text.includes(' ')) return [];
-    return SLASH_COMMANDS.filter(c => c.cmd.startsWith(text));
-  }, [text]);
+  const autocompleteSuggestion = useMemo(() => slashGhostCmd(text), [text]);
+  const composerGhost = useMemo(() => slashComposerGhost(text), [text]);
+  const filteredCommands = useMemo(() => slashMatches(text), [text]);
 
   const contextEstimate = estimateRequestContextTokens(store);
   const contextWindow = getEffectiveContextWindow(
@@ -301,27 +289,14 @@ export function InputArea() {
           </div>
         )}
 
-        {/* Slash Commands Popover */}
-        {filteredCommands.length > 0 && (
-          <div className="absolute bottom-full left-3 right-3 bg-popover border border-border rounded-lg shadow-xl mb-2 overflow-hidden z-50 animate-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
-            {filteredCommands.map(({ cmd, desc }) => (
-              <div
-                key={cmd}
-                className={`px-3 py-2 cursor-pointer flex flex-col gap-0 transition-colors ${cmd === autocompleteSuggestion
-                  ? 'bg-accent/20 text-accent-foreground'
-                  : 'hover:bg-accent/10 focus:bg-accent/20'
-                  }`}
-                onClick={() => {
-                  setText(cmd + ' ');
-                  textareaRef.current?.focus();
-                }}
-              >
-                <div className="font-bold text-xs text-primary font-mono">{cmd}</div>
-                <div className="text-2xs text-muted-foreground leading-tight tracking-tight">{desc}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        <SlashCommandPopover
+          commands={filteredCommands}
+          highlightCmd={autocompleteSuggestion}
+          onPick={(cmd) => {
+            setText(cmd + ' ');
+            textareaRef.current?.focus();
+          }}
+        />
 
         {/* Textarea with Ghost Overlay */}
         <div className="px-3 pt-1 pb-1">
@@ -332,9 +307,9 @@ export function InputArea() {
               aria-hidden="true"
             >
               <span className="text-transparent">{text}</span>
-              {autocompleteSuggestion && (
+              {composerGhost && (
                 <span className="text-muted-foreground/40 italic">
-                  {autocompleteSuggestion.slice(text.length)}
+                  {composerGhost}
                 </span>
               )}
             </div>

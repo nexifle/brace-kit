@@ -178,6 +178,7 @@ export interface AgentSummarizationPlan {
 export function buildAgentSummarizationPlan(
   working: APIMessage[],
   keepRecentTokens: number = DEFAULT_KEEP_RECENT_TOKENS,
+  customInstructions?: string,
 ): AgentSummarizationPlan | null {
   const asMessages = apiMessagesToMessages(working);
   const prep = prepareCompaction(asMessages, keepRecentTokens, undefined, { force: true });
@@ -186,6 +187,7 @@ export function buildAgentSummarizationPlan(
   const history = buildSummarizationApiMessages(buildSummarizationUserPrompt({
     conversationText: historyText || '(empty)',
     previousSummary: prep.previousSummary,
+    customInstructions,
   }));
   if (prep.isSplitTurn && prep.turnPrefixMessages.length) {
     const prefixText = serializeConversation(prep.turnPrefixMessages);
